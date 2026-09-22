@@ -1,0 +1,22 @@
+# Local integration dependencies for R4. Only PostgreSQL is required in R4-B.
+# Bound to loopback on a non-default port to avoid colliding with other local databases.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: r4-agent-platform-postgres
+    environment:
+      POSTGRES_USER: r4
+      POSTGRES_PASSWORD: r4_local_only
+      POSTGRES_DB: r4
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - r4-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U r4 -d r4"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  r4-postgres-data:

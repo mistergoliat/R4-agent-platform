@@ -1,0 +1,22 @@
+{
+  "name": "@r4/observability",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Structured logging, correlation context and telemetry event conventions.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@r4/contracts": "*",
+    "pino": "^10.3.0"
+  }
+}

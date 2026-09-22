@@ -1,0 +1,42 @@
+{
+  "name": "r4-agent-platform",
+  "version": "0.0.0",
+  "private": true,
+  "description": "R4 Agentic Platform — reusable, CRM-independent agent runtime (phase R4-B: platform skeleton).",
+  "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "clean": "tsc -b tsconfig.build.json --clean",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint . --max-warnings=0",
+    "test": "npm run test:unit && npm run test:contract && npm run test:integration",
+    "test:unit": "vitest run --project unit",
+    "test:contract": "vitest run --project contract",
+    "test:integration": "vitest run --project integration",
+    "test:recovery": "vitest run --project recovery",
+    "db:up": "docker compose up -d --wait postgres",
+    "db:down": "docker compose down",
+    "db:migrate": "node apps/api/dist/migrate.js",
+    "start": "node apps/api/dist/main.js",
+    "check": "npm run build && npm run lint && npm run typecheck && npm run test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^20.19.0",
+    "@types/pg": "^8.23.0",
+    "eslint": "^10.11.0",
+    "pg": "^8.23.0",
+    "pino": "^10.3.1",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.70.0",
+    "vitest": "^4.1.0",
+    "zod": "^4.6.5"
+  }
+}

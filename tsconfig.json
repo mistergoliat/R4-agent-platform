@@ -1,0 +1,21 @@
+{
+  "//": "Whole-repository typecheck (source-to-source, no emit). Build uses tsconfig.build.json project references.",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "paths": {
+      "@r4/contracts": ["./packages/contracts/src/index.ts"],
+      "@r4/observability": ["./packages/observability/src/index.ts"],
+      "@r4/model-gateway": ["./packages/model-gateway/src/index.ts"],
+      "@r4/capability-runtime": ["./packages/capability-runtime/src/index.ts"],
+      "@r4/task-runtime": ["./packages/task-runtime/src/index.ts"],
+      "@r4/agent-registry": ["./packages/agent-registry/src/index.ts"],
+      "@r4/persistence-postgres": ["./packages/persistence-postgres/src/index.ts"],
+      "@r4/api": ["./apps/api/src/index.ts"]
+    }
+  },
+  "include": ["packages/*/src", "apps/*/src", "tests", "vitest.config.ts", "eslint.config.js"]
+}

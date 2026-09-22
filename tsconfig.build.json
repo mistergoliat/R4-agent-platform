@@ -1,0 +1,13 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/contracts" },
+    { "path": "packages/observability" },
+    { "path": "packages/model-gateway" },
+    { "path": "packages/capability-runtime" },
+    { "path": "packages/task-runtime" },
+    { "path": "packages/agent-registry" },
+    { "path": "packages/persistence-postgres" },
+    { "path": "apps/api" }
+  ]
+}

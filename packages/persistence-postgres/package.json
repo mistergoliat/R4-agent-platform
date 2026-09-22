@@ -1,0 +1,27 @@
+{
+  "name": "@r4/persistence-postgres",
+  "version": "0.0.0",
+  "private": true,
+  "description": "PostgreSQL adapter: migrations and store implementations for runtime ports.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "migrations"
+  ],
+  "dependencies": {
+    "@r4/contracts": "*",
+    "@r4/observability": "*",
+    "@r4/task-runtime": "*",
+    "@r4/agent-registry": "*",
+    "@r4/capability-runtime": "*",
+    "pg": "^8.23.0"
+  }
+}

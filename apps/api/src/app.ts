@@ -1,0 +1,158 @@
+import Fastify, { type FastifyBaseLogger, type FastifyInstance, type FastifyRequest } from 'fastify';
+import { z } from 'zod';
+import {
+  PlatformError,
+  agentIdSchema,
+  createTaskRequestSchema,
+  idempotencyKeySchema,
+  uuidSchema,
+} from '@r4/contracts';
+import type { AgentRegistry } from '@r4/agent-registry';
+import type { TaskRuntime } from '@r4/task-runtime';
+import { resolveCorrelationId, runWithCorrelation } from '@r4/observability';
+import { toErrorResponse } from './errors.js';
+import { unauthenticatedPrincipalResolver, type PrincipalResolver } from './principal.js';
+
+export interface ReadinessReport {
+  readonly ready: boolean;
+  readonly checks: Readonly<Record<string, unknown>>;
+}
+
+export interface AppDependencies {
+  readonly logger: FastifyBaseLogger;
+  readonly tasks: TaskRuntime;
+  readonly agents: AgentRegistry;
+  readonly readiness: () => Promise<ReadinessReport>;
+  readonly principal?: PrincipalResolver;
+}
+
+export const CORRELATION_HEADER = 'x-correlation-id';
+const MAX_BODY_BYTES = 256 * 1024;
+
+const taskParams = z.strictObject({ id: uuidSchema });
+const runParams = z.strictObject({ id: uuidSchema });
+const agentParams = z.strictObject({ id: agentIdSchema });
+const agentQuery = z.strictObject({ version: z.coerce.number().int().positive().optional() });
+
+/**
+ * HTTP transport for the R4 public API (v1). Routes only validate input,
+ * resolve the caller and delegate to runtime services — no business logic
+ * lives here. Only endpoints for implemented features exist.
+ */
+export function buildApp(deps: AppDependencies): FastifyInstance {
+  const resolvePrincipal = deps.principal ?? unauthenticatedPrincipalResolver;
+  const app = Fastify({
+    loggerInstance: deps.logger,
+    // Request logging is done once, structured, in the onResponse hook below.
+    logController: new Fastify.LogController({ disableRequestLogging: true, requestIdLogLabel: 'correlationId' }),
+    bodyLimit: MAX_BODY_BYTES,
+    genReqId: (request) => resolveCorrelationId(request.headers[CORRELATION_HEADER]),
+  });
+
+  // The API speaks JSON only; other media types are refused with 415.
+  app.removeContentTypeParser('text/plain');
+
+  app.addHook('onRequest', async (request, reply) => {
+    reply.header(CORRELATION_HEADER, request.id);
+  });
+
+  app.addHook('onResponse', async (request, reply) => {
+    request.log.info(
+      {
+        event: 'http.request.completed',
+        method: request.method,
+        route: request.routeOptions.url ?? 'unmatched',
+        statusCode: reply.statusCode,
+        durationMs: Math.round(reply.elapsedTime),
+      },
+      'http.request.completed',
+    );
+  });
+
+  app.setErrorHandler((error, request, reply) => {
+    const { status, body, internal } = toErrorResponse(error, request.id);
+    if (internal) {
+      request.log.error({ err: error }, 'request failed');
+    } else {
+      request.log.info({ errorCode: body.error.code, statusCode: status }, 'request rejected');
+    }
+    void reply.status(status).send(body);
+  });
+
+  app.setNotFoundHandler((request, reply) => {
+    void reply.status(404).send({
+      error: { code: 'route_not_found', message: `no route for ${request.method} ${request.url.split('?')[0]}`, correlationId: request.id },
+    });
+  });
+
+  // Liveness: the process is up and serving. Deliberately no dependency checks.
+  app.get('/health', (_request, reply) => reply.send({ status: 'ok' }));
+
+  // Readiness: dependencies are reachable and the schema/config are in place.
+  app.get('/ready', async (_request, reply) => {
+    const report = await deps.readiness();
+    return reply.status(report.ready ? 200 : 503).send({ status: report.ready ? 'ready' : 'not_ready', checks: report.checks });
+  });
+
+  app.post('/v1/tasks', (request, reply) =>
+    inContext(request, async () => {
+      const body = parse(createTaskRequestSchema, request.body ?? undefined, 'body');
+      const rawKey = request.headers['idempotency-key'];
+      const idempotencyKey = rawKey === undefined ? undefined : parse(idempotencyKeySchema, rawKey, 'Idempotency-Key header');
+      const { view, replayed } = await deps.tasks.createTask({
+        request: body,
+        requestedBy: resolvePrincipal(request),
+        correlationId: request.id,
+        idempotencyKey,
+      });
+      return reply
+        .status(replayed ? 200 : 201)
+        .header('location', `/v1/tasks/${view.task.taskId}`)
+        .header('idempotency-replayed', String(replayed))
+        .send(view);
+    }),
+  );
+
+  app.get('/v1/tasks/:id', (request) =>
+    inContext(request, async () => {
+      const { id } = parse(taskParams, request.params, 'path');
+      return deps.tasks.getTask(id);
+    }),
+  );
+
+  app.get('/v1/agents', (request) =>
+    inContext(request, async () => ({ agents: await deps.agents.list() })),
+  );
+
+  app.get('/v1/agents/:id', (request) =>
+    inContext(request, async () => {
+      const { id } = parse(agentParams, request.params, 'path');
+      const { version } = parse(agentQuery, request.query, 'query');
+      return deps.agents.get(id, version);
+    }),
+  );
+
+  app.get('/v1/runs/:id', (request) =>
+    inContext(request, async () => {
+      const { id } = parse(runParams, request.params, 'path');
+      return deps.tasks.getRun(id);
+    }),
+  );
+
+  return app;
+}
+
+function inContext<T>(request: FastifyRequest, fn: () => Promise<T>): Promise<T> {
+  return runWithCorrelation({ correlationId: request.id }, fn);
+}
+
+function parse<T extends z.ZodType>(schema: T, value: unknown, where: string): z.output<T> {
+  const parsed = schema.safeParse(value);
+  if (!parsed.success) {
+    throw new PlatformError('validation', 'validation_failed', `invalid ${where}: ${z.prettifyError(parsed.error)}`, {
+      location: where,
+      issues: parsed.error.issues.map((i) => ({ path: i.path.map(String).join('.'), message: i.message })),
+    });
+  }
+  return parsed.data;
+}

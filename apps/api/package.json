@@ -1,0 +1,28 @@
+{
+  "name": "@r4/api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "R4 public HTTP API (v1). Transport only: validates input and delegates to runtime services.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@r4/agent-registry": "*",
+    "@r4/contracts": "*",
+    "@r4/observability": "*",
+    "@r4/persistence-postgres": "*",
+    "@r4/task-runtime": "*",
+    "fastify": "^5.12.0",
+    "pino": "^10.3.0",
+    "zod": "^4.6.0"
+  }
+}

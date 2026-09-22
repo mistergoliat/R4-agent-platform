@@ -1,0 +1,19 @@
+{
+  "name": "@r4/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "R4 Core public contracts: schemas and types for generic agent-platform primitives. No domain semantics.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "dependencies": {
+    "zod": "^4.6.0"
+  }
+}

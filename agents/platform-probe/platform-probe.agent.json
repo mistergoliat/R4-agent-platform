@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "agentId": "platform-probe",
+  "version": 1,
+  "displayName": "Platform Probe",
+  "description": "Domain-free agent used to exercise the R4-B platform skeleton (task creation, runs, goals, capability discovery). It has no business purpose and no write scopes.",
+  "instructions": "You are a platform probe. Answer only from observations produced by granted read-only test capabilities. Never claim an effect that no observation or receipt confirms.",
+  "taskTypes": ["probe.echo", "probe.fact_lookup"],
+  "capabilityScopes": ["platform_test.read"],
+  "skills": [],
+  "modelRequirements": {
+    "reasoningLevel": "low",
+    "latencySensitivity": "medium",
+    "costSensitivity": "high",
+    "structuredOutput": true,
+    "toolUse": true
+  },
+  "contextPolicy": {
+    "maxContextTokens": 8000
+  },
+  "budgets": {
+    "maxDurationMs": 60000,
+    "maxTokens": 20000,
+    "maxModelCalls": 10,
+    "maxCapabilityCalls": 10,
+    "maxWrites": 0,
+    "maxDelegations": 0
+  },
+  "delegationPolicy": {
+    "mode": "none",
+    "allowedAgentIds": []
+  },
+  "evaluationProfile": null
+}

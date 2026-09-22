@@ -1,0 +1,23 @@
+{
+  "name": "@r4/task-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Durable task lifecycle, runs and goals. Persistence-agnostic: depends on store ports only.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@r4/contracts": "*",
+    "@r4/observability": "*",
+    "zod": "^4.6.0"
+  }
+}

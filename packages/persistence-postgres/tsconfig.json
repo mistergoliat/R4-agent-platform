@@ -1,0 +1,28 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../contracts"
+    },
+    {
+      "path": "../observability"
+    },
+    {
+      "path": "../task-runtime"
+    },
+    {
+      "path": "../agent-registry"
+    },
+    {
+      "path": "../capability-runtime"
+    }
+  ]
+}
