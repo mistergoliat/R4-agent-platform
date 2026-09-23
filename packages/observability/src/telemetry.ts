@@ -21,6 +21,25 @@ export const TELEMETRY_EVENTS = [
   'model.call.failed',
   'capability.registered',
   'capability.invocation.completed',
+  // R4-C1 execution kernel
+  'worker.started',
+  'worker.stopped',
+  'worker.recovery',
+  'task.claimed',
+  'task.lease.renewed',
+  'task.lease.expired',
+  'task.lease.released',
+  'lease.lost',
+  'run.resumed',
+  'run.step.recorded',
+  'run.completed',
+  'run.failed',
+  'run.cancelled',
+  'run.abandoned',
+  'agent.decision',
+  'capability.invoked',
+  'observation.persisted',
+  'budget.exhausted',
 ] as const;
 export type TelemetryEventName = (typeof TELEMETRY_EVENTS)[number];
 

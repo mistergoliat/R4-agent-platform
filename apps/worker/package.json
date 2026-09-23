@@ -1,0 +1,30 @@
+{
+  "name": "@r4/worker",
+  "version": "0.0.0",
+  "private": true,
+  "description": "R4 worker: claims durable tasks under a lease and executes them with the Agent Kernel. Independent of the API process.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@r4/agent-kernel": "*",
+    "@r4/agent-registry": "*",
+    "@r4/capability-runtime": "*",
+    "@r4/contracts": "*",
+    "@r4/model-gateway": "*",
+    "@r4/observability": "*",
+    "@r4/persistence-postgres": "*",
+    "@r4/task-runtime": "*",
+    "pino": "^10.3.0",
+    "zod": "^4.6.0"
+  }
+}

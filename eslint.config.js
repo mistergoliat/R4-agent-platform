@@ -86,6 +86,24 @@ export default tseslint.config(
     },
   },
   {
+    files: ['packages/agent-kernel/src/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            ...forbiddenEverywhere,
+            { group: ['fastify', 'fastify/*', '@r4/api', '@r4/worker', '**/apps/**'], message: 'Core packages must not depend on transports or apps.' },
+            {
+              group: ['pg', 'pg/*', '@r4/persistence-postgres', '@r4/task-runtime', '@r4/capability-runtime', '@r4/agent-registry'],
+              message: 'The Agent Kernel reaches state and capability execution only through the KernelSession port (ADR-009).',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['apps/*/src/main.ts', 'apps/*/src/migrate.ts'],
     rules: { 'no-console': 'off' },
   },
@@ -102,5 +120,11 @@ export default tseslint.config(
   {
     files: ['eslint.config.js'],
     ...tseslint.configs.disableTypeChecked,
+  },
+  {
+    // Plain-JS child processes spawned by recovery tests (Node cannot run TS directly).
+    files: ['tests/**/*.mjs'],
+    ...tseslint.configs.disableTypeChecked,
+    languageOptions: { ...tseslint.configs.disableTypeChecked.languageOptions, globals: { process: 'readonly' } },
   },
 );

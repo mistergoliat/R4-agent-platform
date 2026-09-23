@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
+  agentDecisionSchema,
   agentDefinitionSchema,
   agentRunSchema,
+  runStepSchema,
+  taskLeaseSchema,
   agentTaskSchema,
   capabilityDefinitionSchema,
   goalSchema,
@@ -33,6 +36,10 @@ const CONTRACTS = {
   Goal: goalSchema,
   CapabilityDefinition: capabilityDefinitionSchema,
   Observation: observationSchema,
+  // R4-C1
+  AgentDecision: agentDecisionSchema,
+  RunStep: runStepSchema,
+  TaskLease: taskLeaseSchema,
 };
 
 describe('provider and domain neutrality of public contracts', () => {

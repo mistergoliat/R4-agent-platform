@@ -2,7 +2,7 @@
   "name": "r4-agent-platform",
   "version": "0.0.0",
   "private": true,
-  "description": "R4 Agentic Platform — reusable, CRM-independent agent runtime (phase R4-B: platform skeleton).",
+  "description": "R4 Agentic Platform — reusable, CRM-independent agent runtime (R4-B platform skeleton + R4-C1 execution kernel).",
   "type": "module",
   "engines": {
     "node": ">=20.19.0"

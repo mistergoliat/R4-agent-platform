@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { budgetSchema } from './budget.js';
 import { goalSchema, goalSpecSchema } from './goal.js';
+import { runStatusSchema } from './run.js';
 import {
   agentIdSchema,
   correlationIdSchema,
@@ -98,7 +99,7 @@ export type TaskTransition = z.infer<typeof taskTransitionSchema>;
 export const runSummarySchema = z.strictObject({
   runId: uuidSchema,
   sequence: positiveIntSchema,
-  status: z.enum(['running', 'completed', 'failed', 'cancelled']),
+  status: runStatusSchema,
 });
 
 /** Read model returned by `GET /v1/tasks/:id`. */

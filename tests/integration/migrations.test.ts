@@ -5,7 +5,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DEFAULT_MIGRATIONS_DIR, checkDatabaseReadiness, migrate, migrationStatus, type Pool } from '@r4/persistence-postgres';
 import { createTestDatabase, openPool, type TestDatabase } from '../support/database.js';
 
-const EXPECTED_TABLES = ['agent_definitions', 'agent_runs', 'agent_task_transitions', 'agent_tasks', 'goals', 'observations', 'r4_schema_migrations'];
+const EXPECTED_MIGRATIONS = ['0001_initial_runtime_schema', '0002_execution_kernel'];
+const EXPECTED_TABLES = ['agent_definitions', 'agent_run_steps', 'agent_runs', 'agent_task_transitions', 'agent_tasks', 'goals', 'observations', 'r4_schema_migrations'];
 
 let db: TestDatabase;
 let pool: Pool;
@@ -24,13 +25,13 @@ describe('migrations from an empty database', () => {
   it('reports an empty database as not ready with all migrations pending', async () => {
     const status = await migrationStatus(pool);
     expect(status.applied).toEqual([]);
-    expect(status.pending).toEqual(['0001_initial_runtime_schema']);
+    expect(status.pending).toEqual(EXPECTED_MIGRATIONS);
     expect((await checkDatabaseReadiness(pool)).ok).toBe(false);
   });
 
   it('applies every migration to an empty database', async () => {
     const { applied } = await migrate(pool);
-    expect(applied).toEqual(['0001_initial_runtime_schema']);
+    expect(applied).toEqual(EXPECTED_MIGRATIONS);
 
     const tables = await pool.query<{ table_name: string }>(
       "select table_name from information_schema.tables where table_schema = 'public' order by table_name",
@@ -75,6 +76,12 @@ describe('migrations from an empty database', () => {
         'agent_tasks_idempotency_uq',
         'agent_tasks_root_goal_fk',
         'agent_tasks_current_goal_fk',
+        // R4-C1
+        'agent_tasks_lease_consistency',
+        'agent_runs_termination_present',
+        'agent_runs_termination_matches_status',
+        'agent_run_steps_one_pending_per_run',
+        'agent_run_steps_invocation_id_key',
       ]),
     );
   });

@@ -1,0 +1,24 @@
+{
+  "name": "@r4/agent-kernel",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Agent Kernel: the model → decision → read → observation loop. Provider- and domain-neutral; persistence only through the KernelSession port.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@r4/contracts": "*",
+    "@r4/model-gateway": "*",
+    "@r4/observability": "*",
+    "zod": "^4.6.0"
+  }
+}

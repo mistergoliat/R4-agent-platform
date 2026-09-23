@@ -1,14 +1,19 @@
-import type {
-  AgentRun,
-  AgentTask,
-  Goal,
-  JsonObject,
-  JsonValue,
-  Observation,
-  Principal,
-  RegisteredAgentDefinition,
-  TaskStatus,
-  TaskTransition,
+import {
+  failureClassOf,
+  type AgentDecision,
+  type AgentRun,
+  type AgentTask,
+  type Goal,
+  type JsonObject,
+  type JsonValue,
+  type Observation,
+  type Principal,
+  type RegisteredAgentDefinition,
+  type RunStep,
+  type TaskLease,
+  type TaskStatus,
+  type TaskTransition,
+  type TerminationReason,
 } from '@r4/contracts';
 
 /**
@@ -69,6 +74,7 @@ export function goalFromRow(row: Row): Goal {
 
 export function runFromRow(row: Row): AgentRun {
   const failureCode = (row.failure_code as string | null) ?? null;
+  const reason = (row.termination_reason as TerminationReason | null) ?? null;
   return {
     runId: row.run_id as string,
     taskId: row.task_id as string,
@@ -85,6 +91,17 @@ export function runFromRow(row: Row): AgentRun {
     },
     result: (row.result as JsonObject | null) ?? null,
     failure: failureCode === null ? null : { code: failureCode, message: (row.failure_message as string | null) ?? '' },
+    termination:
+      reason === null
+        ? null
+        : {
+            reason,
+            failureClass: failureClassOf(reason),
+            code: row.termination_code as string,
+            message: (row.termination_message as string | null) ?? '',
+            details: (row.termination_details as JsonValue | null) ?? null,
+          },
+    recoveries: row.recoveries as number,
     correlationId: row.correlation_id as string,
     version: row.version as number,
     startedAt: iso(row.started_at),
@@ -156,6 +173,39 @@ export function observationFromRow(row: Row): Observation {
     validUntil: isoOrNull(row.valid_until),
     provenance: row.provenance as JsonObject,
     correlationId: row.correlation_id as string,
+  };
+}
+
+/** The lease currently recorded on a task row, or null when unowned. */
+export function leaseFromRow(row: Row): TaskLease | null {
+  if (row.lease_owner === null || row.lease_owner === undefined) return null;
+  return {
+    taskId: row.task_id as string,
+    owner: row.lease_owner as string,
+    generation: row.lease_generation as number,
+    acquiredAt: iso(row.lease_acquired_at),
+    expiresAt: iso(row.lease_expires_at),
+    lastHeartbeatAt: iso(row.last_heartbeat_at),
+  };
+}
+
+export function stepFromRow(row: Row): RunStep {
+  const errorCode = (row.error_code as string | null) ?? null;
+  return {
+    stepId: row.step_id as string,
+    runId: row.run_id as string,
+    taskId: row.task_id as string,
+    iteration: row.iteration as number,
+    leaseGeneration: row.lease_generation as number,
+    decision: (row.decision as AgentDecision | null) ?? null,
+    outcome: row.outcome as RunStep['outcome'],
+    error: errorCode === null ? null : { code: errorCode, message: (row.error_message as string | null) ?? '' },
+    invocationId: (row.invocation_id as string | null) ?? null,
+    observationId: (row.observation_id as string | null) ?? null,
+    usage: { inputTokens: row.input_tokens as number, outputTokens: row.output_tokens as number },
+    correlationId: row.correlation_id as string,
+    createdAt: iso(row.created_at),
+    completedAt: isoOrNull(row.completed_at),
   };
 }
 

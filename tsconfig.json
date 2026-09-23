@@ -14,7 +14,9 @@
       "@r4/task-runtime": ["./packages/task-runtime/src/index.ts"],
       "@r4/agent-registry": ["./packages/agent-registry/src/index.ts"],
       "@r4/persistence-postgres": ["./packages/persistence-postgres/src/index.ts"],
-      "@r4/api": ["./apps/api/src/index.ts"]
+      "@r4/agent-kernel": ["./packages/agent-kernel/src/index.ts"],
+      "@r4/api": ["./apps/api/src/index.ts"],
+      "@r4/worker": ["./apps/worker/src/index.ts"]
     }
   },
   "include": ["packages/*/src", "apps/*/src", "tests", "vitest.config.ts", "eslint.config.js"]

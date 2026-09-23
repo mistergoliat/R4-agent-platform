@@ -9,3 +9,6 @@ export * from './task.js';
 export * from './run.js';
 export * from './capability.js';
 export * from './observation.js';
+export * from './decision.js';
+export * from './lease.js';
+export * from './run-step.js';

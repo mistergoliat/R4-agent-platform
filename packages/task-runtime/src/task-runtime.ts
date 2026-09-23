@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import type { z } from 'zod';
 import {
   EMPTY_RUN_USAGE,
   PlatformError,
@@ -6,9 +6,6 @@ import {
   fingerprint,
   goalSpecSchema,
   idempotencyKeySchema,
-  jsonObjectSchema,
-  runFailureSchema,
-  runUsageSchema,
   statusReasonSchema,
   type AgentRun,
   type AgentTask,
@@ -25,9 +22,18 @@ import {
   type TaskStatus,
   type TaskView,
 } from '@r4/contracts';
-import { emitTelemetry, type StructuredLogger, type TelemetryEventName } from '@r4/observability';
+import { emitTelemetry, type StructuredLogger } from '@r4/observability';
 import { resolveEffectiveBudget } from './budget.js';
-import { assertGoalTransition, assertTaskTransition, isTerminalTaskStatus } from './lifecycle.js';
+import { assertGoalTransition, isTerminalTaskStatus } from './lifecycle.js';
+import {
+  finishRunWithin,
+  parseOrThrow,
+  transitionTaskWithin,
+  updateTaskOrThrow,
+  versionConflict,
+  type PendingEvent,
+  type TerminationInput,
+} from './mutations.js';
 import type { AgentDefinitionResolver, TaskRuntimeStore, TaskUnitOfWork } from './ports.js';
 
 export interface TaskRuntimeOptions {
@@ -75,6 +81,8 @@ export interface FinishRunCommand {
   readonly usage?: RunUsage;
   readonly result?: JsonObject | null;
   readonly failure?: RunFailure | null;
+  /** Structured termination; derived from `status` when omitted (failed → internal_failure). */
+  readonly termination?: TerminationInput;
   readonly correlationId: string;
   readonly expectedVersion?: number;
 }
@@ -102,8 +110,6 @@ export interface CloseGoalCommand {
   readonly correlationId: string;
   readonly expectedVersion?: number;
 }
-
-type PendingEvent = [TelemetryEventName, Record<string, unknown>];
 
 /** Task statuses from which `startRun` may begin a run. */
 const RUNNABLE_STATUSES: readonly TaskStatus[] = ['pending', 'running', 'waiting'];
@@ -244,12 +250,12 @@ export class TaskRuntime {
         const active = await uow.findActiveRun(current.taskId);
         if (active && command.to === 'cancelled') {
           // Cancellation is platform authority: the active run ends with the task.
-          await this.#finishRunWithin(uow, active, { status: 'cancelled', correlationId: command.correlationId }, timestamp, events);
+          await finishRunWithin(uow, active, { status: 'cancelled', correlationId: command.correlationId }, timestamp, events);
         } else if (active) {
           throw new PlatformError('precondition', 'active_run_in_progress', `run ${active.runId} must finish before the task leaves "running"`);
         }
       }
-      return this.#transitionWithin(uow, current, command.to, reason, command.actor, command.correlationId, timestamp, events);
+      return transitionTaskWithin(uow, this.#ids, current, command.to, reason, command.actor, command.correlationId, timestamp, events);
     });
     this.#emit(events);
     return task;
@@ -277,7 +283,7 @@ export class TaskRuntime {
       }
       const timestamp = this.#clock.now().toISOString();
       if (task.status !== 'running') {
-        task = await this.#transitionWithin(uow, task, 'running', 'run_started', command.actor, command.correlationId, timestamp, events);
+        task = await transitionTaskWithin(uow, this.#ids, task, 'running', 'run_started', command.actor, command.correlationId, timestamp, events);
       }
       const run: AgentRun = {
         runId: this.#ids.next(),
@@ -290,6 +296,8 @@ export class TaskRuntime {
         usage: { ...EMPTY_RUN_USAGE },
         result: null,
         failure: null,
+        termination: null,
+        recoveries: 0,
         correlationId: command.correlationId,
         version: 1,
         startedAt: timestamp,
@@ -313,7 +321,7 @@ export class TaskRuntime {
       if (command.expectedVersion !== undefined && command.expectedVersion !== current.version) {
         throw versionConflict('run', current.version, command.expectedVersion);
       }
-      return this.#finishRunWithin(uow, current, command, this.#clock.now().toISOString(), events);
+      return finishRunWithin(uow, current, command, this.#clock.now().toISOString(), events);
     });
     this.#emit(events);
     return run;
@@ -334,7 +342,7 @@ export class TaskRuntime {
       await uow.insertGoal(goal);
       events.push(['goal.created', { taskId: task.taskId, goalId: goal.goalId, parentGoalId: parent.goalId, origin: goal.origin }]);
       if (command.makeCurrent) {
-        await this.#updateTask(uow, { ...task, currentGoalId: goal.goalId, version: task.version + 1, updatedAt: timestamp }, task.version);
+        await updateTaskOrThrow(uow, { ...task, currentGoalId: goal.goalId, version: task.version + 1, updatedAt: timestamp }, task.version);
       }
       return goal;
     });
@@ -358,7 +366,7 @@ export class TaskRuntime {
       }
       if (task.currentGoalId === goal.goalId) return task;
       const updated = { ...task, currentGoalId: goal.goalId, version: task.version + 1, updatedAt: this.#clock.now().toISOString() };
-      await this.#updateTask(uow, updated, task.version);
+      await updateTaskOrThrow(uow, updated, task.version);
       events.push(['goal.updated', { taskId: task.taskId, goalId: goal.goalId, change: 'made_current' }]);
       return updated;
     });
@@ -410,67 +418,6 @@ export class TaskRuntime {
     return goal;
   }
 
-  async #updateTask(uow: TaskUnitOfWork, task: AgentTask, expectedVersion: number): Promise<void> {
-    if (!(await uow.updateTask(task, expectedVersion))) throw versionConflict('task', expectedVersion, expectedVersion);
-  }
-
-  async #transitionWithin(
-    uow: TaskUnitOfWork,
-    task: AgentTask,
-    to: TaskStatus,
-    reason: string | null,
-    actor: Principal,
-    correlationId: string,
-    timestamp: string,
-    events: PendingEvent[],
-  ): Promise<AgentTask> {
-    assertTaskTransition(task.status, to);
-    const updated: AgentTask = { ...task, status: to, statusReason: reason, version: task.version + 1, updatedAt: timestamp };
-    await this.#updateTask(uow, updated, task.version);
-    await uow.insertTransition({
-      transitionId: this.#ids.next(),
-      taskId: task.taskId,
-      fromStatus: task.status,
-      toStatus: to,
-      reason,
-      actor,
-      taskVersion: updated.version,
-      correlationId,
-      occurredAt: timestamp,
-    });
-    events.push(['task.transitioned', { taskId: task.taskId, from: task.status, to, reason, version: updated.version }]);
-    return updated;
-  }
-
-  async #finishRunWithin(
-    uow: TaskUnitOfWork,
-    run: AgentRun,
-    command: Pick<FinishRunCommand, 'status' | 'usage' | 'result' | 'failure' | 'correlationId'>,
-    timestamp: string,
-    events: PendingEvent[],
-  ): Promise<AgentRun> {
-    if (run.status !== 'running') {
-      throw new PlatformError('conflict', 'run_not_active', `run is already ${run.status}`);
-    }
-    const failure = command.failure == null ? null : parseOrThrow(runFailureSchema, command.failure);
-    if ((command.status === 'failed') !== (failure !== null)) {
-      throw new PlatformError('validation', 'validation_failed', 'failure is required exactly when status is "failed"');
-    }
-    const updated: AgentRun = {
-      ...run,
-      status: command.status,
-      usage: command.usage === undefined ? run.usage : parseOrThrow(runUsageSchema, command.usage),
-      result: command.result == null ? null : parseOrThrow(jsonObjectSchema, command.result),
-      failure,
-      version: run.version + 1,
-      finishedAt: timestamp,
-      updatedAt: timestamp,
-    };
-    if (!(await uow.updateRun(updated, run.version))) throw versionConflict('run', run.version, run.version);
-    events.push(['run.finished', { taskId: run.taskId, runId: run.runId, status: updated.status, failureCode: failure?.code ?? null, ...updated.usage }]);
-    return updated;
-  }
-
   #newGoal(taskId: string, parentGoalId: string | null, spec: GoalSpec, origin: GoalOrigin, correlationId: string, timestamp: string, goalId: string = this.#ids.next()): Goal {
     return {
       goalId,
@@ -496,18 +443,4 @@ function assertTaskOpen(task: AgentTask): void {
   if (isTerminalTaskStatus(task.status)) {
     throw new PlatformError('precondition', 'task_terminal', `task is ${task.status}`);
   }
-}
-
-function versionConflict(entity: string, actual: number, expected: number): PlatformError {
-  return new PlatformError('conflict', 'version_conflict', `${entity} version mismatch (expected ${expected}, current ${actual})`, { expected, actual });
-}
-
-function parseOrThrow<T extends z.ZodType>(schema: T, value: unknown): z.output<T> {
-  const parsed = schema.safeParse(value);
-  if (!parsed.success) {
-    throw new PlatformError('validation', 'validation_failed', z.prettifyError(parsed.error), {
-      issues: parsed.error.issues.map((issue) => ({ path: issue.path.map(String).join('.'), message: issue.message })),
-    });
-  }
-  return parsed.data;
 }

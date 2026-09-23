@@ -12,7 +12,9 @@ const alias = {
   '@r4/task-runtime': src('./packages/task-runtime/src/index.ts'),
   '@r4/agent-registry': src('./packages/agent-registry/src/index.ts'),
   '@r4/persistence-postgres': src('./packages/persistence-postgres/src/index.ts'),
+  '@r4/agent-kernel': src('./packages/agent-kernel/src/index.ts'),
   '@r4/api': src('./apps/api/src/index.ts'),
+  '@r4/worker': src('./apps/worker/src/index.ts'),
 };
 
 export default defineConfig({

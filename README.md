@@ -1,14 +1,16 @@
 # R4 Agent Platform
 
-Plataforma agéntica reutilizable e independiente del CRM. Fase actual:
+Plataforma agéntica reutilizable e independiente del CRM. Fases implementadas:
 **R4-B — Platform Skeleton** (contratos, persistencia durable, API mínima,
-telemetría y tests). No contiene todavía cognición, llamadas LLM reales ni
-ningún agente de negocio.
+telemetría) y **R4-C1 — Execution Kernel** (worker con leases/heartbeats/fencing,
+Agent Kernel, `AgentDecision`, capabilities READ, observations, budgets y
+recuperación). No contiene llamadas LLM reales, memoria ni ningún agente de
+negocio.
 
 Lectura obligatoria antes de cambios de arquitectura: [AGENTS.md](AGENTS.md),
 [Constitución](docs/architecture/R4_AGENTIC_PLATFORM_MOTIVATION_AND_CONSTRAINTS.md),
 [PRD](docs/architecture/R4_AGENTIC_PLATFORM_PRD_AND_ROADMAP.md),
-[Arquitectura R4-B](docs/architecture/R4_ARCHITECTURE.md),
+[Arquitectura](docs/architecture/R4_ARCHITECTURE.md),
 [Ownership](docs/architecture/OWNERSHIP_MATRIX.md),
 [Roadmap](docs/roadmap/R4_DELIVERY_ROADMAP.md), [ADRs](docs/adr/).
 
@@ -40,6 +42,28 @@ Variables (ver `.env.example`):
 | `R4_DB_POOL_MAX` | `10` | |
 
 Si el esquema no está al día, la API no arranca (`schema_not_current`).
+
+### Worker (R4-C1)
+
+El worker es un proceso separado de la API que sólo comparte PostgreSQL. Se
+compone con `runWorkerProcess(loadWorkerConfig(process.env), { modelProvider,
+capabilities })`: C1 no incluye proveedor de modelo real ni capabilities de Core,
+por lo que todavía no hay un `main` de producción (ver roadmap §4). Los tests lo
+ejecutan con `FakeModelProvider` y la capability sintética
+`platform_test.get_test_fact`, incluido un proceso real terminado con SIGKILL.
+
+| Variable | Default | Descripción |
+|---|---|---|
+| `R4_WORKER_ID` | `host:pid:random` | Identidad del worker en leases y logs |
+| `R4_WORKER_LEASE_MS` | `30000` | Duración del lease |
+| `R4_WORKER_HEARTBEAT_MS` | `10000` | Debe ser ≤ lease/2 |
+| `R4_WORKER_POLL_MS` | `1000` | Intervalo de polling cuando no hay trabajo |
+| `R4_EXEC_MAX_ITERATIONS` | `50` | Techo por run (el budget de la task puede reducirlo) |
+| `R4_EXEC_MAX_MODEL_CALLS` | `50` | 〃 |
+| `R4_EXEC_MAX_READ_CALLS` | `50` | 〃 |
+| `R4_EXEC_MAX_RUN_DURATION_MS` | `900000` | 〃 (incluye tiempo huérfano tras un crash) |
+| `R4_EXEC_MODEL_CALL_TIMEOUT_MS` | `60000` | Por llamada; acotado por la duración restante |
+| `R4_EXEC_MAX_RUN_RECOVERIES` | `3` | Takeovers antes de abandonar un run (`lease_lost`) |
 Para detener PostgreSQL: `npm run db:down` (el volumen `r4-postgres-data` se conserva).
 
 ## API smoke
@@ -77,7 +101,7 @@ npm run typecheck       # repo completo, incluidos tests
 npm run test:unit       # sin dependencias externas
 npm run test:contract   # pureza de Core, fronteras de dependencias, neutralidad de proveedor
 npm run test:integration  # requiere `npm run db:up`; crea y borra BDs efímeras
-npm run test:recovery   # detiene/arranca el contenedor PostgreSQL: correr aislado
+npm run test:recovery   # detiene/arranca el contenedor PostgreSQL y mata un worker real (SIGKILL); requiere `npm run build`; correr aislado
 npm test                # unit + contract + integration
 npm run check           # build + lint + typecheck + test
 ```
@@ -91,12 +115,14 @@ ni proveedores de modelos: `FakeModelProvider` los reemplaza.
 
 ```text
 apps/api                     HTTP /v1 + composition root + CLI de migraciones
+apps/worker                  worker: claim, lease/heartbeat, kernel (R4-C1)
 packages/contracts           esquemas/tipos de primitivas
 packages/observability       logs estructurados, correlación, eventos
 packages/model-gateway       ModelGateway + FakeModelProvider
 packages/capability-runtime  registry, discovery, invocación, observations
 packages/task-runtime        AgentTask / AgentRun / Goal (sobre ports)
 packages/agent-registry      AgentDefinitions versionadas e inmutables
+packages/agent-kernel        loop model → decisión → READ → observation (R4-C1)
 packages/persistence-postgres  migraciones + stores PostgreSQL
 agents/platform-probe        agente sonda sin dominio
 tests/                       unit · contract · integration · recovery
