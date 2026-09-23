@@ -1,6 +1,6 @@
 # ADR-024 — Primer adapter real de ModelProvider: OpenAI-compatible (R4-F)
 
-- **Estado:** Aceptado en el working tree de R4-F (pendiente de auditoría y commit)
+- **Estado:** Aceptado; publicado en el R4-F BASELINE `1927499`
 - **Fecha:** 2026-09-23
 - **Autoridad superior:** Constitución §20, §25.11; PRD §13; ADR-004, 008, 015
 - **Relacionado:** ADR-023

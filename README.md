@@ -19,8 +19,7 @@ consultation / approval / handoff (también iniciado por un operador),
 reconciliación durable de efectos inciertos, cancelación honesta, goals con raíz
 y foco y continuidad conversacional entre runs.
 
-**R4-F — Sales Reference Application** (en el working tree, pendiente de
-auditoría) es el primer workload y vive **fuera de Core**: el Sales Agent Pack
+**R4-F — Sales Reference Application** (publicado; R4-F BASELINE `1927499`) es el primer workload y vive **fuera de Core**: el Sales Agent Pack
 (`agents/sales`), ports de dominio con fixtures (`adapters/domains`) y el primer
 adapter de modelo real (`adapters/models/openai-compatible`). Core no contiene
 ningún concepto de ventas ni de proveedor; no hay writes de dominio de

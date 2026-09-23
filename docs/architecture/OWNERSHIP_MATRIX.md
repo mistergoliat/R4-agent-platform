@@ -1,6 +1,6 @@
 ---
 title: R4 — Ownership Matrix
-status: implemented (R4-B … R4-E); R4-F (outside Core) in working tree + planned rows
+status: implemented (R4-B … R4-E); R4-F (outside Core, published at 1927499) + planned rows
 owner: architecture
 last_reviewed: 2026-09-23
 ---
@@ -105,7 +105,7 @@ Clases de autoridad:
 | Transición de goal | `task-runtime` (`TemporalRuntime`) + trigger | Evidencia | `goal_transitions` (inmutable) | Append-only | created / focused / achieved / abandoned / superseded | Durable | `integration/temporal-waits` |
 | Proyección de interacción cross-run | `context-compiler` (`platform.interaction`) | CONVERSATIONAL / OBSERVED | Derivada (no se persiste aparte) | — | Por compilación | Recompilada | `unit/context-compiler/temporal-sources`, `integration/temporal-waits` |
 
-## 1f. R4-F — Sales Reference Application (fuera de Core; working tree, pendiente de auditoría)
+## 1f. R4-F — Sales Reference Application (fuera de Core; publicado, R4-F BASELINE `1927499`)
 
 Ninguna de estas filas es una primitiva de Core: pertenecen al Agent Pack
 `agents/sales` o a `adapters/*` (ADR-023, ADR-024).

@@ -1,6 +1,6 @@
 # ADR-023 — Sales Reference Application como Agent Pack (R4-F)
 
-- **Estado:** Aceptado en el working tree de R4-F (pendiente de auditoría y commit)
+- **Estado:** Aceptado; publicado en el R4-F BASELINE `1927499`
 - **Fecha:** 2026-09-23
 - **Baseline R4-E:** `74ed8e728a7043db82ab672810faf1805787497d`
 - **Autoridad superior:** Constitución §9–13, §25; PRD §20, §40 (R4-F), §43–44; ADR-002, 005, 011, 013, 016–018, 021
@@ -30,7 +30,8 @@ entre en Core. La pregunta es si las primitivas genéricas de A–E bastan.
 3. **SalesWorkspace = estado de aplicación Sales, no `AgentTask`.** Tablas en
    el esquema propio `sales` (migración `agents/sales/migrations/0006_…`,
    aplicada con el migrador genérico `migrate(pool, {directory})`; 0001–0005
-   intactas): `conversations` (binding task → customer ref, escrito por el
+   intactas; desde el commit R4-F BASELINE (`1927499`), 0001–0006 congeladas y fijadas
+   por `tests/contract/frozen-migrations.test.ts`): `conversations` (binding task → customer ref, escrito por el
    ingress), `workspaces` (versionado), `workspace_transitions` (append-only,
    una fila por execution key: auditoría + idempotencia), `quote_requests` y
    `quote_references` (append-only). Ninguna FK a tablas de R4; el task id es

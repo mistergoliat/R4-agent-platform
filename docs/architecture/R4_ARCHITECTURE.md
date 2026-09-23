@@ -1,6 +1,6 @@
 ---
 title: R4 — Arquitectura implementada (R4-B + R4-C1 + R4-C2 + R4-D + R4-E) y R4-F (Sales Reference Application)
-status: implemented (R4-B … R4-E, published at 74ed8e7); R4-F in working tree, pending audit
+status: implemented (R4-B … R4-E, published at 74ed8e7); R4-F published at 1927499 (R4-F BASELINE)
 owner: architecture
 last_reviewed: 2026-09-23
 depends_on:

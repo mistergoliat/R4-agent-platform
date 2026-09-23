@@ -21,7 +21,7 @@ requiere autorización explícita (AGENTS.md).
 | R4-C2 | Context Compiler & Memory Boundaries | Completado y publicado (baseline `67a124a`) |
 | R4-D | Governed Execution (PRD §40: "Durable Execution") | Completado sobre `67a124a` (gate SIGKILL tras efecto externo verificado) |
 | R4-E | Temporal + Human Runtime (PRD §40: "Human Collaboration + Scheduler") | Completado y publicado (baseline `74ed8e7`) |
-| R4-F | Sales Reference Application | Implementado en el working tree sobre `74ed8e7` (fuera de Core); pendiente de auditoría y commit (§3.7) |
+| R4-F | Sales Reference Application | Completado y publicado (R4-F BASELINE `1927499`; fuera de Core, §3.7) |
 | R4-G | Quality & Learning | No iniciado |
 | R4-H | Shadow Production | No iniciado |
 | R4-I | Governed Production | No iniciado |
@@ -354,6 +354,14 @@ y `integration/api` esperaban que el repositorio registrara sólo
 El test de handler-error del invoker verifica además `details: null`.
 
 **Comando de escenarios:** `npm run test:sales` (incluido en `npm test`).
+
+**R4-F BASELINE y congelamiento de esquema.** El commit que publica R4-F es el
+**R4-F BASELINE**: `1927499c543aa5ae3c0db01d835cae9dff1c8f9d`. Desde ese commit las
+migraciones **0001–0006 quedan congeladas**: todo cambio de esquema es una
+migración nueva (0007+), nunca una edición. Lo impone
+`tests/contract/frozen-migrations.test.ts` (checksums fijados con la
+normalización del migrador), además del rechazo en runtime
+(`migration_modified`) sobre bases que ya las aplicaron.
 
 ## 4. Decisiones diferidas intencionalmente
 
