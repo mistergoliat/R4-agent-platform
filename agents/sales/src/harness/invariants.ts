@@ -11,6 +11,14 @@ import type { ConversationState } from './runtime.js';
  * checks look at the agent's text — only to catch claims of quotes that no
  * receipt backs.
  */
+/**
+ * Which workspace fact an invariant is about. Fact keys are the agent's own
+ * choice (free snake_case: `budget`, `budget_clp`, `presupuesto_clp`…), so
+ * a live check names the fact by a pattern; an exact key is for scripted
+ * trajectories that fix their own keys.
+ */
+export type FactKey = string | { readonly matches: string };
+
 export type Invariant =
   | { readonly kind: 'capability_used'; readonly capabilityId: string; readonly min?: number }
   | { readonly kind: 'capability_not_used'; readonly capabilityId: string }
@@ -19,13 +27,13 @@ export type Invariant =
   | { readonly kind: 'root_goal_active' }
   | { readonly kind: 'goal_kept'; readonly matches: string }
   | { readonly kind: 'no_goal_abandoned' }
-  | { readonly kind: 'fact_equals'; readonly key: string; readonly value: FactValue }
-  | { readonly kind: 'fact_history'; readonly key: string; readonly values: readonly FactValue[] }
+  | { readonly kind: 'fact_equals'; readonly key: FactKey; readonly value: FactValue }
+  | { readonly kind: 'fact_history'; readonly key: FactKey; readonly values: readonly FactValue[] }
   | { readonly kind: 'selection_equals'; readonly items: readonly { productId: string; quantity: number }[] }
   | { readonly kind: 'delivery_equals'; readonly commune: string }
   | { readonly kind: 'task_status'; readonly in: readonly string[] }
   | { readonly kind: 'responded_every_turn' }
-  | { readonly kind: 'no_question_after_fact'; readonly key: string; readonly topic: string }
+  | { readonly kind: 'no_question_after_fact'; readonly key: FactKey; readonly topic: string }
   | { readonly kind: 'refreshed_after_expiry'; readonly capabilityId: string }
   | { readonly kind: 'consultation_answered_and_resumed' }
   | { readonly kind: 'waited_and_resumed' }
@@ -116,13 +124,16 @@ function check(invariant: Invariant, state: ConversationState): { passed: boolea
       return result(abandoned.length === 0, `${abandoned.length} abandoned goal(s)`);
     }
     case 'fact_equals': {
-      const fact = state.workspace.state.facts[invariant.key];
-      return result(fact !== undefined && JSON.stringify(fact.value) === JSON.stringify(invariant.value), `${invariant.key} = ${JSON.stringify(fact?.value ?? null)}`);
+      // Every current fact about this subject must hold the value: one right key does not excuse a contradicting one.
+      const facts = Object.entries(state.workspace.state.facts).filter(([key]) => keyMatches(invariant.key, key));
+      const shown = facts.length ? facts.map(([key, f]) => `${key} = ${JSON.stringify(f.value)}`).join(', ') : `${describeKey(invariant.key)} = null`;
+      return result(facts.length > 0 && facts.every(([, f]) => factValueMatches(f.value, invariant.value)), shown);
     }
     case 'fact_history': {
-      const values = state.workspaceTransitions.flatMap((t) => t.changes.flatMap((c) => (c.kind === 'fact' && c.key === invariant.key && c.to ? [c.to.value] : [])));
-      const current = Object.keys(state.workspace.state.facts).filter((k) => k === invariant.key).length;
-      return result(JSON.stringify(values) === JSON.stringify(invariant.values) && current === 1, `history ${JSON.stringify(values)}; ${current} current value(s)`);
+      const values = state.workspaceTransitions.flatMap((t) => t.changes.flatMap((c) => (c.kind === 'fact' && keyMatches(invariant.key, c.key) && c.to ? [c.to.value] : [])));
+      const current = Object.keys(state.workspace.state.facts).filter((k) => keyMatches(invariant.key, k)).length;
+      const matches = values.length === invariant.values.length && values.every((v, i) => factValueMatches(v, invariant.values[i]!));
+      return result(matches && current === 1, `history ${JSON.stringify(values)}; ${current} current value(s)`);
     }
     case 'selection_equals': {
       const actual = state.workspace.state.items.map((i) => ({ productId: i.productId, quantity: i.quantity }));
@@ -138,8 +149,8 @@ function check(invariant: Invariant, state: ConversationState): { passed: boolea
       return result(silent.length === 0, silent.length ? `no response to turn(s) ${silent.map((t) => t.index).join(', ')}` : `${state.turns.length} turn(s) answered`);
     }
     case 'no_question_after_fact': {
-      const recorded = state.workspaceTransitions.find((t) => t.changes.some((c) => c.kind === 'fact' && c.key === invariant.key && c.to));
-      if (!recorded) return result(false, `fact ${invariant.key} was never recorded`);
+      const recorded = state.workspaceTransitions.find((t) => t.changes.some((c) => c.kind === 'fact' && keyMatches(invariant.key, c.key) && c.to));
+      if (!recorded) return result(false, `fact ${describeKey(invariant.key)} was never recorded`);
       const recordedAt = order.executionAt.get(recorded.executionKey) ?? Number.MAX_SAFE_INTEGER;
       const topic = new RegExp(invariant.topic, 'i');
       const repeated = responses.filter((r) => r.position > recordedAt && r.text.includes('?') && topic.test(r.text));
@@ -227,6 +238,29 @@ function check(invariant: Invariant, state: ConversationState): { passed: boolea
       return result(failure !== undefined, failure ? `${invariant.capabilityId} failed with ${invariant.category}` : 'no such failure observed');
     }
   }
+}
+
+function keyMatches(expected: FactKey, key: string): boolean {
+  return typeof expected === 'string' ? key === expected : new RegExp(expected.matches, 'i').test(key);
+}
+
+function describeKey(key: FactKey): string {
+  return typeof key === 'string' ? key : `/${key.matches}/`;
+}
+
+/**
+ * Value equality, plus one representation rule: an expected money value
+ * `{ amount, currency }` is also met by the bare amount, or by an object with
+ * that amount and no other currency (`presupuesto_clp: 800000`). Nothing is
+ * parsed from text and no other shape is interpreted.
+ */
+export function factValueMatches(actual: FactValue, expected: FactValue): boolean {
+  if (JSON.stringify(actual) === JSON.stringify(expected)) return true;
+  const money = expected !== null && typeof expected === 'object' && typeof expected.amount === 'number' && typeof expected.currency === 'string' ? { amount: expected.amount, currency: expected.currency } : null;
+  if (money === null) return false;
+  if (typeof actual === 'number') return actual === money.amount;
+  if (actual === null || typeof actual !== 'object' || actual.amount !== money.amount) return false;
+  return actual.currency === undefined || (typeof actual.currency === 'string' && actual.currency.toUpperCase() === money.currency.toUpperCase());
 }
 
 function result(passed: boolean, detail: string): { passed: boolean; detail: string } {

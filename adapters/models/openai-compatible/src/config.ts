@@ -24,7 +24,33 @@ export interface OpenAICompatibleConfig {
   /** `json_object` asks the server for a JSON document; `none` relies on the instructions only. */
   readonly responseFormat: 'json_object' | 'none';
   readonly temperature: number | null;
+  /**
+   * Extra top-level request fields for this endpoint (the `extra_body` of
+   * OpenAI-compatible clients), e.g. `{"thinking":{"type":"disabled"}}` to
+   * make a reasoning mode explicit instead of relying on a server default.
+   * Opaque to the adapter: sent as-is, never interpreted. It can never
+   * override a field the adapter owns (model, messages, token limit,
+   * streaming, response format, temperature, tools). Not for credentials:
+   * it is reported by `describeModelConfig`.
+   */
+  readonly extraBody: Readonly<Record<string, unknown>>;
 }
+
+/** Request fields the adapter owns; `extraBody` may not set them. */
+export const ADAPTER_OWNED_FIELDS: readonly string[] = ['model', 'messages', 'max_tokens', 'max_completion_tokens', 'stream', 'stream_options', 'response_format', 'temperature', 'tools', 'tool_choice', 'functions', 'function_call', 'n'];
+
+const extraBodySchema = z
+  .string()
+  .transform((text, ctx) => {
+    try {
+      return JSON.parse(text) as unknown;
+    } catch {
+      ctx.addIssue({ code: 'custom', message: 'not JSON' });
+      return z.NEVER;
+    }
+  })
+  .pipe(z.record(z.string(), z.unknown()))
+  .refine((body) => Object.keys(body).every((key) => !ADAPTER_OWNED_FIELDS.includes(key)), 'must not set a field the adapter owns');
 
 const envSchema = z.object({
   R4_MODEL_PROVIDER: z.literal('openai_compatible'),
@@ -37,6 +63,7 @@ const envSchema = z.object({
   R4_MODEL_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(64).default(2_048),
   R4_MODEL_RESPONSE_FORMAT: z.enum(['json_object', 'none']).default('json_object'),
   R4_MODEL_TEMPERATURE: z.coerce.number().min(0).max(2).optional(),
+  R4_MODEL_EXTRA_BODY: extraBodySchema.optional(),
 });
 
 /**
@@ -65,11 +92,12 @@ export function loadOpenAICompatibleConfig(env: NodeJS.ProcessEnv): OpenAICompat
     maxOutputTokens: c.R4_MODEL_MAX_OUTPUT_TOKENS,
     responseFormat: c.R4_MODEL_RESPONSE_FORMAT,
     temperature: c.R4_MODEL_TEMPERATURE ?? null,
+    extraBody: c.R4_MODEL_EXTRA_BODY ?? {},
   };
 }
 
 /** What may be printed or stored about a configuration: no key, no credentials in the URL. */
-export function describeModelConfig(config: OpenAICompatibleConfig): { profile: string; host: string; model: string; contextWindowTokens: number; maxOutputTokens: number; responseFormat: string; authenticated: boolean } {
+export function describeModelConfig(config: OpenAICompatibleConfig): { profile: string; host: string; model: string; contextWindowTokens: number; maxOutputTokens: number; responseFormat: string; temperature: number | null; extraBody: Readonly<Record<string, unknown>>; authenticated: boolean } {
   const url = new URL(config.baseUrl);
-  return { profile: config.profile, host: url.host, model: config.model, contextWindowTokens: config.contextWindowTokens, maxOutputTokens: config.maxOutputTokens, responseFormat: config.responseFormat, authenticated: config.apiKey !== null };
+  return { profile: config.profile, host: url.host, model: config.model, contextWindowTokens: config.contextWindowTokens, maxOutputTokens: config.maxOutputTokens, responseFormat: config.responseFormat, temperature: config.temperature, extraBody: config.extraBody, authenticated: config.apiKey !== null };
 }

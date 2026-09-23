@@ -2,6 +2,8 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { configuredModelProvider } from '../model.js';
 import { adminDatabaseUrl, createScenarioDatabase } from '../harness/database.js';
+import { traceDecisions, traceGovernance } from '../harness/diagnostics.js';
+import { RecordingModelProvider } from '../harness/recording.js';
 import { runScenario } from '../harness/runner.js';
 import { ALL_SCENARIOS, scenarioById, type SalesScenario } from '../harness/scenarios.js';
 import { loadLocalEnv, option, print, printReport } from './common.js';
@@ -14,6 +16,10 @@ const KEPT_EVENTS = /^(model\.call\.|context\.compile\.completed$|agent\.decisio
  * representative scenarios against the configured real ModelProvider, each
  * in its own throwaway database, and writes one JSON artifact per scenario
  * plus a summary under `artifacts/sales-live/<timestamp>/` (git-ignored).
+ * Each artifact also carries per-call metadata (finish reason, tokens,
+ * latency) and a decision trace that classifies every cited reference; the
+ * content of a decision is kept only when the platform rejected it (no
+ * reasoning text ever reaches the harness).
  * Invariant results are reported for manual review; a model behaving
  * differently never fails this command — only infrastructure errors do.
  *
@@ -35,10 +41,17 @@ async function main(): Promise<void> {
   for (const scenario of selected) {
     const db = await createScenarioDatabase(adminDatabaseUrl(process.env), 'r4_sales_live');
     try {
-      const run = await runScenario(scenario, { databaseUrl: db.url, mode: 'live', modelProvider: model.provider, modelDescription: model.description });
+      const recorder = new RecordingModelProvider(model.provider);
+      const run = await runScenario(scenario, { databaseUrl: db.url, mode: 'live', modelProvider: recorder, modelDescription: model.description });
+      const decisionTrace = traceDecisions(run.state, recorder.calls);
+      const governance = traceGovernance(run.state);
       const artifact = {
         report: run.report,
         invariants: run.invariants.map((r) => ({ ...r.invariant, passed: r.passed, detail: r.detail })),
+        modelCalls: recorder.calls.map(({ decision: _decision, unparsedShape: _shape, ...metadata }) => metadata),
+        decisionTrace,
+        governance,
+        undeliveredTurns: run.undeliveredTurns,
         telemetry: run.telemetry.filter((e) => typeof e.event === 'string' && KEPT_EVENTS.test(e.event)),
         elapsedMs: run.elapsedMs,
       };
@@ -48,7 +61,13 @@ async function main(): Promise<void> {
       if (key && serialized.includes(key)) throw new Error(`refusing to write ${scenario.id}: the artifact contains the API key`);
       writeFileSync(join(outDir, `${scenario.id}.json`), serialized);
       printReport(run.report, run.invariants);
-      summary.push({ scenario: scenario.id, taskStatus: run.report.finalTaskStatus, invariantsPassed: run.invariants.filter((r) => r.passed).length, invariantsTotal: run.invariants.length, tokens: run.report.tokens, elapsedMs: run.elapsedMs });
+      if (run.undeliveredTurns.length > 0) print(`undelivered turns (task already ${run.report.finalTaskStatus}): ${run.undeliveredTurns.join(', ')}`);
+      for (const g of governance) print(`governed ${g.capabilityId}: policy=${g.policy?.outcome ?? '-'} command=${g.command?.status ?? '-'} receipt=${g.receipt?.status ?? '-'}${g.receipt?.externalOperationRef ? ` (${g.receipt.externalOperationRef})` : ''} evidenceRefs=${g.evidenceRefs.length}`);
+      for (const t of decisionTrace.filter((d) => d.rejectedDecision !== null)) {
+        print(`rejected run ${t.runSequence}#${t.iteration} (${t.errorCode ?? '-'}, finish=${t.finishReason ?? '-'}): refs ${JSON.stringify(t.citedRefs)}`);
+        print(`  decision: ${JSON.stringify(t.rejectedDecision)}`);
+      }
+      summary.push({ scenario: scenario.id, taskStatus: run.report.finalTaskStatus, undeliveredTurns: run.undeliveredTurns, invariantsPassed: run.invariants.filter((r) => r.passed).length, invariantsTotal: run.invariants.length, tokens: run.report.tokens, elapsedMs: run.elapsedMs });
     } finally {
       await db.drop();
     }

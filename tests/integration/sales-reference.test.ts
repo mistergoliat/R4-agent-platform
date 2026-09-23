@@ -237,7 +237,7 @@ describe('Sales conversation on R4 (governed quote, owners, recovery)', () => {
 
 describe('first real ModelProvider adapter inside the Sales runtime', () => {
   const KEY = 'sk-live-looking-SECRET-4f1c2e9a7b';
-  const config = { profile: 'it', baseUrl: 'https://llm.example.test/v1', apiKey: KEY, model: 'm', timeoutMs: 5_000, contextWindowTokens: 200_000, maxOutputTokens: 1_000, responseFormat: 'json_object' as const, temperature: null };
+  const config = { profile: 'it', baseUrl: 'https://llm.example.test/v1', apiKey: KEY, model: 'm', timeoutMs: 5_000, contextWindowTokens: 200_000, maxOutputTokens: 1_000, responseFormat: 'json_object' as const, temperature: null, extraBody: {} };
 
   it('runs a turn through OpenAICompatibleModelProvider and persists no secret anywhere', async () => {
     const answers = ['{"type":"respond","content":"Hola, ¿en qué te ayudo?"}', '{"type":"wait","condition":{"kind":"WAIT_FOR_INPUT"}}'];

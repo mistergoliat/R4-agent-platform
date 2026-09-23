@@ -99,7 +99,7 @@ export class ContextView {
   }
 }
 
-// --- decision builders (the model-facing protocol, r4.agent_decision.v3) ---
+// --- decision builders (the model-facing protocol, r4.agent_decision.v4) ---
 
 export const respond = (text: string | ((v: ContextView) => string)): ScriptedStep => (v) => ({ type: 'respond', content: typeof text === 'string' ? text : text(v) });
 export const waitForCustomer = (reason = 'waiting for the customer'): ScriptedStep => () => ({ type: 'wait', condition: { kind: 'WAIT_FOR_INPUT' }, reason });

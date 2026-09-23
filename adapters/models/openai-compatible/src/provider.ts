@@ -70,7 +70,9 @@ export class OpenAICompatibleModelProvider implements ModelProvider {
         false,
       );
     }
+    // Deployment extras first: the fields the adapter owns always win (config validation also refuses them).
     const body = {
+      ...config.extraBody,
       model: config.model,
       messages,
       max_tokens: maxTokens,

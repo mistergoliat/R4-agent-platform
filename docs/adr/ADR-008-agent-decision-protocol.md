@@ -75,6 +75,32 @@ producidos por el modelo.
   que vuelve al modelo. `capability_failure` queda para cuando la plataforma no
   puede producir evidencia de una invocación.
 
+### r4.agent_decision.v4 (validación live de R4-F, antes de R4-G)
+
+Las primeras corridas con un modelo real (DeepSeek, `sales:live`) terminaron
+en `invalid_decision` por dos ambigüedades del texto, no del contrato:
+
+- **`unknown_evidence`**: el modelo citó como `evidenceRefs` el id de registro
+  del turno del cliente (`memory:<entryId>`) al registrar un hecho que el
+  cliente declaró. El texto sólo mostraba el placeholder `<observationId>`.
+  v4 añade una línea "References": sólo `content.observationId` de items
+  observation es citable; turnos, memoria, goals, item ids y provenance no;
+  lo que dijo el solicitante no necesita referencia (omitir `evidenceRefs`).
+- **`capability_not_permitted`**: el modelo envió una escritura como
+  `read_capability`. v4 nombra el campo `riskClass` en ambas líneas, y el
+  item `capability` del Context Compiler declara, antes del `inputSchema`,
+  `riskClass` y `decision` (`read_capability` | `propose_action`, derivado
+  del riskClass).
+
+**La validación no cambió**: referencias desconocidas siguen siendo
+`unknown_evidence` (sin mapeo por similitud ni quitar prefijos) y una
+escritura como READ sigue siendo `capability_not_permitted`. El esquema JSON
+no cambió. Instrucciones: 2 778 → 3 214 caracteres
+(`unit/agent-kernel/protocol-overhead`). Regresiones:
+`unit/agent-kernel/decision-parser` (casos live),
+`unit/context-compiler/capability-presentation`,
+`sales/live-diagnostics` (replay del caso live por el harness).
+
 ## Alternativas descartadas
 
 - **Function calling nativo como único transporte:** acopla el protocolo al
@@ -96,6 +122,8 @@ producidos por el modelo.
 
 `tests/unit/contracts/decision-and-execution-contracts.test.ts`,
 `tests/unit/agent-kernel/decision-parser.test.ts`,
+`tests/unit/agent-kernel/protocol-overhead.test.ts`,
+`tests/unit/context-compiler/capability-presentation.test.ts`,
 `tests/unit/agent-kernel/kernel.test.ts` (mapeo de terminación),
 `tests/integration/worker-kernel.test.ts` (todos los fallos contra PostgreSQL),
 `tests/contract/execution-kernel-boundaries.test.ts`,

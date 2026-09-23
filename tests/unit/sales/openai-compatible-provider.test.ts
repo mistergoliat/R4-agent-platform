@@ -16,6 +16,7 @@ const CONFIG: OpenAICompatibleConfig = {
   maxOutputTokens: 1_000,
   responseFormat: 'json_object',
   temperature: 0.2,
+  extraBody: {},
 };
 
 function request(overrides: Partial<ModelRequest> = {}): ModelRequest {
@@ -50,7 +51,7 @@ describe('OpenAI-compatible configuration (deployment, not AgentDefinition)', ()
 
   it('loads an explicit profile and never echoes values when invalid', () => {
     const env = { R4_MODEL_PROVIDER: 'openai_compatible', R4_MODEL_BASE_URL: 'http://127.0.0.1:8000/v1/', R4_MODEL_NAME: 'local-70b', R4_MODEL_CONTEXT_WINDOW_TOKENS: '32768', R4_MODEL_PROFILE: 'local' };
-    expect(loadOpenAICompatibleConfig(env)).toMatchObject({ profile: 'local', baseUrl: 'http://127.0.0.1:8000/v1', apiKey: null, model: 'local-70b', contextWindowTokens: 32_768, maxOutputTokens: 2_048, responseFormat: 'json_object' });
+    expect(loadOpenAICompatibleConfig(env)).toMatchObject({ profile: 'local', baseUrl: 'http://127.0.0.1:8000/v1', apiKey: null, model: 'local-70b', contextWindowTokens: 32_768, maxOutputTokens: 2_048, responseFormat: 'json_object', extraBody: {} });
     expect(() => loadOpenAICompatibleConfig({ ...env, R4_MODEL_BASE_URL: 'ftp://nope', R4_MODEL_API_KEY: KEY })).toThrow(/R4_MODEL_BASE_URL/);
     try {
       loadOpenAICompatibleConfig({ ...env, R4_MODEL_CONTEXT_WINDOW_TOKENS: 'x', R4_MODEL_API_KEY: KEY });
@@ -58,6 +59,40 @@ describe('OpenAI-compatible configuration (deployment, not AgentDefinition)', ()
       expect(String(error)).not.toContain(KEY);
     }
     expect(JSON.stringify(describeModelConfig({ ...CONFIG }))).not.toContain(KEY);
+  });
+});
+
+describe('OpenAI-compatible extra request fields (R4_MODEL_EXTRA_BODY)', () => {
+  const env = { R4_MODEL_PROVIDER: 'openai_compatible', R4_MODEL_BASE_URL: 'https://llm.example.test', R4_MODEL_NAME: 'reasoning-model', R4_MODEL_CONTEXT_WINDOW_TOKENS: '64000' };
+
+  it('loads an explicit reasoning switch as opaque deployment configuration and reports it', () => {
+    const config = loadOpenAICompatibleConfig({ ...env, R4_MODEL_EXTRA_BODY: '{"thinking":{"type":"disabled"}}' });
+    expect(config?.extraBody).toEqual({ thinking: { type: 'disabled' } });
+    expect(describeModelConfig(config!)).toMatchObject({ extraBody: { thinking: { type: 'disabled' } } });
+  });
+
+  it.each([
+    ['not JSON', '{thinking: off}'],
+    ['not an object', '["thinking"]'],
+    ['an adapter-owned field', '{"max_tokens":999999}'],
+    ['the model', '{"model":"other"}'],
+    ['native tools', '{"tools":[]}'],
+  ])('refuses %s', (_, value) => {
+    expect(() => loadOpenAICompatibleConfig({ ...env, R4_MODEL_EXTRA_BODY: value })).toThrow(/R4_MODEL_EXTRA_BODY/);
+  });
+
+  it('sends the extra fields without letting them replace what the adapter owns', async () => {
+    const { fetch, calls } = fakeFetch(() => ({ status: 200, body: completion('{"type":"respond","content":"hola"}') }));
+    const provider = new OpenAICompatibleModelProvider({ ...CONFIG, extraBody: { thinking: { type: 'disabled' }, max_tokens: 1 } }, { fetch });
+    await new DefaultModelGateway({ provider, logger: createSilentLogger() }).generate(request());
+    const body = JSON.parse(calls[0]!.init.body) as Record<string, unknown>;
+    expect(body).toMatchObject({ thinking: { type: 'disabled' }, model: 'some-model', max_tokens: 1_000, response_format: { type: 'json_object' } });
+  });
+
+  it('sends no extra field when none is configured (the server default applies)', async () => {
+    const { fetch, calls } = fakeFetch(() => ({ status: 200, body: completion('{"type":"respond","content":"hola"}') }));
+    await new DefaultModelGateway({ provider: new OpenAICompatibleModelProvider(CONFIG, { fetch }), logger: createSilentLogger() }).generate(request());
+    expect(Object.keys(JSON.parse(calls[0]!.init.body) as object).sort()).toEqual(['max_tokens', 'messages', 'model', 'response_format', 'stream', 'temperature']);
   });
 });
 

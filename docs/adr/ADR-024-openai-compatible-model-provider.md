@@ -22,7 +22,7 @@ otros adapters sin cambiar el Sales Agent.
    `R4_MODEL_BASE_URL`, `R4_MODEL_API_KEY` opcional, `R4_MODEL_NAME`,
    `R4_MODEL_PROFILE`, `R4_MODEL_TIMEOUT_MS`, `R4_MODEL_CONTEXT_WINDOW_TOKENS`,
    `R4_MODEL_MAX_OUTPUT_TOKENS`, `R4_MODEL_RESPONSE_FORMAT`,
-   `R4_MODEL_TEMPERATURE`). La `AgentDefinition` sigue sin proveedor, modelo,
+   `R4_MODEL_TEMPERATURE`, `R4_MODEL_EXTRA_BODY`). La `AgentDefinition` sigue sin proveedor, modelo,
    host ni secreto. `providerId = openai-compatible.<profile>` identifica el
    perfil lógico en telemetría.
 3. **Renderizado en el adapter**: los mensajes del kernel conservan su rol; el
@@ -46,7 +46,18 @@ otros adapters sin cambiar el Sales Agent.
    mapeable → `invalid_provider_response`. El abort del gateway lo clasifica
    el gateway. Requiere el cambio mínimo de Core en `ModelProviderError`
    (ADR-023, tabla de cambios).
-7. **Secretos**: la clave sólo viaja en el header `Authorization` de la
+7. **Campos extra de la petición** (`R4_MODEL_EXTRA_BODY`, validación live
+   pre-G): un objeto JSON opaco que se agrega al cuerpo, el `extra_body` de los
+   clientes OpenAI-compatible. Sirve para hacer explícito un switch del
+   servidor en vez de depender de su default, p. ej. DeepSeek
+   `{"thinking":{"type":"disabled"}}` (`deepseek-flash` razona por defecto).
+   El adapter no lo interpreta (sin `if (vendor)` en ningún lado) y no puede
+   pisar campos propios (model, messages, max_tokens, stream,
+   response_format, temperature, tools…): la configuración los rechaza y el
+   cuerpo los escribe después. Se reporta en `describeModelConfig`, así que
+   no es para credenciales. El texto de razonamiento sigue sin conservarse;
+   los reasoning tokens no se exponen (requeriría ampliar `ModelUsage` en Core).
+8. **Secretos**: la clave sólo viaja en el header `Authorization` de la
    petición saliente; nunca en mensajes de error (redactados), respuestas,
    logs, snapshots, observations, receipts ni artifacts (tests).
 

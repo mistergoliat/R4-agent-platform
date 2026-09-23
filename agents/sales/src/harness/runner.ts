@@ -1,3 +1,4 @@
+import { TERMINAL_TASK_STATUSES } from '@r4/contracts';
 import { FakeModelProvider, type ModelProvider } from '@r4/model-gateway';
 import { evaluateInvariants, type InvariantResult } from './invariants.js';
 import { buildReport, type ScenarioReport } from './report.js';
@@ -13,6 +14,11 @@ export interface ScenarioRun {
   /** Metadata-only telemetry of the run (live mode). */
   readonly telemetry: readonly Record<string, unknown>[];
   readonly elapsedMs: number;
+  /**
+   * Live mode: 1-based indexes of the scenario turns that were never
+   * delivered because the task had already ended (e.g. a run failed).
+   */
+  readonly undeliveredTurns: readonly number[];
 }
 
 export interface RunScenarioOptions {
@@ -30,6 +36,9 @@ export interface RunScenarioOptions {
  * migrations) and returns its structured report and invariant results. In
  * live mode the customer turns are sent as-is and the scripted trajectory is
  * ignored: whatever the model decides is recorded, nothing is corrected.
+ * A live task that ends early (a failed run) stops the conversation there:
+ * the remaining turns are reported as undelivered, never forced on a
+ * terminal task, so the run is still recorded for diagnosis.
  */
 export async function runScenario(scenario: SalesScenario, options: RunScenarioOptions): Promise<ScenarioRun> {
   const started = Date.now();
@@ -44,7 +53,12 @@ export async function runScenario(scenario: SalesScenario, options: RunScenarioO
   });
   try {
     const taskId = await harness.openConversation({ customerRef: scenario.customerRef ?? null, correlationId: `scenario-${scenario.id.toLowerCase()}` });
-    for (const turn of scenario.turns) {
+    const undeliveredTurns: number[] = [];
+    for (const [i, turn] of scenario.turns.entries()) {
+      if (options.mode === 'live' && (TERMINAL_TASK_STATUSES as readonly string[]).includes((await harness.api.tasks.getTask(taskId)).task.status)) {
+        undeliveredTurns.push(i + 1);
+        continue;
+      }
       if ('control' in turn) await turn.run(harness, taskId);
       else if ('operator' in turn) await harness.answerConsultation(taskId, turn.operator);
       else if (turn.workerDiesWhen && options.mode === 'scripted') await harness.sayThroughWorkerDeath(taskId, turn.customer, () => turn.workerDiesWhen!(harness));
@@ -59,6 +73,7 @@ export async function runScenario(scenario: SalesScenario, options: RunScenarioO
       state,
       telemetry: [...harness.telemetry],
       elapsedMs: Date.now() - started,
+      undeliveredTurns,
     };
   } finally {
     await harness.close();

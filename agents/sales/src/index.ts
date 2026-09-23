@@ -19,3 +19,5 @@ export * from './harness/scripted.js';
 export * from './harness/scenarios.js';
 export * from './harness/runner.js';
 export * from './harness/database.js';
+export * from './harness/recording.js';
+export * from './harness/diagnostics.js';

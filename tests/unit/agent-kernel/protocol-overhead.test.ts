@@ -12,20 +12,24 @@ import { AGENT_DECISION_JSON_SCHEMA, DECISION_PROTOCOL, PROTOCOL_INSTRUCTIONS } 
  *
  * Measured at r4.agent_decision.v3: instructions 2 778 chars (824 for the four
  * E decisions), schema 6 216 chars (≈4 140 for the E decision shapes alone).
+ * r4.agent_decision.v4 (R4-F live validation) adds one line saying which
+ * references are citable and names the riskClass/decision fields that
+ * separate READ from proposed capabilities (+436 chars: 3 214); the schema
+ * is unchanged.
  */
 describe('decision protocol overhead', () => {
   const instructions = PROTOCOL_INSTRUCTIONS;
   const schema = JSON.stringify(AGENT_DECISION_JSON_SCHEMA);
 
-  it('is protocol v3', () => {
-    expect(DECISION_PROTOCOL).toBe('r4.agent_decision.v3');
-    expect(instructions).toContain('Decision protocol r4.agent_decision.v3.');
+  it('is protocol v4', () => {
+    expect(DECISION_PROTOCOL).toBe('r4.agent_decision.v4');
+    expect(instructions).toContain('Decision protocol r4.agent_decision.v4.');
   });
 
   it('stays within its accounted size', () => {
-    expect(instructions.length).toBeLessThanOrEqual(2_900);
+    expect(instructions.length).toBeLessThanOrEqual(3_250);
     expect(schema.length).toBeLessThanOrEqual(6_400);
-    expect(instructions.length + schema.length).toBeLessThanOrEqual(9_300);
+    expect(instructions.length + schema.length).toBeLessThanOrEqual(9_650);
   });
 
   it('attributes the R4-E share explicitly', () => {

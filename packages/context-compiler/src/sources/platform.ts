@@ -245,12 +245,15 @@ export const capabilitySource: ContextSource = new MappingSource(PLATFORM_SOURCE
     kind: 'capability',
     authority: 'AUTHORITATIVE',
     temporality: 'live',
+    // How to use it comes before what it takes: a long input schema must not bury the
+    // risk class (R4-F live validation: writes were sent as read_capability). `decision`
+    // is the decision type the kernel accepts for this risk class, stated as a fact.
     content: {
       capabilityId: capability.capabilityId,
+      ...(capability.riskClass === undefined ? {} : { riskClass: capability.riskClass, decision: capability.riskClass === 'READ' ? 'read_capability' : 'propose_action' }),
       version: capability.version,
       description: capability.description,
       inputSchema: capability.inputSchema as JsonValue,
-      ...(capability.riskClass === undefined ? {} : { riskClass: capability.riskClass }),
     },
     provenance: { recordType: 'capability_definition', recordId: capability.capabilityId, recordVersion: String(capability.version) },
     createdAt: task.createdAt,

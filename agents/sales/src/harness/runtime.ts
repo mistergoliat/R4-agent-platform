@@ -27,6 +27,8 @@ export interface ShiftableClock extends Clock {
   offsetMs: number;
 }
 
+const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
+
 export function shiftableClock(): ShiftableClock {
   const clock = { offsetMs: 0, now: () => new Date(Date.now() + clock.offsetMs) };
   return clock;
@@ -259,7 +261,11 @@ export class SalesHarness {
       const contexts = (await snapshots.listForRun(summary.runId)).map((s) => {
         const c = snapshotComposition(s);
         const itemIds = Object.values(s.compiledContext.sections).flatMap((items) => items.map((i) => i.itemId));
-        return { snapshotId: s.snapshotId, iteration: s.iteration, attempt: s.attempt, estimatedTokens: s.estimatedTokens, itemIds, includedTokensByKind: Object.fromEntries(Object.entries(c.byKind).map(([k, t]) => [k, t.included.estimatedTokens])), includedTokensBySource: Object.fromEntries(Object.entries(c.bySource).map(([k, t]) => [k, t.included.estimatedTokens])), compactedCount: c.compactedCount };
+        const sectionByItem = Object.fromEntries(Object.entries(s.compiledContext.sections).flatMap(([section, items]) => items.map((i) => [i.itemId, section])));
+        // Diagnostics: which item each id the model could read appears in (its item id, provenance or content).
+        const itemByMentionedId: Record<string, string> = {};
+        for (const items of Object.values(s.compiledContext.sections)) for (const item of items) for (const id of JSON.stringify(item).match(UUID) ?? []) itemByMentionedId[id] ??= item.itemId;
+        return { snapshotId: s.snapshotId, iteration: s.iteration, attempt: s.attempt, estimatedTokens: s.estimatedTokens, itemIds, sectionByItem, itemByMentionedId, includedTokensByKind: Object.fromEntries(Object.entries(c.byKind).map(([k, t]) => [k, t.included.estimatedTokens])), includedTokensBySource: Object.fromEntries(Object.entries(c.bySource).map(([k, t]) => [k, t.included.estimatedTokens])), compactedCount: c.compactedCount };
       });
       runs.push({ run, steps, contexts });
     }
@@ -291,7 +297,7 @@ export type ConversationState = {
   readonly runs: readonly {
     readonly run: Awaited<ReturnType<Platform['tasks']['getRun']>>;
     readonly steps: readonly RunStep[];
-    readonly contexts: readonly { snapshotId: string; iteration: number; itemIds: readonly string[]; attempt: number; estimatedTokens: number; includedTokensByKind: Record<string, number>; includedTokensBySource: Record<string, number>; compactedCount: number }[];
+    readonly contexts: readonly { snapshotId: string; iteration: number; itemIds: readonly string[]; sectionByItem: Readonly<Record<string, string>>; itemByMentionedId: Readonly<Record<string, string>>; attempt: number; estimatedTokens: number; includedTokensByKind: Record<string, number>; includedTokensBySource: Record<string, number>; compactedCount: number }[];
   }[];
   readonly observations: Awaited<ReturnType<PostgresObservationStore['listByTask']>>;
   readonly ledger: Awaited<ReturnType<PostgresActionLedgerStore['forTask']>>;

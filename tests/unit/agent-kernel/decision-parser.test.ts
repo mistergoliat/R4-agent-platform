@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { uuidv7 } from '@r4/contracts';
-import { parseAgentDecision, type DecisionValidationContext } from '@r4/agent-kernel';
+import { PROTOCOL_INSTRUCTIONS, parseAgentDecision, type DecisionValidationContext } from '@r4/agent-kernel';
 import type { ModelResponse } from '@r4/model-gateway';
 import { READ_FACT, WRITE_THING } from '../../support/kernel-fixtures.js';
 
@@ -73,5 +73,61 @@ describe('decision parser: ModelResult → parse → schema → semantics', () =
       const result = parseAgentDecision(response({ structuredData: { type: 'read_capability', capabilityId: WRITE_THING.capabilityId, arguments: {} } }), ctx);
       expect(errorCode(result), riskClass).toBe('capability_not_permitted');
     }
+  });
+});
+
+/**
+ * R4-F live validation (S02, DeepSeek): the model proposed a Sales workspace
+ * update recording a customer-stated fact and cited, as evidence, the record
+ * id of the customer's own conversation turn (`memory:<entryId>`) — an id
+ * it could see in the context, but not an observation. The platform was
+ * right to reject it; the protocol did not say what is citable. The fix is
+ * in the protocol text (r4.agent_decision.v4), never in the validator.
+ */
+describe('evidence references (live regression: conversation turn cited as evidence)', () => {
+  const conversationTurnRecordId = uuidv7();
+  const propose = (evidenceRefs?: unknown) =>
+    response({ structuredData: { type: 'propose_action', capabilityId: WRITE_THING.capabilityId, arguments: { note: 'budget stated by the requester' }, ...(evidenceRefs === undefined ? {} : { evidenceRefs }) } });
+
+  it('still rejects a conversation turn id, and an observation item id, as evidence', () => {
+    expect(errorCode(parseAgentDecision(propose([conversationTurnRecordId]), context))).toBe('unknown_evidence');
+    // No prefix stripping or similarity mapping: only the observationId itself is evidence (the schema already refuses a non-UUID).
+    expect(errorCode(parseAgentDecision(propose([`observation:${observationId}`]), context))).toBe('invalid_decision_schema');
+    expect(errorCode(parseAgentDecision(propose([observationId, conversationTurnRecordId]), context))).toBe('unknown_evidence');
+  });
+
+  it('accepts a proposal that cites nothing, or only observation ids', () => {
+    expect(parseAgentDecision(propose(), context).ok).toBe(true);
+    expect(parseAgentDecision(propose([]), context).ok).toBe(true);
+    expect(parseAgentDecision(propose([observationId]), context).ok).toBe(true);
+  });
+
+  it('is explained by the protocol: only observation ids are citable, requester statements need no reference', () => {
+    const line = PROTOCOL_INSTRUCTIONS.split('\n').find((l) => l.startsWith('References:'));
+    expect(line).toBeDefined();
+    expect(line).toContain('content.observationId');
+    expect(line).toMatch(/conversation turns/);
+    expect(line).toMatch(/What the requester said needs no reference/);
+    expect(line).toMatch(/omit "evidenceRefs"/);
+  });
+});
+
+/**
+ * R4-F live validation (S03, DeepSeek): the model sent a Sales workspace
+ * update as `read_capability`. The capability item showed its riskClass,
+ * but the protocol only said "a READ id" without naming the field. The
+ * platform keeps refusing it; v4 names the field in both decision lines and
+ * each capability item states its decision type (context-compiler test).
+ */
+describe('decision type vs risk class (live regression: write sent as read_capability)', () => {
+  it('still refuses a write capability invoked as a READ', () => {
+    const decision = { type: 'read_capability', capabilityId: WRITE_THING.capabilityId, arguments: { operations: [{ op: 'record_fact', key: 'presupuesto_clp', value: 800000, statedBy: 'customer' }] } };
+    expect(errorCode(parseAgentDecision(response({ structuredData: decision }), context))).toBe('capability_not_permitted');
+  });
+
+  it('is explained by the protocol through the riskClass field shown on each capability', () => {
+    const lines = PROTOCOL_INSTRUCTIONS.split('\n');
+    expect(lines.find((l) => l.includes('"type":"read_capability"'))).toContain('whose riskClass is READ (decision: read_capability)');
+    expect(lines.find((l) => l.includes('"type":"propose_action"'))).toContain('whose riskClass is not READ (decision: propose_action)');
   });
 });

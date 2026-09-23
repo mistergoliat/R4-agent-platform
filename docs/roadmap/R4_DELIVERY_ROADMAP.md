@@ -363,6 +363,22 @@ migración nueva (0007+), nunca una edición. Lo impone
 normalización del migrador), además del rechazo en runtime
 (`migration_modified`) sobre bases que ya las aplicaron.
 
+**Validación live pre-G (sin fase nueva).** Correcciones derivadas de las
+primeras corridas reales de `sales:live` (DeepSeek `deepseek-flash`), cada
+una con test offline: protocolo `r4.agent_decision.v4` (qué referencias son
+citables; `riskClass`/`decision` visibles en cada capability — ADR-008);
+`R4_MODEL_EXTRA_BODY` en el adapter (ADR-024); invariantes de hechos por
+patrón de clave (`budget` vs `presupuesto_clp`) con equivalencia de monto;
+el harness live ya no aborta cuando la task termina antes del último turno, y
+registra la decisión rechazada (o sólo la forma de una salida no parseable,
+nunca su texto), metadata por llamada, la clasificación de cada referencia
+citada (`decisionTrace`) y la cadena propuesta → policy → command → receipt
+(`governance`). **Decisión:** ADR-008 se mantiene (una decisión inválida
+termina la run; sin reintentos, C1 intacto); la reparación queda diferida
+hasta tener evidencia comparativa entre modelos. El gate se cerró con
+`deepseek-flash`, thinking habilitado explícitamente
+(`R4_MODEL_EXTRA_BODY`), `R4_MODEL_MAX_OUTPUT_TOKENS=8192`, protocolo v4.
+
 ## 4. Decisiones diferidas intencionalmente
 
 | Tema | Por qué se difiere | Seam existente |

@@ -50,6 +50,8 @@ export interface SalesScenario {
 }
 
 const HOME_GYM = /gimnasio|gym/i;
+/** The budget fact, whatever key the agent chose for it (the Sales pack prescribes none). */
+const BUDGET = { matches: '^(budget|presupuesto)(_|$)' };
 const KNOWN_CUSTOMER = 'cust-demo-001';
 
 const once = <T>(value: T, then: T) => {
@@ -112,7 +114,7 @@ export const SCENARIOS: readonly SalesScenario[] = [
     invariants: [
       ...always,
       { kind: 'goal_kept', matches: HOME_GYM.source },
-      { kind: 'fact_equals', key: 'budget', value: { amount: 800_000, currency: 'CLP' } },
+      { kind: 'fact_equals', key: BUDGET, value: { amount: 800_000, currency: 'CLP' } },
       { kind: 'capability_used', capabilityId: CAPABILITY_IDS.catalogSearch, min: 2 },
       { kind: 'selection_equals', items: [{ productId: 'RACK-PR200', quantity: 1 }, { productId: 'BAR-OLY20', quantity: 1 }, { productId: 'PLT-IRON-50', quantity: 1 }, { productId: 'BENCH-FID', quantity: 1 }] },
       { kind: 'quotes_issued', equals: 0 },
@@ -145,7 +147,7 @@ export const SCENARIOS: readonly SalesScenario[] = [
         agent: [update([fact('available_space', { widthCm: 250, depthCm: 300 })]), respond('Con ese espacio cabe bien un rack. ¿Qué tipo de entrenamiento te interesa?'), waitForCustomer()],
       },
     ],
-    invariants: [...always, { kind: 'goal_kept', matches: HOME_GYM.source }, { kind: 'current_goal_matches', matches: HOME_GYM.source }, { kind: 'no_goal_abandoned' }, { kind: 'fact_equals', key: 'budget', value: { amount: 800_000, currency: 'CLP' } }],
+    invariants: [...always, { kind: 'goal_kept', matches: HOME_GYM.source }, { kind: 'current_goal_matches', matches: HOME_GYM.source }, { kind: 'no_goal_abandoned' }, { kind: 'fact_equals', key: BUDGET, value: { amount: 800_000, currency: 'CLP' } }],
   },
   {
     id: 'S04',
@@ -161,7 +163,7 @@ export const SCENARIOS: readonly SalesScenario[] = [
         agent: [update([fact('budget', { amount: 1_100_000, currency: 'CLP' }, 'customer')]), respond('Perfecto, trabajamos con $1.100.000. ¿Qué espacio tienes?'), waitForCustomer()],
       },
     ],
-    invariants: [...always, { kind: 'fact_history', key: 'budget', values: [{ amount: 800_000, currency: 'CLP' }, { amount: 1_100_000, currency: 'CLP' }] }, { kind: 'fact_equals', key: 'budget', value: { amount: 1_100_000, currency: 'CLP' } }],
+    invariants: [...always, { kind: 'fact_history', key: BUDGET, values: [{ amount: 800_000, currency: 'CLP' }, { amount: 1_100_000, currency: 'CLP' }] }, { kind: 'fact_equals', key: BUDGET, value: { amount: 1_100_000, currency: 'CLP' } }],
   },
   {
     id: 'S05',
@@ -288,7 +290,7 @@ export const SCENARIOS: readonly SalesScenario[] = [
         agent: [update([fact('budget', { amount: 600_000, currency: 'CLP' })]), respond('Perfecto, con $600.000 para dos personas podemos armar algo sólido. ¿Qué espacio tienen?'), waitForCustomer()],
       },
     ],
-    invariants: [...always, { kind: 'waited_and_resumed' }, { kind: 'goal_kept', matches: HOME_GYM.source }, { kind: 'fact_equals', key: 'users', value: 2 }, { kind: 'fact_equals', key: 'budget', value: { amount: 600_000, currency: 'CLP' } }, { kind: 'prior_response_in_context' }],
+    invariants: [...always, { kind: 'waited_and_resumed' }, { kind: 'goal_kept', matches: HOME_GYM.source }, { kind: 'fact_equals', key: 'users', value: 2 }, { kind: 'fact_equals', key: BUDGET, value: { amount: 600_000, currency: 'CLP' } }, { kind: 'prior_response_in_context' }],
   },
   {
     id: 'S10',
@@ -412,7 +414,7 @@ export const SCENARIOS: readonly SalesScenario[] = [
         ],
       },
     ],
-    invariants: [...always, { kind: 'no_question_after_fact', key: 'budget', topic: 'presupuesto|budget|cu[aá]nto (dinero|quieres gastar)' }, { kind: 'no_question_after_fact', key: 'available_space', topic: 'espacio|metros|space' }],
+    invariants: [...always, { kind: 'no_question_after_fact', key: BUDGET, topic: 'presupuesto|budget|cu[aá]nto (dinero|quieres gastar)' }, { kind: 'no_question_after_fact', key: 'available_space', topic: 'espacio|metros|space' }],
   },
   {
     id: 'S15',
@@ -541,7 +543,7 @@ export const CENTRAL_SCENARIO: SalesScenario = {
     { kind: 'goal_kept', matches: HOME_GYM.source },
     { kind: 'current_goal_matches', matches: HOME_GYM.source },
     { kind: 'no_goal_abandoned' },
-    { kind: 'fact_history', key: 'budget', values: [{ amount: 800_000, currency: 'CLP' }, { amount: 1_100_000, currency: 'CLP' }] },
+    { kind: 'fact_history', key: BUDGET, values: [{ amount: 800_000, currency: 'CLP' }, { amount: 1_100_000, currency: 'CLP' }] },
     { kind: 'selection_equals', items: [{ productId: 'RACK-PR200', quantity: 1 }, { productId: 'BAR-OLY20', quantity: 1 }, { productId: 'PLT-BUMP-100', quantity: 1 }, { productId: 'BENCH-FID', quantity: 1 }] },
     { kind: 'delivery_equals', commune: 'Ñuñoa' },
     { kind: 'capability_used', capabilityId: CAPABILITY_IDS.catalogSearch },
