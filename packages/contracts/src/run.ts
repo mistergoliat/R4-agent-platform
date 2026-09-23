@@ -16,7 +16,7 @@ import {
  * Runs record structured outcomes and usage — never chain-of-thought.
  *
  * Lifecycle (R4-C1):
- *   running ──► completed | failed | cancelled | abandoned   (terminal)
+ *   running ──► completed | failed | cancelled | abandoned | suspended   (terminal)
  *
  * - A run is created already `running`, atomically with the lease that owns it:
  *   there is no unowned "created" limbo.
@@ -24,8 +24,13 @@ import {
  *   lease expires; the next owner resumes the SAME run from its durable step log.
  * - `abandoned` = closed by the platform because ownership was lost too many
  *   times (`lease_lost`); nobody will continue it.
+ * - `suspended` (R4-D) = the run ended without finishing its task because the
+ *   task now waits for something no run can provide: an approval
+ *   (`approval_required`, task `requires_approval`) or the resolution of an
+ *   action whose outcome is unknown (`write_outcome_uncertain`, task
+ *   `blocked`). Terminal for the run; the task continues, if ever, in a new run.
  */
-export const RUN_STATUSES = ['running', 'completed', 'failed', 'cancelled', 'abandoned'] as const;
+export const RUN_STATUSES = ['running', 'completed', 'failed', 'cancelled', 'abandoned', 'suspended'] as const;
 export const runStatusSchema = z.enum(RUN_STATUSES);
 export type RunStatus = z.infer<typeof runStatusSchema>;
 
@@ -39,6 +44,9 @@ export const TERMINATION_REASONS = [
   'lease_lost',
   'cancelled',
   'internal_failure',
+  // R4-D governed execution
+  'approval_required',
+  'write_outcome_uncertain',
 ] as const;
 export const terminationReasonSchema = z.enum(TERMINATION_REASONS);
 export type TerminationReason = z.infer<typeof terminationReasonSchema>;
@@ -47,7 +55,7 @@ export type TerminationReason = z.infer<typeof terminationReasonSchema>;
  * Coarse failure classes (input for Quality/Evaluation). Derived from the
  * reason — never stored independently, so they cannot disagree.
  */
-export const FAILURE_CLASSES = ['model', 'protocol', 'capability', 'platform', 'lease', 'budget'] as const;
+export const FAILURE_CLASSES = ['model', 'protocol', 'capability', 'platform', 'lease', 'budget', 'action'] as const;
 export const failureClassSchema = z.enum(FAILURE_CLASSES);
 export type FailureClass = z.infer<typeof failureClassSchema>;
 
@@ -60,6 +68,9 @@ const FAILURE_CLASS_BY_REASON: Readonly<Record<TerminationReason, FailureClass |
   internal_failure: 'platform',
   lease_lost: 'lease',
   budget_exhausted: 'budget',
+  // Waiting for a human decision is not a failure.
+  approval_required: null,
+  write_outcome_uncertain: 'action',
 };
 
 export function failureClassOf(reason: TerminationReason): FailureClass | null {
@@ -75,6 +86,9 @@ export function runStatusForTermination(reason: TerminationReason): Exclude<RunS
       return 'cancelled';
     case 'lease_lost':
       return 'abandoned';
+    case 'approval_required':
+    case 'write_outcome_uncertain':
+      return 'suspended';
     default:
       return 'failed';
   }

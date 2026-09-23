@@ -3,7 +3,10 @@ import {
   PlatformError,
   capabilityDefinitionSchema,
   type CapabilityDefinition,
+  type JsonValue,
+  type TrustedActionContext,
   type TrustedExecutionContext,
+  type WriteRecoveryStrategy,
 } from '@r4/contracts';
 
 export interface CapabilityHandlerContext {
@@ -32,7 +35,76 @@ export interface RegisteredCapability {
   readonly input: z.ZodType;
   readonly output: z.ZodType;
   readonly handler: CapabilityHandler<unknown, unknown>;
+  /** (R4-D) Present only for writes registered with `registerWrite`: reachable only by the ActionExecutor. */
+  readonly write?: RegisteredWriteHandlers;
 }
+
+// ---------------------------------------------------------------------------
+// R4-D write capabilities
+// ---------------------------------------------------------------------------
+
+/** What a write handler receives. The execution key and context come from the platform only. */
+export interface WriteHandlerContext {
+  /** Platform execution key: the same for every attempt, replay and reconciliation of one command. */
+  readonly executionKey: string;
+  readonly execution: TrustedActionContext;
+  /** 1-based attempt number of this call within the command. */
+  readonly attempt: number;
+  /** Aborted when the attempt times out; the outcome is then unknown to the platform. */
+  readonly signal: AbortSignal;
+}
+
+/**
+ * What the domain reports for one execution. `failed` and `rejected` MUST
+ * mean "no effect happened"; when the handler cannot tell, it returns
+ * `unknown` (or throws): the platform then never assumes either way.
+ */
+export type WriteExecutionResult<O> =
+  | {
+      readonly status: 'applied';
+      readonly result: O;
+      readonly resourceRef?: string;
+      readonly externalOperationRef?: string;
+      /** When the domain applied the effect (ISO-8601), if it reports it. */
+      readonly executedAt?: string;
+      /** True when the domain returned an effect applied earlier under the same key. */
+      readonly replayed?: boolean;
+    }
+  | { readonly status: 'rejected'; readonly code: string; readonly message: string; readonly details?: JsonValue }
+  | { readonly status: 'failed'; readonly code: string; readonly message: string; readonly details?: JsonValue }
+  | { readonly status: 'unknown'; readonly message: string };
+
+/** Reconciliation additionally knows "nothing was applied for this key". */
+export type WriteReconciliationResult<O> = WriteExecutionResult<O> | { readonly status: 'not_applied' };
+
+export type WriteExecuteHandler<I, O> = (input: I, context: WriteHandlerContext) => Promise<WriteExecutionResult<O>>;
+export type WriteReconcileHandler<O> = (context: WriteHandlerContext) => Promise<WriteReconciliationResult<O>>;
+
+/**
+ * A write capability as its owner registers it. The owner must declare how a
+ * repeated execution is made safe; without that the capability cannot be
+ * registered as executable (a plain `register` of a write class stays
+ * visible but can never execute).
+ */
+export interface WriteCapabilityRegistration<I, O> {
+  readonly definition: Omit<CapabilityDefinition, 'inputSchema' | 'outputSchema' | 'writeRecovery'>;
+  readonly recovery: WriteRecoveryStrategy;
+  readonly input: z.ZodType<I>;
+  readonly output: z.ZodType<O>;
+  readonly execute: WriteExecuteHandler<I, O>;
+  /** Required for `reconcile_before_retry`; optional (a last resort) for `idempotent_replay`. */
+  readonly reconcile?: WriteReconcileHandler<O>;
+}
+
+export interface RegisteredWriteHandlers {
+  readonly recovery: WriteRecoveryStrategy;
+  readonly execute: WriteExecuteHandler<unknown, unknown>;
+  readonly reconcile: WriteReconcileHandler<unknown> | null;
+}
+
+/** A write is never executable through the READ handler slot. */
+const refuseReadPath: CapabilityHandler<unknown, unknown> = () =>
+  Promise.reject(new PlatformError('internal', 'write_requires_governed_execution', 'write capabilities execute only through the ActionExecutor'));
 
 /**
  * In-process registry of capabilities available to this runtime. It is
@@ -44,31 +116,66 @@ export class CapabilityRegistry {
   readonly #byKey = new Map<string, RegisteredCapability>();
 
   register<I, O>(registration: CapabilityRegistration<I, O>): CapabilityDefinition {
-    let inputSchema: Record<string, unknown>;
-    let outputSchema: Record<string, unknown>;
-    try {
-      inputSchema = z.toJSONSchema(registration.input, { io: 'input' });
-      outputSchema = z.toJSONSchema(registration.output, { io: 'output' });
-    } catch (error) {
-      throw new PlatformError('validation', 'capability_schema_unrepresentable', `capability ${registration.definition.capabilityId}: schemas must be representable as JSON Schema`, { cause: String(error) });
-    }
-
-    const parsed = capabilityDefinitionSchema.safeParse({ ...registration.definition, inputSchema, outputSchema });
-    if (!parsed.success) {
-      throw new PlatformError('validation', 'invalid_capability_definition', `invalid capability definition: ${z.prettifyError(parsed.error)}`);
-    }
-    const definition = parsed.data;
-    const key = registryKey(definition.capabilityId, definition.version);
-    if (this.#byKey.has(key)) {
-      throw new PlatformError('conflict', 'capability_already_registered', `capability ${key} is already registered`);
-    }
-    this.#byKey.set(key, {
+    const definition = this.#define(registration.definition, registration.input, registration.output);
+    this.#add({
       definition,
       input: registration.input,
       output: registration.output,
       handler: registration.handler as CapabilityHandler<unknown, unknown>,
     });
     return definition;
+  }
+
+  /**
+   * (R4-D) Registers an executable write. Its handlers are held apart from the
+   * READ handler slot, so the read invoker can never reach them; only the
+   * ActionExecutor calls them, and only for a command the platform authorized.
+   */
+  registerWrite<I, O>(registration: WriteCapabilityRegistration<I, O>): CapabilityDefinition {
+    const { capabilityId } = registration.definition;
+    if (registration.definition.riskClass === 'READ') {
+      throw new PlatformError('validation', 'invalid_capability_definition', `${capabilityId}: READ capabilities are registered with register()`);
+    }
+    if (registration.recovery === 'reconcile_before_retry' && registration.reconcile === undefined) {
+      throw new PlatformError('validation', 'invalid_capability_definition', `${capabilityId}: reconcile_before_retry requires a reconcile handler`);
+    }
+    const definition = this.#define({ ...registration.definition, writeRecovery: registration.recovery }, registration.input, registration.output);
+    this.#add({
+      definition,
+      input: registration.input,
+      output: registration.output,
+      handler: refuseReadPath,
+      write: {
+        recovery: registration.recovery,
+        execute: registration.execute as WriteExecuteHandler<unknown, unknown>,
+        reconcile: (registration.reconcile as WriteReconcileHandler<unknown> | undefined) ?? null,
+      },
+    });
+    return definition;
+  }
+
+  #define(base: Omit<CapabilityDefinition, 'inputSchema' | 'outputSchema'>, input: z.ZodType, output: z.ZodType): CapabilityDefinition {
+    let inputSchema: Record<string, unknown>;
+    let outputSchema: Record<string, unknown>;
+    try {
+      inputSchema = z.toJSONSchema(input, { io: 'input' });
+      outputSchema = z.toJSONSchema(output, { io: 'output' });
+    } catch (error) {
+      throw new PlatformError('validation', 'capability_schema_unrepresentable', `capability ${base.capabilityId}: schemas must be representable as JSON Schema`, { cause: String(error) });
+    }
+    const parsed = capabilityDefinitionSchema.safeParse({ ...base, inputSchema, outputSchema });
+    if (!parsed.success) {
+      throw new PlatformError('validation', 'invalid_capability_definition', `invalid capability definition: ${z.prettifyError(parsed.error)}`);
+    }
+    return parsed.data;
+  }
+
+  #add(entry: RegisteredCapability): void {
+    const key = registryKey(entry.definition.capabilityId, entry.definition.version);
+    if (this.#byKey.has(key)) {
+      throw new PlatformError('conflict', 'capability_already_registered', `capability ${key} is already registered`);
+    }
+    this.#byKey.set(key, entry);
   }
 
   /** Exact version, or the highest registered version when omitted. */

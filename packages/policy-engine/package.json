@@ -1,0 +1,22 @@
+{
+  "name": "@r4/policy-engine",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Deterministic, model-independent authorization of governed actions (R4-D). Pure: no I/O, no model, no domain.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@r4/contracts": "*",
+    "zod": "^4.6.0"
+  }
+}

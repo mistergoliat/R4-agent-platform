@@ -5,6 +5,7 @@ import {
   type Clock,
   type IdGenerator,
   type Observation,
+  type ProposeActionDecision,
   type ReadCapabilityDecision,
   type RegisteredAgentDefinition,
   type RunStep,
@@ -13,7 +14,8 @@ import {
 import {
   KernelInterrupt,
   buildExecutionState,
-  readableCapabilities,
+  visibleCapabilities,
+  type ActionOutcome,
   type CapabilityDescriptor,
   type ExecutionContext,
   type ExecutionPolicy,
@@ -23,10 +25,10 @@ import {
   type RunEnding,
   type StepRecord,
 } from '@r4/agent-kernel';
-import { CapabilityInvoker, type CapabilityRegistry, type ObservationStore } from '@r4/capability-runtime';
+import { ActionExecutor, CapabilityInvoker, type CapabilityRegistry, type ObservationStore } from '@r4/capability-runtime';
 import { ContextCompiler, platformContextSources, snapshotComposition, type ContextCompileRequest } from '@r4/context-compiler';
 import { emitTelemetry, type StructuredLogger } from '@r4/observability';
-import type { AgentDefinitionResolver, DurableExecution, ExecutionRuntime } from '@r4/task-runtime';
+import type { ActionProgress, ActionRuntime, AgentDefinitionResolver, DurableExecution, ExecutionRuntime } from '@r4/task-runtime';
 import { DEFAULT_CONTEXT_POLICY } from './config.js';
 
 export interface DurableSessionOptions {
@@ -43,21 +45,32 @@ export interface DurableSessionOptions {
    * platform wires memory, compaction and any extra sources.
    */
   readonly context?: ContextCompiler;
+  /**
+   * R4-D: the governed-execution authority (proposal → policy → command →
+   * attempts → receipt). Without it no proposed action can be resolved.
+   */
+  readonly actions?: ActionRuntime;
   readonly ids: IdGenerator;
   readonly clock: Clock;
   readonly logger: StructuredLogger;
 }
 
+/** Upper bound for the in-process pause between attempts of one command (declared backoff doubles). */
+const MAX_ATTEMPT_BACKOFF_MS = 30_000;
+
 /**
  * KernelSession backed by durable state. Pure glue: every rule lives in the
  * ExecutionRuntime (ownership, run lifecycle), the CapabilityInvoker (scopes,
- * READ-only, schemas) or the kernel (decisions, budgets). Every write carries
+ * READ-only, schemas), the ActionRuntime + Policy Engine (R4-D: authority
+ * over effects, attempt rules), the ActionExecutor (write handler calls,
+ * outcome classification) or the kernel (decisions, budgets). Every write carries
  * the lease token, so it is fenced; runtime errors are translated into kernel
  * interruptions where the run must be left untouched.
  */
 export class DurableKernelSession implements KernelSession {
   readonly #options: DurableSessionOptions;
   readonly #invoker: CapabilityInvoker;
+  readonly #executor: ActionExecutor;
   readonly #compiler: ContextCompiler;
   /** Invocations whose observation this session wrote (fenced) itself. */
   readonly #recorded = new Set<string>();
@@ -74,12 +87,13 @@ export class DurableKernelSession implements KernelSession {
     const fenced: ObservationStore = {
       record: async (observation) => {
         const stored = await execution.recordObservation(lease, observation);
-        this.#recorded.add(stored.source.invocationId);
+        if (stored.source.kind === 'capability') this.#recorded.add(stored.source.invocationId);
         return stored;
       },
       findByInvocationId: (invocationId) => options.observations.findByInvocationId(invocationId),
     };
     this.#invoker = new CapabilityInvoker({ registry: options.capabilities, observations: fenced, ids: options.ids, clock: options.clock, logger: options.logger });
+    this.#executor = new ActionExecutor({ registry: options.capabilities, logger: options.logger });
   }
 
   load(): Promise<ExecutionState> {
@@ -97,6 +111,7 @@ export class DurableKernelSession implements KernelSession {
         capabilities: this.#options.capabilities.discover(agent.capabilityScopes).map(toDescriptor),
         policy: this.#options.policy,
         now: this.#options.clock.now(),
+        writeActions: durable.writeActions,
       });
     });
   }
@@ -180,6 +195,62 @@ export class DurableKernelSession implements KernelSession {
     });
   }
 
+  /**
+   * R4-D. Drives a proposal through the governed path from wherever its
+   * durable ledger stands — the same code runs first time and after any
+   * crash:
+   *
+   *   awaiting authorization → prepare (resolve + validate arguments) →
+   *     reject (observed) | authorize (Policy Engine, in the runtime)
+   *   executing → advance: the runtime grants exactly one attempt (made
+   *     durable first, fenced) or settles the command → the ActionExecutor
+   *     calls the write handler with the command's execution key → record
+   *   observed / suspended → return
+   *
+   * Pure sequencing: which attempt may happen, and whether any may, is the
+   * runtime's decision from the attempt log; this session never retries on
+   * its own, never creates a key and never records an outcome unfenced.
+   */
+  executeAction(step: RunStep, _decision: ProposeActionDecision): Promise<ActionOutcome> {
+    // The durable proposal — not the in-memory decision — is what gets governed.
+    return translate(async () => {
+      const { lease, actions } = this.#options;
+      if (!actions) throw new PlatformError('internal', 'governed_execution_unavailable', 'this worker has no action runtime');
+      if (step.proposalId === null) throw new PlatformError('internal', 'action_without_proposal', `step ${step.stepId} has no proposal id`);
+      const agent = this.#agent;
+      if (!agent) throw new PlatformError('internal', 'session_not_loaded', 'load() must precede executeAction()');
+      const proposalId = step.proposalId;
+
+      let progress: ActionProgress = await actions.loadAction(lease, proposalId);
+      for (;;) {
+        if (progress.kind === 'observed') return { kind: 'observed', observation: progress.observation };
+        if (progress.kind === 'suspended') {
+          const { reason, code, message, details } = progress.termination;
+          return { kind: 'suspended', termination: { reason, code, message, details } };
+        }
+        const { state } = progress;
+        if (state.phase === 'awaiting_authorization') {
+          const prepared = this.#executor.prepare({ capabilityId: state.proposal.capabilityId, arguments: state.proposal.arguments });
+          progress = prepared.ok
+            ? await actions.authorizeAction(lease, { proposalId, agent, capability: prepared.capability, semantics: prepared.semantics, validatedArguments: prepared.validatedArguments })
+            : await actions.rejectAction(lease, { proposalId, cause: prepared.cause, message: prepared.message, details: prepared.details });
+          continue;
+        }
+        if (state.attempts.length > 0 && state.execution) await pause(backoff(state.execution.semantics.initialBackoffMs, state.attempts.length));
+        const advanced = await actions.advanceAction(lease, proposalId);
+        if (advanced.kind !== 'attempt') {
+          progress = advanced;
+          continue;
+        }
+        const report = await this.#executor.attempt(
+          { command: advanced.command, decision: advanced.decision },
+          { attemptNumber: advanced.attempt.attemptNumber, kind: advanced.attempt.kind, workerId: lease.owner },
+        );
+        progress = await actions.recordAttempt(lease, proposalId, advanced.attempt.attemptId, report);
+      }
+    });
+  }
+
   finish(ending: RunEnding): Promise<void> {
     return translate(async () => {
       await this.#options.execution.finishExecution(this.#options.lease, {
@@ -218,14 +289,16 @@ export function contextCompileRequest(context: ExecutionContext, steps: readonly
       goal: context.goal,
       observations: context.observations,
       responses: steps.flatMap((s) => (s.decision?.type === 'respond' ? [{ stepId: s.stepId, iteration: s.iteration, content: s.decision.content, recordedAt: s.createdAt }] : [])),
-      // Visible to the model: READ only (C1 rule). Executability is still checked on the decision.
-      capabilities: readableCapabilities(context).map((c) => ({ capabilityId: c.capabilityId, version: c.version, description: c.description, inputSchema: c.inputSchema })),
+      // Visible to the model: READ, plus (R4-D) write classes when the run may write at all.
+      // Visible ≠ executable: reads are checked on the decision, writes by policy.
+      capabilities: visibleCapabilities(context).map((c) => ({ capabilityId: c.capabilityId, version: c.version, description: c.description, inputSchema: c.inputSchema, riskClass: c.riskClass })),
       constraints: {
         remaining: {
           iterations: limits.maxIterations - usage.iterations,
           modelCalls: limits.maxModelCalls - usage.modelCalls,
           readCapabilityCalls: limits.maxReadCapabilityCalls - usage.readCapabilityCalls,
           tokens: limits.maxTokens === null ? null : limits.maxTokens - usage.tokens,
+          writeActions: Math.max(0, limits.maxWriteActions - usage.writeActions),
         },
         runDeadlineAt: new Date(Date.parse(context.run.startedAt) + limits.maxRunDurationMs).toISOString(),
       },
@@ -284,4 +357,14 @@ async function translate<T>(fn: () => Promise<T>): Promise<T> {
     }
     throw error;
   }
+}
+
+/** Declared initial backoff, doubling per attempt already made, bounded. */
+function backoff(initialMs: number, attemptsSoFar: number): number {
+  if (initialMs <= 0) return 0;
+  return Math.min(MAX_ATTEMPT_BACKOFF_MS, initialMs * 2 ** Math.max(0, attemptsSoFar - 1));
+}
+
+function pause(ms: number): Promise<void> {
+  return ms <= 0 ? Promise.resolve() : new Promise((resolve) => setTimeout(resolve, ms));
 }

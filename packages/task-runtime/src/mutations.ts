@@ -108,6 +108,11 @@ export async function finishRunWithin(
     updatedAt: timestamp,
   };
   if (!(await uow.updateRun(updated, run.version))) throw versionConflict('run', run.version, run.version);
+  // R4-D: an effect whose outcome is unknown stays marked as such, whatever ended the run.
+  const unresolved = await uow.flagUnresolvedActionExecutions(run.runId, timestamp);
+  if (unresolved > 0) {
+    events.push(['action.outcome_uncertain', { taskId: run.taskId, runId: run.runId, agentId: run.agentId, executions: unresolved, cause: 'run_ended', terminationReason: termination.reason }]);
+  }
   events.push(['run.finished', { taskId: run.taskId, runId: run.runId, status: updated.status, terminationReason: termination.reason, failureCode: failure?.code ?? null, ...updated.usage }]);
   return updated;
 }
@@ -142,6 +147,9 @@ function defaultReason(status: Exclude<RunStatus, 'running'>): TerminationReason
       return 'lease_lost';
     case 'failed':
       return 'internal_failure';
+    case 'suspended':
+      // Why a run was suspended (approval vs unknown outcome) is never implied.
+      throw new PlatformError('validation', 'validation_failed', 'a suspended run requires an explicit termination reason');
   }
 }
 

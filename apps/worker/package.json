@@ -24,6 +24,7 @@
     "@r4/model-gateway": "*",
     "@r4/observability": "*",
     "@r4/persistence-postgres": "*",
+    "@r4/policy-engine": "*",
     "@r4/task-runtime": "*",
     "pino": "^10.3.0",
     "zod": "^4.6.0"

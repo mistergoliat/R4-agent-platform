@@ -1,6 +1,7 @@
 import {
   EMPTY_RUN_USAGE,
   PlatformError,
+  actionProposalSchema,
   contextSnapshotSchema,
   memoryEntrySchema,
   runStatusForTermination,
@@ -79,6 +80,8 @@ export interface DurableExecution {
   readonly goal: Goal;
   readonly steps: readonly RunStep[];
   readonly observations: readonly Observation[];
+  /** (R4-D) Action commands created for the task so far — the write budget's usage. Task-scoped: a later run does not reset it. */
+  readonly writeActions: number;
 }
 
 export interface RecordStepCommand {
@@ -131,13 +134,22 @@ export interface FinishExecutionCommand {
   readonly finalStep?: RecordStepCommand;
 }
 
-/** The task status a run termination leads to. Only `completed` succeeds the task. */
-export function taskStatusForTermination(reason: TerminationReason): Extract<TaskStatus, 'completed' | 'failed' | 'cancelled'> {
+/**
+ * The task status a run termination leads to. Only `completed` succeeds the
+ * task. (R4-D) A suspended run leaves its task waiting, never terminal:
+ * `requires_approval` for a human decision, `blocked` for an action whose
+ * outcome is unknown.
+ */
+export function taskStatusForTermination(reason: TerminationReason): Extract<TaskStatus, 'completed' | 'failed' | 'cancelled' | 'requires_approval' | 'blocked'> {
   switch (reason) {
     case 'completed':
       return 'completed';
     case 'cancelled':
       return 'cancelled';
+    case 'approval_required':
+      return 'requires_approval';
+    case 'write_outcome_uncertain':
+      return 'blocked';
     default:
       return 'failed';
   }
@@ -145,6 +157,29 @@ export function taskStatusForTermination(reason: TerminationReason): Extract<Tas
 
 export function workerPrincipal(workerId: string): Principal {
   return { kind: 'system', ref: `worker:${workerId}` };
+}
+
+export interface OwnedExecution {
+  readonly task: AgentTask;
+  readonly lease: TaskLease;
+  readonly run: AgentRun;
+}
+
+/**
+ * The fencing rule, shared by every owner-only write (execution and, since
+ * R4-D, governed actions): row-lock the task, verify the caller's lease on
+ * the database clock, require the task to be running with an active run.
+ */
+export async function lockOwnedExecution(uow: ExecutionUnitOfWork, token: LeaseToken): Promise<OwnedExecution> {
+  const locked = await uow.lockTaskLease(token.taskId);
+  if (!locked) throw new PlatformError('not_found', 'task_not_found', `task ${token.taskId} not found`);
+  const lease = assertLeaseHeld(locked.lease, token, locked.dbNow);
+  if (locked.task.status !== 'running') {
+    throw new PlatformError('precondition', 'task_not_runnable', `task is ${locked.task.status}`, { status: locked.task.status });
+  }
+  const run = await uow.findActiveRun(locked.task.taskId);
+  if (!run) throw new PlatformError('precondition', 'task_not_runnable', 'task has no active run');
+  return { task: locked.task, lease, run };
 }
 
 /**
@@ -289,7 +324,8 @@ export class ExecutionRuntime {
       if (!goal) throw new PlatformError('internal', 'current_goal_missing', `task ${task.taskId} has no current goal row`);
       const steps = await uow.listRunSteps(run.runId);
       const observations = await uow.listObservations(task.taskId);
-      return { lease, task, run, goal, steps, observations };
+      const writeActions = await uow.countActionExecutions(task.taskId);
+      return { lease, task, run, goal, steps, observations, writeActions };
     });
   }
 
@@ -298,6 +334,11 @@ export class ExecutionRuntime {
    * usage. A READ decision gets its invocation id here — from the platform,
    * before execution — so a crash between decision and execution can never
    * produce a second, different invocation for the same decision.
+   *
+   * (R4-D) A `propose_action` decision becomes a durable ActionProposal in the
+   * same transaction, with a platform proposal id, before anything is
+   * authorized or executed. Its evidence references must be observations of
+   * this task.
    */
   async recordStep(token: LeaseToken, command: RecordStepCommand): Promise<RunStep> {
     if (command.outcome !== 'pending' && command.outcome !== 'recorded') {
@@ -324,6 +365,9 @@ export class ExecutionRuntime {
     const events: PendingEvent[] = [];
     const stored = await this.#store.transaction(async (uow) => {
       const { run, task } = await this.#owned(uow, token);
+      if (observation.source.kind !== 'capability') {
+        throw new PlatformError('validation', 'not_a_read_observation', 'action outcomes are recorded only by the governed action path');
+      }
       const invocationId = observation.source.invocationId;
       const step = await uow.findStepByInvocationId(invocationId);
       if (!step || step.runId !== run.runId || observation.runId !== run.runId || observation.taskId !== task.taskId) {
@@ -493,7 +537,7 @@ export class ExecutionRuntime {
         reason === 'completed' ? { result } : {},
       );
       await uow.releaseLease(token);
-      const event = run.status === 'completed' ? 'run.completed' : run.status === 'abandoned' ? 'run.abandoned' : run.status === 'cancelled' ? 'run.cancelled' : 'run.failed';
+      const event = run.status === 'completed' ? 'run.completed' : run.status === 'abandoned' ? 'run.abandoned' : run.status === 'cancelled' ? 'run.cancelled' : run.status === 'suspended' ? 'run.suspended' : 'run.failed';
       events.push([event, { taskId: task.taskId, runId: run.runId, agentId: task.agentId, workerId: token.owner, terminationReason: reason, failureClass: run.termination?.failureClass ?? null, code: run.termination?.code ?? null, ...run.usage }]);
       return { task, run };
     });
@@ -521,6 +565,7 @@ export class ExecutionRuntime {
       throw new PlatformError('conflict', 'iteration_conflict', `expected iteration ${steps.length + 1}, got ${command.iteration}`);
     }
     const executesRead = command.decision?.type === 'read_capability' && command.outcome === 'pending';
+    const proposal = command.decision?.type === 'propose_action' && command.outcome === 'pending' ? command.decision : null;
     const step = parseOrThrow(runStepSchema, {
       stepId: this.#ids.next(),
       runId: run.runId,
@@ -533,12 +578,41 @@ export class ExecutionRuntime {
       invocationId: executesRead ? this.#ids.next() : null,
       observationId: null,
       contextSnapshotId: command.contextSnapshotId ?? null,
+      proposalId: proposal ? this.#ids.next() : null,
       usage: { inputTokens: command.usage.inputTokens, outputTokens: command.usage.outputTokens },
       correlationId: task.correlationId,
       createdAt: timestamp,
       completedAt: command.outcome === 'pending' ? null : timestamp,
     });
     await uow.insertRunStep(step);
+    if (proposal) {
+      const evidenceRefs = proposal.evidenceRefs ?? [];
+      if (evidenceRefs.length > 0) {
+        const known = new Set((await uow.listObservations(task.taskId)).map((o) => o.observationId));
+        const unknown = evidenceRefs.filter((id) => !known.has(id));
+        if (unknown.length > 0) {
+          throw new PlatformError('validation', 'unknown_evidence', `evidence must reference observations of this task (${unknown.length} unknown)`);
+        }
+      }
+      const stored = parseOrThrow(actionProposalSchema, {
+        proposalId: step.proposalId,
+        taskId: task.taskId,
+        runId: run.runId,
+        stepId: step.stepId,
+        iteration: step.iteration,
+        agentId: run.agentId,
+        agentVersion: run.agentVersion,
+        capabilityId: proposal.capabilityId,
+        arguments: proposal.arguments,
+        evidenceRefs,
+        contextSnapshotId: step.contextSnapshotId,
+        leaseGeneration: token.generation,
+        correlationId: task.correlationId,
+        createdAt: timestamp,
+      });
+      await uow.insertActionProposal(stored);
+      events.push(['action.proposed', { taskId: task.taskId, runId: run.runId, agentId: task.agentId, workerId: token.owner, iteration: step.iteration, proposalId: stored.proposalId, capabilityId: truncate(stored.capabilityId).slice(0, 128), evidenceRefs: evidenceRefs.length }]);
+    }
     // Every step is exactly one model call: charge it with the step.
     const updated: AgentRun = {
       ...run,
@@ -556,16 +630,8 @@ export class ExecutionRuntime {
     return step;
   }
 
-  async #owned(uow: ExecutionUnitOfWork, token: LeaseToken): Promise<{ task: AgentTask; lease: TaskLease; run: AgentRun }> {
-    const locked = await uow.lockTaskLease(token.taskId);
-    if (!locked) throw new PlatformError('not_found', 'task_not_found', `task ${token.taskId} not found`);
-    const lease = assertLeaseHeld(locked.lease, token, locked.dbNow);
-    if (locked.task.status !== 'running') {
-      throw new PlatformError('precondition', 'task_not_runnable', `task is ${locked.task.status}`, { status: locked.task.status });
-    }
-    const run = await uow.findActiveRun(locked.task.taskId);
-    if (!run) throw new PlatformError('precondition', 'task_not_runnable', 'task has no active run');
-    return { task: locked.task, lease, run };
+  #owned(uow: ExecutionUnitOfWork, token: LeaseToken): Promise<OwnedExecution> {
+    return lockOwnedExecution(uow, token);
   }
 
   async #newRun(uow: ExecutionUnitOfWork, task: AgentTask, timestamp: string): Promise<AgentRun> {

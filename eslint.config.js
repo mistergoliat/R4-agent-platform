@@ -126,6 +126,24 @@ export default tseslint.config(
     },
   },
   {
+    files: ['packages/policy-engine/src/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            ...forbiddenEverywhere,
+            { group: ['fastify', 'fastify/*', '@r4/api', '@r4/worker', '**/apps/**'], message: 'Core packages must not depend on transports or apps.' },
+            {
+              group: ['pg', 'pg/*', 'node:*', '@r4/persistence-postgres', '@r4/task-runtime', '@r4/capability-runtime', '@r4/agent-registry', '@r4/agent-kernel', '@r4/model-gateway', '@r4/observability', '@r4/context-compiler'],
+              message: 'The Policy Engine is pure and deterministic: no I/O, no runtime, no model (ADR-017).',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['apps/*/src/main.ts', 'apps/*/src/migrate.ts'],
     rules: { 'no-console': 'off' },
   },

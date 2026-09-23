@@ -36,6 +36,7 @@ export const TELEMETRY_EVENTS = [
   'run.failed',
   'run.cancelled',
   'run.abandoned',
+  'run.suspended',
   'agent.decision',
   'capability.invoked',
   'observation.persisted',
@@ -51,6 +52,21 @@ export const TELEMETRY_EVENTS = [
   'context.snapshot.persisted',
   'context.snapshot.reused',
   'context.compile.completed',
+  // R4-D governed execution (metadata only: ids, classes, codes, attempts — never arguments or results)
+  'action.proposed',
+  'policy.evaluated',
+  'action.command.created',
+  'action.execution.started',
+  'action.execution.replayed',
+  'action.attempt.recorded',
+  'action.reconciliation.started',
+  'action.reconciliation.completed',
+  'action.receipt.persisted',
+  'action.observation.persisted',
+  'action.denied',
+  'action.approval_required',
+  'action.failed',
+  'action.outcome_uncertain',
 ] as const;
 export type TelemetryEventName = (typeof TELEMETRY_EVENTS)[number];
 

@@ -183,7 +183,7 @@ describe('classified failures', () => {
   });
 
   it('unknown decision type → invalid_decision', async () => {
-    const r = await runFailing([{ type: 'structured', data: { type: 'propose_action' } }]);
+    const r = await runFailing([{ type: 'structured', data: { type: 'delegate' } }]);
     expect(r.run.termination).toMatchObject({ reason: 'invalid_decision', code: 'unknown_decision_type' });
   });
 

@@ -1,7 +1,7 @@
-import type { AgentDecision, CompiledContext, CompletionResult, JsonObject, ReadCapabilityDecision, RunStep } from '@r4/contracts';
+import type { AgentDecision, CompiledContext, CompletionResult, JsonObject, ProposeActionDecision, ReadCapabilityDecision, RunStep } from '@r4/contracts';
 import type { ModelError, ModelGateway, ModelUsage } from '@r4/model-gateway';
 import { emitTelemetry, type StructuredLogger } from '@r4/observability';
-import { budgetTerminationCode, checkBeforeModelCall, checkBeforeRead, modelCallTimeout, type BudgetExhaustion } from './budget.js';
+import { budgetTerminationCode, checkBeforeModelCall, checkBeforeRead, checkBeforeWrite, modelCallTimeout, type BudgetExhaustion } from './budget.js';
 import type { ExecutionContext } from './context.js';
 import { parseAgentDecision, type DecisionError } from './decision-parser.js';
 import { renderModelRequest } from './request.js';
@@ -42,7 +42,8 @@ const NO_USAGE: ModelUsage = { inputTokens: 0, outputTokens: 0 };
  * Agent Kernel (R4-C1, context from R4-C2). Runs the loop
  *
  *   load durable state → budget → prepare context (snapshot durable) → model →
- *   validate decision → READ (execute + observation) | respond | complete → repeat
+ *   validate decision → READ (execute + observation) | propose_action (R4-D:
+ *   governed by the platform → observation) | respond | complete → repeat
  *
  * The model decides WHICH decision comes next; the kernel decides whether it
  * is acceptable and the session port (platform) performs it. The kernel keeps
@@ -87,7 +88,7 @@ export class AgentKernel {
 
       const loaded = await this.#call(session, () => session.load());
       if (!loaded.ok) return loaded.outcome;
-      const { context, pendingRead } = loaded.value;
+      const { context, pendingRead, pendingAction } = loaded.value;
       const telemetry = {
         taskId: context.task.taskId,
         runId: context.run.runId,
@@ -101,6 +102,13 @@ export class AgentKernel {
       if (pendingRead) {
         const read = await this.#executeRead(session, pendingRead.step, pendingRead.decision, { ...telemetry, iteration: pendingRead.step.iteration }, true);
         if (read) return read;
+        continue;
+      }
+      // R4-D recovery: an action whose outcome is not observed is resolved by the
+      // platform from its ledger first; the model never continues past it.
+      if (pendingAction) {
+        const action = await this.#executeAction(session, pendingAction.step, pendingAction.decision);
+        if (action) return action;
         continue;
       }
 
@@ -152,7 +160,7 @@ export class AgentKernel {
         ...telemetry,
         outcome: 'accepted',
         decisionType: decision.type,
-        capabilityId: decision.type === 'read_capability' ? decision.capabilityId : null,
+        capabilityId: decision.type === 'read_capability' || decision.type === 'propose_action' ? decision.capabilityId : null,
       });
 
       switch (decision.type) {
@@ -165,6 +173,18 @@ export class AgentKernel {
           if (!recorded.ok) return recorded.outcome;
           const read = await this.#executeRead(session, recorded.value, decision, telemetry, false);
           if (read) return read;
+          continue;
+        }
+        case 'propose_action': {
+          // Before the proposal is recorded, i.e. before any further write can be created.
+          const writeExhausted = checkBeforeWrite(context.budget.limits, context.budget.usage);
+          if (writeExhausted) {
+            return this.#exhausted(session, writeExhausted, step({ decision, outcome: 'refused', error: { code: 'budget_exhausted', message: `${writeExhausted.dimension} reached` }, usage }), telemetry);
+          }
+          const recorded = await this.#call(session, () => session.recordStep(step({ decision, outcome: 'pending', error: null, usage })));
+          if (!recorded.ok) return recorded.outcome;
+          const action = await this.#executeAction(session, recorded.value, decision);
+          if (action) return action;
           continue;
         }
         case 'respond': {
@@ -203,6 +223,35 @@ export class AgentKernel {
           code: 'capability_execution_error',
           message: error instanceof Error ? error.message : 'capability execution failed',
           details: { capabilityId: decision.capabilityId, invocationId: step.invocationId },
+        },
+        result: null,
+        finalStep: null,
+      });
+    }
+  }
+
+  /**
+   * (R4-D) Hands a pending proposal to the platform. Returns an outcome only
+   * when the loop must stop: the platform suspended the run itself, ownership
+   * was lost, or the platform could not resolve the action — in which case
+   * the run fails as a platform fault and the platform keeps any attempt whose
+   * outcome is unknown flagged for reconciliation (never "failed"). Telemetry
+   * of every stage (proposed, evaluated, command, attempts, receipt) is the
+   * platform's.
+   */
+  async #executeAction(session: KernelSession, step: RunStep, decision: ProposeActionDecision): Promise<KernelOutcome | null> {
+    try {
+      const outcome = await session.executeAction(step, decision);
+      return outcome.kind === 'observed' ? null : { kind: 'terminated', termination: outcome.termination };
+    } catch (error) {
+      if (error instanceof KernelInterrupt) return { kind: 'interrupted', cause: error.interruption };
+      this.#logger.error({ err: describeError(error), proposalId: step.proposalId }, 'governed action could not be resolved');
+      return this.#finish(session, {
+        termination: {
+          reason: 'internal_failure',
+          code: 'action_execution_error',
+          message: describeError(error).message,
+          details: { capabilityId: decision.capabilityId, proposalId: step.proposalId },
         },
         result: null,
         finalStep: null,

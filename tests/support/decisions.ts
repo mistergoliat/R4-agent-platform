@@ -83,3 +83,8 @@ export function sequence(entries: readonly ScriptEntry[]): FakeModelScript {
 export function readThenComplete(capabilityId: string, args: Record<string, unknown>): FakeModelScript {
   return (request) => (contextOf(request).observations.length === 0 ? read(capabilityId, args) : completeFromObservations('fact retrieved')(request));
 }
+
+/** R4-D: a proposed action (only capability id, arguments and optional evidence — nothing trusted). */
+export function propose(capabilityId: string, args: Record<string, unknown>, evidenceRefs?: string[]): FakeModelStep {
+  return { type: 'structured', data: { type: 'propose_action', capabilityId, arguments: args, ...(evidenceRefs ? { evidenceRefs } : {}) } };
+}

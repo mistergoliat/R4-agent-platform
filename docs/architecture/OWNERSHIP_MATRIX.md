@@ -1,8 +1,8 @@
 ---
 title: R4 — Ownership Matrix
-status: implemented (R4-B, R4-C1, R4-C2 pending acceptance) + planned rows
+status: implemented (R4-B, R4-C1, R4-C2, R4-D) + planned rows
 owner: architecture
-last_reviewed: 2026-09-22
+last_reviewed: 2026-09-23
 ---
 
 # R4 — Ownership Matrix
@@ -67,17 +67,34 @@ Clases de autoridad:
 | DERIVED_SUMMARY | `context-compiler` (produce), `task-runtime` (persiste con el snapshot) | DERIVED — nunca verdad | `memory_entries` (`derivation_key` único por task) | Inmutable; reemplazado por un summary que lo cubre | por presión de presupuesto (sólo FIXED) | Reutilizado sin recompactar | `unit/context-compiler/compaction`, `integration/context-snapshots` |
 | Conflicto de contexto | `context-compiler` (detecta) | Plataforma expone; sólo AUTHORITATIVE vigente prevalece | En el `compiled_context` | — | Por compilación | Recompilado | `unit/context-compiler/compiler`, `long-context` |
 
+## 1d. Implementado en R4-D
+
+| Concepto | Owner (paquete) | Autoridad | Almacenamiento | Mutabilidad | Ciclo de vida | Ante reinicio | Evaluación |
+|---|---|---|---|---|---|---|---|
+| `propose_action` (AgentDecision) | Modelo (propone), `agent-kernel` (valida estructura) | Cognición validada por plataforma | En su step (`agent_run_steps.decision`) | Inmutable | — | Durable | `unit/agent-kernel/kernel-actions`, `contract/governed-execution-boundaries` |
+| ActionProposal | `task-runtime` (`ExecutionRuntime.recordStep`) | Evidencia de intención (nunca de ejecución) | `action_proposals` | Inmutable (trigger) | con su step, antes de toda autorización | Base de la recuperación (ventana A) | `integration/governed-execution*` |
+| PolicyDecision | `policy-engine` (decide), `task-runtime` (`ActionRuntime`, persiste) | Autoridad de plataforma | `policy_decisions` | Inmutable (trigger) | una por propuesta | Explicable tras cambios de política (id, versión, hash) | `unit/policy-engine`, `integration/governed-execution` |
+| ActionPolicyConfiguration | `apps/worker` (binding) + `DEFAULT_ACTION_POLICY` | Configuración | Proceso; identidad en cada decisión | Por versión (hash) | — | Recargada; decisiones pasadas conservan su versión | `unit/policy-engine` |
+| TrustedActionContext | `task-runtime` (`ActionRuntime`) desde task/run/agente durables | Autoridad de plataforma | En el comando (`trusted_context`) | Inmutable | por comando | La recuperación ejecuta con el mismo contexto | `integration/governed-execution` (escalamiento) |
+| ActionCommand / ActionExecution | `task-runtime` (`ActionRuntime`) | Autoridad de plataforma | `action_executions` | Comando inmutable; `status` por transiciones válidas | `prepared → executing → succeeded \| rejected \| failed`, o `needs_reconciliation` | Mismo comando y misma clave tras crash/takeover | `unit/task-runtime/action-lifecycle`, `integration/governed-execution-recovery` |
+| Execution key | `task-runtime` (`executionKeyFor`) | Autoridad de plataforma | `action_executions.execution_key` (único) | Write-once | con el comando | Nunca regenerada | `contract/governed-execution-boundaries`, SIGKILL |
+| ActionAttempt | `task-runtime` (escribe), `capability-runtime` (`ActionExecutor`, realiza la llamada) | Evidencia operacional | `action_execution_attempts` | Append-only; outcome una vez | fila antes de la llamada → outcome | Intento sin outcome = desconocido ⇒ replay/reconcile por regla | `integration/governed-execution-recovery` |
+| ActionReceipt | `task-runtime` (`ActionRuntime`) | Evidencia (resultado conocido; no verdad de dominio actual) | `action_receipts` | Inmutable (trigger) | uno por ejecución, con la observation | Durable | `integration/governed-execution`, `recovery/governed-write-crash` |
+| Observation de acción | `task-runtime` (`ActionRuntime`) | Evidencia (`OBSERVED`) | `observations` (`source_kind = action`) | Inmutable (trigger, también para READ) | con receipt/decisión/rechazo | Llega al siguiente ContextSnapshot | `integration/governed-execution*` |
+| Write capability (handlers de escritura) | Owner declarado (dominio / pack), gobernada por `capability-runtime` | Dominio (ejecuta) | En memoria (`registerWrite`) | Inmutable por `(id, version)` | registrada en boot con estrategia | Reconstruida deterministamente | `unit/capability-runtime/action-executor` |
+| Budget de writes | `apps/worker` (`R4_EXEC_MAX_WRITE_ACTIONS`, default 0) + `budget.maxWrites` | Configuración | Entorno; consumo = comandos de la task | Por proceso | — | Consumo derivado del ledger | `unit/agent-kernel/kernel-actions`, `integration/governed-execution` |
+| Resultado incierto | `task-runtime` | Plataforma (declara que no sabe) | `action_executions.status = needs_reconciliation` | Hasta resolución (R4-E+) | run `suspended`, task `blocked` | Nunca se asume éxito ni fallo | `integration/governed-execution-recovery` |
+
 ## 2. Planificado (sin implementar; owner candidato)
 
 | Concepto | Fase | Owner candidato | Autoridad |
 |---|---|---|---|
 | Escritura de working/episodic memory desde el loop | R4-D+ | `agent-kernel` + contracts (decisión nueva) | Cognición (nunca verdad) |
 | Fuentes de estado de dominio | R4-F+ | Adapters de dominio vía `ContextSource` | Owner del dominio (AUTHORITATIVE) |
-| Decisiones Delegate / Wait / ProposeAction / Consult / Approval / Handoff | R4-D/E | `agent-kernel` + contracts | Cognición (propuesta) |
-| ActionProposal | R4-D | kernel → `capability-runtime` | Cognición (propuesta) |
-| Policy decision | R4-D | `policy-engine` | Plataforma |
-| ActionReceipt | R4-D | `capability-runtime` | Evidencia |
-| Checkpoints de efectos, cancelación cooperativa de efectos | R4-D | `task-runtime` | Plataforma |
+| Decisiones Delegate / Wait / Consult / Approval / Handoff | R4-E+ | `agent-kernel` + contracts | Cognición (propuesta) |
+| ApprovalRequest / resolución de `REQUIRE_APPROVAL` | R4-E | `human-collaboration` | Humano (decisión) + plataforma (estado) |
+| Reconciliador de ejecuciones `needs_reconciliation`; cancelación cooperativa de efectos en vuelo | R4-E+ | `task-runtime` | Plataforma |
+| Verificación de identidad (`identityAssurance = verified`) | con el primer servicio de identidad | servicio de identidad + plataforma | Plataforma |
 | Consultation / Approval / Handoff | R4-E | `human-collaboration` | Humano (decisión) + plataforma (estado) |
 | Scheduler / wake-ups | R4-E | `scheduler` | Plataforma (despierta; no decide) |
 | Artifact | R4-C/E (a decidir) | `artifacts` | Evidencia versionada |

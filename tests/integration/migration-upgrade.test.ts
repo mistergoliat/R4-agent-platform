@@ -68,12 +68,12 @@ afterAll(async () => {
 
 describe('upgrade from the R4-B schema', () => {
   it('reports exactly the post-R4-B migrations as pending on an R4-B database', async () => {
-    expect((await migrationStatus(pool)).pending).toEqual(['0002_execution_kernel', '0003_context_and_memory']);
+    expect((await migrationStatus(pool)).pending).toEqual(['0002_execution_kernel', '0003_context_and_memory', '0004_governed_execution']);
     expect((await checkDatabaseReadiness(pool)).ok).toBe(false);
   });
 
   it('applies 0002 (and 0003) over existing data and backfills structured terminations', async () => {
-    expect(await migrate(pool)).toEqual({ applied: ['0002_execution_kernel', '0003_context_and_memory'] });
+    expect(await migrate(pool)).toEqual({ applied: ['0002_execution_kernel', '0003_context_and_memory', '0004_governed_execution'] });
     expect((await checkDatabaseReadiness(pool)).ok).toBe(true);
 
     const store = new PostgresTaskRuntimeStore(pool);

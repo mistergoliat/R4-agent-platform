@@ -157,6 +157,7 @@ describe('kernel recovery and interruption', () => {
         session.failNext.load = new KernelInterrupt('lease_lost');
         return o;
       },
+      executeAction: (s, d) => session.executeAction(s, d),
       finish: (e) => session.finish(e),
     });
     expect(out1).toEqual({ kind: 'interrupted', cause: 'lease_lost' });

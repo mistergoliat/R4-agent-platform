@@ -9,13 +9,16 @@ import {
   type Goal,
   type JsonValue,
   type Observation,
+  type ProposeActionDecision,
   type ReadCapabilityDecision,
   type RunStep,
 } from '@r4/contracts';
 import {
   KernelInterrupt,
   buildExecutionState,
+  type ActionOutcome,
   type CapabilityDescriptor,
+  type KernelTermination,
   type ExecutionContext,
   type ExecutionPolicy,
   type ExecutionState,
@@ -34,6 +37,8 @@ export const TEST_POLICY: ExecutionPolicy = {
   maxReadCapabilityCalls: 20,
   maxRunDurationMs: 60_000,
   modelCallTimeoutMs: 5_000,
+  // R4-D: like an empty worker environment, no writes unless a test opts in.
+  maxWriteActions: 0,
 };
 
 const T0 = '2026-01-01T00:00:00.000Z';
@@ -145,6 +150,13 @@ export interface MemorySessionOptions {
   readonly policy?: Partial<ExecutionPolicy>;
   /** Produces the observation outcome for a READ; default echoes the arguments. */
   readonly read?: (decision: ReadCapabilityDecision) => { outcome: Observation['outcome']; payload: JsonValue | null; errorCode?: string } | Promise<{ outcome: Observation['outcome']; payload: JsonValue | null; errorCode?: string }>;
+  /**
+   * R4-D: what the platform does with a proposed action (default: a
+   * receipt-backed success). `suspend` simulates a run the platform ended.
+   */
+  readonly action?: (decision: ProposeActionDecision) =>
+    | { outcome: Observation['outcome']; payload?: JsonValue | null; errorCode?: string }
+    | { suspend: KernelTermination };
   /** Clock for elapsed-time budgets. */
   readonly now?: () => Date;
   /** R4-C2: the compiler used by prepareContext (default: platform sources, default policy). */
@@ -175,9 +187,10 @@ export class MemorySession implements KernelSession {
   readonly steps: RunStep[] = [];
   readonly observations: Observation[] = [];
   readonly reads: ReadCapabilityDecision[] = [];
+  readonly actions: ProposeActionDecision[] = [];
   ending: RunEnding | null = null;
   /** Failure injection: throw from the named method on its next call. */
-  readonly failNext: Partial<Record<'load' | 'prepareContext' | 'recordStep' | 'executeRead' | 'finish', Error>> = {};
+  readonly failNext: Partial<Record<'load' | 'prepareContext' | 'recordStep' | 'executeRead' | 'executeAction' | 'finish', Error>> = {};
   readonly snapshots: MemorySnapshot[] = [];
   readonly compiler: ContextCompiler;
   readonly #options: MemorySessionOptions;
@@ -205,6 +218,7 @@ export class MemorySession implements KernelSession {
         capabilities: this.#options.capabilities ?? [READ_FACT, WRITE_THING],
         policy: { ...TEST_POLICY, ...this.#options.policy },
         now: this.#options.now?.() ?? new Date(this.run.startedAt),
+        writeActions: this.actions.length,
       }),
     );
   }
@@ -237,7 +251,7 @@ export class MemorySession implements KernelSession {
 
   async executeRead(step: RunStep, decision: ReadCapabilityDecision): Promise<Observation> {
     this.#inject('executeRead');
-    const existing = this.observations.find((o) => o.source.invocationId === step.invocationId);
+    const existing = this.observations.find((o) => o.source.kind === 'capability' && o.source.invocationId === step.invocationId);
     if (existing) return existing;
     this.reads.push(decision);
     const produced = this.#options.read ? await this.#options.read(decision) : { outcome: 'succeeded' as const, payload: decision.arguments };
@@ -261,6 +275,38 @@ export class MemorySession implements KernelSession {
     return observation;
   }
 
+  /** In-memory stand-in for the governed path: NOT a runtime implementation (no policy, no ledger). */
+  executeAction(step: RunStep, decision: ProposeActionDecision): Promise<ActionOutcome> {
+    this.#inject('executeAction');
+    const existing = this.observations.find((o) => o.source.kind === 'action' && o.source.proposalId === step.proposalId);
+    if (existing) return Promise.resolve({ kind: 'observed', observation: existing });
+    this.actions.push(decision);
+    const produced = this.#options.action?.(decision) ?? { outcome: 'succeeded' as const, payload: { applied: true } };
+    if ('suspend' in produced) {
+      this.ending = { termination: produced.suspend, result: null, finalStep: null };
+      return Promise.resolve({ kind: 'suspended', termination: produced.suspend });
+    }
+    const receiptId = produced.outcome === 'succeeded' ? uuidv7() : null;
+    const observation: Observation = {
+      observationId: uuidv7(),
+      taskId: this.task.taskId,
+      runId: this.run.runId,
+      agentId: this.agent.agentId,
+      source: { kind: 'action', capabilityId: decision.capabilityId, capabilityVersion: 1, proposalId: step.proposalId!, policyDecisionId: uuidv7(), executionId: receiptId ? uuidv7() : null, receiptId },
+      outcome: produced.outcome,
+      payload: produced.outcome === 'succeeded' ? (produced.payload ?? null) : null,
+      error: produced.outcome === 'succeeded' ? null : { code: (produced.errorCode ?? 'policy_denied') as 'policy_denied', message: 'not executed', details: null },
+      observedAt: T0,
+      validUntil: null,
+      provenance: {},
+      correlationId: this.task.correlationId,
+    };
+    this.observations.push(observation);
+    const index = this.steps.findIndex((s) => s.stepId === step.stepId);
+    this.steps[index] = { ...step, outcome: 'observed', observationId: observation.observationId, completedAt: T0 };
+    return Promise.resolve({ kind: 'observed', observation });
+  }
+
   finish(ending: RunEnding): Promise<void> {
     this.#inject('finish');
     if (ending.finalStep) this.steps.push(this.#toStep(ending.finalStep));
@@ -282,6 +328,7 @@ export class MemorySession implements KernelSession {
       invocationId: executesRead ? uuidv7() : null,
       observationId: null,
       contextSnapshotId: record.contextSnapshotId ?? null,
+      proposalId: record.decision?.type === 'propose_action' && record.outcome === 'pending' ? uuidv7() : null,
       usage: record.usage,
       correlationId: this.task.correlationId,
       createdAt: T0,

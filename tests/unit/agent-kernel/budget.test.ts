@@ -11,7 +11,7 @@ import {
 import { reasonCodeSchema } from '@r4/contracts';
 import { TEST_POLICY } from '../../support/kernel-fixtures.js';
 
-const fresh: ExecutionUsage = { iterations: 0, modelCalls: 0, readCapabilityCalls: 0, tokens: 0, elapsedMs: 0 };
+const fresh: ExecutionUsage = { iterations: 0, modelCalls: 0, readCapabilityCalls: 0, tokens: 0, elapsedMs: 0, writeActions: 0 };
 
 describe('budget controller', () => {
   it('uses policy ceilings when the task declares nothing', () => {
@@ -22,6 +22,7 @@ describe('budget controller', () => {
       maxRunDurationMs: 60_000,
       maxTokens: null,
       modelCallTimeoutMs: 5_000,
+      maxWriteActions: 0,
     });
   });
 
@@ -48,7 +49,7 @@ describe('budget controller', () => {
   });
 
   it('reports a deterministic dimension when several are exhausted', () => {
-    const all = { iterations: 99, modelCalls: 99, readCapabilityCalls: 99, tokens: 99, elapsedMs: 999_999 };
+    const all = { iterations: 99, modelCalls: 99, readCapabilityCalls: 99, tokens: 99, elapsedMs: 999_999, writeActions: 99 };
     expect(checkBeforeModelCall(resolveExecutionLimits(TEST_POLICY, {}), all)?.dimension).toBe('maxRunDurationMs');
   });
 

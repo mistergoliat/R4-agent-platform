@@ -12,6 +12,12 @@ export interface ExecutionPolicy {
   readonly maxRunDurationMs: number;
   /** Upper bound for one model call; also capped by the remaining run duration. */
   readonly modelCallTimeoutMs: number;
+  /**
+   * (R4-D) Write actions (commands created after an ALLOW) a task may perform.
+   * Operator configuration, tightened by the task's `maxWrites`; 0 means the
+   * worker performs no writes at all.
+   */
+  readonly maxWriteActions: number;
 }
 
 /** The limits one run executes under. */
@@ -23,15 +29,19 @@ export interface ExecutionLimits {
   /** From the task budget only; null when the task declares none. */
   readonly maxTokens: number | null;
   readonly modelCallTimeoutMs: number;
+  /** (R4-D) Task-scoped. */
+  readonly maxWriteActions: number;
 }
 
-/** Consumption so far, derived from the durable step log — never from process memory. */
+/** Consumption so far, derived from durable state (step log, action ledger) — never from process memory. */
 export interface ExecutionUsage {
   readonly iterations: number;
   readonly modelCalls: number;
   readonly readCapabilityCalls: number;
   readonly tokens: number;
   readonly elapsedMs: number;
+  /** (R4-D) Write commands created for the task so far. */
+  readonly writeActions: number;
 }
 
 export type BudgetDimension =
@@ -41,7 +51,9 @@ export type BudgetDimension =
   | 'maxRunDurationMs'
   | 'maxTokens'
   /** R4-C2: the context the policy requires does not fit the context budget. */
-  | 'maxContextTokens';
+  | 'maxContextTokens'
+  /** R4-D: no further write action may be created for the task. */
+  | 'maxWriteActions';
 
 /** Stable, machine-readable termination code for a dimension (snake_case). */
 export function budgetTerminationCode(dimension: BudgetDimension): string {
@@ -61,6 +73,7 @@ export function assertExecutionPolicy(policy: ExecutionPolicy): void {
     ['maxReadCapabilityCalls', policy.maxReadCapabilityCalls, 0],
     ['maxRunDurationMs', policy.maxRunDurationMs, 1],
     ['modelCallTimeoutMs', policy.modelCallTimeoutMs, 1],
+    ['maxWriteActions', policy.maxWriteActions, 0],
   ];
   for (const [name, value, min] of entries) {
     if (!Number.isInteger(value) || value < min) {
@@ -78,6 +91,7 @@ export function resolveExecutionLimits(policy: ExecutionPolicy, taskBudget: Budg
     maxRunDurationMs: tighter(policy.maxRunDurationMs, taskBudget.maxDurationMs),
     maxTokens: taskBudget.maxTokens ?? null,
     modelCallTimeoutMs: policy.modelCallTimeoutMs,
+    maxWriteActions: tighter(policy.maxWriteActions, taskBudget.maxWrites),
   };
 }
 
@@ -98,6 +112,18 @@ export function checkBeforeModelCall(limits: ExecutionLimits, usage: ExecutionUs
 export function checkBeforeRead(limits: ExecutionLimits, usage: ExecutionUsage): BudgetExhaustion | null {
   if (usage.readCapabilityCalls >= limits.maxReadCapabilityCalls) {
     return { dimension: 'maxReadCapabilityCalls', limit: limits.maxReadCapabilityCalls, used: usage.readCapabilityCalls };
+  }
+  return null;
+}
+
+/**
+ * (R4-D) Checked before a proposed action is recorded, i.e. before any
+ * further write execution can be created. Proposals that policy denies
+ * create no command and consume nothing.
+ */
+export function checkBeforeWrite(limits: ExecutionLimits, usage: ExecutionUsage): BudgetExhaustion | null {
+  if (usage.writeActions >= limits.maxWriteActions) {
+    return { dimension: 'maxWriteActions', limit: limits.maxWriteActions, used: usage.writeActions };
   }
   return null;
 }

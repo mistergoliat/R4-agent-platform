@@ -10,6 +10,7 @@
       "@r4/contracts": ["./packages/contracts/src/index.ts"],
       "@r4/observability": ["./packages/observability/src/index.ts"],
       "@r4/model-gateway": ["./packages/model-gateway/src/index.ts"],
+      "@r4/policy-engine": ["./packages/policy-engine/src/index.ts"],
       "@r4/capability-runtime": ["./packages/capability-runtime/src/index.ts"],
       "@r4/task-runtime": ["./packages/task-runtime/src/index.ts"],
       "@r4/agent-registry": ["./packages/agent-registry/src/index.ts"],

@@ -50,11 +50,11 @@ describe('Agent Kernel boundary (ADR-009)', () => {
 });
 
 describe('AgentDecision protocol', () => {
-  it('is the C1 subset of the PRD §7 decisions, and nothing else', () => {
-    expect([...AGENT_DECISION_TYPES]).toEqual(['read_capability', 'respond', 'complete']);
+  it('is the C1 subset of the PRD §7 decisions plus R4-D propose_action, and nothing else', () => {
+    expect([...AGENT_DECISION_TYPES]).toEqual(['read_capability', 'respond', 'complete', 'propose_action']);
   });
 
-  it('exposes no vendor, model or effect fields to the model', () => {
+  it('exposes no vendor, model or trusted effect fields to the model', () => {
     const names = new Set<string>();
     const walk = (node: unknown): void => {
       if (Array.isArray(node)) node.forEach(walk);
@@ -65,11 +65,12 @@ describe('AgentDecision protocol', () => {
       }
     };
     walk(AGENT_DECISION_JSON_SCHEMA);
-    expect([...names].sort()).toEqual(['arguments', 'capabilityId', 'content', 'data', 'evidence', 'result', 'summary', 'type']);
+    // R4-D adds only `evidenceRefs` (observation ids the platform verifies).
+    expect([...names].sort()).toEqual(['arguments', 'capabilityId', 'content', 'data', 'evidence', 'evidenceRefs', 'result', 'summary', 'type']);
   });
 });
 
-describe('READ-only execution (write audit)', () => {
+describe('READ invocation boundary (write audit)', () => {
   it('has exactly one call site for capability handlers: the invoker', () => {
     const callers = runtimeSources.filter((file) => /\.handler\(/.test(readFileSync(file, 'utf8'))).map((file) => relative(ROOT, file).split('\\').join('/'));
     expect(callers).toEqual(['packages/capability-runtime/src/invoker.ts']);

@@ -99,8 +99,10 @@ describe('C2 contracts are provider- and domain-neutral', () => {
 });
 
 describe('no model-written canonical truth', () => {
-  it('the model can still only read, respond or complete — no memory or state writes', () => {
-    expect([...AGENT_DECISION_TYPES]).toEqual(['read_capability', 'respond', 'complete']);
+  it('the model can still only read, respond, complete or PROPOSE — no memory or state writes', () => {
+    // R4-D adds propose_action: a proposal the platform governs, never a direct write of memory or state.
+    expect([...AGENT_DECISION_TYPES]).toEqual(['read_capability', 'respond', 'complete', 'propose_action']);
+    for (const type of AGENT_DECISION_TYPES) expect(type).not.toMatch(/memory|state|write|execute|commit/);
   });
 
   it('no memory type is AUTHORITATIVE', () => {

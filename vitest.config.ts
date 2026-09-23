@@ -8,6 +8,7 @@ const alias = {
   '@r4/contracts': src('./packages/contracts/src/index.ts'),
   '@r4/observability': src('./packages/observability/src/index.ts'),
   '@r4/model-gateway': src('./packages/model-gateway/src/index.ts'),
+  '@r4/policy-engine': src('./packages/policy-engine/src/index.ts'),
   '@r4/capability-runtime': src('./packages/capability-runtime/src/index.ts'),
   '@r4/task-runtime': src('./packages/task-runtime/src/index.ts'),
   '@r4/agent-registry': src('./packages/agent-registry/src/index.ts'),

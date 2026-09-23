@@ -4,10 +4,12 @@ import {
   capabilityIdSchema,
   correlationIdSchema,
   positiveIntSchema,
+  principalSchema,
   scopeSchema,
   slugSchema,
   uniqueArray,
   uuidSchema,
+  type Principal,
 } from './primitives.js';
 
 /**
@@ -25,6 +27,22 @@ export const RISK_CLASSES = [
 ] as const;
 export const riskClassSchema = z.enum(RISK_CLASSES);
 export type RiskClass = z.infer<typeof riskClassSchema>;
+
+/**
+ * How a write capability's owner makes a repeated execution with the same
+ * platform execution key safe (R4-D, ADR-018). Both require the domain to
+ * apply at most one effect per execution key.
+ *
+ * - idempotent_replay       executing again with the same key returns the
+ *                           original outcome instead of a second effect
+ * - reconcile_before_retry  the outcome can be looked up by key; the platform
+ *                           must reconcile before it may execute again
+ *
+ * A write without a declared strategy is never executed.
+ */
+export const WRITE_RECOVERY_STRATEGIES = ['idempotent_replay', 'reconcile_before_retry'] as const;
+export const writeRecoveryStrategySchema = z.enum(WRITE_RECOVERY_STRATEGIES);
+export type WriteRecoveryStrategy = z.infer<typeof writeRecoveryStrategySchema>;
 
 /** A JSON Schema document, as exposed to models and external consumers. */
 export const jsonSchemaDocumentSchema = z.record(z.string(), z.unknown());
@@ -58,6 +76,8 @@ export const capabilityDefinitionSchema = z
     auditLevel: z.enum(['minimal', 'standard', 'full']),
     inputSchema: jsonSchemaDocumentSchema,
     outputSchema: jsonSchemaDocumentSchema,
+    /** (R4-D) Declared only by write capabilities registered with write handlers. */
+    writeRecovery: writeRecoveryStrategySchema.optional(),
   })
   .superRefine((definition, ctx) => {
     // Blind retries of writes are forbidden: a retried non-read must be keyed.
@@ -79,6 +99,12 @@ export const capabilityDefinitionSchema = z
         message: 'READ capabilities must be safely repeatable',
       });
     }
+    if (definition.writeRecovery !== undefined && definition.riskClass === 'READ') {
+      ctx.addIssue({ code: 'custom', path: ['writeRecovery'], message: 'READ capabilities have no write recovery strategy' });
+    }
+    if (definition.writeRecovery !== undefined && definition.idempotency !== 'key_required') {
+      ctx.addIssue({ code: 'custom', path: ['writeRecovery'], message: 'a write recovery strategy requires idempotency "key_required" (execution keys)' });
+    }
   });
 export type CapabilityDefinition = z.infer<typeof capabilityDefinitionSchema>;
 
@@ -95,6 +121,41 @@ export const trustedExecutionContextSchema = z.strictObject({
   grantedScopes: uniqueArray(scopeSchema),
 });
 export type TrustedExecutionContext = z.infer<typeof trustedExecutionContextSchema>;
+
+/**
+ * How strongly the platform has established who a task acts for. Same scale
+ * as `identityRequirement`. Derived by the platform from the resolved
+ * principal — never from model output or arguments.
+ */
+export const IDENTITY_ASSURANCES = ['none', 'provisional', 'verified'] as const;
+export const identityAssuranceSchema = z.enum(IDENTITY_ASSURANCES);
+export type IdentityAssurance = z.infer<typeof identityAssuranceSchema>;
+
+export function identityAssuranceRank(level: IdentityAssurance): number {
+  return IDENTITY_ASSURANCES.indexOf(level);
+}
+
+/**
+ * R4-D: the platform's assurance for a resolved principal. No identity
+ * verification service exists yet, so nothing is `verified`: an
+ * authenticated principal is `provisional`, an unauthenticated one `none`.
+ */
+export function identityAssuranceOf(principal: Principal): IdentityAssurance {
+  return principal.kind === 'unauthenticated' ? 'none' : 'provisional';
+}
+
+/**
+ * The trusted context of a governed action (R4-D): the execution context plus
+ * who the task acts for and how well that is established. Built by the
+ * platform from durable task, run and agent records and persisted with the
+ * command, so recovery executes with exactly the same context. There is no
+ * tenant: R4 has no tenancy model yet (not invented here).
+ */
+export const trustedActionContextSchema = trustedExecutionContextSchema.extend({
+  actor: principalSchema,
+  identityAssurance: identityAssuranceSchema,
+});
+export type TrustedActionContext = z.infer<typeof trustedActionContextSchema>;
 
 /**
  * What an agent asks for. Untrusted end to end: the id may not exist and the

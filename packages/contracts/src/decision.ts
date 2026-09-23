@@ -14,12 +14,20 @@ import { jsonObjectSchema, uniqueArray, uuidSchema } from './primitives.js';
  * - complete: declare the task finished with a structured result. It cannot
  *   cause side effects: the result is stored as data and nothing else.
  *
+ * - propose_action (R4-D): ask the platform to produce an effect through one
+ *   registered write capability. It is intent only: the platform persists the
+ *   proposal, decides by deterministic policy whether it may execute, runs it
+ *   with a platform execution key and reports the outcome as an observation
+ *   backed by a receipt. The model supplies only the capability id, the
+ *   arguments and (optionally) the observations it relies on — never keys,
+ *   decisions, risk, permissions, identity, receipts or execution status.
+ *
  * Every object is strict: unknown keys are a protocol violation, never
  * silently dropped. This also keeps free-form reasoning out of stored decisions.
- * The remaining PRD §7 decisions (ProposeAction, Delegate, Wait, ...) arrive
- * with the phases that implement them.
+ * The remaining PRD §7 decisions (Delegate, Wait, ...) arrive with the phases
+ * that implement them.
  */
-export const AGENT_DECISION_TYPES = ['read_capability', 'respond', 'complete'] as const;
+export const AGENT_DECISION_TYPES = ['read_capability', 'respond', 'complete', 'propose_action'] as const;
 export const agentDecisionTypeSchema = z.enum(AGENT_DECISION_TYPES);
 export type AgentDecisionType = z.infer<typeof agentDecisionTypeSchema>;
 
@@ -51,10 +59,21 @@ export const completeDecisionSchema = z.strictObject({
 });
 export type CompleteDecision = z.infer<typeof completeDecisionSchema>;
 
+export const proposeActionDecisionSchema = z.strictObject({
+  type: z.literal('propose_action'),
+  /** As requested; existence, class and permission are checked by the platform. */
+  capabilityId: z.string().min(1).max(256),
+  arguments: jsonObjectSchema,
+  /** Observation ids the proposal relies on; each must exist for the task. */
+  evidenceRefs: uniqueArray(uuidSchema).max(100).optional(),
+});
+export type ProposeActionDecision = z.infer<typeof proposeActionDecisionSchema>;
+
 export const agentDecisionSchema = z.discriminatedUnion('type', [
   readCapabilityDecisionSchema,
   respondDecisionSchema,
   completeDecisionSchema,
+  proposeActionDecisionSchema,
 ]);
 export type AgentDecision = z.infer<typeof agentDecisionSchema>;
 
@@ -68,9 +87,12 @@ export const DECISION_ERROR_CODES = [
   'invalid_decision_schema',
   /** The capability is not among those offered to this run. */
   'unknown_capability',
-  /** The capability exists for the agent but is not READ: not executable in C1. */
+  /**
+   * The capability exists for the agent but not for this decision type: a
+   * non-READ asked for with `read_capability`, or a READ with `propose_action`.
+   */
   'capability_not_permitted',
-  /** `complete` cites evidence that is not an observation of this task. */
+  /** `complete` or `propose_action` cites evidence that is not an observation of this task. */
   'unknown_evidence',
 ] as const;
 export const decisionErrorCodeSchema = z.enum(DECISION_ERROR_CODES);

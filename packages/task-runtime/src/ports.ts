@@ -1,7 +1,12 @@
 import type {
+  ActionAttempt,
+  ActionExecution,
+  ActionProposal,
+  ActionReceipt,
   AgentRun,
   AgentTask,
   ContextSnapshot,
+  PolicyDecision,
   Goal,
   LeaseToken,
   MemoryEntry,
@@ -53,6 +58,13 @@ export interface TaskUnitOfWork {
   findActiveRun(taskId: string): Promise<AgentRun | null>;
   nextRunSequence(taskId: string): Promise<number>;
   updateRun(run: AgentRun, expectedVersion: number): Promise<boolean>;
+  /**
+   * (R4-D) When a run ends, every action execution of it still `executing`
+   * (an attempt's outcome is unknown) becomes `needs_reconciliation`, so no
+   * exit path — finish, suspension, abandonment or cancellation — leaves an
+   * ambiguous effect looking like anything but what it is. Returns the count.
+   */
+  flagUnresolvedActionExecutions(runId: string, timestamp: string): Promise<number>;
 }
 
 /** Narrow view of the Agent Registry the Task Runtime needs. */
@@ -124,4 +136,24 @@ export interface ExecutionUnitOfWork extends TaskUnitOfWork {
    * derivation key): the stored entry is returned when it already exists.
    */
   insertMemoryEntry(entry: MemoryEntry): Promise<MemoryEntry>;
+
+  // R4-D governed execution. Proposals, decisions, attempts (once finished)
+  // and receipts are immutable: the store must refuse any other change.
+  insertActionProposal(proposal: ActionProposal): Promise<void>;
+  findActionProposal(proposalId: string): Promise<ActionProposal | null>;
+  insertPolicyDecision(decision: PolicyDecision): Promise<void>;
+  findPolicyDecisionByProposal(proposalId: string): Promise<PolicyDecision | null>;
+  insertActionExecution(execution: ActionExecution): Promise<void>;
+  findActionExecutionByProposal(proposalId: string): Promise<ActionExecution | null>;
+  /** Status change only (the command is immutable). Optimistic: false when the version moved. */
+  updateActionExecutionStatus(execution: ActionExecution, expectedVersion: number): Promise<boolean>;
+  /** Commands created for the task (write budget). */
+  countActionExecutions(taskId: string): Promise<number>;
+  listActionAttempts(executionId: string): Promise<ActionAttempt[]>;
+  insertActionAttempt(attempt: ActionAttempt): Promise<void>;
+  /** Records an attempt's outcome, once. False when it already has one. */
+  finishActionAttempt(attempt: ActionAttempt): Promise<boolean>;
+  insertActionReceipt(receipt: ActionReceipt): Promise<void>;
+  findActionReceiptByExecution(executionId: string): Promise<ActionReceipt | null>;
+  findObservationByProposal(proposalId: string): Promise<Observation | null>;
 }

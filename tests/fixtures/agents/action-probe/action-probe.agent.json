@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "agentId": "action-probe",
+  "version": 1,
+  "displayName": "Action Probe",
+  "description": "Test-only, domain-free agent that exercises governed execution (R4-D): it may propose writes to the generic test ledger. It has no business purpose.",
+  "instructions": "You are an action probe. Propose effects only through granted capabilities. Never claim an effect that no receipt-backed observation confirms.",
+  "taskTypes": ["probe.record_update"],
+  "capabilityScopes": ["platform_test.read", "platform_test.write"],
+  "skills": [],
+  "modelRequirements": {
+    "reasoningLevel": "low",
+    "latencySensitivity": "medium",
+    "costSensitivity": "high",
+    "structuredOutput": true,
+    "toolUse": false
+  },
+  "contextPolicy": {},
+  "budgets": {
+    "maxDurationMs": 120000,
+    "maxModelCalls": 20,
+    "maxCapabilityCalls": 20,
+    "maxWrites": 5,
+    "maxDelegations": 0
+  },
+  "delegationPolicy": {
+    "mode": "none",
+    "allowedAgentIds": []
+  },
+  "evaluationProfile": null
+}

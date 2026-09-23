@@ -35,7 +35,7 @@ describe('minimal execution context', () => {
       steps: [],
       observations: [],
       capabilities: [],
-      policy: { maxIterations: 1, maxModelCalls: 1, maxReadCapabilityCalls: 1, maxRunDurationMs: 1_000, modelCallTimeoutMs: 1 },
+      policy: { maxIterations: 1, maxModelCalls: 1, maxReadCapabilityCalls: 1, maxRunDurationMs: 1_000, modelCallTimeoutMs: 1, maxWriteActions: 0 },
       now: new Date(Date.parse(session.run.startedAt) + 1_234),
     });
     expect(state.context.budget.usage.elapsedMs).toBe(1_234);

@@ -114,7 +114,13 @@ export const capabilitySource: ContextSource = new MappingSource(PLATFORM_SOURCE
     kind: 'capability',
     authority: 'AUTHORITATIVE',
     temporality: 'live',
-    content: { capabilityId: capability.capabilityId, version: capability.version, description: capability.description, inputSchema: capability.inputSchema as JsonValue },
+    content: {
+      capabilityId: capability.capabilityId,
+      version: capability.version,
+      description: capability.description,
+      inputSchema: capability.inputSchema as JsonValue,
+      ...(capability.riskClass === undefined ? {} : { riskClass: capability.riskClass }),
+    },
     provenance: { recordType: 'capability_definition', recordId: capability.capabilityId, recordVersion: String(capability.version) },
     createdAt: task.createdAt,
   })),
@@ -139,6 +145,8 @@ export const observationSource: ContextSource = new MappingSource(PLATFORM_SOURC
       outcome: o.outcome,
       payload: o.payload,
       error: o.error,
+      // R4-D: an action outcome says which proposal it answers and whether a receipt backs it.
+      ...(o.source.kind === 'action' ? { action: { proposalId: o.source.proposalId, receiptId: o.source.receiptId } } : {}),
     },
     provenance: {
       recordType: 'observation',

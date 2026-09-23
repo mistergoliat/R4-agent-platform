@@ -1,8 +1,8 @@
 ---
-title: R4 — Arquitectura implementada (R4-B + R4-C1 + R4-C2)
-status: implemented (R4-B, R4-C1), R4-C2 pending acceptance
+title: R4 — Arquitectura implementada (R4-B + R4-C1 + R4-C2 + R4-D)
+status: implemented (R4-B, R4-C1, R4-C2, R4-D)
 owner: architecture
-last_reviewed: 2026-09-22
+last_reviewed: 2026-09-23
 depends_on:
   - R4_AGENTIC_PLATFORM_MOTIVATION_AND_CONSTRAINTS.md
   - R4_AGENTIC_PLATFORM_PRD_AND_ROADMAP.md
@@ -21,17 +21,22 @@ depends_on:
   - ../adr/ADR-013-memory-classification.md
   - ../adr/ADR-014-compaction-is-non-authoritative.md
   - ../adr/ADR-015-context-budget-policy-and-measurement.md
+  - ../adr/ADR-016-action-proposal-receipt-boundary.md
+  - ../adr/ADR-017-policy-engine-boundary.md
+  - ../adr/ADR-018-write-idempotency-and-reconciliation.md
+  - ../adr/ADR-019-external-side-effect-recovery.md
+  - ../adr/ADR-020-receipt-immutability.md
 ---
 
-# R4 — Arquitectura implementada (R4-B + R4-C1 + R4-C2)
+# R4 — Arquitectura implementada (R4-B + R4-C1 + R4-C2 + R4-D)
 
 Este documento describe lo que **existe** en el repositorio tras R4-B (Platform
-Skeleton), R4-C1 (Execution Kernel) y R4-C2 (Context Compiler & Memory
-Boundaries). No describe la arquitectura final de R4: la Constitución y el PRD
+Skeleton), R4-C1 (Execution Kernel), R4-C2 (Context Compiler & Memory
+Boundaries) y R4-D (Governed Execution). No describe la arquitectura final de R4: la Constitución y el PRD
 siguen siendo la autoridad (Constitución > PRD > ADR > tarea). Lo que aquí
 figura como "seam" es un punto de extensión deliberado, no una funcionalidad
 implementada. Las secciones 1–10 describen R4-B, actualizadas donde C1/C2 las
-cambiaron; la sección 11 describe R4-C1 y la 12 R4-C2.
+cambiaron; la sección 11 describe R4-C1, la 12 R4-C2 y la 13 R4-D.
 
 ## 1. Objetivo de R4-B
 
@@ -66,6 +71,7 @@ R4-agent-platform/
 │   ├── agent-registry/         Carga, valida y registra AgentDefinitions inmutables y versionadas.
 │   ├── agent-kernel/           (C1) Loop model → decisión → READ → observation. Sin estado ni persistencia.
 │   ├── context-compiler/       (C2) Contexto estructurado por decisión: sources, autoridad, frescura, budget, compaction.
+│   ├── policy-engine/          (D) Autorización determinista de acciones: reglas tipadas, versionadas y con hash. Pura.
 │   └── persistence-postgres/   Migraciones + implementación PostgreSQL de los ports.
 ├── agents/
 │   └── platform-probe/         Única definición de agente: sonda sin dominio para R4-B.
@@ -74,9 +80,8 @@ R4-agent-platform/
 ```
 
 Paquetes del árbol sugerido que **no** se crearon porque no corresponden a
-R4-B/C1/C2: `memory` (la memoria de C2 es un contrato + tabla + source, sin
-runtime propio; ADR-013), `artifacts`,
-`policy-engine`, `scheduler`, `human-collaboration`, `evaluation`, `agents/sales`,
+R4-B/C1/C2/D: `memory` (la memoria de C2 es un contrato + tabla + source, sin
+runtime propio; ADR-013), `artifacts`, `scheduler`, `human-collaboration`, `evaluation`, `agents/sales`,
 `agents/quality-auditor`, `agents/marketing-analyst`, `adapters/*`. Ver
 [roadmap](../roadmap/R4_DELIVERY_ROADMAP.md).
 
@@ -97,14 +102,16 @@ model-gateway   capability-runtime   task-runtime   agent-registry   context-com
 agent-kernel (C1)      └──────── persistence-postgres ───┴──────────────┘ (MemoryReader)
    ▲                                      ▲
    │                                 apps/api  (también usa task-runtime, agent-registry)
-   └──────────── apps/worker (C1/C2): kernel + context-compiler + task-runtime +
-                 capability-runtime + agent-registry + persistence-postgres + model-gateway
+   └──────────── apps/worker (C1/C2/D): kernel + context-compiler + task-runtime +
+                 capability-runtime + agent-registry + persistence-postgres + model-gateway +
+                 policy-engine (D; sólo contracts + zod: pura)
 ```
 
 `agent-kernel` depende sólo de `contracts`, `observability` y la interfaz de
 `model-gateway` — no del compilador de contexto. `context-compiler` depende sólo
-de `contracts` y `observability`. `apps/worker` no depende de `apps/api` ni de
-Fastify.
+de `contracts` y `observability`. (D) `policy-engine` depende sólo de `contracts`
+y `zod`; `task-runtime` usa el puerto `ActionAuthorizer` de `contracts`, nunca el
+motor. `apps/worker` no depende de `apps/api` ni de Fastify.
 
 Reglas duras (fallan el build si se violan):
 
@@ -117,7 +124,9 @@ Reglas duras (fallan el build si se violan):
 | `agent-kernel` no conoce `context-compiler`; el compilador no alcanza almacenamiento, runtimes, kernel ni modelos | ESLint + allow-list + `tests/contract/context-boundaries.test.ts` |
 | Sólo fuentes de plataforma producen ítems `AUTHORITATIVE`; ninguna memoria es autoritativa; el modelo no escribe memoria ni estado | `context-boundaries.test.ts` |
 | `apps/worker` independiente de `apps/api` y de HTTP | `dependency-boundaries.test.ts` |
-| Un único call site de handlers de capability (el invoker); sin bypass de writes | `execution-kernel-boundaries.test.ts` |
+| Un único call site de handlers de capability (el invoker); sin rutas de desarrollo para writes | `execution-kernel-boundaries.test.ts` |
+| (D) Handlers de escritura: único call site = `ActionExecutor`; política sólo evaluada por `ActionRuntime`; única fuente de execution keys; kernel sin acceso a writes; ningún campo confiable en `AgentDecision`; sin detector textual | `tests/contract/governed-execution-boundaries.test.ts` |
+| (D) `policy-engine` puro (sin I/O, runtimes, modelo ni observabilidad); runtimes independientes del motor | ESLint + allow-list + `dependency-boundaries.test.ts` |
 | Paquetes Core no importan transportes ni apps | ESLint |
 | Grafo interno acíclico | `dependency-boundaries.test.ts` |
 | Core sin términos de dominio/canal/CRM/vendor | `tests/contract/core-purity.test.ts` |
@@ -201,7 +210,7 @@ completed/failed/cancelled → (terminal, sin salidas)
 ### 4.3 AgentRun — ejecución cognitiva acotada
 
 `runId`, `taskId`, `sequence` (1..n por task), `agentId/agentVersion`,
-`status (running|completed|failed|cancelled|abandoned)`, `contextSnapshotRef`
+`status (running|completed|failed|cancelled|abandoned|suspended [D])`, `contextSnapshotRef`
 (seam R4-C2), `usage` (columnas: modelCalls, inputTokens, outputTokens,
 capabilityCalls), `result` (JSON estructurado), `failure {code,message}`,
 `termination {reason, failureClass, code, message, details}` (C1),
@@ -305,12 +314,17 @@ falla con `schema_not_current` y `/ready` reporta las migraciones pendientes.
 | `agent_task_transitions` | `transition_id` | no (append-only) | `unique(task_id, task_version)` |
 | `goals` | `goal_id` | sí (`version`) | FK compuestas; una raíz por task |
 | `agent_runs` | `run_id` | sí (`version`) | uso en columnas; un run activo por task |
-| `observations` | `observation_id` | no | `invocation_id` único; frescura (`valid_until`) |
+| `observations` | `observation_id` | no (trigger desde D) | `invocation_id` único (READ) / `proposal_id` único (acción, D); frescura (`valid_until`) |
 | `agent_tasks.lease_*` (C1) | — | sí (sin `version`) | owner, generation (fencing), expiración en reloj de BD; ADR-007 |
 | `agent_run_steps` (C1) | `step_id` | sólo `pending → observed` | una fila por iteración; `unique(run_id, iteration)`, `invocation_id` único, un `pending` por run; (C2) `context_snapshot_id` con FK compuesta a su run+iteración |
 | `memory_entries` (C2) | `entry_id` | sólo `expired_at` una vez (trigger) | task-scoped; supersession (misma task+tipo, un sucesor); `unique(task_id, derivation_key)` para summaries; sin `SECRET` |
 | `context_snapshots` (C2) | `snapshot_id` | no (trigger) | `unique(run_id, iteration, attempt)`; `supersedes_snapshot_id` único; `compiled_context` JSONB; `budget_mode` + `max_estimated_tokens` (null ⇔ unbounded) |
 | `context_snapshot_items` (C2) | `(snapshot_id, position)` | no (trigger) | decisión por **cada** ítem evaluado, compactados incluidos (sin contenido); `SECRET` sólo como excluido; fuente única de la contabilidad (ADR-015) |
+| `action_proposals` (D) | `proposal_id` | no (trigger) | una por step `propose_action` (`unique(step_id)`); `evidence_refs`; `context_snapshot_id` |
+| `policy_decisions` (D) | `decision_id` | no (trigger) | una por propuesta; `policy_id/version/hash/engine_version`, `risk_class`, `reason_code`, `rule`, `identity_assurance` |
+| `action_executions` (D) | `execution_id` | sólo `status` (trigger: comando inmutable, transiciones válidas) | comando: `execution_key` único, argumentos validados, contexto confiable, semántica; FK compuesta sólo a decisiones `allow`; resuelto ⇒ receipt (constraint trigger diferido) |
+| `action_execution_attempts` (D) | `attempt_id` | outcome una vez (trigger) | `unique(execution_id, attempt_number)`; fila escrita antes de la llamada externa |
+| `action_receipts` (D) | `receipt_id` | no (trigger) | uno por ejecución; clave = clave del comando (FK compuesta); `obtained_via`, `replayed` |
 
 JSONB sólo donde el esquema es genuinamente extensible (input de task,
 constraints, result, provenance, payloads, sub-documentos de configuración).
@@ -333,7 +347,8 @@ ciclo de vida y `correlation_id`.
   `goal.updated`, `run.started`, `run.finished`, `model.call.completed`,
   `model.call.failed`, `capability.invocation.completed`,
   `http.request.completed`, `service.started`, `service.stopping`,
-  `db.migration.applied`, `db.migrations.completed`. Eventos de C1 en §11.9.
+  `db.migration.applied`, `db.migrations.completed`. Eventos de C1 en §11.9, de C2
+  en §12.9 y de D en §13.9.
 - La telemetría registra **sólo metadata** (IDs, estados, conteos, latencias,
   códigos). Nunca prompts, texto de salida del modelo, goals, input de tasks ni
   chain-of-thought (verificado por tests).
@@ -367,16 +382,19 @@ Observation que produce la propia plataforma.
 | Caída de la BD | Probado deteniendo el contenedor real: `/health` 200, `/ready` 503, datos 503 `database_unavailable`, el proceso no cae y se recupera solo (`tests/recovery`). |
 | Resume | (C1) Un run huérfano se detecta por expiración del lease y otro worker lo reanuda desde su step log (§11.7). |
 | Idempotencia | Creación de tasks (por principal) e invocaciones de capability (por `invocationId`), ambas persistentes a través de reinicios. |
-| Checkpointing | (C1) Cada iteración es un step durable (`agent_run_steps`); el loop se reconstruye desde ahí. Checkpoints de efectos (writes) son R4-D. |
+| Checkpointing | (C1) Cada iteración es un step durable (`agent_run_steps`); el loop se reconstruye desde ahí. (D) Checkpoints de efectos: propuesta, decisión, comando, intentos y receipt durables (§13.7). |
 | Estado en memoria | Sólo configuración reconstruible de forma determinista (capability registry desde código; definiciones desde archivos, verificadas contra la BD). (C2) El compilador no tiene estado; la sesión guarda sólo el último `load()` de la iteración en curso. |
 | Contexto y memoria | (C2) Memoria de task, snapshots y summaries viven en PostgreSQL; sobreviven reinicio de worker, de API y de PostgreSQL (§12.8). |
 
 ## 10. Qué queda fuera (deliberadamente)
 
 Memoria de largo plazo/organización/semántica, retrieval vectorial, artifacts,
-ActionProposal/Receipt, Policy Engine, scheduler,
-consultation/approval/handoff, delegación, evaluation runtime, llamadas LLM
-reales, autenticación, outbox de eventos, MCP, Sales y cualquier write. Ver
+scheduler, consultation/approval/handoff (el workflow humano de aprobación es
+R4-E; R4-D sólo produce `REQUIRE_APPROVAL`), reconciliador de ejecuciones
+`needs_reconciliation`, delegación, evaluation runtime, llamadas LLM reales,
+autenticación y verificación de identidad, outbox de eventos, MCP, Sales y
+cualquier write de dominio de producción. (ActionProposal/Receipt, Policy
+Engine y writes gobernados: §13, R4-D.) Ver
 [roadmap](../roadmap/R4_DELIVERY_ROADMAP.md) §4.
 
 ## 11. R4-C1 — Execution Kernel
@@ -461,9 +479,11 @@ concedida y `READ`; evidencia = observations de la task).
   (step `pending`). La Observation se inserta y liga al step en una sola
   transacción fenced: es la única evidencia del resultado y la siguiente
   iteración la lee de PostgreSQL.
-- Sólo `READ` es ejecutable: el kernel rechaza otras clases
-  (`capability_not_permitted`) y el invoker también (`execution_not_permitted`).
-  El invoker es el único call site de handlers.
+- Sólo `READ` es **invocable** con `read_capability`: el kernel rechaza otras
+  clases (`capability_not_permitted`) y el invoker también
+  (`execution_not_permitted`). El invoker es el único call site de handlers
+  READ. (R4-D: los writes se *proponen* y siguen el camino gobernado de §13;
+  sus handlers están fuera del alcance del invoker.)
 
 ### 11.6 Budgets y terminación
 
@@ -649,3 +669,157 @@ usado: `budgetMode`, raw/compiled/included/excluded tokens, conteos,
 compaction input/output, tokens incluidos por kind y por autoridad — enums
 cerrados; por fuente y por ítem sólo en persistencia). Sólo metadata: nunca
 contenido de ítems (verificado por tests con marcadores y secretos).
+
+## 13. R4-D — Governed Execution
+
+Pregunta que responde D: ¿puede un agente proponer una mutación, permitir que
+la plataforma determine si está autorizada, ejecutarla de manera durable e
+idempotente y volver a observar un resultado verificable, sin que el modelo
+controle permisos, ejecución ni verdad transaccional?
+
+```text
+model ─► propose_action {capabilityId, arguments, evidenceRefs?}   (intención; sin campos confiables)
+   ─► step pending + ActionProposal                      (1 tx fenced; evidencia verificada)
+   ─► ActionExecutor.prepare: resolver + validar argumentos
+        ├─ inválido ─► observation write_validation_failure ─► el agente sigue
+        └─ ActionRuntime.authorizeAction ─► Policy Engine (pura) ─► PolicyDecision
+             ├─ DENY             ─► observation policy_denied ─► el agente sigue
+             ├─ REQUIRE_APPROVAL ─► observation + run suspended + task requires_approval (1 tx)
+             └─ ALLOW            ─► ActionCommand (executionKey de plataforma) (misma tx)
+   ─► advanceAction: fila de intento (fenced) ─► ActionExecutor.attempt ─► write handler (misma clave)
+   ─► recordAttempt: receipt + estado + observation + step observed (1 tx)
+        └─ desconocido ─► replay / reconcile según el log de intentos, o
+                           needs_reconciliation + run suspended + task blocked
+   ─► load ─► ContextSnapshot con la observation ─► model
+```
+
+Invariante: **el modelo propone; la plataforma autoriza; la capability/dominio
+ejecuta; el receipt prueba lo que ocurrió.**
+
+### 13.1 Componentes
+
+| Componente | Paquete | Rol |
+|---|---|---|
+| `ProposeActionDecision`, `ActionProposal`, `PolicyDecision`, `ActionCommand`/`ActionExecution`, `ActionAttempt`, `ActionReceipt`, `TrustedActionContext`, `ActionAuthorizer` (puerto) | `contracts` | Contratos estrictos (ADR-016) |
+| `ActionPolicyEngine`, `DEFAULT_ACTION_POLICY` | `policy-engine` | Autorización determinista, versionada y con hash (ADR-017) |
+| `CapabilityRegistry.registerWrite`, `ActionExecutor` | `capability-runtime` | Registro de writes con estrategia declarada; único call site de handlers de escritura; clasificación conservadora (ADR-018) |
+| `ActionRuntime`, `nextActionStep` | `task-runtime` | Autoridad durable y fenced sobre el ciclo de vida del efecto; regla única del siguiente intento (ADR-018/019) |
+| `ExecutionRuntime.recordStep` | `task-runtime` | Persiste la propuesta con su step |
+| Métodos del ledger en `PostgresExecutionStore`; `PostgresActionLedgerStore` | `persistence-postgres` | SQL del ledger; lectura para auditoría y métricas |
+| `DurableKernelSession.executeAction` | `apps/worker` | Secuenciación sin reglas: preparar → autorizar → avanzar → intentar → registrar |
+| `AgentKernel` (`propose_action`, `pendingAction`) | `agent-kernel` | Budget de writes; entrega la propuesta al puerto; nunca ve un handler |
+
+### 13.2 AgentDecision
+
+`propose_action` se agrega sin tocar `read_capability`, `respond` ni `complete`
+(protocolo `r4.agent_decision.v2`). El parser exige capability concedida y no
+READ (`unknown_capability`, `capability_not_permitted`) y `evidenceRefs` ⊆
+observations de la task (`unknown_evidence`). Cualquier campo extra — clave de
+idempotencia, decisión de política, riesgo, permiso, identidad, receipt,
+estado, lease — es `invalid_decision_schema`.
+
+### 13.3 Política (ADR-017)
+
+Reglas tipadas en orden fijo; entradas sólo de plataforma (los argumentos no
+entran). `TrustedActionContext` = contexto de ejecución C1 + `actor`
+(`task.requestedBy`) + `identityAssurance` (`unauthenticated → none`; resto
+`provisional`; nada es `verified` en D). Cada decisión persiste política
+(`id`, `version`, `hash`, `engineVersion`), capability y versión, clase de
+riesgo, agente/task, resultado, `reasonCode`, `rule` e `identityAssurance`.
+
+### 13.4 Execution identity e idempotencia (ADR-018)
+
+`executionKey = r4x_<executionId>`: generado y persistido con el comando,
+antes de cualquier llamada; lo usan todas las ejecuciones, replays y
+reconciliaciones de ese comando, por cualquier worker. Estrategias
+`idempotent_replay` y `reconcile_before_retry`; sin estrategia, la capability
+es visible pero no ejecutable (`unsafe_write_semantics`). Resultado del
+dominio: `applied | rejected | failed | unknown` (+ `not_applied` sólo en
+reconciliación). Timeout, excepción o salida inválida ⇒ `unknown`.
+
+### 13.5 Ciclo de vida de `ActionExecution`
+
+```text
+prepared ──► executing ──► succeeded | rejected | failed     (siempre con receipt)
+                 └───────► needs_reconciliation              (resultado desconocido; resolución: R4-E+)
+```
+
+Los intentos (`execute` = el primero, `replay`, `reconcile`) son append-only y
+se escriben antes de la llamada; su outcome se registra una vez. Desde el
+estado durable se reconstruye: qué se pretendía (propuesta), qué decidió la
+política, qué comando se generó, si empezó la ejecución, qué intentos
+corrieron y qué resultado se observó.
+
+### 13.6 Receipt y observation
+
+El receipt (`succeeded | rejected | failed`) es evidencia inmutable del
+resultado **conocido**: `resourceRef`, `externalOperationRef`, `result`
+(validado contra el esquema de salida), `error`, `executedAt`, `evidence`
+(`obtainedVia`, intento, número de intentos, `replayed`). La observation de
+acción (`source.kind = 'action'`) se persiste en la misma transacción, con
+`validUntil = null`: el receipt prueba qué ocurrió, no el estado actual del
+recurso. Un resultado desconocido no produce observation ni receipt.
+
+### 13.7 Transacciones y recuperación (ADR-019)
+
+| Muere el worker… | Estado durable | Qué hace el siguiente dueño |
+|---|---|---|
+| tras la propuesta, antes de la política (A) | step `pending` + propuesta | evalúa la política; sin llamada al modelo |
+| tras ALLOW (B) | comando `prepared` | ejecuta con la misma clave |
+| tras la fila de intento, antes de la llamada (B′) | intento sin outcome | replay/reconcile por la regla del log |
+| tras el efecto, antes del receipt (C) | intento sin outcome; efecto aplicado | misma clave → replay idempotente o reconciliación → un efecto, un receipt |
+| tras receipt + observation (D) | step `observed` | no re-ejecuta; snapshot nuevo con la observation |
+
+La llamada externa nunca está dentro de una transacción. Un worker que perdió
+el lease no puede registrar intento, receipt, observation, step ni transición
+(fencing C1 reutilizado vía `lockOwnedExecution`). Todo fin de run deja las
+ejecuciones `executing` como `needs_reconciliation`.
+
+### 13.8 Budget de writes y terminación
+
+`ExecutionPolicy.maxWriteActions` (`R4_EXEC_MAX_WRITE_ACTIONS`, **0 por
+defecto**: sin writes salvo opt-in del operador), acotado por `budget.maxWrites`
+de la task; consumo = comandos creados para la task (task-scoped). Se chequea
+antes de registrar la propuesta; agotado ⇒ step `refused` +
+`budget_exhausted` / `max_write_actions`. Con límite 0 las capabilities de
+escritura tampoco se ofrecen al modelo.
+
+| Situación | Resultado |
+|---|---|
+| argumentos inválidos / no-write | observation `write_validation_failure`; continúa |
+| política DENY | observation `policy_denied`; continúa |
+| REQUIRE_APPROVAL | run `suspended` (`approval_required`, clase null), task `requires_approval` |
+| conflicto de concurrencia / rechazo del dominio | receipt `rejected`, observation `action_rejected`; continúa |
+| fallo definitivo del dominio | receipt `failed`, observation `write_execution_failure`; continúa |
+| resultado desconocido | run `suspended` (`write_outcome_uncertain`, código `write_outcome_uncertain` o `write_reconciliation_failure`, clase `action`), task `blocked` |
+| budget de writes | `budget_exhausted` / `max_write_actions` |
+| fallo de plataforma no clasificado | `internal_failure` / `action_execution_error` (ejecución en vuelo ⇒ `needs_reconciliation`) |
+
+### 13.9 Telemetría (D)
+
+`action.proposed`, `policy.evaluated`, `action.command.created`,
+`action.execution.started`, `action.execution.replayed`,
+`action.attempt.recorded`, `action.reconciliation.started`,
+`action.reconciliation.completed`, `action.receipt.persisted` (con
+`receiptLatencyMs`), `action.observation.persisted`, `action.denied`,
+`action.approval_required`, `action.failed`, `action.outcome_uncertain`,
+`run.suspended`. Metadata: `correlationId`, `taskId`, `runId`, `agentId`,
+`proposalId`, `executionId`, `capabilityId`, `riskClass`, `workerId`,
+`attempt`. Nunca argumentos, resultados ni secretos.
+
+### 13.10 Métricas (fundamento, sin dashboards)
+
+`PostgresActionLedgerStore.metrics(taskId?)` deriva del ledger: propuestas,
+allow/deny/approval, rechazos de validación, ejecuciones, intentos por tipo
+(execute/replay/reconcile), receipts por estado, resultados inciertos,
+duplicados evitados (`replayed` en intentos no iniciales) y latencia
+comando→receipt.
+
+### 13.11 Fixture de prueba (fuera de Core)
+
+`tests/fixtures/capabilities/test-ledger.ts`: ledger genérico de registros de
+prueba en el esquema `platform_test` (creado por el test, no por migraciones
+R4), a lo sumo un efecto por clave, replay idempotente, reconciliación por
+clave, `expectedVersion` opcional y ganchos de fallo. Agente de prueba
+`tests/fixtures/agents/action-probe` (el `platform-probe` del repo sigue sin
+scopes de escritura).

@@ -2,7 +2,7 @@
 title: R4 — Delivery Roadmap
 status: active
 owner: architecture
-last_reviewed: 2026-09-22
+last_reviewed: 2026-09-23
 source: ../architecture/R4_AGENTIC_PLATFORM_PRD_AND_ROADMAP.md §40
 ---
 
@@ -18,8 +18,8 @@ requiere autorización explícita (AGENTS.md).
 | R4-A | Architecture Freeze | Parcial: Constitución + PRD existen; los contratos se congelaron en código en R4-B |
 | R4-B | Platform Skeleton | Completado y publicado (baseline `d75cfb3`) |
 | R4-C1 | Execution Kernel | Completado y publicado (baseline `834a5f1`) |
-| **R4-C2** | **Context Compiler & Memory Boundaries** | **Implementado sobre `834a5f1` (pendiente de auditoría; sin commit)** |
-| R4-D | Durable Execution | No iniciado |
+| R4-C2 | Context Compiler & Memory Boundaries | Completado y publicado (baseline `67a124a`) |
+| R4-D | Governed Execution (PRD §40: "Durable Execution") | Completado sobre `67a124a` (gate SIGKILL tras efecto externo verificado) |
 | R4-E | Human Collaboration + Scheduler | No iniciado |
 | R4-F | Sales Reference Application | No iniciado |
 | R4-G | Quality & Learning | No iniciado |
@@ -175,6 +175,69 @@ falso éxito, preguntas repetidas, selección de capabilities, latencia, costo y
 tokens. Los datos necesarios (snapshots + decisiones por ítem + composición)
 ya existen.
 
+## 3.5 R4-D — Governed Execution
+
+Pregunta: ¿puede un agente proponer una mutación, permitir que la plataforma
+determine si está autorizada, ejecutarla de manera durable e idempotente y
+volver a observar un resultado verificable, sin que el modelo controle
+permisos, ejecución ni verdad transaccional? Diseño:
+[arquitectura §13](../architecture/R4_ARCHITECTURE.md), ADR-016…020. D se
+compone sobre C1/C2: no cambia claim, leases, heartbeat, fencing (reutilizado),
+lifecycle del run (sólo agrega el estado terminal `suspended`), Context
+Compiler ni contabilidad de contexto.
+
+**Alcance vs. PRD §40.** El PRD lista para R4-D también "optimistic concurrency
+contracts" (cubierto: `expectedVersion` es del dominio, R4 lo transporta y un
+conflicto es un receipt `rejected`), "checkpoints" y "recovery" (cubiertos) y
+"cancellation": D garantiza que una cancelación durante una llamada en vuelo
+deja la ejecución `needs_reconciliation` y rechaza la respuesta tardía; la
+cancelación **cooperativa** de un efecto en curso queda diferida (§4).
+
+| # | Criterio de salida | Evidencia |
+|---|---|---|
+| 1 | `AgentDecision` soporta `propose_action` | `contracts/decision.ts`; `unit/agent-kernel/kernel-actions`; `contract/execution-kernel-boundaries` |
+| 2 | Propuesta durable antes de ejecutar | `ExecutionRuntime.recordStep` (step + propuesta, 1 tx); ventana A en `integration/governed-execution-recovery` |
+| 3 | Política determinista e independiente del modelo | `packages/policy-engine` (sólo contracts + zod); `unit/policy-engine` (determinismo) |
+| 4 | El modelo no concede permisos | `contract/governed-execution-boundaries` (campos confiables); `integration/governed-execution` (escalamiento) |
+| 5 | Ningún write evita la Policy Engine | FK compuesta comando→ALLOW; `ActionExecutor.resolve`; `contract/governed-execution-boundaries`; mutación 2 |
+| 6 | Identidad de ejecución de la plataforma | `executionKeyFor` (único generador); `unit/task-runtime/action-lifecycle`; SIGKILL |
+| 7 | Semántica de recuperación explícita | `registerWrite` + `writeRecovery`; `unsafe_write_semantics`; `unit/capability-runtime/action-executor` |
+| 8 | ActionExecution durable | `action_executions` + `action_execution_attempts`; ventanas B/B′/C |
+| 9 | Receipt durable e inmutable | `action_receipts` + triggers; `integration/governed-execution` (UPDATE/DELETE rechazados) |
+| 10 | El receipt es la evidencia | resuelto ⇒ receipt (constraint trigger); éxito observado ⇒ receipt (CHECK + contrato) |
+| 11 | La observation llega al siguiente ContextSnapshot | `integration/governed-execution` (probe), ventana D (snapshot de iteración 2) |
+| 12 | Crash tras el efecto no duplica | `recovery/governed-write-crash` (SIGKILL real); ventana C in-process |
+| 13 | Worker stale no persiste resultados | 3 tests de "stale worker protection"; mutación 3 |
+| 14 | Resultado desconocido nunca se adivina | "uncertain outcomes are never guessed" (needs_reconciliation, sin observation, task `blocked`) |
+| 15 | Conflicto de concurrencia no se reintenta a ciegas | "optimistic concurrency" (1 intento, receipt `rejected`, `action_rejected`) |
+| 16 | REQUIRE_APPROVAL impide ejecutar | `integration/governed-execution` (0 llamadas; run `suspended`; task `requires_approval`) |
+| 17 | Sin workflow de aprobación prematuro | sin ApprovalRequest/API/UI; `requires_approval` no es reclamable |
+| 18 | Budget de writes | `unit/agent-kernel/kernel-actions`; `integration/governed-execution` (`max_write_actions`) |
+| 19–20 | Invariantes C1 y C2 intactas | suites C1/C2 verdes; cambios listados abajo |
+| 21–23 | Tests previos, de D y recovery pasan | ver informe de cierre |
+| 24 | build/lint/typecheck | ver informe de cierre |
+| 25 | `git diff --check` | limpio |
+| 26 | Nada de R4-E | sin approvals humanos, scheduler, consultation, handoff, delegación, MCP |
+
+**Pruebas de mutación** (temporales, revertidas): clave nueva por intento → 12
+tests fallan (incl. SIGKILL); política evitada (todo ALLOW) → 7; fencing del
+ActionRuntime sin verificación de lease → 3; `reconcile_before_retry` que
+reintenta sin reconciliar → 4.
+
+**Cambios en tests existentes (R4-B/C1/C2), todos inevitables por la
+extensión:** listas de migraciones/tablas (`migrations`, `migration-upgrade`,
+`migration-upgrade-c2`); allow-list de dependencias (paquete nuevo); la lista
+de tipos de decisión y los nombres del JSON Schema en dos tests de contrato;
+la tabla de clases de falla (dos razones nuevas); dos tests que usaban
+`propose_action` como ejemplo de tipo *desconocido* (ahora `delegate`); los
+literales de `ExecutionPolicy`/`ExecutionUsage` (campo nuevo) y la expectativa
+exacta de límites; `MemorySession`, `InMemoryObservationStore` y una sesión
+inline de un test del kernel implementan/estrechan los puertos extendidos.
+`TEST_POLICY.maxWriteActions = 0`, igual que un worker con entorno vacío, de
+modo que C1/C2 corren sin writes y sus snapshots no cambian de forma.
+**Endurecimiento de C1:** `observations` ahora es inmutable también en la BD
+(trigger); ningún código ni test la modificaba.
+
 ## 4. Decisiones diferidas intencionalmente
 
 | Tema | Por qué se difiere | Seam existente |
@@ -185,14 +248,12 @@ ya existen.
 | Entry point de producción del worker (`main`) | No existe proveedor real ni capabilities de Core: un `main` sería un placeholder | `runWorkerProcess(loadWorkerConfig(env), bindings)` |
 | `/health`, `/ready` del worker | Sin consumidor (sin deploy); liveness observable por telemetría y `last_heartbeat_at` | `createWorkerPlatform` |
 | Protocolo de acción híbrido (tool calls nativas) | Constitución §27.11 sigue abierta; C1 usa salida estructurada | `parseAgentDecision` |
-| Decisiones Delegate, Wait, ProposeAction, Consult, Approval, Handoff | Fases R4-D/E | `AgentDecision` (unión discriminada) |
+| Decisiones Delegate, Wait, Consult, Approval, Handoff | R4-E+ (ProposeAction: implementada en R4-D) | `AgentDecision` (unión discriminada) |
 | Reintentos de modelo y reparación de decisiones inválidas | Política sin evidencia; afecta evaluación | `model_failure` / `invalid_decision` clasificados |
 | Presupuesto de costo / tokens como política | Ownership de pricing sin decidir; `maxTokens` sí se aplica si la task lo declara | `ExecutionPolicy`, `budgetSchema` |
 | Deadline de task (`deadlineAt`) aplicado por el worker | No requerido por C1 | `maxRunDurationMs` |
 | Prioridades / `LISTEN/NOTIFY` en el claim | Sin necesidad demostrada (ADR-006) | índice `agent_tasks_claimable_idx` |
-| ActionProposal / Policy / Receipt / writes | R4-D | Invoker rechaza no-READ con `execution_not_permitted` |
-| Retries de capabilities | Requieren clasificación de errores y receipts (R4-D) | `retryPolicy` en la definición; `attempts` en provenance |
-| Checkpoints de efectos (writes) | R4-D | step log (`agent_run_steps`), `invocationId` |
+| Retries de capabilities READ | Sin necesidad demostrada (los writes ya reintentan sólo por su estrategia declarada, R4-D) | `retryPolicy` en la definición; `attempts` en provenance |
 | Outbox durable y catálogo público de eventos | Sin consumidor aún; evita infraestructura prematura | Eventos de telemetría con nombres estables |
 | Artifact | Depende del modelo de tasks/ownership (Constitución §18) | — |
 | Budgets de costo | Ownership de pricing/moneda sin decidir | `budgetSchema` extensible |
@@ -213,3 +274,11 @@ ya existen.
 | (C2) Extracción automática de `assertions` desde texto | Sería un LLM decidiendo; sin él los conflictos en texto libre no se detectan | `assertions` declaradas por la fuente |
 | (C2) Exponer snapshots por HTTP | Sin consumidor; la auditoría lee la BD | `PostgresContextSnapshotStore` |
 | (C2) Renderizado por proveedor del `CompiledContext` | Llega con el primer adapter real | `ModelRequest.context` |
+| (D) Workflow humano de aprobación (ApprovalRequest, API, UI, reanudación tras aprobar) | R4-E | `policy_decisions` `require_approval` + observation + task `requires_approval` |
+| (D) Reconciliador de ejecuciones `needs_reconciliation` y desbloqueo de tasks `blocked` | Requiere operador/scheduler (R4-E+); D sólo garantiza no adivinar | `action_executions.status`, intentos, `reconcile` de la capability |
+| (D) Cancelación cooperativa de un efecto en vuelo | Sin caso de uso; D marca la ejecución `needs_reconciliation` y rechaza la respuesta tardía | `signal` en `WriteHandlerContext`; `finishRunWithin` |
+| (D) Verificación de identidad (`verified`) y tenancy | Sin servicio de identidad ni modelo de tenant; no inventarlos | `identityAssuranceOf`, `TrustedActionContext.actor` |
+| (D) Deduplicación semántica entre propuestas distintas | Depende de la intención del dominio | propuestas y ejecuciones separadas por clave |
+| (D) Política productiva (autonomía por agente, overrides reales) | Decisión de gobierno, no técnica | `ActionPolicyConfiguration`, `WorkerBindings.actionPolicy` |
+| (D) Evaluación textual de afirmaciones del agente | R4-G; D garantiza la verdad estructural (ledger), no la redacción | observations + receipts |
+| (D) Capabilities de escritura de dominio reales | Fuera de Core (ADR-005); D usa sólo el ledger de prueba | `registerWrite` |

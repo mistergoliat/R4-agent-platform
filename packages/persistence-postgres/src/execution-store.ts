@@ -1,5 +1,20 @@
-import type { ContextSnapshot, LeaseToken, MemoryEntry, Observation, RunStep, TaskLease } from '@r4/contracts';
+import type { ActionAttempt, ActionExecution, ActionProposal, ActionReceipt, ContextSnapshot, LeaseToken, MemoryEntry, Observation, PolicyDecision, RunStep, TaskLease } from '@r4/contracts';
 import type { ClaimedTask, ExecutionStore, ExecutionUnitOfWork, LockedTaskLease } from '@r4/task-runtime';
+import {
+  attemptFromRow,
+  executionFromRow,
+  finishAttempt,
+  insertAttempt,
+  insertDecision,
+  insertExecution,
+  insertProposal,
+  insertReceipt,
+  one,
+  policyDecisionFromRow,
+  proposalFromRow,
+  receiptFromRow,
+  updateExecutionStatus,
+} from './action-store.js';
 import { insertContextSnapshot, insertMemoryEntry, loadContextSnapshot } from './memory-store.js';
 import { recordObservation } from './observation-store.js';
 import { query, withTransaction, type Pool } from './pool.js';
@@ -112,12 +127,12 @@ class PostgresExecutionUnitOfWork extends PostgresTaskUnitOfWork implements Exec
       `insert into agent_run_steps (
          step_id, run_id, task_id, iteration, lease_generation, decision_type, decision, outcome,
          error_code, error_message, invocation_id, observation_id, input_tokens, output_tokens,
-         correlation_id, created_at, completed_at, context_snapshot_id)
-       values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+         correlation_id, created_at, completed_at, context_snapshot_id, proposal_id)
+       values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
       [
         step.stepId, step.runId, step.taskId, step.iteration, step.leaseGeneration, step.decision?.type ?? null, jsonb(step.decision), step.outcome,
         step.error?.code ?? null, step.error?.message ?? null, step.invocationId, step.observationId, step.usage.inputTokens, step.usage.outputTokens,
-        step.correlationId, step.createdAt, step.completedAt, step.contextSnapshotId,
+        step.correlationId, step.createdAt, step.completedAt, step.contextSnapshotId, step.proposalId,
       ],
     );
   }
@@ -154,5 +169,65 @@ class PostgresExecutionUnitOfWork extends PostgresTaskUnitOfWork implements Exec
 
   insertMemoryEntry(entry: MemoryEntry): Promise<MemoryEntry> {
     return insertMemoryEntry(this.client, entry);
+  }
+
+  // R4-D governed execution ledger
+  insertActionProposal(proposal: ActionProposal): Promise<void> {
+    return insertProposal(this.client, proposal);
+  }
+
+  findActionProposal(proposalId: string): Promise<ActionProposal | null> {
+    return one(this.client, 'select * from action_proposals where proposal_id = $1', [proposalId], proposalFromRow);
+  }
+
+  insertPolicyDecision(decision: PolicyDecision): Promise<void> {
+    return insertDecision(this.client, decision);
+  }
+
+  findPolicyDecisionByProposal(proposalId: string): Promise<PolicyDecision | null> {
+    return one(this.client, 'select * from policy_decisions where proposal_id = $1', [proposalId], policyDecisionFromRow);
+  }
+
+  insertActionExecution(execution: ActionExecution): Promise<void> {
+    return insertExecution(this.client, execution);
+  }
+
+  findActionExecutionByProposal(proposalId: string): Promise<ActionExecution | null> {
+    // Row-locked: attempts and status changes of one command are serialized.
+    return one(this.client, 'select * from action_executions where proposal_id = $1 for update', [proposalId], executionFromRow);
+  }
+
+  updateActionExecutionStatus(execution: ActionExecution, expectedVersion: number): Promise<boolean> {
+    return updateExecutionStatus(this.client, execution, expectedVersion);
+  }
+
+  async countActionExecutions(taskId: string): Promise<number> {
+    const result = await this.client.query<{ n: number }>('select count(*)::int as n from action_executions where task_id = $1', [taskId]);
+    return result.rows[0]!.n;
+  }
+
+  async listActionAttempts(executionId: string): Promise<ActionAttempt[]> {
+    const result = await this.client.query<Row>('select * from action_execution_attempts where execution_id = $1 order by attempt_number', [executionId]);
+    return result.rows.map(attemptFromRow);
+  }
+
+  insertActionAttempt(attempt: ActionAttempt): Promise<void> {
+    return insertAttempt(this.client, attempt);
+  }
+
+  finishActionAttempt(attempt: ActionAttempt): Promise<boolean> {
+    return finishAttempt(this.client, attempt);
+  }
+
+  insertActionReceipt(receipt: ActionReceipt): Promise<void> {
+    return insertReceipt(this.client, receipt);
+  }
+
+  findActionReceiptByExecution(executionId: string): Promise<ActionReceipt | null> {
+    return one(this.client, 'select * from action_receipts where execution_id = $1', [executionId], receiptFromRow);
+  }
+
+  findObservationByProposal(proposalId: string): Promise<Observation | null> {
+    return one(this.client, 'select * from observations where proposal_id = $1', [proposalId], observationFromRow);
   }
 }

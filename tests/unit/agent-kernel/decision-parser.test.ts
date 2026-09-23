@@ -45,7 +45,7 @@ describe('decision parser: ModelResult → parse → schema → semantics', () =
     ['a JSON array', response({ structuredData: [1, 2] }), 'invalid_decision_schema'],
     ['a JSON string', response({ structuredData: 'complete' }), 'invalid_decision_schema'],
     ['missing type', response({ structuredData: { capabilityId: READ_FACT.capabilityId, arguments: {} } }), 'unknown_decision_type'],
-    ['unknown type', response({ structuredData: { type: 'propose_action', action: 'x' } }), 'unknown_decision_type'],
+    ['unknown type', response({ structuredData: { type: 'delegate', action: 'x' } }), 'unknown_decision_type'],
     ['partially valid (extra key)', response({ structuredData: { type: 'respond', content: 'x', thoughts: 'hidden reasoning' } }), 'invalid_decision_schema'],
     ['invalid arguments shape', response({ structuredData: { type: 'read_capability', capabilityId: READ_FACT.capabilityId, arguments: null } }), 'invalid_decision_schema'],
     ['unknown capability', response({ structuredData: { type: 'read_capability', capabilityId: 'platform_test.nope', arguments: {} } }), 'unknown_capability'],

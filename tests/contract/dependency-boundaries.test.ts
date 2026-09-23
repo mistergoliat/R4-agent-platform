@@ -47,10 +47,12 @@ const ALLOWED: Record<string, string[]> = {
   // R4-C2 (ADR-010): the compiler reads only through ContextSources/ports —
   // no storage, execution runtime, kernel or model.
   '@r4/context-compiler': ['@r4/contracts', '@r4/observability', 'zod'],
+  // R4-D (ADR-017): pure and deterministic — no I/O, no runtime, no model, not even logging.
+  '@r4/policy-engine': ['@r4/contracts', 'zod'],
   // The worker is a composition root, like the API — but has no HTTP transport.
   '@r4/worker': [
     '@r4/contracts', '@r4/observability', '@r4/model-gateway', '@r4/capability-runtime', '@r4/task-runtime',
-    '@r4/agent-registry', '@r4/persistence-postgres', '@r4/agent-kernel', '@r4/context-compiler', 'pino', 'zod',
+    '@r4/agent-registry', '@r4/persistence-postgres', '@r4/agent-kernel', '@r4/context-compiler', '@r4/policy-engine', 'pino', 'zod',
   ],
 };
 
@@ -92,6 +94,16 @@ describe('dependency boundaries', () => {
   it('keeps the context compiler away from storage, execution, the kernel and models (R4-C2)', () => {
     for (const forbidden of ['pg', '@r4/persistence-postgres', '@r4/task-runtime', '@r4/capability-runtime', '@r4/agent-registry', '@r4/agent-kernel', '@r4/model-gateway', '@r4/api', '@r4/worker', 'fastify']) {
       expect(deps('@r4/context-compiler')).not.toContain(forbidden);
+    }
+  });
+
+  it('keeps the policy engine pure and the runtimes independent of it (R4-D)', () => {
+    for (const forbidden of ['pg', '@r4/persistence-postgres', '@r4/task-runtime', '@r4/capability-runtime', '@r4/agent-kernel', '@r4/model-gateway', '@r4/observability', '@r4/context-compiler', '@r4/api', '@r4/worker']) {
+      expect(deps('@r4/policy-engine')).not.toContain(forbidden);
+    }
+    // The runtimes depend on the ActionAuthorizer port (contracts), never on the engine.
+    for (const name of ['@r4/task-runtime', '@r4/capability-runtime', '@r4/agent-kernel', '@r4/persistence-postgres', '@r4/api']) {
+      expect(deps(name)).not.toContain('@r4/policy-engine');
     }
   });
 

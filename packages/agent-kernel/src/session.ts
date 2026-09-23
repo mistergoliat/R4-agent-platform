@@ -4,6 +4,7 @@ import type {
   JsonObject,
   JsonValue,
   Observation,
+  ProposeActionDecision,
   ReadCapabilityDecision,
   RunStep,
   TerminationReason,
@@ -27,7 +28,11 @@ export interface KernelSession {
    * never knows how the context was built; it only sends it.
    */
   prepareContext(context: ExecutionContext): Promise<PreparedContext>;
-  /** Appends a non-terminal iteration (READ → pending, respond → recorded). READs get their invocation id here. */
+  /**
+   * Appends a non-terminal iteration (READ → pending, propose_action → pending,
+   * respond → recorded). READs get their invocation id here; proposals get
+   * their proposal id and become a durable ActionProposal in the same write.
+   */
   recordStep(step: StepRecord): Promise<RunStep>;
   /**
    * Executes a pending READ with its recorded invocation id and returns the
@@ -35,9 +40,25 @@ export interface KernelSession {
    * idempotent: an invocation that already has an observation is not re-run.
    */
   executeRead(step: RunStep, decision: ReadCapabilityDecision): Promise<Observation>;
+  /**
+   * (R4-D) Resolves a pending proposed action through the platform's governed
+   * path — validation, deterministic policy, command with a platform
+   * execution key, attempts, receipt — from wherever its durable ledger
+   * stands, and returns its persisted observation, or the termination the
+   * platform already recorded when the run cannot continue (approval
+   * required, outcome unknown). The kernel never sees a write handler and
+   * never decides whether, how or how often a write executes.
+   */
+  executeAction(step: RunStep, decision: ProposeActionDecision): Promise<ActionOutcome>;
   /** Ends the run (and task) with a structured termination; `finalStep` is written atomically with it. */
   finish(ending: RunEnding): Promise<void>;
 }
+
+export type ActionOutcome =
+  /** The outcome is durable (denied, rejected, or receipt-backed); the loop continues with it in context. */
+  | { readonly kind: 'observed'; readonly observation: Observation }
+  /** The platform ended the run itself, atomically with the evidence; the kernel only reports it. */
+  | { readonly kind: 'suspended'; readonly termination: KernelTermination };
 
 export type PreparedContext =
   /** `snapshotId` is durable: the model call below is made with exactly `context`. */

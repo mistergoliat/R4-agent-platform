@@ -26,6 +26,8 @@ const configSchema = z.object({
   R4_EXEC_MAX_RUN_DURATION_MS: int(1).default(15 * 60_000),
   R4_EXEC_MODEL_CALL_TIMEOUT_MS: int(1).default(60_000),
   R4_EXEC_MAX_RUN_RECOVERIES: int(0).default(3),
+  // R4-D: write actions per task. 0 = this worker performs no writes unless the operator opts in.
+  R4_EXEC_MAX_WRITE_ACTIONS: int(0).default(0),
   // R4-C2 context compilation policy (operator configuration).
   // Budget (ADR-015): unbounded by default — no R4-imposed limit. `fixed` requires R4_CONTEXT_MAX_TOKENS.
   R4_CONTEXT_BUDGET_MODE: z.enum(['unbounded', 'fixed']).default('unbounded'),
@@ -81,6 +83,7 @@ export function loadWorkerConfig(env: NodeJS.ProcessEnv): WorkerConfig {
       maxReadCapabilityCalls: c.R4_EXEC_MAX_READ_CALLS,
       maxRunDurationMs: c.R4_EXEC_MAX_RUN_DURATION_MS,
       modelCallTimeoutMs: c.R4_EXEC_MODEL_CALL_TIMEOUT_MS,
+      maxWriteActions: c.R4_EXEC_MAX_WRITE_ACTIONS,
     },
     context: {
       budget: c.R4_CONTEXT_MAX_TOKENS === undefined ? { mode: 'unbounded' } : { mode: 'fixed', maxEstimatedTokens: c.R4_CONTEXT_MAX_TOKENS },

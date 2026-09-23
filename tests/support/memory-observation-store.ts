@@ -9,6 +9,7 @@ export class InMemoryObservationStore implements ObservationStore {
   readonly byInvocation = new Map<string, Observation>();
 
   record(observation: Observation): Promise<Observation> {
+    if (observation.source.kind !== 'capability') throw new Error('READ observations only');
     const existing = this.byInvocation.get(observation.source.invocationId);
     if (existing) return Promise.resolve(existing);
     this.byInvocation.set(observation.source.invocationId, observation);

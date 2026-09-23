@@ -4,6 +4,7 @@ import type {
   AgentTask,
   Goal,
   Observation,
+  ProposeActionDecision,
   ReadCapabilityDecision,
   RiskClass,
   RunStep,
@@ -43,8 +44,9 @@ export interface ExecutionContext {
   /** `respond` outputs already recorded by this run, so the agent knows what it said. */
   readonly responses: readonly { readonly iteration: number; readonly content: string }[];
   /**
-   * Capabilities the agent's scopes grant, with their risk class. Only READ
-   * ones are offered to the model or executable in C1.
+   * Capabilities the agent's scopes grant, with their risk class. READ ones
+   * are invoked (`read_capability`); since R4-D, write classes may only be
+   * proposed (`propose_action`) and are offered when the run may write at all.
    */
   readonly capabilities: readonly CapabilityDescriptor[];
   readonly budget: { readonly limits: ExecutionLimits; readonly usage: ExecutionUsage };
@@ -58,6 +60,13 @@ export interface ExecutionState {
    * invocation id before anything else — never re-decided.
    */
   readonly pendingRead: { readonly step: RunStep; readonly decision: ReadCapabilityDecision } | null;
+  /**
+   * (R4-D) An action proposed in an earlier iteration whose outcome is not
+   * observed yet (the worker may have died before policy, before the call,
+   * or after the effect but before its receipt). The platform resolves it
+   * from its durable ledger before the model is asked anything.
+   */
+  readonly pendingAction: { readonly step: RunStep; readonly decision: ProposeActionDecision } | null;
 }
 
 export interface ExecutionStateInput {
@@ -70,6 +79,8 @@ export interface ExecutionStateInput {
   readonly capabilities: readonly CapabilityDescriptor[];
   readonly policy: ExecutionPolicy;
   readonly now: Date;
+  /** (R4-D) Write commands already created for the task (action ledger). */
+  readonly writeActions?: number;
 }
 
 /** Pure: the same durable state always yields the same context. */
@@ -82,11 +93,14 @@ export function buildExecutionState(input: ExecutionStateInput): ExecutionState 
     readCapabilityCalls: steps.filter((s) => s.decision?.type === 'read_capability' && (s.outcome === 'pending' || s.outcome === 'observed')).length,
     tokens: steps.reduce((sum, s) => sum + s.usage.inputTokens + s.usage.outputTokens, 0),
     elapsedMs: Math.max(0, input.now.getTime() - Date.parse(input.run.startedAt)),
+    writeActions: input.writeActions ?? 0,
   };
   const responses = steps.flatMap((s) => (s.decision?.type === 'respond' ? [{ iteration: s.iteration, content: s.decision.content }] : []));
   const last = steps.at(-1);
   const pendingRead =
     last && last.outcome === 'pending' && last.decision?.type === 'read_capability' ? { step: last, decision: last.decision } : null;
+  const pendingAction =
+    last && last.outcome === 'pending' && last.decision?.type === 'propose_action' ? { step: last, decision: last.decision } : null;
 
   return {
     context: {
@@ -101,9 +115,20 @@ export function buildExecutionState(input: ExecutionStateInput): ExecutionState 
       budget: { limits: resolveExecutionLimits(input.policy, input.task.budget), usage },
     },
     pendingRead,
+    pendingAction,
   };
 }
 
 export function readableCapabilities(context: ExecutionContext): CapabilityDescriptor[] {
   return context.capabilities.filter((c) => c.riskClass === 'READ');
+}
+
+/**
+ * (R4-D) What the model is offered: READ capabilities, plus write classes
+ * when the run's write limit allows any write at all. Visible ≠ executable:
+ * a proposed write still goes through policy, and its outcome only through
+ * a receipt.
+ */
+export function visibleCapabilities(context: ExecutionContext): CapabilityDescriptor[] {
+  return context.budget.limits.maxWriteActions > 0 ? [...context.capabilities] : readableCapabilities(context);
 }

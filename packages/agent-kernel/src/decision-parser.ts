@@ -32,6 +32,11 @@ export interface DecisionValidationContext {
  *
  * C1 accepts decisions as structured output only; native tool calls are not a
  * decision transport here (Constitution §27.11 stays open).
+ *
+ * The strict schemas are also what keeps trusted fields out of the model's
+ * reach (R4-D): a decision carrying an execution key, a policy decision, a
+ * risk class, a permission, an identity, a receipt or a status is rejected
+ * as `invalid_decision_schema`, never silently stripped.
  */
 export function parseAgentDecision(response: ModelResponse, context: DecisionValidationContext): DecisionParseResult {
   const raw = extractJson(response);
@@ -60,7 +65,22 @@ export function parseAgentDecision(response: ModelResponse, context: DecisionVal
         return fail('unknown_capability', 'the requested capability is not available to this run');
       }
       if (capability.riskClass !== 'READ') {
-        return fail('capability_not_permitted', `${capability.capabilityId} is ${capability.riskClass}; only READ capabilities are executable`);
+        return fail('capability_not_permitted', `${capability.capabilityId} is ${capability.riskClass}; only READ capabilities are invoked (writes are proposed)`);
+      }
+      return { ok: true, decision };
+    }
+    case 'propose_action': {
+      // Structure only: whether the action may execute is the Policy Engine's decision, not the kernel's.
+      const capability = context.capabilities.find((c) => c.capabilityId === decision.capabilityId);
+      if (!capability) {
+        return fail('unknown_capability', 'the proposed capability is not available to this run');
+      }
+      if (capability.riskClass === 'READ') {
+        return fail('capability_not_permitted', `${capability.capabilityId} is READ; reads are invoked with read_capability, not proposed`);
+      }
+      const unknown = (decision.evidenceRefs ?? []).filter((id) => !context.observationIds.has(id));
+      if (unknown.length > 0) {
+        return fail('unknown_evidence', `evidenceRefs must reference observations of this task (${unknown.length} unknown)`);
       }
       return { ok: true, decision };
     }

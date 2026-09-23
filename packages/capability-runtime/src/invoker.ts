@@ -54,8 +54,9 @@ type Outcome =
  *   resolve → authorize (scopes) → permit (R4-B: READ only) → validate args
  *   → execute with timeout → validate output → record observation
  *
- * Writes are not executable here by design: they will require the
- * ActionProposal → Policy → Execution → ActionReceipt path (R4-D).
+ * Writes are not executable here by design: they go through the
+ * ActionProposal → Policy → ActionCommand → ActionExecutor → ActionReceipt
+ * path (R4-D), whose handlers this invoker cannot reach.
  */
 export class CapabilityInvoker {
   readonly #registry: CapabilityRegistry;

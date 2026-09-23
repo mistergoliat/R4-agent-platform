@@ -187,4 +187,14 @@ export class PostgresTaskUnitOfWork implements TaskUnitOfWork {
     );
     return result.rowCount === 1;
   }
+
+  async flagUnresolvedActionExecutions(runId: string, timestamp: string): Promise<number> {
+    const result = await this.client.query(
+      `update action_executions
+          set status = 'needs_reconciliation', version = version + 1, updated_at = greatest(updated_at, $2::timestamptz)
+        where run_id = $1 and status = 'executing'`,
+      [runId, timestamp],
+    );
+    return result.rowCount ?? 0;
+  }
 }

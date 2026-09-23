@@ -51,6 +51,9 @@ describe('run termination contract', () => {
       ['lease_lost', 'lease'],
       ['cancelled', null],
       ['internal_failure', 'platform'],
+      // R4-D
+      ['approval_required', null],
+      ['write_outcome_uncertain', 'action'],
     ]);
     // Every class is reachable.
     expect(new Set(TERMINATION_REASONS.map(failureClassOf).filter(Boolean))).toEqual(new Set(FAILURE_CLASSES));

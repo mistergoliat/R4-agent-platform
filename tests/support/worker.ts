@@ -2,6 +2,7 @@ import type { Logger } from 'pino';
 import type { ExecutionPolicy } from '@r4/agent-kernel';
 import { CapabilityRegistry } from '@r4/capability-runtime';
 import type { ContextCompactor, ContextCompilationPolicyInput, ContextSource } from '@r4/context-compiler';
+import type { ActionPolicyConfigurationInput } from '@r4/policy-engine';
 import { FakeModelProvider, type FakeModelScript } from '@r4/model-gateway';
 import { createSilentLogger } from '@r4/observability';
 import { PostgresExecutionStore, PostgresObservationStore, type Pool } from '@r4/persistence-postgres';
@@ -25,6 +26,8 @@ export interface TestWorkerOptions {
   readonly context?: Partial<ContextCompilationPolicyInput>;
   readonly compactor?: ContextCompactor;
   readonly contextSources?: readonly ContextSource[];
+  /** R4-D: action policy binding (default: the platform's DEFAULT_ACTION_POLICY). */
+  readonly actionPolicy?: ActionPolicyConfigurationInput;
 }
 
 /** Same as a worker booted from an empty environment (loadWorkerConfig): unbounded budget. */
@@ -76,7 +79,13 @@ export async function startTestWorker(databaseUrl: string, options: TestWorkerOp
   const capabilities = options.capabilities ?? testCapabilities();
   const platform = await createWorkerPlatform(
     testWorkerConfig(databaseUrl, options),
-    { modelProvider: provider, capabilities, ...(options.compactor ? { compactor: options.compactor } : {}), ...(options.contextSources ? { contextSources: options.contextSources } : {}) },
+    {
+      modelProvider: provider,
+      capabilities,
+      ...(options.compactor ? { compactor: options.compactor } : {}),
+      ...(options.contextSources ? { contextSources: options.contextSources } : {}),
+      ...(options.actionPolicy ? { actionPolicy: options.actionPolicy } : {}),
+    },
     { logger: options.logger ?? createSilentLogger() },
   );
   return { platform, provider, capabilities };

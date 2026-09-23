@@ -157,12 +157,23 @@ export function observationFromRow(row: Row): Observation {
     taskId: row.task_id as string,
     runId: (row.run_id as string | null) ?? null,
     agentId: row.agent_id as string,
-    source: {
-      kind: 'capability',
-      capabilityId: row.capability_id as string,
-      capabilityVersion: (row.capability_version as number | null) ?? null,
-      invocationId: row.invocation_id as string,
-    },
+    source:
+      row.source_kind === 'action'
+        ? {
+            kind: 'action',
+            capabilityId: row.capability_id as string,
+            capabilityVersion: (row.capability_version as number | null) ?? null,
+            proposalId: row.proposal_id as string,
+            policyDecisionId: (row.policy_decision_id as string | null) ?? null,
+            executionId: (row.execution_id as string | null) ?? null,
+            receiptId: (row.receipt_id as string | null) ?? null,
+          }
+        : {
+            kind: 'capability',
+            capabilityId: row.capability_id as string,
+            capabilityVersion: (row.capability_version as number | null) ?? null,
+            invocationId: row.invocation_id as string,
+          },
     outcome: row.outcome as Observation['outcome'],
     payload: (row.payload as JsonValue | null) ?? null,
     error:
@@ -207,6 +218,7 @@ export function stepFromRow(row: Row): RunStep {
     invocationId: (row.invocation_id as string | null) ?? null,
     observationId: (row.observation_id as string | null) ?? null,
     contextSnapshotId: (row.context_snapshot_id as string | null) ?? null,
+    proposalId: (row.proposal_id as string | null) ?? null,
     usage: { inputTokens: row.input_tokens as number, outputTokens: row.output_tokens as number },
     correlationId: row.correlation_id as string,
     createdAt: iso(row.created_at),

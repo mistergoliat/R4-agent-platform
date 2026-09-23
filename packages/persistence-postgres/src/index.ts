@@ -6,3 +6,4 @@ export * from './agent-definition-store.js';
 export * from './observation-store.js';
 export * from './execution-store.js';
 export * from './memory-store.js';
+export * from './action-store.js';

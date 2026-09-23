@@ -15,7 +15,8 @@ import {
   migrationStatus,
   type Pool,
 } from '@r4/persistence-postgres';
-import { ExecutionRuntime } from '@r4/task-runtime';
+import { ActionPolicyEngine, DEFAULT_ACTION_POLICY, type ActionPolicyConfigurationInput } from '@r4/policy-engine';
+import { ActionRuntime, ExecutionRuntime } from '@r4/task-runtime';
 import { validateWorkerConfig, type WorkerConfig } from './config.js';
 import { DurableKernelSession } from './session.js';
 import { Worker } from './worker.js';
@@ -34,6 +35,11 @@ export interface WorkerBindings {
   readonly compactor?: ContextCompactor;
   /** Additional context sources (e.g. domain state owned outside the Core), registered after the platform's. */
   readonly contextSources?: readonly ContextSource[];
+  /**
+   * R4-D: the deterministic action policy (typed rule set, versioned and
+   * hashed). Defaults to the platform's conservative DEFAULT_ACTION_POLICY.
+   */
+  readonly actionPolicy?: ActionPolicyConfigurationInput;
 }
 
 export interface WorkerOverrides {
@@ -71,7 +77,10 @@ export async function createWorkerPlatform(config: WorkerConfig, bindings: Worke
 
     const agents = new AgentRegistry({ store: new PostgresAgentDefinitionStore(pool), clock, logger });
     const observations = new PostgresObservationStore(pool);
-    const execution = new ExecutionRuntime({ store: new PostgresExecutionStore(pool), ids, clock, logger, maxRunRecoveries: config.maxRunRecoveries });
+    const store = new PostgresExecutionStore(pool);
+    const execution = new ExecutionRuntime({ store, ids, clock, logger, maxRunRecoveries: config.maxRunRecoveries });
+    // The only authority over effects: policy is evaluated inside the runtime's fenced transactions.
+    const actions = new ActionRuntime({ store, authorizer: new ActionPolicyEngine(bindings.actionPolicy ?? DEFAULT_ACTION_POLICY), ids, clock, logger });
     const kernel = new AgentKernel({ gateway: new DefaultModelGateway({ provider: bindings.modelProvider, logger }), logger });
     const context = new ContextCompiler({
       sources: [...platformContextSources(), new MemoryContextSource(new PostgresMemoryStore(pool)), ...(bindings.contextSources ?? [])],
@@ -85,7 +94,7 @@ export async function createWorkerPlatform(config: WorkerConfig, bindings: Worke
       execution,
       kernel,
       sessions: ({ lease }) =>
-        new DurableKernelSession({ lease, execution, agents, capabilities: bindings.capabilities, observations, policy: config.execution, context, ids, clock, logger }),
+        new DurableKernelSession({ lease, execution, agents, capabilities: bindings.capabilities, observations, policy: config.execution, context, actions, ids, clock, logger }),
       leaseDurationMs: config.leaseDurationMs,
       heartbeatIntervalMs: config.heartbeatIntervalMs,
       pollIntervalMs: config.pollIntervalMs,

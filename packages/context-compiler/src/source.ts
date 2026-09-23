@@ -5,6 +5,7 @@ import type {
   ContextContributionInput,
   Goal,
   Observation,
+  RiskClass,
 } from '@r4/contracts';
 
 /** Who the context is for: one iteration of one run. */
@@ -23,6 +24,8 @@ export interface VisibleCapability {
   readonly version: number;
   readonly description: string;
   readonly inputSchema: Readonly<Record<string, unknown>>;
+  /** (R4-D) Tells the model whether it invokes (READ) or proposes (write classes); never what policy will decide. */
+  readonly riskClass?: RiskClass;
 }
 
 /** The limits the run executes under, as durable facts (no wall-clock "remaining time"). */
@@ -33,6 +36,8 @@ export interface ExecutionConstraints {
     readonly readCapabilityCalls: number;
     /** Null when the task declares no token budget. */
     readonly tokens: number | null;
+    /** (R4-D) Write actions the task may still create. */
+    readonly writeActions?: number;
   };
   /** run.startedAt + maximum run duration: absolute, so it does not change while the iteration waits. */
   readonly runDeadlineAt: string;

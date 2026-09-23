@@ -7,8 +7,13 @@ Agent Kernel, `AgentDecision`, capabilities READ, observations, budgets y
 recuperación) y **R4-C2 — Context Compiler & Memory Boundaries** (contexto
 estructurado, acotado y reproducible por decisión; autoridad y frescura
 explícitas; memoria task-scoped; compaction no autoritativa; `ContextSnapshot`
-durable antes de cada llamada al modelo). No contiene llamadas LLM reales ni
-ningún agente de negocio.
+durable antes de cada llamada al modelo). **R4-D — Governed Execution**:
+el agente propone efectos
+(`propose_action`); una Policy Engine determinista decide; la plataforma crea
+un comando con execution key propia, lo ejecuta mediante un `ActionExecutor`
+separado, se recupera de crashes sin duplicar efectos y sólo informa el
+resultado con un `ActionReceipt` inmutable. No contiene llamadas LLM reales,
+writes de dominio de producción ni ningún agente de negocio.
 
 Lectura obligatoria antes de cambios de arquitectura: [AGENTS.md](AGENTS.md),
 [Constitución](docs/architecture/R4_AGENTIC_PLATFORM_MOTIVATION_AND_CONSTRAINTS.md),
@@ -67,6 +72,7 @@ ejecutan con `FakeModelProvider` y la capability sintética
 | `R4_EXEC_MAX_RUN_DURATION_MS` | `900000` | 〃 (incluye tiempo huérfano tras un crash) |
 | `R4_EXEC_MODEL_CALL_TIMEOUT_MS` | `60000` | Por llamada; acotado por la duración restante |
 | `R4_EXEC_MAX_RUN_RECOVERIES` | `3` | Takeovers antes de abandonar un run (`lease_lost`) |
+| `R4_EXEC_MAX_WRITE_ACTIONS` | `0` | (D) Acciones de escritura por task (el `maxWrites` de la task puede reducirlo). `0` = el worker no escribe; con `0` las capabilities de escritura ni se ofrecen al modelo |
 | `R4_CONTEXT_BUDGET_MODE` | `unbounded` | Presupuesto de contexto (ADR-015): `unbounded` = R4 no impone límite propio (nada se excluye ni compacta por presupuesto); `fixed` = acotado |
 | `R4_CONTEXT_MAX_TOKENS` | — | Obligatorio sólo con `fixed`: techo en tokens estimados. `contextPolicy.maxContextTokens` del agente puede ajustarlo en ambos modos |
 | `R4_CONTEXT_RECENT_TURNS` | `20` | Turnos recientes que se mantienen crudos cuando hay que compactar (sólo `fixed`) |
@@ -77,6 +83,16 @@ La compaction (sólo con presupuesto `fixed`) requiere un `ContextCompactor` en 
 (`{ modelProvider, capabilities, compactor?, contextSources? }`); C2 sólo trae
 el determinístico. `contextSources` registra fuentes adicionales (p. ej. estado
 de dominio fuera de Core) sin modificar el compilador.
+
+(R4-D) Las capabilities de escritura se registran con `registry.registerWrite({
+definition, recovery: 'idempotent_replay' | 'reconcile_before_retry', input,
+output, execute, reconcile? })`: el handler recibe la execution key de la
+plataforma y debe aplicar a lo sumo un efecto por clave. La política se inyecta
+con `actionPolicy` en los bindings (default `DEFAULT_ACTION_POLICY`: reversible
+autónomo; irreversible, financiero y comunicación externa requieren aprobación
+o identidad verificada; privilegiado denegado). `REQUIRE_APPROVAL` deja la task
+en `requires_approval` (el workflow de aprobación es R4-E); un resultado que no
+puede establecerse deja la task `blocked` y la ejecución `needs_reconciliation`.
 Para detener PostgreSQL: `npm run db:down` (el volumen `r4-postgres-data` se conserva).
 
 ## API smoke
@@ -114,7 +130,7 @@ npm run typecheck       # repo completo, incluidos tests
 npm run test:unit       # sin dependencias externas
 npm run test:contract   # pureza de Core, fronteras de dependencias, neutralidad de proveedor
 npm run test:integration  # requiere `npm run db:up`; crea y borra BDs efímeras
-npm run test:recovery   # detiene/arranca el contenedor PostgreSQL y mata un worker real (SIGKILL); requiere `npm run build`; correr aislado
+npm run test:recovery   # detiene/arranca el contenedor PostgreSQL y mata workers reales (SIGKILL, incl. tras un efecto externo); requiere `npm run build`; correr aislado
 npm test                # unit + contract + integration
 npm run check           # build + lint + typecheck + test
 ```
@@ -132,11 +148,12 @@ apps/worker                  worker: claim, lease/heartbeat, kernel (R4-C1)
 packages/contracts           esquemas/tipos de primitivas
 packages/observability       logs estructurados, correlación, eventos
 packages/model-gateway       ModelGateway + FakeModelProvider
-packages/capability-runtime  registry, discovery, invocación, observations
-packages/task-runtime        AgentTask / AgentRun / Goal (sobre ports)
+packages/capability-runtime  registry, discovery, invocación READ, observations; (D) writes + ActionExecutor
+packages/task-runtime        AgentTask / AgentRun / Goal (sobre ports); (D) ActionRuntime: propuesta → decisión → comando → intentos → receipt
 packages/agent-registry      AgentDefinitions versionadas e inmutables
-packages/agent-kernel        loop model → decisión → READ → observation (R4-C1)
+packages/agent-kernel        loop model → decisión → READ | propose_action → observation (R4-C1, R4-D)
 packages/context-compiler    contexto estructurado por decisión: sources, autoridad, frescura, budget, compaction (R4-C2)
+packages/policy-engine       autorización determinista de acciones: reglas tipadas, versión + hash (R4-D)
 packages/persistence-postgres  migraciones + stores PostgreSQL
 agents/platform-probe        agente sonda sin dominio
 tests/                       unit · contract · integration · recovery
