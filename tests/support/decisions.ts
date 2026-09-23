@@ -1,3 +1,4 @@
+import type { CompiledContext } from '@r4/contracts';
 import type { FakeModelScript, FakeModelStep, ModelRequest } from '@r4/model-gateway';
 
 /**
@@ -17,7 +18,11 @@ export function complete(summary: string, evidence: string[] = [], data?: Record
   return { type: 'structured', data: { type: 'complete', result: { summary, evidence, ...(data ? { data } : {}) } } };
 }
 
-/** The execution context document the kernel rendered for this call. */
+/**
+ * A compact view of what the model received, projected from the structured
+ * compiled context of the request (R4-C2). Observations include expired ones
+ * kept as history.
+ */
 export interface RenderedContext {
   iteration: number;
   task: { taskId: string; input: Record<string, unknown> };
@@ -27,10 +32,28 @@ export interface RenderedContext {
   budget: { remaining: Record<string, number | null> };
 }
 
+export function compiledOf(request: ModelRequest): CompiledContext {
+  if (!request.context) throw new Error('model request carries no compiled context');
+  return request.context;
+}
+
 export function contextOf(request: ModelRequest): RenderedContext {
-  const user = request.messages.find((m) => m.role === 'user');
-  if (!user) throw new Error('no user message in model request');
-  return JSON.parse(user.content) as RenderedContext;
+  const { scope, sections } = compiledOf(request);
+  const task = sections.task.find((i) => i.kind === 'task')!.content as RenderedContext['task'];
+  const execution = sections.task.find((i) => i.kind === 'execution_constraints')!.content as { remaining: Record<string, number | null> };
+  return {
+    iteration: scope.iteration,
+    task,
+    capabilities: sections.capabilities.map((i) => i.content as { capabilityId: string }),
+    observations: [...sections.observations, ...sections.history.filter((i) => i.kind === 'observation')].map((i) => i.content as RenderedContext['observations'][number]),
+    responses: sections.conversation
+      .filter((i) => i.sourceId === 'platform.run')
+      .map((i) => {
+        const content = i.content as { iteration: number; text: string };
+        return { iteration: content.iteration, content: content.text };
+      }),
+    budget: { remaining: execution.remaining },
+  };
 }
 
 /** Completes citing every observation the model was shown — proves the observation reached the model. */

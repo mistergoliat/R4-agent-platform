@@ -3,9 +3,13 @@ import {
   type AgentDecision,
   type AgentRun,
   type AgentTask,
+  type CompiledContext,
+  type ContextItemDecision,
+  type ContextSnapshot,
   type Goal,
   type JsonObject,
   type JsonValue,
+  type MemoryEntry,
   type Observation,
   type Principal,
   type RegisteredAgentDefinition,
@@ -202,6 +206,7 @@ export function stepFromRow(row: Row): RunStep {
     error: errorCode === null ? null : { code: errorCode, message: (row.error_message as string | null) ?? '' },
     invocationId: (row.invocation_id as string | null) ?? null,
     observationId: (row.observation_id as string | null) ?? null,
+    contextSnapshotId: (row.context_snapshot_id as string | null) ?? null,
     usage: { inputTokens: row.input_tokens as number, outputTokens: row.output_tokens as number },
     correlationId: row.correlation_id as string,
     createdAt: iso(row.created_at),
@@ -212,4 +217,57 @@ export function stepFromRow(row: Row): RunStep {
 /** JSONB parameters are always passed pre-serialized (pg would turn arrays into SQL arrays). */
 export function jsonb(value: unknown): string | null {
   return value === null || value === undefined ? null : JSON.stringify(value);
+}
+
+export function contextSnapshotFromRow(row: Row, items: readonly Row[]): ContextSnapshot {
+  return {
+    snapshotId: row.snapshot_id as string,
+    runId: row.run_id as string,
+    taskId: row.task_id as string,
+    iteration: row.iteration as number,
+    attempt: row.attempt as number,
+    agentId: row.agent_id as string,
+    agentVersion: row.agent_version as number,
+    compilerVersion: row.compiler_version as string,
+    policyVersion: row.policy_version as string,
+    compiledContext: row.compiled_context as CompiledContext,
+    contentHash: row.content_hash as string,
+    inputFingerprint: row.input_fingerprint as string,
+    estimatedTokens: row.estimated_tokens as number,
+    budget: row.budget_mode === 'fixed' ? { mode: 'fixed', maxEstimatedTokens: row.max_estimated_tokens as number } : { mode: 'unbounded' },
+    decisions: items.map((item) => ({
+      itemId: item.item_id as string,
+      sourceId: item.source_id as string,
+      kind: item.kind as ContextItemDecision['kind'],
+      authority: item.authority as ContextItemDecision['authority'],
+      freshness: item.freshness as ContextItemDecision['freshness'],
+      sensitivity: item.sensitivity as ContextItemDecision['sensitivity'],
+      decision: item.decision as ContextItemDecision['decision'],
+      section: (item.section as ContextItemDecision['section']) ?? null,
+      reason: (item.exclusion_reason as ContextItemDecision['reason']) ?? null,
+      representedBy: (item.represented_by as string | null) ?? null,
+      estimatedTokens: item.estimated_tokens as number,
+    })),
+    supersedesSnapshotId: (row.supersedes_snapshot_id as string | null) ?? null,
+    correlationId: row.correlation_id as string,
+    createdAt: iso(row.created_at),
+  };
+}
+
+export function memoryEntryFromRow(row: Row): MemoryEntry {
+  return {
+    entryId: row.entry_id as string,
+    taskId: row.task_id as string,
+    memoryType: row.memory_type as MemoryEntry['memoryType'],
+    // Discriminated by memory_type; the row was validated before it was written.
+    content: row.content as never,
+    occurredAt: iso(row.occurred_at),
+    recordedAt: iso(row.recorded_at),
+    validUntil: isoOrNull(row.valid_until),
+    expiredAt: isoOrNull(row.expired_at),
+    supersedesEntryId: (row.supersedes_entry_id as string | null) ?? null,
+    sensitivity: row.sensitivity as MemoryEntry['sensitivity'],
+    recordedBy: { kind: row.recorded_by_kind as Principal['kind'], ref: row.recorded_by_ref as string },
+    correlationId: row.correlation_id as string,
+  };
 }

@@ -23,6 +23,9 @@
     },
     {
       "path": "../capability-runtime"
+    },
+    {
+      "path": "../context-compiler"
     }
   ]
 }

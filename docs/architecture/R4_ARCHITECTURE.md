@@ -1,6 +1,6 @@
 ---
-title: R4 — Arquitectura implementada (R4-B + R4-C1)
-status: implemented (R4-B, R4-C1)
+title: R4 — Arquitectura implementada (R4-B + R4-C1 + R4-C2)
+status: implemented (R4-B, R4-C1), R4-C2 pending acceptance
 owner: architecture
 last_reviewed: 2026-09-22
 depends_on:
@@ -15,16 +15,23 @@ depends_on:
   - ../adr/ADR-007-lease-heartbeat-fencing.md
   - ../adr/ADR-008-agent-decision-protocol.md
   - ../adr/ADR-009-agent-kernel-boundary.md
+  - ../adr/ADR-010-context-compiler-boundary.md
+  - ../adr/ADR-011-context-authority-model.md
+  - ../adr/ADR-012-context-snapshot-semantics.md
+  - ../adr/ADR-013-memory-classification.md
+  - ../adr/ADR-014-compaction-is-non-authoritative.md
+  - ../adr/ADR-015-context-budget-policy-and-measurement.md
 ---
 
-# R4 — Arquitectura implementada (R4-B + R4-C1)
+# R4 — Arquitectura implementada (R4-B + R4-C1 + R4-C2)
 
 Este documento describe lo que **existe** en el repositorio tras R4-B (Platform
-Skeleton) y R4-C1 (Execution Kernel). No describe la arquitectura final de R4:
-la Constitución y el PRD siguen siendo la autoridad (Constitución > PRD > ADR >
-tarea). Lo que aquí figura como "seam" es un punto de extensión deliberado, no
-una funcionalidad implementada. Las secciones 1–10 describen R4-B, actualizadas
-donde C1 las cambió; la sección 11 describe R4-C1.
+Skeleton), R4-C1 (Execution Kernel) y R4-C2 (Context Compiler & Memory
+Boundaries). No describe la arquitectura final de R4: la Constitución y el PRD
+siguen siendo la autoridad (Constitución > PRD > ADR > tarea). Lo que aquí
+figura como "seam" es un punto de extensión deliberado, no una funcionalidad
+implementada. Las secciones 1–10 describen R4-B, actualizadas donde C1/C2 las
+cambiaron; la sección 11 describe R4-C1 y la 12 R4-C2.
 
 ## 1. Objetivo de R4-B
 
@@ -58,6 +65,7 @@ R4-agent-platform/
 │   ├── task-runtime/           Ciclo de vida de AgentTask/AgentRun/Goal sobre ports de persistencia.
 │   ├── agent-registry/         Carga, valida y registra AgentDefinitions inmutables y versionadas.
 │   ├── agent-kernel/           (C1) Loop model → decisión → READ → observation. Sin estado ni persistencia.
+│   ├── context-compiler/       (C2) Contexto estructurado por decisión: sources, autoridad, frescura, budget, compaction.
 │   └── persistence-postgres/   Migraciones + implementación PostgreSQL de los ports.
 ├── agents/
 │   └── platform-probe/         Única definición de agente: sonda sin dominio para R4-B.
@@ -66,7 +74,8 @@ R4-agent-platform/
 ```
 
 Paquetes del árbol sugerido que **no** se crearon porque no corresponden a
-R4-B/C1: `context-compiler`, `memory`, `artifacts`,
+R4-B/C1/C2: `memory` (la memoria de C2 es un contrato + tabla + source, sin
+runtime propio; ADR-013), `artifacts`,
 `policy-engine`, `scheduler`, `human-collaboration`, `evaluation`, `agents/sales`,
 `agents/quality-auditor`, `agents/marketing-analyst`, `adapters/*`. Ver
 [roadmap](../roadmap/R4_DELIVERY_ROADMAP.md).
@@ -79,21 +88,23 @@ agnóstico de persistencia.
 ### 2.1 Grafo de dependencias (verificado por test)
 
 ```text
-contracts  ◄──────────────────────────────────────────────┐
-   ▲                                                       │
-observability                                              │
-   ▲        ▲               ▲               ▲              │
-model-gateway   capability-runtime   task-runtime   agent-registry
-   ▲                   ▲                  ▲              ▲
-agent-kernel (C1)      └──────── persistence-postgres ───┘
+contracts  ◄───────────────────────────────────────────────────────────┐
+   ▲                                                                    │
+observability                                                           │
+   ▲        ▲               ▲               ▲              ▲            │
+model-gateway   capability-runtime   task-runtime   agent-registry   context-compiler (C2)
+   ▲                   ▲                  ▲              ▲              ▲
+agent-kernel (C1)      └──────── persistence-postgres ───┴──────────────┘ (MemoryReader)
    ▲                                      ▲
    │                                 apps/api  (también usa task-runtime, agent-registry)
-   └──────────── apps/worker (C1): kernel + task-runtime + capability-runtime +
-                                   agent-registry + persistence-postgres + model-gateway
+   └──────────── apps/worker (C1/C2): kernel + context-compiler + task-runtime +
+                 capability-runtime + agent-registry + persistence-postgres + model-gateway
 ```
 
 `agent-kernel` depende sólo de `contracts`, `observability` y la interfaz de
-`model-gateway`; `apps/worker` no depende de `apps/api` ni de Fastify.
+`model-gateway` — no del compilador de contexto. `context-compiler` depende sólo
+de `contracts` y `observability`. `apps/worker` no depende de `apps/api` ni de
+Fastify.
 
 Reglas duras (fallan el build si se violan):
 
@@ -103,6 +114,8 @@ Reglas duras (fallan el build si se violan):
 | Sólo `persistence-postgres` habla con PostgreSQL | ESLint `no-restricted-imports` + allow-list de dependencias |
 | `model-gateway` no alcanza estado ni ejecución de capabilities | ESLint + allow-list |
 | `agent-kernel` no alcanza PostgreSQL, task/capability runtime, registry, transportes | ESLint + allow-list + `tests/contract/execution-kernel-boundaries.test.ts` |
+| `agent-kernel` no conoce `context-compiler`; el compilador no alcanza almacenamiento, runtimes, kernel ni modelos | ESLint + allow-list + `tests/contract/context-boundaries.test.ts` |
+| Sólo fuentes de plataforma producen ítems `AUTHORITATIVE`; ninguna memoria es autoritativa; el modelo no escribe memoria ni estado | `context-boundaries.test.ts` |
 | `apps/worker` independiente de `apps/api` y de HTTP | `dependency-boundaries.test.ts` |
 | Un único call site de handlers de capability (el invoker); sin bypass de writes | `execution-kernel-boundaries.test.ts` |
 | Paquetes Core no importan transportes ni apps | ESLint |
@@ -294,7 +307,10 @@ falla con `schema_not_current` y `/ready` reporta las migraciones pendientes.
 | `agent_runs` | `run_id` | sí (`version`) | uso en columnas; un run activo por task |
 | `observations` | `observation_id` | no | `invocation_id` único; frescura (`valid_until`) |
 | `agent_tasks.lease_*` (C1) | — | sí (sin `version`) | owner, generation (fencing), expiración en reloj de BD; ADR-007 |
-| `agent_run_steps` (C1) | `step_id` | sólo `pending → observed` | una fila por iteración; `unique(run_id, iteration)`, `invocation_id` único, un `pending` por run |
+| `agent_run_steps` (C1) | `step_id` | sólo `pending → observed` | una fila por iteración; `unique(run_id, iteration)`, `invocation_id` único, un `pending` por run; (C2) `context_snapshot_id` con FK compuesta a su run+iteración |
+| `memory_entries` (C2) | `entry_id` | sólo `expired_at` una vez (trigger) | task-scoped; supersession (misma task+tipo, un sucesor); `unique(task_id, derivation_key)` para summaries; sin `SECRET` |
+| `context_snapshots` (C2) | `snapshot_id` | no (trigger) | `unique(run_id, iteration, attempt)`; `supersedes_snapshot_id` único; `compiled_context` JSONB; `budget_mode` + `max_estimated_tokens` (null ⇔ unbounded) |
+| `context_snapshot_items` (C2) | `(snapshot_id, position)` | no (trigger) | decisión por **cada** ítem evaluado, compactados incluidos (sin contenido); `SECRET` sólo como excluido; fuente única de la contabilidad (ADR-015) |
 
 JSONB sólo donde el esquema es genuinamente extensible (input de task,
 constraints, result, provenance, payloads, sub-documentos de configuración).
@@ -352,14 +368,16 @@ Observation que produce la propia plataforma.
 | Resume | (C1) Un run huérfano se detecta por expiración del lease y otro worker lo reanuda desde su step log (§11.7). |
 | Idempotencia | Creación de tasks (por principal) e invocaciones de capability (por `invocationId`), ambas persistentes a través de reinicios. |
 | Checkpointing | (C1) Cada iteración es un step durable (`agent_run_steps`); el loop se reconstruye desde ahí. Checkpoints de efectos (writes) son R4-D. |
-| Estado en memoria | Sólo configuración reconstruible de forma determinista (capability registry desde código; definiciones desde archivos, verificadas contra la BD). |
+| Estado en memoria | Sólo configuración reconstruible de forma determinista (capability registry desde código; definiciones desde archivos, verificadas contra la BD). (C2) El compilador no tiene estado; la sesión guarda sólo el último `load()` de la iteración en curso. |
+| Contexto y memoria | (C2) Memoria de task, snapshots y summaries viven en PostgreSQL; sobreviven reinicio de worker, de API y de PostgreSQL (§12.8). |
 
 ## 10. Qué queda fuera (deliberadamente)
 
-Context Compiler, memoria, artifacts, ActionProposal/Receipt, Policy Engine,
-scheduler, consultation/approval/handoff, delegación, evaluation runtime,
-llamadas LLM reales, autenticación, outbox de eventos, MCP, Sales y cualquier
-write. Ver [roadmap](../roadmap/R4_DELIVERY_ROADMAP.md) §4.
+Memoria de largo plazo/organización/semántica, retrieval vectorial, artifacts,
+ActionProposal/Receipt, Policy Engine, scheduler,
+consultation/approval/handoff, delegación, evaluation runtime, llamadas LLM
+reales, autenticación, outbox de eventos, MCP, Sales y cualquier write. Ver
+[roadmap](../roadmap/R4_DELIVERY_ROADMAP.md) §4.
 
 ## 11. R4-C1 — Execution Kernel
 
@@ -437,7 +455,8 @@ concedida y `READ`; evidencia = observations de la task).
   `executeRead`, `finish`) e interrupciones (`KernelInterrupt`).
 - `ExecutionContext` = definición · task · goal actual · observations de la
   task · respuestas del run · budget · capabilities por scope. Reconstruido en
-  cada iteración; futuro input del Context Compiler.
+  cada iteración. Desde C2 el kernel lo usa para budgets y validación; lo que
+  ve el modelo es el `CompiledContext` que devuelve `prepareContext` (§12).
 - Un READ recibe su `invocationId` de la plataforma **antes** de ejecutarse
   (step `pending`). La Observation se inserta y liga al step en una sola
   transacción fenced: es la única evidencia del resultado y la siguiente
@@ -472,7 +491,7 @@ READ.
 | Muerte del worker… | Estado durable | Qué hace el siguiente dueño |
 |---|---|---|
 | antes/durante el claim | nada, o lease + run `running` sin steps | reanuda y llama al modelo |
-| durante la llamada al modelo | steps previos | repite la llamada (sin efectos; uso no registrado) |
+| durante la llamada al modelo | steps previos + (C2) snapshot de la iteración | repite la llamada (sin efectos; uso no registrado) con el **mismo** snapshot si sus inputs no cambiaron (ADR-012) |
 | tras decidir READ, antes de la observation | step `pending` con `invocationId` | ejecuta ese READ con el mismo `invocationId`, sin llamar al modelo |
 | tras persistir la observation | step `observed` | llama al modelo con la observation en el contexto |
 | tras decidir complete/invalid/budget | nada parcial: step final + cierre son atómicos | — |
@@ -495,3 +514,138 @@ su vida es observable por telemetría y por `last_heartbeat_at`.
 `correlationId`, `taskId`, `runId`, `agentId`, `workerId`, `iteration` (por
 contexto de correlación o campos explícitos). Nunca prompts, contenido de
 decisiones, payloads de observations, goals ni input (verificado por tests).
+
+## 12. R4-C2 — Context Compiler & Memory Boundaries
+
+Pregunta que responde C2: ¿puede R4 construir, para cada decisión del agente,
+un contexto mínimo, estructurado, reproducible, acotado por presupuesto y
+consciente de autoridad y frescura, sin convertir transcript, summaries,
+observations, memoria y estado de negocio en una sola fuente de verdad?
+
+```text
+load (fenced) ─► ExecutionContext ─► KernelSession.prepareContext
+   ├─ ContextCompiler.compile: sources → admisión → selección → CompiledContext
+   ├─ ¿snapshot de (run, iteración) con el mismo inputFingerprint? → reutilizar
+   └─ si no: ExecutionRuntime.recordContextSnapshot (fenced, ANTES del modelo)
+─► AgentKernel.decide(context, compiled) ─► ModelRequest { messages:[protocolo], context }
+─► step registrado con contextSnapshotId
+```
+
+### 12.1 Componentes
+
+| Componente | Paquete | Rol |
+|---|---|---|
+| `ContextItem`, `CompiledContext`, `ContextSnapshot`, `ContextItemDecision`, `MemoryEntry` | `contracts` | Contratos estrictos, versionados, neutrales de proveedor y dominio |
+| `ContextCompiler` | `context-compiler` | Admisión, frescura, selección por política, compaction, conflictos, hash, telemetría. No escribe, no decide acciones (ADR-010) |
+| `ContextSource` + fuentes `platform.*` | `context-compiler` | agent, task, run (restricciones + respuestas), goal, capability, observation, memory |
+| `ContextSizer` / `Utf8BytesSizer` | `context-compiler` | Port de tamaño determinístico (sin tokenizer de proveedor) |
+| `ContextCompactor` / `DeterministicCompactor` | `context-compiler` | Seam de compaction; sólo la implementación determinística (ADR-014) |
+| `ExecutionRuntime.recordContextSnapshot` / `latestContextSnapshot` | `task-runtime` | Persistencia fenced del snapshot (+ summaries) antes del modelo (ADR-012) |
+| `PostgresMemoryStore`, `PostgresContextSnapshotStore` | `persistence-postgres` | Memoria append-only (`MemoryReader`) y lectura de snapshots para auditoría |
+| `DurableKernelSession.prepareContext` | `apps/worker` | Pegamento: arma el request del compilador, reutiliza o persiste |
+
+### 12.2 Autoridad, frescura y conflictos (ADR-011)
+
+Cada ítem lleva `authority` (AUTHORITATIVE · OBSERVED · CONVERSATIONAL ·
+DERIVED · COGNITIVE), restringida por `kind`; `freshness` (fresh · stale ·
+expired · unknown) calculada con reloj inyectado; `provenance`
+(`recordType/recordId/recordVersion/producedBy/derivedFrom`) y `sensitivity`.
+Lo expirado nunca es actual: sólo evidencia en `history`. Los desacuerdos entre
+`assertions` se exponen como `conflicts` con todas las posiciones; sólo una
+posición AUTHORITATIVE vigente puede prevalecer.
+
+### 12.3 Estructura del contexto compilado
+
+`sections` = `agent` · `task` (task + restricciones de ejecución) · `goals` ·
+`capabilities` (visibles; ejecutable sigue decidiéndolo C1) ·
+`authoritativeState` · `observations` · `conversation` · `workingMemory` ·
+`episodicMemory` · `derivedMemory` · `history`; más `conflicts`, `omissions`
+(conteo por motivo) y `budget`. El esquema prohíbe `SECRET`, ítems fuera de su
+sección, `expired` fuera de `history` y presupuestos excedidos.
+
+### 12.4 Selección y presupuesto (ADR-010, ADR-015)
+
+**Budgeting es un mecanismo. La política de presupuesto es una decisión
+empírica. La política por defecto en esta etapa es UNBOUNDED. El modo acotado
+sigue disponible para experimentos y futuros controles productivos.**
+
+Política `ContextCompilationPolicy` (worker `R4_CONTEXT_*`) con
+`budget: ContextBudgetPolicy`:
+
+| Modo | Qué hace |
+|---|---|
+| `unbounded` (default) | R4 no impone límite propio (no significa contexto infinito). Se aplican todas las reglas de autoridad, frescura, supersession, `SECRET`, duplicados, conflictos y orden; ningún ítem se excluye por `budget`, no hay compaction, `budget_exhausted` no ocurre. |
+| `fixed(N)` | Selección acotada, compaction por presión, `kindLimits`, `omissions`, `budget_exhausted` (`max_context_tokens`). Tests, benchmarks, experimentos, protección futura. |
+
+El `contextPolicy.maxContextTokens` del agente sólo ajusta
+(unbounded + N → fixed(N)). A futuro:
+`input efectivo = min(límite físico del modelo, presupuesto opcional de R4)`;
+C2 no modela límites de proveedor.
+
+Requeridos por tipo (agent_definition, task, execution_constraints, goal,
+capability) o por la fuente (última observation del run); luego `state →
+observation → conversation_turn → working_note → episode → derived_summary`,
+más recientes primero; evidencia expirada al final. `kindLimits` es política
+de selección (motivo `policy`). Motivos de exclusión: `expired`,
+`superseded`, `budget`, `policy`, `sensitivity`, `duplicate`,
+`not_relevant_to_scope`, `compacted`.
+
+**Comportamiento observado, no veredicto:** con FIXED(6000) y este orden de
+selección, el corpus largo deja working y episodic memory en 0 ítems
+incluidos. Definir una asignación productiva requiere evaluación empírica.
+
+### 12.4b Contabilidad del contexto (ADR-015)
+
+`ContextComposition` = proyección determinística (no persistida) de las
+decisiones por ítem + `estimated_tokens` + budget del snapshot
+(`snapshotComposition`):
+`raw = included + excluded`, `compiled = included + overhead`; desgloses por
+kind, autoridad, fuente, sección y motivo; métricas de compaction (input,
+output, ratio, ítems). Consultas de percentiles por agente/tipo de
+task/kind/autoridad/fuente: `GROUP BY` sobre `context_snapshot_items`.
+
+### 12.5 Memoria (ADR-013)
+
+`WORKING` (COGNITIVE), `CONVERSATIONAL` (CONVERSATIONAL), `EPISODIC` (OBSERVED),
+`DERIVED_SUMMARY` (DERIVED): task-scoped, append-only, supersede/expire sin
+destruir procedencia, sin `SECRET`. El modelo no tiene decisión que escriba
+memoria ni estado; la plataforma sólo escribe summaries de compaction.
+
+### 12.6 Compaction (ADR-014)
+
+Sólo bajo presupuesto FIXED y presión de presupuesto (nunca en UNBOUNDED): el prefijo antiguo (en bloques) se resume en
+un `DERIVED_SUMMARY` con derivación completa, persistido junto al snapshot y
+reutilizado después; la cola reciente queda cruda; las fuentes nunca se borran.
+
+### 12.7 ContextSnapshot (ADR-012)
+
+Persistido antes de cada llamada al modelo, inmutable (triggers), ligado al step
+por FK compuesta. Reutilización en recuperación si el `inputFingerprint`
+(ítems evaluados + frescura + política y presupuesto efectivos) no cambió; si
+cambió, attempt nuevo que supersede al anterior. Reconstrucción exacta:
+`step.contextSnapshotId → compiledContext`; contabilidad:
+`snapshotComposition(snapshot)`.
+
+### 12.8 Durabilidad y recuperación
+
+| Evento | Resultado verificado |
+|---|---|
+| Worker muere durante la llamada (SIGKILL real) | el siguiente worker reutiliza el snapshot de esa iteración byte a byte (`worker-process-crash.test.ts`) |
+| Transición durable mientras la iteración está huérfana | attempt 2 que supersede, attempt 1 intacto (`context-snapshots.test.ts`) |
+| Cambio de presupuesto efectivo entre el worker caído y el que reanuda | attempt 2 con el nuevo budget; nunca reutiliza un snapshot incompatible (`context-snapshots.test.ts`) |
+| Observation nueva | snapshot nuevo en la siguiente iteración que la incluye |
+| Reinicio de worker / API / PostgreSQL | memoria y snapshots intactos (`context-snapshots`, `restart-persistence`, `database-restart`) |
+| Upgrade C1 → C2 | steps C1 con `contextSnapshotId = null`; el run continúa con snapshots (`migration-upgrade-c2.test.ts`) |
+
+### 12.9 Telemetría (C2)
+
+`context.compile.started`, `context.source.loaded`, `context.item.included`,
+`context.item.excluded` (agregados por fuente/tipo/autoridad/frescura/sección o
+motivo, con `count` y `estimatedTokens`: volumen acotado; el detalle por ítem vive
+en el snapshot), `context.compacted`, `context.conflict.detected`,
+`context.budget.exhausted`, `context.snapshot.persisted`,
+`context.snapshot.reused`, `context.compile.completed` (una vez por snapshot
+usado: `budgetMode`, raw/compiled/included/excluded tokens, conteos,
+compaction input/output, tokens incluidos por kind y por autoridad — enums
+cerrados; por fuente y por ítem sólo en persistencia). Sólo metadata: nunca
+contenido de ítems (verificado por tests con marcadores y secretos).

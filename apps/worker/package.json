@@ -19,6 +19,7 @@
     "@r4/agent-kernel": "*",
     "@r4/agent-registry": "*",
     "@r4/capability-runtime": "*",
+    "@r4/context-compiler": "*",
     "@r4/contracts": "*",
     "@r4/model-gateway": "*",
     "@r4/observability": "*",

@@ -1,0 +1,23 @@
+{
+  "name": "@r4/context-compiler",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Context Compiler: builds the minimal, structured, budgeted and reproducible context of each agent decision from pluggable ContextSources. Provider-, domain- and storage-neutral.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@r4/contracts": "*",
+    "@r4/observability": "*",
+    "zod": "^4.6.0"
+  }
+}

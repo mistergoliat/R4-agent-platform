@@ -4,6 +4,7 @@
     { "path": "packages/contracts" },
     { "path": "packages/observability" },
     { "path": "packages/model-gateway" },
+    { "path": "packages/context-compiler" },
     { "path": "packages/capability-runtime" },
     { "path": "packages/task-runtime" },
     { "path": "packages/agent-registry" },

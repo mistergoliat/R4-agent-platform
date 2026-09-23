@@ -1,5 +1,6 @@
-import type { LeaseToken, Observation, RunStep, TaskLease } from '@r4/contracts';
+import type { ContextSnapshot, LeaseToken, MemoryEntry, Observation, RunStep, TaskLease } from '@r4/contracts';
 import type { ClaimedTask, ExecutionStore, ExecutionUnitOfWork, LockedTaskLease } from '@r4/task-runtime';
+import { insertContextSnapshot, insertMemoryEntry, loadContextSnapshot } from './memory-store.js';
 import { recordObservation } from './observation-store.js';
 import { query, withTransaction, type Pool } from './pool.js';
 import { iso, jsonb, leaseFromRow, observationFromRow, stepFromRow, taskFromRow, type Row } from './rows.js';
@@ -111,12 +112,12 @@ class PostgresExecutionUnitOfWork extends PostgresTaskUnitOfWork implements Exec
       `insert into agent_run_steps (
          step_id, run_id, task_id, iteration, lease_generation, decision_type, decision, outcome,
          error_code, error_message, invocation_id, observation_id, input_tokens, output_tokens,
-         correlation_id, created_at, completed_at)
-       values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+         correlation_id, created_at, completed_at, context_snapshot_id)
+       values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
       [
         step.stepId, step.runId, step.taskId, step.iteration, step.leaseGeneration, step.decision?.type ?? null, jsonb(step.decision), step.outcome,
         step.error?.code ?? null, step.error?.message ?? null, step.invocationId, step.observationId, step.usage.inputTokens, step.usage.outputTokens,
-        step.correlationId, step.createdAt, step.completedAt,
+        step.correlationId, step.createdAt, step.completedAt, step.contextSnapshotId,
       ],
     );
   }
@@ -137,5 +138,21 @@ class PostgresExecutionUnitOfWork extends PostgresTaskUnitOfWork implements Exec
 
   insertObservation(observation: Observation): Promise<Observation> {
     return recordObservation(this.client, observation);
+  }
+
+  async findLatestContextSnapshot(runId: string, iteration: number): Promise<ContextSnapshot | null> {
+    const result = await this.client.query<Row>(
+      'select * from context_snapshots where run_id = $1 and iteration = $2 order by attempt desc limit 1',
+      [runId, iteration],
+    );
+    return result.rows[0] ? loadContextSnapshot(this.client, result.rows[0]) : null;
+  }
+
+  insertContextSnapshot(snapshot: ContextSnapshot): Promise<void> {
+    return insertContextSnapshot(this.client, snapshot);
+  }
+
+  insertMemoryEntry(entry: MemoryEntry): Promise<MemoryEntry> {
+    return insertMemoryEntry(this.client, entry);
   }
 }

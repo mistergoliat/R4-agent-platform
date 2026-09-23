@@ -20,16 +20,17 @@ export interface CapabilityDescriptor {
 }
 
 /**
- * ExecutionContext: the MINIMAL, explicit input of one kernel iteration in
- * R4-C1. It is deliberately not the Context Compiler: no conversation, no
- * memory, no retrieval, no compaction. It holds exactly
+ * ExecutionContext: the platform facts of one kernel iteration. It holds
+ * exactly
  *
  *   agent definition · task · current goal · the task's observations ·
  *   this run's own responses · budget · capabilities granted by scope
  *
- * and is rebuilt from durable state on every iteration. It is the future
- * INPUT of the Context Compiler (R4-C2), which will select from it rather
- * than replace it.
+ * and is rebuilt from durable state on every iteration. The kernel uses it to
+ * enforce budgets and validate decisions (what is executable, what evidence
+ * exists). Since R4-C2 it is NOT what the model sees: the session compiles the
+ * model's context from these facts plus memory (Context Compiler) and hands
+ * the kernel a CompiledContext through `prepareContext`.
  */
 export interface ExecutionContext {
   readonly agent: AgentDefinition;

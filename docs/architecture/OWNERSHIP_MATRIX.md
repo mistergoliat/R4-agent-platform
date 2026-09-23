@@ -1,6 +1,6 @@
 ---
 title: R4 — Ownership Matrix
-status: implemented (R4-B, R4-C1) + planned rows
+status: implemented (R4-B, R4-C1, R4-C2 pending acceptance) + planned rows
 owner: architecture
 last_reviewed: 2026-09-22
 ---
@@ -54,12 +54,25 @@ Clases de autoridad:
 | ExecutionPolicy (límites) | `apps/worker` (config) + budget de la task | Configuración | Entorno (`R4_EXEC_*`) | Por proceso | — | Recargada al arrancar; consumo en el step log | `unit/agent-kernel/budget`, `unit/worker/config` |
 | Worker | `apps/worker` | Ejecutor (sin autoridad) | Ninguno propio (lease en BD) | — | start → poll/claim/execute → stop (libera lease) | Reemplazable; otro worker reanuda | `integration/worker-*`, `recovery/worker-process-crash` |
 
+## 1c. Implementado en R4-C2
+
+| Concepto | Owner (paquete) | Autoridad | Almacenamiento | Mutabilidad | Ciclo de vida | Ante reinicio | Evaluación |
+|---|---|---|---|---|---|---|---|
+| ContextItem | Fuente que lo aporta (`platform.*` o externa); compilador (sella `sourceId`) | La declarada y restringida por `kind` (ADR-011) | Derivado; decisión por ítem en `context_snapshot_items` | — | Por compilación | Recompilado desde estado durable | `unit/context-compiler/*` |
+| CompiledContext | `context-compiler` | Plataforma (qué ve el modelo y por qué) | `context_snapshots.compiled_context` | Inmutable una vez persistido | Por llamada al modelo | Reutilizado o recompilado (ADR-012) | `unit/context-compiler/compiler`, `integration/context-snapshots` |
+| ContextSnapshot | `task-runtime` (`ExecutionRuntime`, fenced) | Evidencia (input exacto de cada llamada) | `context_snapshots` + `context_snapshot_items` | Inmutable (triggers); attempts nuevos lo superseden | antes del modelo → referenciado por el step | Durable; base de la reutilización en recovery | `integration/context-snapshots`, `recovery/worker-process-crash` |
+| ContextCompilationPolicy / ContextBudgetPolicy | `apps/worker` (config) + `contextPolicy` del agente (sólo ajusta) | Configuración (presupuesto = decisión empírica; default UNBOUNDED, ADR-015) | Entorno (`R4_CONTEXT_*`) | Por proceso; versión = fingerprint | — | Recargada; un cambio material produce un attempt nuevo | `unit/worker/context-config`, `unit/context-compiler/budget-accounting` |
+| ContextComposition (contabilidad) | `context-compiler` (proyección) | Evidencia derivada | No persistida: derivada de `context_snapshot_items` | — | Por snapshot | Recalculable desde persistencia | `unit/context-compiler/budget-accounting`, `integration/context-snapshots` |
+| MemoryEntry (WORKING/CONVERSATIONAL/EPISODIC) | Quien la registra (principal resuelto por plataforma); `persistence-postgres` (guarda) | COGNITIVE / CONVERSATIONAL / OBSERVED — nunca AUTHORITATIVE | `memory_entries` | Append-only; supersede; expire una vez | append → (superseded \| expired) | Durable | `unit/context-compiler/contracts`, `integration/context-snapshots`, `integration/restart-persistence`, `recovery/database-restart` |
+| DERIVED_SUMMARY | `context-compiler` (produce), `task-runtime` (persiste con el snapshot) | DERIVED — nunca verdad | `memory_entries` (`derivation_key` único por task) | Inmutable; reemplazado por un summary que lo cubre | por presión de presupuesto (sólo FIXED) | Reutilizado sin recompactar | `unit/context-compiler/compaction`, `integration/context-snapshots` |
+| Conflicto de contexto | `context-compiler` (detecta) | Plataforma expone; sólo AUTHORITATIVE vigente prevalece | En el `compiled_context` | — | Por compilación | Recompilado | `unit/context-compiler/compiler`, `long-context` |
+
 ## 2. Planificado (sin implementar; owner candidato)
 
 | Concepto | Fase | Owner candidato | Autoridad |
 |---|---|---|---|
-| Context Compiler / AgentRunContext / snapshot | R4-C2 | `context-compiler` | Plataforma (selección observable) |
-| Working memory / proyección de conversación | R4-C2 | `memory` | Cognición efímera; nunca verdad |
+| Escritura de working/episodic memory desde el loop | R4-D+ | `agent-kernel` + contracts (decisión nueva) | Cognición (nunca verdad) |
+| Fuentes de estado de dominio | R4-F+ | Adapters de dominio vía `ContextSource` | Owner del dominio (AUTHORITATIVE) |
 | Decisiones Delegate / Wait / ProposeAction / Consult / Approval / Handoff | R4-D/E | `agent-kernel` + contracts | Cognición (propuesta) |
 | ActionProposal | R4-D | kernel → `capability-runtime` | Cognición (propuesta) |
 | Policy decision | R4-D | `policy-engine` | Plataforma |

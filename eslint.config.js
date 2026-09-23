@@ -98,6 +98,28 @@ export default tseslint.config(
               group: ['pg', 'pg/*', '@r4/persistence-postgres', '@r4/task-runtime', '@r4/capability-runtime', '@r4/agent-registry'],
               message: 'The Agent Kernel reaches state and capability execution only through the KernelSession port (ADR-009).',
             },
+            {
+              group: ['@r4/context-compiler'],
+              message: 'The Agent Kernel consumes a CompiledContext through the KernelSession port; it never knows how context is built (ADR-010).',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['packages/context-compiler/src/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            ...forbiddenEverywhere,
+            { group: ['fastify', 'fastify/*', '@r4/api', '@r4/worker', '**/apps/**'], message: 'Core packages must not depend on transports or apps.' },
+            {
+              group: ['pg', 'pg/*', '@r4/persistence-postgres', '@r4/task-runtime', '@r4/capability-runtime', '@r4/agent-registry', '@r4/agent-kernel', '@r4/model-gateway'],
+              message: 'The Context Compiler reads only through ContextSources and ports; it never reaches storage, execution, the kernel or a model (ADR-010).',
+            },
           ],
         },
       ],

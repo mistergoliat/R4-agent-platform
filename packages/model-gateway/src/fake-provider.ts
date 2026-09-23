@@ -38,7 +38,8 @@ export const FAKE_MODEL_ID = 'fake-deterministic-1';
 /**
  * Deterministic in-process provider for tests and offline evaluation. Token
  * usage is a deterministic character count, labelled as such — not a real
- * tokenizer.
+ * tokenizer. It keeps the structured `request.context` as-is (it has no
+ * rendering of its own), so tests can inspect exactly what a model received.
  */
 export class FakeModelProvider implements ModelProvider {
   readonly providerId = FAKE_PROVIDER_ID;
@@ -62,7 +63,7 @@ export class FakeModelProvider implements ModelProvider {
     const index = this.#requests.length;
     this.#requests.push(request);
     const step = this.#nextStep(request, index);
-    const inputTokens = request.messages.reduce((sum, m) => sum + m.content.length, 0);
+    const inputTokens = request.messages.reduce((sum, m) => sum + m.content.length, 0) + (request.context ? JSON.stringify(request.context).length : 0);
 
     switch (step.type) {
       case 'text':

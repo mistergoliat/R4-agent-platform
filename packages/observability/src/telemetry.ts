@@ -40,6 +40,17 @@ export const TELEMETRY_EVENTS = [
   'capability.invoked',
   'observation.persisted',
   'budget.exhausted',
+  // R4-C2 context compiler (metadata only: ids, kinds, counts, tokens — never item content)
+  'context.compile.started',
+  'context.source.loaded',
+  'context.item.included',
+  'context.item.excluded',
+  'context.compacted',
+  'context.conflict.detected',
+  'context.budget.exhausted',
+  'context.snapshot.persisted',
+  'context.snapshot.reused',
+  'context.compile.completed',
 ] as const;
 export type TelemetryEventName = (typeof TELEMETRY_EVENTS)[number];
 

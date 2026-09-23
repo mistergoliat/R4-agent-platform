@@ -5,8 +5,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DEFAULT_MIGRATIONS_DIR, checkDatabaseReadiness, migrate, migrationStatus, type Pool } from '@r4/persistence-postgres';
 import { createTestDatabase, openPool, type TestDatabase } from '../support/database.js';
 
-const EXPECTED_MIGRATIONS = ['0001_initial_runtime_schema', '0002_execution_kernel'];
-const EXPECTED_TABLES = ['agent_definitions', 'agent_run_steps', 'agent_runs', 'agent_task_transitions', 'agent_tasks', 'goals', 'observations', 'r4_schema_migrations'];
+const EXPECTED_MIGRATIONS = ['0001_initial_runtime_schema', '0002_execution_kernel', '0003_context_and_memory'];
+const EXPECTED_TABLES = [
+  'agent_definitions', 'agent_run_steps', 'agent_runs', 'agent_task_transitions', 'agent_tasks',
+  'context_snapshot_items', 'context_snapshots', 'goals', 'memory_entries', 'observations', 'r4_schema_migrations',
+];
 
 let db: TestDatabase;
 let pool: Pool;
@@ -82,6 +85,10 @@ describe('migrations from an empty database', () => {
         'agent_runs_termination_matches_status',
         'agent_run_steps_one_pending_per_run',
         'agent_run_steps_invocation_id_key',
+        // R4-C2
+        'agent_run_steps_context_snapshot_fk',
+        'context_snapshots_run_id_iteration_attempt_key',
+        'memory_entries_task_id_derivation_key_key',
       ]),
     );
   });

@@ -27,7 +27,10 @@ export const modelRequirementsSchema = z.strictObject({
 });
 export type ModelRequirements = z.infer<typeof modelRequirementsSchema>;
 
-/** Seam for the Context Compiler (R4-C). Stored as JSON because it will grow. */
+/**
+ * The agent's own context ceiling (R4-C2): it can only tighten the operator's
+ * context compilation policy, never widen it. Stored as JSON because it will grow.
+ */
 export const contextPolicySchema = z.strictObject({
   maxContextTokens: positiveIntSchema.optional(),
 });

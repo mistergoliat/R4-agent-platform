@@ -1,6 +1,7 @@
 import {
   PlatformError,
   type AgentTask,
+  type ContextComposition,
   type Clock,
   type IdGenerator,
   type Observation,
@@ -12,16 +13,21 @@ import {
 import {
   KernelInterrupt,
   buildExecutionState,
+  readableCapabilities,
   type CapabilityDescriptor,
+  type ExecutionContext,
   type ExecutionPolicy,
   type ExecutionState,
   type KernelSession,
+  type PreparedContext,
   type RunEnding,
   type StepRecord,
 } from '@r4/agent-kernel';
 import { CapabilityInvoker, type CapabilityRegistry, type ObservationStore } from '@r4/capability-runtime';
-import type { StructuredLogger } from '@r4/observability';
-import type { AgentDefinitionResolver, ExecutionRuntime } from '@r4/task-runtime';
+import { ContextCompiler, platformContextSources, snapshotComposition, type ContextCompileRequest } from '@r4/context-compiler';
+import { emitTelemetry, type StructuredLogger } from '@r4/observability';
+import type { AgentDefinitionResolver, DurableExecution, ExecutionRuntime } from '@r4/task-runtime';
+import { DEFAULT_CONTEXT_POLICY } from './config.js';
 
 export interface DurableSessionOptions {
   readonly lease: TaskLease;
@@ -31,6 +37,12 @@ export interface DurableSessionOptions {
   /** Unfenced read side of the observation store (idempotency lookups only). */
   readonly observations: Pick<ObservationStore, 'findByInvocationId'>;
   readonly policy: ExecutionPolicy;
+  /**
+   * R4-C2: builds the model's context. Defaults to the platform sources only
+   * (no memory, no compaction) under the default context policy; the worker
+   * platform wires memory, compaction and any extra sources.
+   */
+  readonly context?: ContextCompiler;
   readonly ids: IdGenerator;
   readonly clock: Clock;
   readonly logger: StructuredLogger;
@@ -46,12 +58,16 @@ export interface DurableSessionOptions {
 export class DurableKernelSession implements KernelSession {
   readonly #options: DurableSessionOptions;
   readonly #invoker: CapabilityInvoker;
+  readonly #compiler: ContextCompiler;
   /** Invocations whose observation this session wrote (fenced) itself. */
   readonly #recorded = new Set<string>();
   #agent: RegisteredAgentDefinition | null = null;
+  /** The durable state of the latest load(): what prepareContext compiles from. */
+  #loaded: DurableExecution | null = null;
 
   constructor(options: DurableSessionOptions) {
     this.#options = options;
+    this.#compiler = options.context ?? new ContextCompiler({ sources: platformContextSources(), policy: DEFAULT_CONTEXT_POLICY, logger: options.logger });
     const { lease, execution } = options;
     // Observations of this session are written only through the fenced path:
     // a worker that lost its lease cannot record evidence.
@@ -70,6 +86,7 @@ export class DurableKernelSession implements KernelSession {
     return translate(async () => {
       const durable = await this.#options.execution.loadExecution(this.#options.lease);
       const agent = await this.#agentOf(durable.task);
+      this.#loaded = durable;
       return buildExecutionState({
         agent,
         task: durable.task,
@@ -82,6 +99,55 @@ export class DurableKernelSession implements KernelSession {
         now: this.#options.clock.now(),
       });
     });
+  }
+
+  /**
+   * Compiles the context of the upcoming model call and makes it durable
+   * first. When this iteration already has a snapshot (the previous attempt
+   * died during its model call) and its inputs — items and their freshness —
+   * are unchanged, that snapshot is reused as-is: a logical attempt never
+   * silently sees a different context. Changed inputs or a changed effective
+   * policy/budget produce a new attempt that supersedes it.
+   */
+  prepareContext(context: ExecutionContext): Promise<PreparedContext> {
+    return translate(async () => {
+      const { lease, execution, logger } = this.#options;
+      const outcome = await this.#compiler.compile(this.#compileRequest(context));
+      if (outcome.kind === 'budget_exhausted') {
+        return { kind: 'budget_exhausted', limit: outcome.maxEstimatedTokens, required: outcome.requiredTokens };
+      }
+      const telemetry = { taskId: context.task.taskId, runId: context.run.runId, agentId: context.agent.agentId, workerId: lease.owner, iteration: context.iteration };
+      const latest = await execution.latestContextSnapshot(lease, context.iteration);
+      if (latest && latest.inputFingerprint === outcome.inputFingerprint) {
+        emitTelemetry(logger, 'context.snapshot.reused', { ...telemetry, attempt: latest.attempt, snapshotId: latest.snapshotId, contentHash: latest.contentHash });
+        // Accounting of what the model actually receives: the stored snapshot.
+        emitTelemetry(logger, 'context.compile.completed', compileCompleted(telemetry, latest.snapshotId, true, snapshotComposition(latest)));
+        return { kind: 'ready', snapshotId: latest.snapshotId, context: latest.compiledContext, reused: true };
+      }
+      const snapshot = await execution.recordContextSnapshot(lease, {
+        runId: context.run.runId,
+        iteration: context.iteration,
+        compilerVersion: outcome.compilerVersion,
+        policyVersion: outcome.policyVersion,
+        compiledContext: outcome.compiled,
+        contentHash: outcome.contentHash,
+        inputFingerprint: outcome.inputFingerprint,
+        estimatedTokens: outcome.estimatedTokens,
+        budget: outcome.budget,
+        decisions: outcome.decisions,
+        newSummaries: outcome.newSummaries,
+      });
+      emitTelemetry(logger, 'context.compile.completed', compileCompleted(telemetry, snapshot.snapshotId, false, outcome.composition));
+      return { kind: 'ready', snapshotId: snapshot.snapshotId, context: snapshot.compiledContext, reused: false };
+    });
+  }
+
+  #compileRequest(context: ExecutionContext): ContextCompileRequest {
+    const loaded = this.#loaded;
+    if (!loaded || loaded.run.runId !== context.run.runId) {
+      throw new PlatformError('internal', 'session_not_loaded', 'load() must precede prepareContext()');
+    }
+    return contextCompileRequest(context, loaded.steps, this.#options.clock.now());
   }
 
   recordStep(step: StepRecord): Promise<RunStep> {
@@ -132,6 +198,68 @@ export class DurableKernelSession implements KernelSession {
     this.#agent = agent;
     return agent;
   }
+}
+
+/**
+ * The compiler request of one iteration: the platform facts the kernel's
+ * ExecutionContext holds, the run's recorded responses (from its step log),
+ * the constraints as durable facts, and the agent's own context ceiling.
+ */
+export function contextCompileRequest(context: ExecutionContext, steps: readonly RunStep[], now: Date): ContextCompileRequest {
+  const { limits, usage } = context.budget;
+  const maxContextTokens = context.agent.contextPolicy.maxContextTokens;
+  return {
+    scope: { taskId: context.task.taskId, runId: context.run.runId, agentId: context.agent.agentId, agentVersion: context.agent.version, iteration: context.iteration },
+    now,
+    execution: {
+      agent: context.agent,
+      task: context.task,
+      run: context.run,
+      goal: context.goal,
+      observations: context.observations,
+      responses: steps.flatMap((s) => (s.decision?.type === 'respond' ? [{ stepId: s.stepId, iteration: s.iteration, content: s.decision.content, recordedAt: s.createdAt }] : [])),
+      // Visible to the model: READ only (C1 rule). Executability is still checked on the decision.
+      capabilities: readableCapabilities(context).map((c) => ({ capabilityId: c.capabilityId, version: c.version, description: c.description, inputSchema: c.inputSchema })),
+      constraints: {
+        remaining: {
+          iterations: limits.maxIterations - usage.iterations,
+          modelCalls: limits.maxModelCalls - usage.modelCalls,
+          readCapabilityCalls: limits.maxReadCapabilityCalls - usage.readCapabilityCalls,
+          tokens: limits.maxTokens === null ? null : limits.maxTokens - usage.tokens,
+        },
+        runDeadlineAt: new Date(Date.parse(context.run.startedAt) + limits.maxRunDurationMs).toISOString(),
+      },
+    },
+    ...(maxContextTokens === undefined ? {} : { budgetCeilingTokens: maxContextTokens }),
+  };
+}
+
+/**
+ * Aggregated accounting of one model input (ADR-015): totals plus per-kind and
+ * per-authority token maps — bounded cardinality (closed enums). Per-source and
+ * per-item detail stays in `context_snapshot_items`. Never item content.
+ */
+function compileCompleted(base: Record<string, unknown>, snapshotId: string, reused: boolean, c: ContextComposition): Record<string, unknown> {
+  const tokens = (tallies: Partial<Record<string, { included: { estimatedTokens: number } }>>) =>
+    Object.fromEntries(Object.entries(tallies).map(([key, t]) => [key, t!.included.estimatedTokens]));
+  return {
+    ...base,
+    snapshotId,
+    reused,
+    budgetMode: c.budget.mode,
+    maxEstimatedTokens: c.budget.mode === 'fixed' ? c.budget.maxEstimatedTokens : null,
+    rawEstimatedTokens: c.rawEstimatedTokens,
+    compiledEstimatedTokens: c.compiledEstimatedTokens,
+    includedEstimatedTokens: c.includedEstimatedTokens,
+    excludedEstimatedTokens: c.excludedEstimatedTokens,
+    includedCount: c.includedCount,
+    excludedCount: c.excludedCount,
+    compactedCount: c.compactedCount,
+    compactionInputEstimatedTokens: c.compaction?.inputEstimatedTokens ?? 0,
+    compactionOutputEstimatedTokens: c.compaction?.outputEstimatedTokens ?? 0,
+    includedTokensByKind: tokens(c.byKind),
+    includedTokensByAuthority: tokens(c.byAuthority),
+  };
 }
 
 function toDescriptor(definition: { capabilityId: string; version: number; description: string; riskClass: CapabilityDescriptor['riskClass']; inputSchema: Record<string, unknown> }): CapabilityDescriptor {

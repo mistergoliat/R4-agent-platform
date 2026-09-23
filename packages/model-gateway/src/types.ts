@@ -1,4 +1,4 @@
-import type { ModelRequirements } from '@r4/contracts';
+import type { CompiledContext, ModelRequirements } from '@r4/contracts';
 
 /**
  * Provider-neutral model contracts. Nothing here names a vendor. The kernel
@@ -41,6 +41,13 @@ export interface ModelRequest {
   readonly correlation: ModelCallCorrelation;
   readonly requirements: ModelRequirements;
   readonly messages: readonly ModelMessage[];
+  /**
+   * The structured, provider-neutral context of this call (R4-C2), exactly as
+   * recorded in its ContextSnapshot. It is the canonical input: provider
+   * adapters render it into messages, system blocks or cache blocks without
+   * changing its meaning. Never flattened into one prompt string by the Core.
+   */
+  readonly context?: CompiledContext;
   readonly tools?: readonly ModelToolSpec[];
   readonly outputContract: ModelOutputContract;
   readonly limits: {

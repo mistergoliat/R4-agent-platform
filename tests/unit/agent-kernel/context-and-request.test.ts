@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { agentDecisionSchema, uuidv7 } from '@r4/contracts';
-import { AGENT_DECISION_JSON_SCHEMA, DECISION_PROTOCOL, buildExecutionState, renderModelRequest } from '@r4/agent-kernel';
+import { AGENT_DECISION_JSON_SCHEMA, DECISION_PROTOCOL, PROTOCOL_INSTRUCTIONS, buildExecutionState, renderModelRequest } from '@r4/agent-kernel';
 import { contextOf } from '../../support/decisions.js';
 import { MemorySession, READ_FACT, WRITE_THING } from '../../support/kernel-fixtures.js';
 
@@ -43,21 +43,28 @@ describe('minimal execution context', () => {
 });
 
 describe('model request rendering', () => {
-  it('is provider-neutral, JSON-structured and carries only the minimal context', async () => {
+  // R4-C2: the context travels structured (the compiled context of the snapshot), never as one prompt string.
+  it('is provider-neutral and carries the compiled context structured, next to the protocol instructions', async () => {
     const session = new MemorySession({ capabilities: [READ_FACT, WRITE_THING] });
     const { context } = await session.load();
-    const request = renderModelRequest(context, 1_000);
+    const prepared = await session.prepareContext(context);
+    if (prepared.kind !== 'ready') throw new Error('context not ready');
+    const request = renderModelRequest(context, prepared.context, 1_000);
 
     expect(request.outputContract).toEqual({ kind: 'json', name: 'agent_decision', schema: AGENT_DECISION_JSON_SCHEMA });
     expect(request.tools).toBeUndefined();
     expect(request.limits).toEqual({ timeoutMs: 1_000 });
     expect(request.correlation).toEqual({ correlationId: session.task.correlationId, taskId: session.task.taskId, runId: session.run.runId, agentId: session.agent.agentId });
-    expect(request.messages.map((m) => m.role)).toEqual(['system', 'user']);
-    expect(request.messages[0]!.content).toContain(session.agent.instructions);
+    // Only the kernel's protocol is text; the agent's instructions are a context item.
+    expect(request.messages).toEqual([{ role: 'system', content: PROTOCOL_INSTRUCTIONS }]);
     expect(request.messages[0]!.content).toContain(DECISION_PROTOCOL);
+    expect(request.messages[0]!.content).not.toContain(session.agent.instructions);
+    expect(request.context).toBe(prepared.context);
+    expect(request.context!.sections.agent[0]!.content).toMatchObject({ instructions: session.agent.instructions });
 
     const doc = contextOf(request);
-    expect(Object.keys(doc).sort()).toEqual(['budget', 'capabilities', 'goal', 'iteration', 'observations', 'protocol', 'responses', 'task']);
+    expect(doc.iteration).toBe(1);
+    expect(doc.task.taskId).toBe(session.task.taskId);
     // Write-class capabilities are never offered.
     expect(doc.capabilities.map((c) => c.capabilityId)).toEqual([READ_FACT.capabilityId]);
   });

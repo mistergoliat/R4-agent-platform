@@ -5,6 +5,7 @@ import {
   type AgentDefinition,
   type AgentRun,
   type AgentTask,
+  type CompiledContext,
   type Goal,
   type JsonValue,
   type Observation,
@@ -15,12 +16,17 @@ import {
   KernelInterrupt,
   buildExecutionState,
   type CapabilityDescriptor,
+  type ExecutionContext,
   type ExecutionPolicy,
   type ExecutionState,
   type KernelSession,
+  type PreparedContext,
   type RunEnding,
   type StepRecord,
 } from '@r4/agent-kernel';
+import { ContextCompiler, platformContextSources, type ContextSource } from '@r4/context-compiler';
+import { createSilentLogger } from '@r4/observability';
+import { DEFAULT_CONTEXT_POLICY, contextCompileRequest } from '@r4/worker';
 
 export const TEST_POLICY: ExecutionPolicy = {
   maxIterations: 20,
@@ -141,6 +147,20 @@ export interface MemorySessionOptions {
   readonly read?: (decision: ReadCapabilityDecision) => { outcome: Observation['outcome']; payload: JsonValue | null; errorCode?: string } | Promise<{ outcome: Observation['outcome']; payload: JsonValue | null; errorCode?: string }>;
   /** Clock for elapsed-time budgets. */
   readonly now?: () => Date;
+  /** R4-C2: the compiler used by prepareContext (default: platform sources, default policy). */
+  readonly compiler?: ContextCompiler;
+  /** Extra context sources appended to the platform ones (ignored when `compiler` is given). */
+  readonly contextSources?: readonly ContextSource[];
+}
+
+/** A snapshot as the in-memory session keeps it (the durable one lives in PostgreSQL). */
+export interface MemorySnapshot {
+  readonly snapshotId: string;
+  readonly iteration: number;
+  readonly attempt: number;
+  readonly inputFingerprint: string;
+  readonly contentHash: string;
+  readonly context: CompiledContext;
 }
 
 /**
@@ -157,11 +177,15 @@ export class MemorySession implements KernelSession {
   readonly reads: ReadCapabilityDecision[] = [];
   ending: RunEnding | null = null;
   /** Failure injection: throw from the named method on its next call. */
-  readonly failNext: Partial<Record<'load' | 'recordStep' | 'executeRead' | 'finish', Error>> = {};
+  readonly failNext: Partial<Record<'load' | 'prepareContext' | 'recordStep' | 'executeRead' | 'finish', Error>> = {};
+  readonly snapshots: MemorySnapshot[] = [];
+  readonly compiler: ContextCompiler;
   readonly #options: MemorySessionOptions;
 
   constructor(options: MemorySessionOptions = {}) {
     this.#options = options;
+    this.compiler =
+      options.compiler ?? new ContextCompiler({ sources: [...platformContextSources(), ...(options.contextSources ?? [])], policy: DEFAULT_CONTEXT_POLICY, logger: createSilentLogger() });
     this.agent = options.agent ?? agentFixture();
     this.task = options.task ?? taskFixture();
     this.run = runFixture(this.task);
@@ -183,6 +207,25 @@ export class MemorySession implements KernelSession {
         now: this.#options.now?.() ?? new Date(this.run.startedAt),
       }),
     );
+  }
+
+  /** Same semantics as the durable session: compile, then reuse the iteration's snapshot if its inputs are unchanged. */
+  async prepareContext(context: ExecutionContext): Promise<PreparedContext> {
+    this.#inject('prepareContext');
+    const outcome = await this.compiler.compile(contextCompileRequest(context, this.steps, this.#options.now?.() ?? new Date(this.run.startedAt)));
+    if (outcome.kind === 'budget_exhausted') return { kind: 'budget_exhausted', limit: outcome.maxEstimatedTokens, required: outcome.requiredTokens };
+    const latest = this.snapshots.filter((x) => x.iteration === context.iteration).at(-1);
+    if (latest && latest.inputFingerprint === outcome.inputFingerprint) return { kind: 'ready', snapshotId: latest.snapshotId, context: latest.context, reused: true };
+    const snapshot: MemorySnapshot = {
+      snapshotId: uuidv7(),
+      iteration: context.iteration,
+      attempt: (latest?.attempt ?? 0) + 1,
+      inputFingerprint: outcome.inputFingerprint,
+      contentHash: outcome.contentHash,
+      context: outcome.compiled,
+    };
+    this.snapshots.push(snapshot);
+    return { kind: 'ready', snapshotId: snapshot.snapshotId, context: snapshot.context, reused: false };
   }
 
   recordStep(record: StepRecord): Promise<RunStep> {
@@ -238,6 +281,7 @@ export class MemorySession implements KernelSession {
       error: record.error,
       invocationId: executesRead ? uuidv7() : null,
       observationId: null,
+      contextSnapshotId: record.contextSnapshotId ?? null,
       usage: record.usage,
       correlationId: this.task.correlationId,
       createdAt: T0,

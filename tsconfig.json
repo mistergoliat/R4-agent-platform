@@ -15,6 +15,7 @@
       "@r4/agent-registry": ["./packages/agent-registry/src/index.ts"],
       "@r4/persistence-postgres": ["./packages/persistence-postgres/src/index.ts"],
       "@r4/agent-kernel": ["./packages/agent-kernel/src/index.ts"],
+      "@r4/context-compiler": ["./packages/context-compiler/src/index.ts"],
       "@r4/api": ["./apps/api/src/index.ts"],
       "@r4/worker": ["./apps/worker/src/index.ts"]
     }

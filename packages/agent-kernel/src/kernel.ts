@@ -1,4 +1,4 @@
-import type { AgentDecision, CompletionResult, JsonObject, ReadCapabilityDecision, RunStep } from '@r4/contracts';
+import type { AgentDecision, CompiledContext, CompletionResult, JsonObject, ReadCapabilityDecision, RunStep } from '@r4/contracts';
 import type { ModelError, ModelGateway, ModelUsage } from '@r4/model-gateway';
 import { emitTelemetry, type StructuredLogger } from '@r4/observability';
 import { budgetTerminationCode, checkBeforeModelCall, checkBeforeRead, modelCallTimeout, type BudgetExhaustion } from './budget.js';
@@ -39,18 +39,19 @@ export type DecideOutcome =
 const NO_USAGE: ModelUsage = { inputTokens: 0, outputTokens: 0 };
 
 /**
- * Agent Kernel (R4-C1). Runs the loop
+ * Agent Kernel (R4-C1, context from R4-C2). Runs the loop
  *
- *   load durable state → budget → model → validate decision →
- *   READ (execute + observation) | respond | complete → repeat
+ *   load durable state → budget → prepare context (snapshot durable) → model →
+ *   validate decision → READ (execute + observation) | respond | complete → repeat
  *
  * The model decides WHICH decision comes next; the kernel decides whether it
  * is acceptable and the session port (platform) performs it. The kernel keeps
  * no loop state across iterations: each iteration starts from `session.load()`,
  * so any worker can continue a run after a crash. Iterative, never recursive.
  *
- * Independent of storage, transport, providers and domains: it depends only on
- * contracts, the ModelGateway interface and the KernelSession port.
+ * Independent of storage, transport, providers, domains and of how context is
+ * compiled: it depends only on contracts, the ModelGateway interface and the
+ * KernelSession port.
  */
 export class AgentKernel {
   readonly #gateway: ModelGateway;
@@ -61,9 +62,13 @@ export class AgentKernel {
     this.#logger = options.logger;
   }
 
-  /** One model call turned into a validated decision (or a classified failure). */
-  async decide(context: ExecutionContext, signal?: AbortSignal): Promise<DecideOutcome> {
-    const request = renderModelRequest(context, modelCallTimeout(context.budget.limits, context.budget.usage));
+  /**
+   * One model call turned into a validated decision (or a classified failure).
+   * The model sees `compiled`; the decision is still validated against the
+   * platform's own facts in `context` (visible ≠ executable).
+   */
+  async decide(context: ExecutionContext, compiled: CompiledContext, signal?: AbortSignal): Promise<DecideOutcome> {
+    const request = renderModelRequest(context, compiled, modelCallTimeout(context.budget.limits, context.budget.usage));
     const result = await this.#gateway.generate(request, signal ? { signal } : {});
     if (!result.ok) return { kind: 'model_failure', error: result.error };
     const parsed = parseAgentDecision(result.response, {
@@ -102,10 +107,25 @@ export class AgentKernel {
       const exhausted = checkBeforeModelCall(context.budget.limits, context.budget.usage);
       if (exhausted) return this.#exhausted(session, exhausted, null, telemetry);
 
-      const decided = await this.decide(context, signal);
+      // The context is compiled and its snapshot made durable before the model
+      // is called, so any later reader knows exactly what this call saw.
+      const prepared = await this.#call(session, () => session.prepareContext(context));
+      if (!prepared.ok) return prepared.outcome;
+      if (prepared.value.kind === 'budget_exhausted') {
+        const { limit, required } = prepared.value;
+        return this.#exhausted(session, { dimension: 'maxContextTokens', limit, used: required }, null, telemetry);
+      }
+      const { snapshotId, context: compiled } = prepared.value;
+
+      const decided = await this.decide(context, compiled, signal);
       // A call cut short by lease loss or shutdown is not ours to record.
       if (signal?.aborted) return interrupted(signal);
-      const step = (partial: Pick<StepRecord, 'decision' | 'outcome' | 'error' | 'usage'>): StepRecord => ({ runId: context.run.runId, iteration: context.iteration, ...partial });
+      const step = (partial: Pick<StepRecord, 'decision' | 'outcome' | 'error' | 'usage'>): StepRecord => ({
+        runId: context.run.runId,
+        iteration: context.iteration,
+        contextSnapshotId: snapshotId,
+        ...partial,
+      });
 
       if (decided.kind === 'model_failure') {
         const { error } = decided;

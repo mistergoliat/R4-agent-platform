@@ -3,11 +3,13 @@ import { PlatformError, systemClock, uuidV7Generator, type Clock, type IdGenerat
 import { AgentKernel } from '@r4/agent-kernel';
 import { AgentRegistry } from '@r4/agent-registry';
 import type { CapabilityRegistry } from '@r4/capability-runtime';
+import { ContextCompiler, MemoryContextSource, platformContextSources, type ContextCompactor, type ContextSource } from '@r4/context-compiler';
 import { DefaultModelGateway, type ModelProvider } from '@r4/model-gateway';
 import { createLogger } from '@r4/observability';
 import {
   PostgresAgentDefinitionStore,
   PostgresExecutionStore,
+  PostgresMemoryStore,
   PostgresObservationStore,
   createPool,
   migrationStatus,
@@ -25,6 +27,13 @@ import { Worker } from './worker.js';
 export interface WorkerBindings {
   readonly modelProvider: ModelProvider;
   readonly capabilities: CapabilityRegistry;
+  /**
+   * R4-C2. Without a compactor, conversation that exceeds the context budget
+   * is dropped oldest-first; C2 ships only the deterministic one.
+   */
+  readonly compactor?: ContextCompactor;
+  /** Additional context sources (e.g. domain state owned outside the Core), registered after the platform's. */
+  readonly contextSources?: readonly ContextSource[];
 }
 
 export interface WorkerOverrides {
@@ -64,13 +73,19 @@ export async function createWorkerPlatform(config: WorkerConfig, bindings: Worke
     const observations = new PostgresObservationStore(pool);
     const execution = new ExecutionRuntime({ store: new PostgresExecutionStore(pool), ids, clock, logger, maxRunRecoveries: config.maxRunRecoveries });
     const kernel = new AgentKernel({ gateway: new DefaultModelGateway({ provider: bindings.modelProvider, logger }), logger });
+    const context = new ContextCompiler({
+      sources: [...platformContextSources(), new MemoryContextSource(new PostgresMemoryStore(pool)), ...(bindings.contextSources ?? [])],
+      policy: config.context,
+      compactor: bindings.compactor ?? null,
+      logger,
+    });
 
     const worker = new Worker({
       workerId: config.workerId,
       execution,
       kernel,
       sessions: ({ lease }) =>
-        new DurableKernelSession({ lease, execution, agents, capabilities: bindings.capabilities, observations, policy: config.execution, ids, clock, logger }),
+        new DurableKernelSession({ lease, execution, agents, capabilities: bindings.capabilities, observations, policy: config.execution, context, ids, clock, logger }),
       leaseDurationMs: config.leaseDurationMs,
       heartbeatIntervalMs: config.heartbeatIntervalMs,
       pollIntervalMs: config.pollIntervalMs,

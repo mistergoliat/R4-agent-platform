@@ -3,9 +3,10 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Platform } from '@r4/api';
+import { PostgresContextSnapshotStore } from '@r4/persistence-postgres';
 import { GET_TEST_FACT_ID } from '../fixtures/capabilities/get-test-fact.js';
 import { createMigratedTestDatabase, type TestDatabase } from '../support/database.js';
-import { completeFromObservations, contextOf, sequence } from '../support/decisions.js';
+import { compiledOf, completeFromObservations, contextOf, sequence } from '../support/decisions.js';
 import { startTestPlatform, validTaskBody } from '../support/platform.js';
 import { leaseRow, observationsOf, startTestWorker, stepsOf, testCapabilities, waitFor, type TestWorker } from '../support/worker.js';
 
@@ -57,6 +58,9 @@ describe('worker process crash (SIGKILL)', () => {
         R4_WORKER_HEARTBEAT_MS: '250',
         R4_WORKER_POLL_MS: '50',
         R4_EXEC_MODEL_CALL_TIMEOUT_MS: '600000',
+        // Same iteration ceiling as the recovering test worker (TEST_POLICY), so both
+        // compile identical execution constraints for the interrupted iteration.
+        R4_EXEC_MAX_ITERATIONS: '20',
         R4_LOG_LEVEL: 'info',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -79,6 +83,8 @@ describe('worker process crash (SIGKILL)', () => {
       return found.length === 1 ? found : null;
     }, 30_000, 50);
     await waitFor(() => childLines.some((l) => l.event === 'task.lease.renewed'), 10_000, 50);
+    // …and it is inside its iteration-2 model call (whose snapshot is persisted first).
+    await waitFor(() => childLines.some((l) => l.event === 'context.snapshot.persisted' && l.iteration === 2), 10_000, 50);
 
     child.kill('SIGKILL');
     expect(await exited).toBe('SIGKILL');
@@ -122,6 +128,15 @@ describe('worker process crash (SIGKILL)', () => {
       [1, 'read_capability', 'observed', 1],
       [2, 'complete', 'recorded', 2],
     ]);
+
+    // R4-C2: A died DURING its iteration-2 model call, after persisting that call's
+    // snapshot. B resumed the same logical attempt with the same snapshot: no second
+    // attempt, byte-identical model input, reconstructable from PostgreSQL alone.
+    const stored = await new PostgresContextSnapshotStore(platform.pool).listForRun(runId);
+    expect(stored.map((s) => [s.iteration, s.attempt])).toEqual([[1, 1], [2, 1]]);
+    expect((await stepsOf(platform.pool, runId)).map((s) => s.contextSnapshotId)).toEqual(stored.map((s) => s.snapshotId));
+    expect(compiledOf(workerB.provider.requests[0]!)).toEqual(stored[1]!.compiledContext);
+    expect(childLines.filter((l) => l.event === 'context.snapshot.persisted').map((l) => l.snapshotId)).toEqual(stored.map((s) => s.snapshotId));
 
     // The killed process reported its own telemetry while alive.
     const events = new Set(childLines.map((l) => l.event));

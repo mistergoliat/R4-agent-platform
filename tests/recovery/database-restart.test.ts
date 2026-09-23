@@ -1,5 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { uuidv7 } from '@r4/contracts';
+import { PostgresMemoryStore } from '@r4/persistence-postgres';
 import type { Platform } from '@r4/api';
 import { createMigratedTestDatabase, type TestDatabase } from '../support/database.js';
 import { startTestPlatform, validTaskBody } from '../support/platform.js';
@@ -47,6 +49,18 @@ describe('database server restart', () => {
     expect(created.statusCode).toBe(201);
     const before = created.json();
     const taskId = before.task.taskId as string;
+    // R4-C2: task memory needed for continuation must survive the server restart too.
+    const now = new Date().toISOString();
+    const note = await new PostgresMemoryStore(platform.pool).append({
+      entryId: uuidv7(),
+      taskId,
+      memoryType: 'WORKING',
+      occurredAt: now,
+      recordedAt: now,
+      recordedBy: { kind: 'service', ref: 'db-restart' },
+      correlationId: 'db-restart',
+      content: { category: 'note', text: 'must survive a PostgreSQL restart' },
+    });
 
     docker('stop', '-t', '5', CONTAINER);
 
@@ -65,6 +79,7 @@ describe('database server restart', () => {
     const after = await platform.app.inject({ method: 'GET', url: `/v1/tasks/${taskId}` });
     expect(after.statusCode).toBe(200);
     expect(after.json()).toEqual(before);
+    expect(await new PostgresMemoryStore(platform.pool).listForTask(taskId)).toEqual([note]);
 
     // Idempotency and writes work again on the same process.
     const replay = await platform.app.inject({ method: 'POST', url: '/v1/tasks', payload: validTaskBody(), headers: { 'idempotency-key': 'db-restart-1' } });

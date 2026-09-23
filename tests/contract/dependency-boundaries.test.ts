@@ -38,15 +38,19 @@ const ALLOWED: Record<string, string[]> = {
   '@r4/capability-runtime': ['@r4/contracts', '@r4/observability', 'zod'],
   '@r4/task-runtime': ['@r4/contracts', '@r4/observability', 'zod'],
   '@r4/agent-registry': ['@r4/contracts', '@r4/observability', 'zod'],
-  '@r4/persistence-postgres': ['@r4/contracts', '@r4/observability', '@r4/task-runtime', '@r4/agent-registry', '@r4/capability-runtime', 'pg'],
+  // R4-C2: persistence also implements the context compiler's MemoryReader port.
+  '@r4/persistence-postgres': ['@r4/contracts', '@r4/observability', '@r4/task-runtime', '@r4/agent-registry', '@r4/capability-runtime', '@r4/context-compiler', 'pg'],
   '@r4/api': ['@r4/contracts', '@r4/observability', '@r4/task-runtime', '@r4/agent-registry', '@r4/persistence-postgres', 'fastify', 'pino', 'zod'],
   // R4-C1 (ADR-009): the kernel sees models only through the gateway interface
   // and state/capabilities only through its KernelSession port.
   '@r4/agent-kernel': ['@r4/contracts', '@r4/observability', '@r4/model-gateway', 'zod'],
+  // R4-C2 (ADR-010): the compiler reads only through ContextSources/ports —
+  // no storage, execution runtime, kernel or model.
+  '@r4/context-compiler': ['@r4/contracts', '@r4/observability', 'zod'],
   // The worker is a composition root, like the API — but has no HTTP transport.
   '@r4/worker': [
     '@r4/contracts', '@r4/observability', '@r4/model-gateway', '@r4/capability-runtime', '@r4/task-runtime',
-    '@r4/agent-registry', '@r4/persistence-postgres', '@r4/agent-kernel', 'pino', 'zod',
+    '@r4/agent-registry', '@r4/persistence-postgres', '@r4/agent-kernel', '@r4/context-compiler', 'pino', 'zod',
   ],
 };
 
@@ -79,9 +83,15 @@ describe('dependency boundaries', () => {
     expect(deps('@r4/model-gateway')).not.toContain('@r4/capability-runtime');
   });
 
-  it('keeps the agent kernel away from storage, execution runtimes and transports', () => {
-    for (const forbidden of ['pg', '@r4/persistence-postgres', '@r4/task-runtime', '@r4/capability-runtime', '@r4/agent-registry', '@r4/api', '@r4/worker', 'fastify']) {
+  it('keeps the agent kernel away from storage, execution runtimes, transports and context compilation', () => {
+    for (const forbidden of ['pg', '@r4/persistence-postgres', '@r4/task-runtime', '@r4/capability-runtime', '@r4/agent-registry', '@r4/api', '@r4/worker', 'fastify', '@r4/context-compiler']) {
       expect(deps('@r4/agent-kernel')).not.toContain(forbidden);
+    }
+  });
+
+  it('keeps the context compiler away from storage, execution, the kernel and models (R4-C2)', () => {
+    for (const forbidden of ['pg', '@r4/persistence-postgres', '@r4/task-runtime', '@r4/capability-runtime', '@r4/agent-registry', '@r4/agent-kernel', '@r4/model-gateway', '@r4/api', '@r4/worker', 'fastify']) {
+      expect(deps('@r4/context-compiler')).not.toContain(forbidden);
     }
   });
 
@@ -92,7 +102,7 @@ describe('dependency boundaries', () => {
   });
 
   it('keeps runtime logic persistence-agnostic (ports, not drivers)', () => {
-    for (const name of ['@r4/task-runtime', '@r4/capability-runtime', '@r4/agent-registry', '@r4/model-gateway', '@r4/agent-kernel']) {
+    for (const name of ['@r4/task-runtime', '@r4/capability-runtime', '@r4/agent-registry', '@r4/model-gateway', '@r4/agent-kernel', '@r4/context-compiler']) {
       expect(deps(name)).not.toContain('pg');
       expect(deps(name)).not.toContain('@r4/persistence-postgres');
     }

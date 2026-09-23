@@ -17,8 +17,8 @@ requiere autorización explícita (AGENTS.md).
 |---|---|---|
 | R4-A | Architecture Freeze | Parcial: Constitución + PRD existen; los contratos se congelaron en código en R4-B |
 | R4-B | Platform Skeleton | Completado y publicado (baseline `d75cfb3`) |
-| **R4-C1** | **Execution Kernel** | **Implementado (pendiente de revisión; sin commit)** |
-| R4-C2 | Context + Memory (resto de R4-C) | No iniciado — requiere autorización |
+| R4-C1 | Execution Kernel | Completado y publicado (baseline `834a5f1`) |
+| **R4-C2** | **Context Compiler & Memory Boundaries** | **Implementado sobre `834a5f1` (pendiente de auditoría; sin commit)** |
 | R4-D | Durable Execution | No iniciado |
 | R4-E | Human Collaboration + Scheduler | No iniciado |
 | R4-F | Sales Reference Application | No iniciado |
@@ -87,18 +87,93 @@ cooperativa.
 | 19 | `git diff --check` | limpio |
 | 20 | Nada de C2+ | sin context compiler, memoria, writes, policy, approvals, delegación, MCP, scheduler |
 
-### 3.2 R4-C2 — condiciones de entrada propuestas
+### 3.2 Condiciones de entrada que C2 dejó abiertas
 
-No se inicia sin autorización. Antes de empezar conviene decidir:
+Las cinco condiciones propuestas al cerrar C1: la (1) la resolvió C2 (§3.3).
+Siguen abiertas (2) reparación de decisiones inválidas y reintentos de modelo,
+(3) destino de `respond`, (4) cierre de goals y (5) primer adapter de proveedor
+real.
 
-1. Qué selecciona el Context Compiler desde `ExecutionContext` y cómo se hace
-   observable (`contextSnapshotRef`).
-2. Política de reparación de decisiones inválidas (hoy terminan el run) y de
-   reintentos de modelo (hoy ninguno), con métricas de evaluación.
-3. Si `respond` se entrega a algún destino (hoy sólo se registra).
-4. Cómo se cierran goals (hoy `complete` no modifica goals: cerrar un goal es
-   cognición y no existe decisión para ello).
-5. Primer adapter de proveedor real y su suite de contrato (ADR-004).
+## 3.3 R4-C2 — Context Compiler & Memory Boundaries
+
+Pregunta: ¿puede R4 construir para cada decisión un contexto mínimo,
+estructurado, reproducible, acotado por presupuesto y consciente de
+autoridad/frescura, sin convertir transcript, summaries, observations, memoria y
+estado de negocio en una sola fuente de verdad? Diseño:
+[arquitectura §12](../architecture/R4_ARCHITECTURE.md), ADR-010…014. C2 se compone
+sobre C1: no cambia claim, leases, heartbeat, fencing, ownership, recuperación
+de runs, ejecución READ, durabilidad de observations, protocolo `AgentDecision`
+ni terminación por budget.
+
+| # | Criterio de salida | Evidencia |
+|---|---|---|
+| 1 | Compilador independiente del proveedor | `contract/context-boundaries` (imports, sin modelo/SQL), allow-list |
+| 2 | Contexto estructurado, no prompt gigante | `CompiledContext` + `ModelRequest.context`; `unit/agent-kernel/context-and-request` |
+| 3 | Sources extensibles sin tocar el compilador | `unit/context-compiler/compiler` (extensibility), `integration/context-snapshots` (`external.record_state`) |
+| 4 | Autoridad explícita | `AUTHORITIES_BY_KIND` en esquema; `unit/context-compiler/contracts` |
+| 5 | Frescura explícita | `unit/context-compiler/freshness` (reloj inyectado, bordes) |
+| 6 | Conversación/observations/memoria/estado no se confunden | secciones + validación de esquema; `contracts`, `compiler`, `long-context` |
+| 7 | Summaries nunca reemplazan estado canónico | `compiler` (DERIVED vs AUTHORITATIVE), `compaction`, `long-context`, escenario `summary_degradation` |
+| 8 | Budget determinístico | `compiler` (budget), `long-context` (≤ techo sobre documento completo) |
+| 9 | Selección reproducible | `compiler` (determinism: mismo hash, orden independiente de las fuentes) |
+| 10 | Cada llamada al modelo con snapshot durable | `integration/context-snapshots` (step ↔ snapshot, persistido antes de la llamada) |
+| 11 | Snapshots inmutables | triggers; `integration/context-snapshots` (UPDATE/DELETE rechazados) |
+| 12 | Recovery reutiliza el snapshot de la attempt lógica | `integration/context-snapshots` (reuse), `recovery/worker-process-crash` (SIGKILL) |
+| 13 | Evidencia nueva genera snapshot nuevo | `integration/context-snapshots` (observation en iteración 2; attempt 2 al llegar memoria) |
+| 14 | Fronteras de memoria explícitas | ADR-013; `contracts`, `compiler` (supersession/expiración), `context-snapshots` (append-only) |
+| 15 | Compaction preserva procedencia | `compaction` (derivación completa), `context-snapshots` (compaction E2E) |
+| 16 | Compaction no destruye evidencia cruda | `compaction` (fuentes intactas), `context-snapshots` (120 turnos siguen en BD) |
+| 17 | Secretos no llegan al modelo | `compiler` (admission), `context-snapshots` (request, snapshot y logs sin el valor) |
+| 18 | Kernel no sabe cómo se compiló | `contract/context-boundaries`, ESLint |
+| 19 | Invariantes C1 intactas | suites C1 verdes (ver informe); cambios C1 listados abajo |
+| 20 | Long-context sintético | `unit/context-compiler/long-context` (604 entradas de memoria, 30 observations) |
+| 21–23 | Tests R4-B, C1 y C2 pasan | ver informe de cierre |
+| 24 | build/lint/typecheck | ver informe de cierre |
+| 25 | `git diff --check` | limpio |
+
+**Cambios en tests existentes (C1/R4-B), todos inevitables por la extensión:**
+lista esperada de migraciones/tablas (`migrations.test.ts`,
+`migration-upgrade.test.ts`); allow-list de dependencias (paquete nuevo); el
+test de renderizado del request (C1 lo declaraba reemplazable por C2);
+`contextOf` en `tests/support` ahora proyecta el contexto estructurado; la
+sesión inline de un test de kernel implementa `prepareContext`; timeout
+explícito en el test de estrés de 400 iteraciones; el worker del test SIGKILL
+alinea `R4_EXEC_MAX_ITERATIONS` y su capability inline con la fixture
+compartida (se habían desincronizado). **Bug latente de R4-B corregido:**
+`updateRun` nunca persistía `context_snapshot_ref`.
+
+### 3.4 Ajuste previo a la aceptación de C2 — presupuesto y medición (ADR-015)
+
+Budgeting es un mecanismo; la política de presupuesto es una decisión
+empírica; la política por defecto en esta etapa es **UNBOUNDED**; el modo
+acotado (**FIXED(N)**) sigue disponible para experimentos y futuros controles
+productivos.
+
+| # | Criterio | Evidencia |
+|---|---|---|
+| 1 | UNBOUNDED es el default | `contextCompilationPolicySchema` (default), `unit/worker/context-config` |
+| 2 | Sin límite artificial global hardcodeado | `R4_CONTEXT_MAX_TOKENS` sólo con `R4_CONTEXT_BUDGET_MODE=fixed`; `DEFAULT_CONTEXT_POLICY` = unbounded |
+| 3–4 | FIXED(N) completo: selección, compaction, `budget_exhausted` | suites previas bajo `fixed(N)` sin relajar aserciones; `budget-accounting` (FIXED(6000)) |
+| 5 | UNBOUNDED no elimina por presupuesto | `budget-accounting` (0 exclusiones `budget`, 0 compaction) |
+| 6–8 | Consumo por kind, autoridad y fuente | `ContextComposition`; conciliación exacta en `budget-accounting`; `GROUP BY` en `integration/context-snapshots` |
+| 9 | Métricas de compaction | `composition.compaction` (input/output/ratio/ítems) |
+| 10 | Contabilidad reproducible | `budget-accounting` (misma composición, mismo JSON) |
+| 11 | Presupuesto en la equivalencia de snapshots | fingerprint incluye política + presupuesto efectivo; `integration/context-snapshots` (attempt 2 por cambio de budget) |
+| 12 | Sin acoplamiento a proveedor | `contract/context-boundaries`, `core-purity` |
+| 13 | C1 sin cambios | sólo el compilador, contratos C2, migración 0003 (no publicada) y worker |
+
+**Comportamiento observado (no deficiencia genérica):** con FIXED(6000) y el
+orden de selección actual, el corpus largo deja working y episodic memory con
+0 ítems incluidos. Es un resultado bajo una política acotada concreta; decidir
+una asignación productiva requiere evaluación empírica.
+
+**Capacidad futura (no implementada): context engineering guiado por
+evaluación** — quitar episodic memory, reducir historial conversacional,
+cambiar la prioridad de working memory, distintos umbrales de compaction y
+distintos presupuestos, comparados contra éxito de task, continuidad del goal,
+falso éxito, preguntas repetidas, selección de capabilities, latencia, costo y
+tokens. Los datos necesarios (snapshots + decisiones por ítem + composición)
+ya existen.
 
 ## 4. Decisiones diferidas intencionalmente
 
@@ -125,3 +200,16 @@ No se inicia sin autorización. Antes de empezar conviene decidir:
 | Deshabilitar/retirar versiones de agentes | No hay caso de uso | Nueva versión |
 | Worker con varias tasks concurrentes | Un worker = una task; paralelismo con más workers | `Worker.runOnce` |
 | Imagen Docker de la API / despliegue | "No hacer deployment" | `npm start` sobre `dist` |
+| (C2) Escritura de working/episodic memory desde el loop | Requiere ampliar `AgentDecision` (congelado en C1) o productores de fases futuras | `MemoryEntry` + `PostgresMemoryStore.append` |
+| (C2) Endpoint de turnos / ingestión de conversación (`/v1/turns`) | Sin canal en C2; no asumir WhatsApp | `CONVERSATIONAL` + `interactionRef` |
+| (C2) Compactor basado en modelo y summaries incrementales | Sin proveedor real; C2 prueba semántica, no calidad | `ContextCompactor` seam |
+| (C2) Tokenizer por proveedor | Presupuesto reproducible primero | `ContextSizer` port |
+| (C2) Presupuesto productivo de contexto (valor de N, asignación por kind) | Sin evidencia: se decide con evals y consumo observado (ADR-015) | `ContextBudgetPolicy` FIXED, `kindLimits`, `ContextComposition` |
+| (C2) Límite físico del modelo (envelope) | Llega con el primer adapter real; input efectivo = min(envelope, presupuesto R4) | techo por request (`budgetCeilingTokens`) |
+| (C2) Activación de compaction no basada en presupuesto (umbrales, costo) | Primero observar | `ContextCompactor`, política |
+| (C2) Analytics / dashboards de contexto (percentiles) | Sin consumidor; los datos existen | `context_snapshot_items` + `context_snapshots` |
+| (C2) Retrieval semántico / vectorial / RAG, memoria de largo plazo | Sin necesidad demostrada | `ContextSource` |
+| (C2) Fuentes de estado de dominio reales | Fuera de Core (ADR-005) | `WorkerBindings.contextSources`, kind `state` |
+| (C2) Extracción automática de `assertions` desde texto | Sería un LLM decidiendo; sin él los conflictos en texto libre no se detectan | `assertions` declaradas por la fuente |
+| (C2) Exponer snapshots por HTTP | Sin consumidor; la auditoría lee la BD | `PostgresContextSnapshotStore` |
+| (C2) Renderizado por proveedor del `CompiledContext` | Llega con el primer adapter real | `ModelRequest.context` |

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { systemClock, uuidV7Generator } from '@r4/contracts';
 import { CapabilityInvoker, CapabilityRegistry } from '@r4/capability-runtime';
 import { createSilentLogger } from '@r4/observability';
-import { PostgresObservationStore, PostgresTaskRuntimeStore } from '@r4/persistence-postgres';
+import { PostgresMemoryStore, PostgresObservationStore, PostgresTaskRuntimeStore } from '@r4/persistence-postgres';
 import { createMigratedTestDatabase, type TestDatabase } from '../support/database.js';
 import { startTestPlatform, validTaskBody } from '../support/platform.js';
 import { GET_TEST_FACT_ID, getTestFactCapability } from '../fixtures/capabilities/get-test-fact.js';
@@ -65,6 +65,28 @@ describe('state survives a process restart', () => {
       const finished = await second.tasks.finishRun({ runId: run.runId, status: 'completed', correlationId: 'c' });
       expect(finished.status).toBe('completed');
       expect((await second.tasks.startRun({ taskId, actor, correlationId: 'c' })).run.sequence).toBe(2);
+    } finally {
+      await second.close();
+    }
+  });
+
+  // R4-C2: memory required to continue a task lives only in PostgreSQL.
+  it('task memory written by one process is read unchanged by a fresh one', async () => {
+    const first = await startTestPlatform(db.url);
+    const created = await first.app.inject({ method: 'POST', url: '/v1/tasks', payload: validTaskBody({ taskType: 'probe.fact_lookup' }) });
+    const taskId = created.json().task.taskId as string;
+    const ids = uuidV7Generator();
+    const now = new Date().toISOString();
+    const common = { taskId, occurredAt: now, recordedAt: now, recordedBy: { kind: 'service' as const, ref: 'restart-test' }, correlationId: 'c' };
+    const written = [
+      await new PostgresMemoryStore(first.pool).append({ ...common, entryId: ids.next(), memoryType: 'WORKING', content: { category: 'hypothesis', text: 'survives restart' } }),
+      await new PostgresMemoryStore(first.pool).append({ ...common, entryId: ids.next(), memoryType: 'EPISODIC', content: { event: 'task_resumed', text: 'resumed' } }),
+    ];
+    await first.close();
+
+    const second = await startTestPlatform(db.url);
+    try {
+      expect(await new PostgresMemoryStore(second.pool).listForTask(taskId)).toEqual(written);
     } finally {
       await second.close();
     }

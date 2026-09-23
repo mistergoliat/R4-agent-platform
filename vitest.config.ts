@@ -13,6 +13,7 @@ const alias = {
   '@r4/agent-registry': src('./packages/agent-registry/src/index.ts'),
   '@r4/persistence-postgres': src('./packages/persistence-postgres/src/index.ts'),
   '@r4/agent-kernel': src('./packages/agent-kernel/src/index.ts'),
+  '@r4/context-compiler': src('./packages/context-compiler/src/index.ts'),
   '@r4/api': src('./apps/api/src/index.ts'),
   '@r4/worker': src('./apps/worker/src/index.ts'),
 };

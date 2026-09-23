@@ -12,3 +12,5 @@ export * from './observation.js';
 export * from './decision.js';
 export * from './lease.js';
 export * from './run-step.js';
+export * from './context.js';
+export * from './memory.js';

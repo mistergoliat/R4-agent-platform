@@ -24,6 +24,9 @@ import {
  * - model_failed the model call itself failed
  *
  * Only structured decisions are stored — never raw model text or reasoning.
+ *
+ * R4-C2: `contextSnapshotId` names the immutable ContextSnapshot the step's
+ * model call was made with (null only for steps recorded before R4-C2).
  */
 export const RUN_STEP_OUTCOMES = ['pending', 'observed', 'recorded', 'refused', 'invalid', 'model_failed'] as const;
 export const runStepOutcomeSchema = z.enum(RUN_STEP_OUTCOMES);
@@ -45,6 +48,7 @@ export const runStepSchema = z
     error: z.strictObject({ code: reasonCodeSchema, message: z.string().max(2000) }).nullable(),
     invocationId: uuidSchema.nullable(),
     observationId: uuidSchema.nullable(),
+    contextSnapshotId: uuidSchema.nullable().default(null),
     usage: z.strictObject({ inputTokens: nonNegativeIntSchema, outputTokens: nonNegativeIntSchema }),
     correlationId: correlationIdSchema,
     createdAt: timestampSchema,

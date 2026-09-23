@@ -1,6 +1,7 @@
 import type { Logger } from 'pino';
 import type { ExecutionPolicy } from '@r4/agent-kernel';
 import { CapabilityRegistry } from '@r4/capability-runtime';
+import type { ContextCompactor, ContextCompilationPolicyInput, ContextSource } from '@r4/context-compiler';
 import { FakeModelProvider, type FakeModelScript } from '@r4/model-gateway';
 import { createSilentLogger } from '@r4/observability';
 import { PostgresExecutionStore, PostgresObservationStore, type Pool } from '@r4/persistence-postgres';
@@ -20,7 +21,18 @@ export interface TestWorkerOptions {
   readonly pollIntervalMs?: number;
   readonly maxRunRecoveries?: number;
   readonly logger?: Logger;
+  /** R4-C2: context policy overrides, compactor and extra sources. */
+  readonly context?: Partial<ContextCompilationPolicyInput>;
+  readonly compactor?: ContextCompactor;
+  readonly contextSources?: readonly ContextSource[];
 }
+
+/** Same as a worker booted from an empty environment (loadWorkerConfig): unbounded budget. */
+export const TEST_CONTEXT_POLICY: ContextCompilationPolicyInput = {
+  budget: { mode: 'unbounded' },
+  expiredEvidence: 'include',
+  conversation: { recentTurns: 20, compaction: { enabled: true, chunkTurns: 10 } },
+};
 
 export interface TestWorker {
   readonly platform: WorkerPlatform;
@@ -40,7 +52,7 @@ export function testCapabilities(handler?: Parameters<typeof getTestFactCapabili
   return registry;
 }
 
-export function testWorkerConfig(databaseUrl: string, options: Omit<TestWorkerOptions, 'script' | 'capabilities' | 'logger'>): WorkerConfig {
+export function testWorkerConfig(databaseUrl: string, options: Omit<TestWorkerOptions, 'script' | 'capabilities' | 'logger' | 'compactor' | 'contextSources'>): WorkerConfig {
   return {
     databaseUrl,
     logLevel: 'silent',
@@ -51,6 +63,7 @@ export function testWorkerConfig(databaseUrl: string, options: Omit<TestWorkerOp
     pollIntervalMs: options.pollIntervalMs ?? 25,
     maxRunRecoveries: options.maxRunRecoveries ?? 3,
     execution: { ...TEST_POLICY, ...options.policy },
+    context: { ...TEST_CONTEXT_POLICY, ...options.context },
   };
 }
 
@@ -61,7 +74,11 @@ export function testWorkerConfig(databaseUrl: string, options: Omit<TestWorkerOp
 export async function startTestWorker(databaseUrl: string, options: TestWorkerOptions): Promise<TestWorker> {
   const provider = new FakeModelProvider(options.script);
   const capabilities = options.capabilities ?? testCapabilities();
-  const platform = await createWorkerPlatform(testWorkerConfig(databaseUrl, options), { modelProvider: provider, capabilities }, { logger: options.logger ?? createSilentLogger() });
+  const platform = await createWorkerPlatform(
+    testWorkerConfig(databaseUrl, options),
+    { modelProvider: provider, capabilities, ...(options.compactor ? { compactor: options.compactor } : {}), ...(options.contextSources ? { contextSources: options.contextSources } : {}) },
+    { logger: options.logger ?? createSilentLogger() },
+  );
   return { platform, provider, capabilities };
 }
 

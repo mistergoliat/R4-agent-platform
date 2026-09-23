@@ -2,10 +2,13 @@
 
 Plataforma agéntica reutilizable e independiente del CRM. Fases implementadas:
 **R4-B — Platform Skeleton** (contratos, persistencia durable, API mínima,
-telemetría) y **R4-C1 — Execution Kernel** (worker con leases/heartbeats/fencing,
+telemetría), **R4-C1 — Execution Kernel** (worker con leases/heartbeats/fencing,
 Agent Kernel, `AgentDecision`, capabilities READ, observations, budgets y
-recuperación). No contiene llamadas LLM reales, memoria ni ningún agente de
-negocio.
+recuperación) y **R4-C2 — Context Compiler & Memory Boundaries** (contexto
+estructurado, acotado y reproducible por decisión; autoridad y frescura
+explícitas; memoria task-scoped; compaction no autoritativa; `ContextSnapshot`
+durable antes de cada llamada al modelo). No contiene llamadas LLM reales ni
+ningún agente de negocio.
 
 Lectura obligatoria antes de cambios de arquitectura: [AGENTS.md](AGENTS.md),
 [Constitución](docs/architecture/R4_AGENTIC_PLATFORM_MOTIVATION_AND_CONSTRAINTS.md),
@@ -64,6 +67,16 @@ ejecutan con `FakeModelProvider` y la capability sintética
 | `R4_EXEC_MAX_RUN_DURATION_MS` | `900000` | 〃 (incluye tiempo huérfano tras un crash) |
 | `R4_EXEC_MODEL_CALL_TIMEOUT_MS` | `60000` | Por llamada; acotado por la duración restante |
 | `R4_EXEC_MAX_RUN_RECOVERIES` | `3` | Takeovers antes de abandonar un run (`lease_lost`) |
+| `R4_CONTEXT_BUDGET_MODE` | `unbounded` | Presupuesto de contexto (ADR-015): `unbounded` = R4 no impone límite propio (nada se excluye ni compacta por presupuesto); `fixed` = acotado |
+| `R4_CONTEXT_MAX_TOKENS` | — | Obligatorio sólo con `fixed`: techo en tokens estimados. `contextPolicy.maxContextTokens` del agente puede ajustarlo en ambos modos |
+| `R4_CONTEXT_RECENT_TURNS` | `20` | Turnos recientes que se mantienen crudos cuando hay que compactar (sólo `fixed`) |
+| `R4_CONTEXT_COMPACTION_CHUNK` | `10` | El prefijo compactado crece en bloques de N turnos |
+| `R4_CONTEXT_EXPIRED_EVIDENCE` | `include` | `include`: evidencia expirada queda como `history` (nunca como verdad actual); `exclude`: se omite |
+
+La compaction (sólo con presupuesto `fixed`) requiere un `ContextCompactor` en los bindings del worker
+(`{ modelProvider, capabilities, compactor?, contextSources? }`); C2 sólo trae
+el determinístico. `contextSources` registra fuentes adicionales (p. ej. estado
+de dominio fuera de Core) sin modificar el compilador.
 Para detener PostgreSQL: `npm run db:down` (el volumen `r4-postgres-data` se conserva).
 
 ## API smoke
@@ -123,6 +136,7 @@ packages/capability-runtime  registry, discovery, invocación, observations
 packages/task-runtime        AgentTask / AgentRun / Goal (sobre ports)
 packages/agent-registry      AgentDefinitions versionadas e inmutables
 packages/agent-kernel        loop model → decisión → READ → observation (R4-C1)
+packages/context-compiler    contexto estructurado por decisión: sources, autoridad, frescura, budget, compaction (R4-C2)
 packages/persistence-postgres  migraciones + stores PostgreSQL
 agents/platform-probe        agente sonda sin dominio
 tests/                       unit · contract · integration · recovery

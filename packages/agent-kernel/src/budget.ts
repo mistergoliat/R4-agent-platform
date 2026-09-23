@@ -34,7 +34,14 @@ export interface ExecutionUsage {
   readonly elapsedMs: number;
 }
 
-export type BudgetDimension = 'maxIterations' | 'maxModelCalls' | 'maxReadCapabilityCalls' | 'maxRunDurationMs' | 'maxTokens';
+export type BudgetDimension =
+  | 'maxIterations'
+  | 'maxModelCalls'
+  | 'maxReadCapabilityCalls'
+  | 'maxRunDurationMs'
+  | 'maxTokens'
+  /** R4-C2: the context the policy requires does not fit the context budget. */
+  | 'maxContextTokens';
 
 /** Stable, machine-readable termination code for a dimension (snake_case). */
 export function budgetTerminationCode(dimension: BudgetDimension): string {

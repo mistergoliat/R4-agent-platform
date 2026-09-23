@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { workerIdSchema } from '@r4/contracts';
 import { assertExecutionPolicy, type ExecutionPolicy } from '@r4/agent-kernel';
 import { assertLeaseTiming } from '@r4/task-runtime';
+import { contextCompilationPolicySchema, type ContextCompilationPolicyInput } from '@r4/context-compiler';
 
 const int = (min: number) => z.coerce.number().int().min(min);
 
@@ -25,6 +26,13 @@ const configSchema = z.object({
   R4_EXEC_MAX_RUN_DURATION_MS: int(1).default(15 * 60_000),
   R4_EXEC_MODEL_CALL_TIMEOUT_MS: int(1).default(60_000),
   R4_EXEC_MAX_RUN_RECOVERIES: int(0).default(3),
+  // R4-C2 context compilation policy (operator configuration).
+  // Budget (ADR-015): unbounded by default — no R4-imposed limit. `fixed` requires R4_CONTEXT_MAX_TOKENS.
+  R4_CONTEXT_BUDGET_MODE: z.enum(['unbounded', 'fixed']).default('unbounded'),
+  R4_CONTEXT_MAX_TOKENS: int(1).optional(),
+  R4_CONTEXT_RECENT_TURNS: int(1).default(20),
+  R4_CONTEXT_COMPACTION_CHUNK: int(1).default(10),
+  R4_CONTEXT_EXPIRED_EVIDENCE: z.enum(['include', 'exclude']).default('include'),
 });
 
 export interface WorkerConfig {
@@ -37,7 +45,16 @@ export interface WorkerConfig {
   readonly pollIntervalMs: number;
   readonly maxRunRecoveries: number;
   readonly execution: ExecutionPolicy;
+  /** R4-C2: how the Context Compiler selects and bounds each model input. */
+  readonly context: ContextCompilationPolicyInput;
 }
+
+/**
+ * Default context policy (e.g. for sessions built without a platform): the
+ * schema defaults, i.e. an unbounded budget. Equal to what an empty
+ * environment yields, so both compile equivalent snapshots.
+ */
+export const DEFAULT_CONTEXT_POLICY: ContextCompilationPolicyInput = Object.freeze({ budget: { mode: 'unbounded' as const } });
 
 /** Configuration comes only from the environment; invalid config fails the boot. */
 export function loadWorkerConfig(env: NodeJS.ProcessEnv): WorkerConfig {
@@ -46,6 +63,9 @@ export function loadWorkerConfig(env: NodeJS.ProcessEnv): WorkerConfig {
     throw new Error(`invalid configuration:\n${z.prettifyError(parsed.error)}`);
   }
   const c = parsed.data;
+  if ((c.R4_CONTEXT_BUDGET_MODE === 'fixed') !== (c.R4_CONTEXT_MAX_TOKENS !== undefined)) {
+    throw new Error('invalid configuration:\nR4_CONTEXT_MAX_TOKENS must be set exactly when R4_CONTEXT_BUDGET_MODE=fixed');
+  }
   const config: WorkerConfig = {
     databaseUrl: c.R4_DATABASE_URL,
     logLevel: c.R4_LOG_LEVEL,
@@ -62,6 +82,11 @@ export function loadWorkerConfig(env: NodeJS.ProcessEnv): WorkerConfig {
       maxRunDurationMs: c.R4_EXEC_MAX_RUN_DURATION_MS,
       modelCallTimeoutMs: c.R4_EXEC_MODEL_CALL_TIMEOUT_MS,
     },
+    context: {
+      budget: c.R4_CONTEXT_MAX_TOKENS === undefined ? { mode: 'unbounded' } : { mode: 'fixed', maxEstimatedTokens: c.R4_CONTEXT_MAX_TOKENS },
+      expiredEvidence: c.R4_CONTEXT_EXPIRED_EVIDENCE,
+      conversation: { recentTurns: c.R4_CONTEXT_RECENT_TURNS, compaction: { enabled: true, chunkTurns: c.R4_CONTEXT_COMPACTION_CHUNK } },
+    },
   };
   validateWorkerConfig(config);
   return config;
@@ -72,6 +97,8 @@ export function validateWorkerConfig(config: WorkerConfig): void {
   workerIdSchema.parse(config.workerId);
   assertLeaseTiming({ leaseDurationMs: config.leaseDurationMs, heartbeatIntervalMs: config.heartbeatIntervalMs });
   assertExecutionPolicy(config.execution);
+  const context = contextCompilationPolicySchema.safeParse(config.context);
+  if (!context.success) throw new Error(`invalid context policy:\n${z.prettifyError(context.error)}`);
   if (!Number.isInteger(config.pollIntervalMs) || config.pollIntervalMs <= 0) {
     throw new Error('pollIntervalMs must be a positive integer');
   }

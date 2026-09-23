@@ -120,7 +120,10 @@ describe('kernel budgets', () => {
     expect(terminated(outcome)).toMatchObject({ reason: 'budget_exhausted', code: 'max_run_duration_ms' });
   });
 
-  it('is iterative: hundreds of iterations do not grow the stack', async () => {
+  // R4-C2: every iteration now compiles (and snapshots) a context over a
+  // conversation that grows to 400 turns — quadratic work by design of this
+  // stress test, well above real policies (maxIterations defaults to 50).
+  it('is iterative: hundreds of iterations do not grow the stack', { timeout: 30_000 }, async () => {
     const { outcome, provider } = await runWith(() => respond('tick'), { policy: { maxIterations: 400, maxModelCalls: 400 } });
     expect(terminated(outcome)?.code).toBe('max_iterations');
     expect(provider.callCount).toBe(400);
@@ -147,6 +150,7 @@ describe('kernel recovery and interruption', () => {
     // First "worker" dies after the observation: its next load is refused.
     const out1 = await first.kernel.run({
       load: () => session.load(),
+      prepareContext: (c) => session.prepareContext(c),
       recordStep: (s) => session.recordStep(s),
       executeRead: async (s, d) => {
         const o = await session.executeRead(s, d);

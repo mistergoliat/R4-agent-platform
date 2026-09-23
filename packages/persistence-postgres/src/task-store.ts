@@ -175,14 +175,14 @@ export class PostgresTaskUnitOfWork implements TaskUnitOfWork {
               result = $7::jsonb, failure_code = $8, failure_message = $9,
               termination_reason = $10, termination_code = $11, termination_message = $12,
               termination_details = $13::jsonb, recoveries = $14, version = $15,
-              finished_at = $16, updated_at = $17
+              finished_at = $16, updated_at = $17, context_snapshot_ref = $19
         where run_id = $1 and version = $18`,
       [
         run.runId, run.status, run.usage.modelCalls, run.usage.inputTokens, run.usage.outputTokens, run.usage.capabilityCalls,
         jsonb(run.result), run.failure?.code ?? null, run.failure?.message ?? null,
         run.termination?.reason ?? null, run.termination?.code ?? null, run.termination?.message ?? null,
         jsonb(run.termination?.details), run.recoveries, run.version,
-        run.finishedAt, run.updatedAt, expectedVersion,
+        run.finishedAt, run.updatedAt, expectedVersion, run.contextSnapshotRef,
       ],
     );
     return result.rowCount === 1;

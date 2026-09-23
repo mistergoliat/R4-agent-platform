@@ -1,8 +1,10 @@
 import type {
   AgentRun,
   AgentTask,
+  ContextSnapshot,
   Goal,
   LeaseToken,
+  MemoryEntry,
   Observation,
   RegisteredAgentDefinition,
   RunStep,
@@ -112,4 +114,14 @@ export interface ExecutionUnitOfWork extends TaskUnitOfWork {
   listObservations(taskId: string): Promise<Observation[]>;
   /** Idempotent on `source.invocationId`; returns the stored row either way. */
   insertObservation(observation: Observation): Promise<Observation>;
+
+  /** R4-C2: the latest attempt recorded for (run, iteration), or null. */
+  findLatestContextSnapshot(runId: string, iteration: number): Promise<ContextSnapshot | null>;
+  /** Snapshots are immutable: insert only (the store must refuse updates and deletes). */
+  insertContextSnapshot(snapshot: ContextSnapshot): Promise<void>;
+  /**
+   * Appends a memory entry. A DERIVED_SUMMARY is idempotent on (task,
+   * derivation key): the stored entry is returned when it already exists.
+   */
+  insertMemoryEntry(entry: MemoryEntry): Promise<MemoryEntry>;
 }

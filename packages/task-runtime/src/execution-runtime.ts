@@ -1,12 +1,19 @@
 import {
   EMPTY_RUN_USAGE,
   PlatformError,
+  contextSnapshotSchema,
+  memoryEntrySchema,
   runStatusForTermination,
   runStepSchema,
   type AgentDecision,
   type AgentRun,
   type AgentTask,
   type Clock,
+  type CompiledContext,
+  type ContextBudgetPolicy,
+  type ContextItemDecision,
+  type ContextSnapshot,
+  type DerivedSummaryContent,
   type Goal,
   type IdGenerator,
   type JsonObject,
@@ -82,7 +89,35 @@ export interface RecordStepCommand {
   readonly outcome: Exclude<RunStepOutcome, 'observed'>;
   readonly error?: { readonly code: string; readonly message: string } | null;
   readonly usage: { readonly inputTokens: number; readonly outputTokens: number };
+  /** R4-C2: the snapshot of (run, iteration) the model call was made with. */
+  readonly contextSnapshotId?: string | null;
 }
+
+/**
+ * R4-C2: the compiled context of the model call about to be made for
+ * `iteration`. Summaries produced by the compilation are persisted in the same
+ * transaction, so a snapshot never references a summary that does not exist.
+ */
+export interface RecordContextSnapshotCommand {
+  readonly runId: string;
+  readonly iteration: number;
+  readonly compilerVersion: string;
+  readonly policyVersion: string;
+  readonly compiledContext: CompiledContext;
+  readonly contentHash: string;
+  readonly inputFingerprint: string;
+  readonly estimatedTokens: number;
+  readonly budget: ContextBudgetPolicy;
+  readonly decisions: readonly ContextItemDecision[];
+  readonly newSummaries: readonly {
+    readonly occurredAt: string;
+    readonly sensitivity: 'NORMAL' | 'SENSITIVE';
+    readonly content: DerivedSummaryContent;
+  }[];
+}
+
+/** Principal recorded on memory the platform derives itself (summaries). */
+export const CONTEXT_COMPILER_PRINCIPAL: Principal = { kind: 'system', ref: 'context-compiler' };
 
 export interface FinishExecutionCommand {
   readonly termination: TerminationInput;
@@ -312,6 +347,107 @@ export class ExecutionRuntime {
   }
 
   /**
+   * R4-C2: the latest ContextSnapshot recorded for the iteration the run is
+   * about to execute (recovery reuses it when its inputs are unchanged).
+   * Verifies ownership like every execution call.
+   */
+  async latestContextSnapshot(token: LeaseToken, iteration: number): Promise<ContextSnapshot | null> {
+    return this.#store.transaction(async (uow) => {
+      const { run } = await this.#owned(uow, token);
+      return uow.findLatestContextSnapshot(run.runId, iteration);
+    });
+  }
+
+  /**
+   * R4-C2: makes the context of the next model call durable BEFORE the call,
+   * in one fenced transaction together with any summary the compilation
+   * produced. The snapshot is immutable; a later snapshot of the same
+   * iteration is a new attempt that supersedes it (never an update). The run's
+   * `contextSnapshotRef` points at the latest snapshot.
+   */
+  async recordContextSnapshot(token: LeaseToken, command: RecordContextSnapshotCommand): Promise<ContextSnapshot> {
+    const events: PendingEvent[] = [];
+    const snapshot = await this.#store.transaction(async (uow) => {
+      const { task, run } = await this.#owned(uow, token);
+      if (run.runId !== command.runId) {
+        throw new PlatformError('conflict', 'run_mismatch', `run ${command.runId} is not the active run of task ${task.taskId}`);
+      }
+      const steps = await uow.listRunSteps(run.runId);
+      if (steps.some((s) => s.outcome === 'pending')) {
+        throw new PlatformError('conflict', 'pending_step_exists', 'the previous READ has not been observed yet');
+      }
+      if (command.iteration !== steps.length + 1) {
+        throw new PlatformError('conflict', 'iteration_conflict', `expected iteration ${steps.length + 1}, got ${command.iteration}`);
+      }
+      const { scope } = command.compiledContext;
+      if (scope.taskId !== task.taskId || scope.runId !== run.runId || scope.iteration !== command.iteration || scope.agentId !== run.agentId || scope.agentVersion !== run.agentVersion) {
+        throw new PlatformError('validation', 'context_scope_mismatch', 'the compiled context was built for another run, iteration or agent');
+      }
+      const timestamp = this.#clock.now().toISOString();
+      for (const summary of command.newSummaries) {
+        await uow.insertMemoryEntry(
+          parseOrThrow(memoryEntrySchema, {
+            entryId: this.#ids.next(),
+            taskId: task.taskId,
+            memoryType: 'DERIVED_SUMMARY',
+            occurredAt: summary.occurredAt,
+            recordedAt: timestamp,
+            sensitivity: summary.sensitivity,
+            recordedBy: CONTEXT_COMPILER_PRINCIPAL,
+            correlationId: task.correlationId,
+            content: summary.content,
+          }),
+        );
+      }
+      const previous = await uow.findLatestContextSnapshot(run.runId, command.iteration);
+      const stored = parseOrThrow(contextSnapshotSchema, {
+        snapshotId: this.#ids.next(),
+        runId: run.runId,
+        taskId: task.taskId,
+        iteration: command.iteration,
+        attempt: (previous?.attempt ?? 0) + 1,
+        agentId: run.agentId,
+        agentVersion: run.agentVersion,
+        compilerVersion: command.compilerVersion,
+        policyVersion: command.policyVersion,
+        compiledContext: command.compiledContext,
+        contentHash: command.contentHash,
+        inputFingerprint: command.inputFingerprint,
+        estimatedTokens: command.estimatedTokens,
+        budget: command.budget,
+        decisions: command.decisions,
+        supersedesSnapshotId: previous?.snapshotId ?? null,
+        correlationId: task.correlationId,
+        createdAt: timestamp,
+      });
+      await uow.insertContextSnapshot(stored);
+      const updated: AgentRun = { ...run, contextSnapshotRef: stored.snapshotId, version: run.version + 1, updatedAt: timestamp };
+      if (!(await uow.updateRun(updated, run.version))) throw versionConflict('run', run.version, run.version);
+      events.push([
+        'context.snapshot.persisted',
+        {
+          taskId: task.taskId,
+          runId: run.runId,
+          agentId: task.agentId,
+          workerId: token.owner,
+          iteration: stored.iteration,
+          attempt: stored.attempt,
+          snapshotId: stored.snapshotId,
+          supersedesSnapshotId: stored.supersedesSnapshotId,
+          contentHash: stored.contentHash,
+          estimatedTokens: stored.estimatedTokens,
+          budgetMode: stored.budget.mode,
+          maxEstimatedTokens: stored.budget.mode === 'fixed' ? stored.budget.maxEstimatedTokens : null,
+          newSummaries: command.newSummaries.length,
+        },
+      ]);
+      return stored;
+    });
+    this.#emit(events);
+    return snapshot;
+  }
+
+  /**
    * Ends the run with a structured termination and moves the task to the
    * matching terminal status, then releases the lease — all atomically.
    */
@@ -396,6 +532,7 @@ export class ExecutionRuntime {
       error: command.error == null ? null : { code: command.error.code, message: truncate(command.error.message) },
       invocationId: executesRead ? this.#ids.next() : null,
       observationId: null,
+      contextSnapshotId: command.contextSnapshotId ?? null,
       usage: { inputTokens: command.usage.inputTokens, outputTokens: command.usage.outputTokens },
       correlationId: task.correlationId,
       createdAt: timestamp,

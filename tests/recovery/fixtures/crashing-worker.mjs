@@ -25,7 +25,9 @@ capabilities.register({
     freshnessTtlMs: 60000,
     auditLevel: 'standard',
   },
-  input: z.strictObject({ factKey: z.string() }),
+  // Identical to tests/fixtures/capabilities/get-test-fact.ts: the capability is
+  // part of the model's context (R4-C2), so a drift would change what it sees.
+  input: z.strictObject({ factKey: z.string().regex(/^[a-z][a-z0-9_.]{0,63}$/) }),
   output: z.strictObject({ factKey: z.string(), found: z.boolean(), value: z.string().nullable() }),
   handler: ({ factKey }) => {
     process.stdout.write(`${JSON.stringify({ event: 'child.handler.executed', factKey })}\n`);
