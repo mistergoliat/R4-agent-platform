@@ -12,13 +12,20 @@ el agente propone efectos
 (`propose_action`); una Policy Engine determinista decide; la plataforma crea
 un comando con execution key propia, lo ejecuta mediante un `ActionExecutor`
 separado, se recupera de crashes sin duplicar efectos y sólo informa el
-resultado con un `ActionReceipt` inmutable. **R4-E — Temporal + Human Runtime**
-(en el working tree, pendiente de auditoría): esperas durables (`WAIT_FOR_INPUT`,
+resultado con un `ActionReceipt` inmutable. **R4-E — Temporal + Human Runtime**:
+esperas durables (`WAIT_FOR_INPUT`,
 `WAIT_UNTIL` interrumpible por input), scheduler como proceso independiente,
 consultation / approval / handoff (también iniciado por un operador),
 reconciliación durable de efectos inciertos, cancelación honesta, goals con raíz
-y foco y continuidad conversacional entre runs. No contiene llamadas LLM reales,
-writes de dominio de producción ni ningún agente de negocio.
+y foco y continuidad conversacional entre runs.
+
+**R4-F — Sales Reference Application** (en el working tree, pendiente de
+auditoría) es el primer workload y vive **fuera de Core**: el Sales Agent Pack
+(`agents/sales`), ports de dominio con fixtures (`adapters/domains`) y el primer
+adapter de modelo real (`adapters/models/openai-compatible`). Core no contiene
+ningún concepto de ventas ni de proveedor; no hay writes de dominio de
+producción (los servicios reales no están documentados aquí: sus adapters live
+están pendientes).
 
 Lectura obligatoria antes de cambios de arquitectura: [AGENTS.md](AGENTS.md),
 [Constitución](docs/architecture/R4_AGENTIC_PLATFORM_MOTIVATION_AND_CONSTRAINTS.md),
@@ -125,6 +132,46 @@ npm run start:scheduler
 
 Para detener PostgreSQL: `npm run db:down` (el volumen `r4-postgres-data` se conserva).
 
+### Sales Reference Application (R4-F)
+
+Agent Pack fuera de Core ([arquitectura §15](docs/architecture/R4_ARCHITECTURE.md),
+[ADR-023](docs/adr/ADR-023-sales-reference-application.md),
+[ADR-024](docs/adr/ADR-024-openai-compatible-model-provider.md)). Su estado
+(esquema `sales`) tiene migración propia:
+
+```bash
+npm run build
+npm run db:migrate && npm run sales:migrate     # Core, luego el pack
+npm run sales:e2e                               # sin modelo: escenario central scripted (offline)
+npm run sales:e2e -- --scenario S06             # cualquier escenario S01–S17 / CENTRAL, scripted
+npm run sales:e2e -- --interactive --customer cust-demo-001   # conversación real (requiere R4_MODEL_*)
+npm run sales:live                              # escenarios representativos contra el modelo configurado
+```
+
+`sales:e2e` y `sales:live` crean una base desechable por ejecución con
+`R4_SALES_ADMIN_DATABASE_URL` / `R4_TEST_DATABASE_URL` (default: el PostgreSQL
+local de `docker compose`). `sales:live` escribe artifacts JSON (turnos,
+decisiones, capabilities, observations, goals, workspace, receipts, tokens,
+latencia, contexto por kind) en `artifacts/sales-live/<timestamp>/` (ignorado por
+git); sin credenciales imprime `live provider smoke not executed: credentials
+unavailable` y termina con 0. Las diferencias de comportamiento de un modelo
+real nunca fallan CI.
+
+Modelo (configuración de despliegue; la AgentDefinition no tiene proveedor ni secreto):
+
+| Variable | Default | Descripción |
+|---|---|---|
+| `R4_MODEL_PROVIDER` | — | `openai_compatible` activa el adapter; ausente = sin modelo real |
+| `R4_MODEL_BASE_URL` | — | Endpoint OpenAI-compatible (hospedado, vLLM, servidor local) |
+| `R4_MODEL_API_KEY` | — | Opcional; sólo viaja en el header `Authorization` |
+| `R4_MODEL_NAME` | — | Modelo lógico del endpoint |
+| `R4_MODEL_PROFILE` | `default` | Nombre de perfil en telemetría (`openai-compatible.<profile>`) |
+| `R4_MODEL_CONTEXT_WINDOW_TOKENS` | — | Envelope físico: lo que no cabe se rechaza (`model_envelope_exceeded`), nunca se trunca |
+| `R4_MODEL_MAX_OUTPUT_TOKENS` | `2048` | Salida reservada |
+| `R4_MODEL_TIMEOUT_MS` | `120000` | Deadline de transporte del adapter |
+| `R4_MODEL_RESPONSE_FORMAT` | `json_object` | `json_object` \| `none` |
+| `R4_MODEL_TEMPERATURE` | — | Opcional |
+
 ## API smoke
 
 ```bash
@@ -171,14 +218,16 @@ npm run test:unit       # sin dependencias externas
 npm run test:contract   # pureza de Core, fronteras de dependencias, neutralidad de proveedor
 npm run test:integration  # requiere `npm run db:up`; crea y borra BDs efímeras
 npm run test:recovery   # detiene/arranca el contenedor PostgreSQL y mata workers y schedulers reales (SIGKILL, incl. tras un efecto externo y a mitad de una reconciliación); requiere `npm run build`; correr aislado
-npm test                # unit + contract + integration
+npm run test:sales      # (F) escenarios S01–S17 + CENTRAL: modelo scripted, dominio fixture, PostgreSQL real
+npm test                # unit + contract + integration + sales
 npm run check           # build + lint + typecheck + test
 ```
 
 Los tests de integración usan `R4_TEST_DATABASE_URL`
 (default `postgres://r4:r4_local_only@127.0.0.1:55432/postgres`) y fallan
 —no se omiten— si PostgreSQL no está disponible. Ningún test usa red externa
-ni proveedores de modelos: `FakeModelProvider` los reemplaza.
+ni proveedores de modelos: `FakeModelProvider` los reemplaza (el adapter
+OpenAI-compatible se prueba con un `fetch` falso).
 
 ## Estructura
 
@@ -197,5 +246,8 @@ packages/context-compiler    contexto estructurado por decisión: sources, autor
 packages/policy-engine       autorización determinista de acciones: reglas tipadas, versión + hash (R4-D)
 packages/persistence-postgres  migraciones + stores PostgreSQL
 agents/platform-probe        agente sonda sin dominio
-tests/                       unit · contract · integration · recovery
+agents/sales                 (F) Sales Agent Pack: definición, capabilities, workspace (esquema sales), harness y CLIs — fuera de Core
+adapters/domains             (F) ports Customer/Catalog/Shipping/Quote + fixtures deterministas; sin dependencia de R4
+adapters/models/openai-compatible  (F) primer ModelProvider real (chat-completions genérico)
+tests/                       unit · contract · integration · recovery · sales
 ```

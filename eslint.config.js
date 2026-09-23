@@ -147,6 +147,40 @@ export default tseslint.config(
     files: ['apps/*/src/main.ts', 'apps/*/src/migrate.ts'],
     rules: { 'no-console': 'off' },
   },
+  // R4-F: outside Core. Domain adapters know nothing of R4; the provider adapter only its SPI;
+  // the Sales pack reaches R4 through public packages, never deep imports or the task runtime.
+  {
+    files: ['adapters/domains/src/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [...forbiddenEverywhere, { group: ['@r4/*', '@r4-sales/*', 'pg', 'pg/*', '**/packages/**', '**/apps/**', '**/agents/**'], message: 'Domain adapters are independent of R4 and never touch R4 persistence (R4-F).' }] },
+      ],
+    },
+  },
+  {
+    files: ['adapters/models/**/src/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            ...forbiddenEverywhere,
+            { group: ['pg', 'pg/*', '@r4/persistence-postgres', '@r4/task-runtime', '@r4/capability-runtime', '@r4/agent-kernel', '@r4/worker', '@r4/api', '@r4-sales/*', '**/packages/**'], message: 'A model provider adapter implements ModelProvider only (ADR-004, R4-F).' },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['agents/sales/src/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { patterns: [...forbiddenEverywhere, { group: ['@r4/task-runtime', '**/packages/*/src/**', '**/apps/*/src/**', '../../packages/**', '../../apps/**'], message: 'The Sales pack uses R4 through its public packages only (R4-F).' }] },
+      ],
+    },
+  },
   {
     files: ['tests/**/*.ts'],
     rules: {

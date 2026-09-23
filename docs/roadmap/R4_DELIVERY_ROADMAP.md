@@ -20,8 +20,8 @@ requiere autorización explícita (AGENTS.md).
 | R4-C1 | Execution Kernel | Completado y publicado (baseline `834a5f1`) |
 | R4-C2 | Context Compiler & Memory Boundaries | Completado y publicado (baseline `67a124a`) |
 | R4-D | Governed Execution (PRD §40: "Durable Execution") | Completado sobre `67a124a` (gate SIGKILL tras efecto externo verificado) |
-| R4-E | Temporal + Human Runtime (PRD §40: "Human Collaboration + Scheduler") | Implementado en el working tree sobre `3990652`; pendiente de auditoría final y commit (§3.6) |
-| R4-F | Sales Reference Application | No iniciado |
+| R4-E | Temporal + Human Runtime (PRD §40: "Human Collaboration + Scheduler") | Completado y publicado (baseline `74ed8e7`) |
+| R4-F | Sales Reference Application | Implementado en el working tree sobre `74ed8e7` (fuera de Core); pendiente de auditoría y commit (§3.7) |
 | R4-G | Quality & Learning | No iniciado |
 | R4-H | Shadow Production | No iniciado |
 | R4-I | Governed Production | No iniciado |
@@ -304,6 +304,57 @@ worker de prueba acepta un reloj inyectado.
 caracteres (824 de E) + JSON Schema 6 216 (≈4 140 de E), fijado por
 `unit/agent-kernel/protocol-overhead`.
 
+## 3.7 R4-F — Sales Reference Application
+
+Pregunta: ¿puede R4 sostener una conversación comercial natural, mantener el
+objetivo del cliente, consultar sistemas reales mediante capabilities,
+construir progresivamente una solución y producir una cotización gobernada
+sin codificar el flujo comercial como workflow? Diseño:
+[arquitectura §15](../architecture/R4_ARCHITECTURE.md), ADR-023, ADR-024.
+Baseline R4-E: `74ed8e7`. Todo el código de F vive fuera de Core
+(`agents/sales`, `adapters/domains`, `adapters/models/openai-compatible`); la
+migración `0006` es del pack (`agents/sales/migrations`, esquema `sales`).
+
+| # | Criterio de salida | Evidencia |
+|---|---|---|
+| 1 | Sales Agent fuera de Core | `agents/sales`; `contract/sales-boundaries` (Core no importa Sales ni adapters); `contract/core-purity` sin cambios |
+| 2 | Input canónico en lenguaje natural | `SalesHarness.say` → `TemporalRuntime.submitInput`; todos los escenarios |
+| 3 | Goal sobrevive multi-turno | S03, S09, CENTRAL (`goal_kept`, `current_goal_matches`, `root_goal_active`) |
+| 4 | Ports Customer/Catalog/Shipping/Quote | `adapters/domains`; `unit/sales/domain-fixtures`; S01–S17 |
+| 5 | Hechos de producto desde observations | capabilities de catálogo con `freshnessTtlMs`; S07 (`refreshed_after_expiry`, `quote_line_price`) |
+| 6 | Estado Sales estructurado durable | `sales.workspaces` + `workspace_transitions`; `integration/sales-reference` |
+| 7 | Selección no destructiva por accidente | `unit/sales/workspace-model`; S05 |
+| 8 | Espera y reanudación | S09 (reinicio de worker), CENTRAL (`waited_and_resumed`, `prior_response_in_context`) |
+| 9 | Pregunta incidental no destruye el goal | S03, CENTRAL |
+| 10 | Corrección reemplaza la restricción | S04, CENTRAL (`fact_history`) |
+| 11 | Quote por `propose_action` | `integration/sales-reference` (propuesta → decisión → comando → receipt) |
+| 12 | Quote pasa por Policy | `SALES_ACTION_POLICY`; decisión persistida con regla `capabilities.quote.create.autonomy`; denegaciones sin evidencia / sin identidad |
+| 13 | Éxito de quote exige receipt | `no_unbacked_quote_claim` en todos los escenarios; `invariants.test` (negativo) |
+| 14 | Crash no duplica el efecto lógico | S13 + `integration/sales-reference` (worker muere tras emitir: 1 quote, 1 receipt vía `reconcile`, misma run) ; S17 y outcome desconocido vía scheduler |
+| 15 | El agente continúa tras la observation del quote | S11 (turno 2 usa la validez del receipt) |
+| 16 | Primer ModelProvider real fuera de Core | `adapters/models/openai-compatible`; ADR-024 |
+| 17 | CI offline sin credenciales | `FakeModelProvider` + fixtures; `sales:live` sin credenciales ⇒ "not executed" |
+| 18 | Harness live | `npm run sales:live` (artifacts en `artifacts/sales-live/`) |
+| 19 | S01–S15 | `tests/sales/scenarios.test.ts` (S01–S17 + CENTRAL) |
+| 20 | Sin workflow determinístico | `contract/sales-boundaries` (instrucciones y código sin etapas/intents/pasos) |
+| 21 | Sin subagentes | `delegationPolicy: none`; un solo agente Sales |
+| 22–23 | Tests A–E y F pasan | ver informe de cierre |
+| 24 | build / lint / typecheck | ver informe de cierre |
+| 25 | `git diff --check` | limpio |
+| 26 | Documentación | arquitectura §15, ownership §1f, ADR-023/024, README |
+| 27 | Nada de R4-G | invariantes mecánicas + reporte estructurado; sin scoring, rúbricas ni evaluación automática de lenguaje |
+
+**Cambios en Core (genéricos, con test):** `CapabilityFailure` (el invoker
+conserva `details` clasificados de un fallo READ) y `ModelProviderError` con
+`timeout` / `invalid_provider_response`. Ver ADR-023.
+
+**Cambios en tests de fases previas (inevitables):** `integration/agent-registry`
+y `integration/api` esperaban que el repositorio registrara sólo
+`platform-probe`; ahora `./agents` también contiene `sales@1` (5 expectativas, incl. `unit/agent-registry/loader`).
+El test de handler-error del invoker verifica además `details: null`.
+
+**Comando de escenarios:** `npm run test:sales` (incluido en `npm test`).
+
 ## 4. Decisiones diferidas intencionalmente
 
 | Tema | Por qué se difiere | Seam existente |
@@ -355,3 +406,11 @@ caracteres (824 de E) + JSON Schema 6 216 (≈4 140 de E), fijado por
 | (E) Memoria semántica de largo plazo; resumen de historia de interacción basado en modelo | Sin proveedor real ni evaluación | `platform.interaction` + compaction de C2 |
 | (E) Delegación multi-agente; Quality Auditor | R4-F+ / R4-G | `AgentDecision`, evaluación |
 | (E) Carga de la proyección de interacción acotada en la consulta (no sólo en el compilador) | Sin tasks largas reales todavía; C2 ya acota lo que ve el modelo | `interactionRecords` |
+| (F) Adapters live de Customer / Catalog / Shipping / Quote | Ningún contrato público documentado en este repositorio; no se inventan endpoints | ports en `adapters/domains/*/port.ts` |
+| (F) Entrega de `respond` por canal (WhatsApp, etc.) | Boundary posterior; `respond` es observable, no entregado | input canónico; `respond` en el step log |
+| (F) Reintento de modelo / reparación de decisiones inválidas | Sigue diferido (C1): una decisión inválida de un modelo real termina la run; `sales:live` lo registra | `invalid_decision`, `model_failure` |
+| (F) Actualización de cotizaciones emitidas | La semántica del owner en F es "cambio ⇒ quote nuevo" | `quote.create`; `selectionOrDeliveryChangedSince` en el workspace |
+| (F) Tool calling nativo como transporte de decisiones | ADR-008 se mantiene durante F | `OpenAICompatibleModelProvider` no envía tools |
+| (F) Presupuesto/optimización de contexto para Sales | Medir primero (ADR-015); el reporte ya da tokens por kind y fuente | `report.context`, `context_snapshot_items` |
+| (F) Prompt de ventas óptimo, jerarquía óptima de goals, scoring de calidad, subagentes especialistas | Requieren evidencia de R4-G | escenarios + `sales:live` artifacts |
+| (F) Identidad de cliente productiva | Sin servicio de identidad; binding provisional del ingress | `sales.conversations`, `customer.get_context` |

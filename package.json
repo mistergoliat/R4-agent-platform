@@ -2,21 +2,24 @@
   "name": "r4-agent-platform",
   "version": "0.0.0",
   "private": true,
-  "description": "R4 Agentic Platform — reusable, CRM-independent agent runtime (R4-B platform skeleton + R4-C1 execution kernel + R4-C2 context compiler + R4-D governed execution + R4-E temporal/human runtime).",
+  "description": "R4 Agentic Platform — reusable, CRM-independent agent runtime (R4-B platform skeleton + R4-C1 execution kernel + R4-C2 context compiler + R4-D governed execution + R4-E temporal/human runtime) and, outside Core, the R4-F Sales reference application.",
   "type": "module",
   "engines": {
     "node": ">=20.19.0"
   },
   "workspaces": [
     "packages/*",
-    "apps/*"
+    "apps/*",
+    "adapters/domains",
+    "adapters/models/*",
+    "agents/sales"
   ],
   "scripts": {
     "build": "tsc -b tsconfig.build.json",
     "clean": "tsc -b tsconfig.build.json --clean",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint . --max-warnings=0",
-    "test": "npm run test:unit && npm run test:contract && npm run test:integration",
+    "test": "npm run test:unit && npm run test:contract && npm run test:integration && npm run test:sales",
     "test:unit": "vitest run --project unit",
     "test:contract": "vitest run --project contract",
     "test:integration": "vitest run --project integration",
@@ -26,7 +29,11 @@
     "db:migrate": "node apps/api/dist/migrate.js",
     "start": "node apps/api/dist/main.js",
     "start:scheduler": "node apps/scheduler/dist/main.js",
-    "check": "npm run build && npm run lint && npm run typecheck && npm run test"
+    "check": "npm run build && npm run lint && npm run typecheck && npm run test",
+    "test:sales": "vitest run --project sales",
+    "sales:migrate": "node agents/sales/dist/cli/migrate.js",
+    "sales:e2e": "node agents/sales/dist/cli/e2e.js",
+    "sales:live": "node agents/sales/dist/cli/live.js"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

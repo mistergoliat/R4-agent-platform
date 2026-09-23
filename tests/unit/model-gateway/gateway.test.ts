@@ -5,6 +5,7 @@ import {
   DefaultModelGateway,
   FAKE_MODEL_ID,
   FakeModelProvider,
+  ModelProviderError,
   parseStructuredOutput,
   type FakeModelScript,
   type ModelGateway,
@@ -109,6 +110,15 @@ describe('DefaultModelGateway with FakeModelProvider', () => {
     expect(a).toMatchObject({ ok: false, error: { kind: 'provider_error', retryable: true, message: 'upstream 503', providerId: 'fake' } });
     expect(b).toMatchObject({ ok: false, error: { kind: 'rate_limited', retryable: true } });
     expect(c).toMatchObject({ ok: false, error: { kind: 'provider_error', retryable: false } });
+  });
+
+  it('keeps an adapter-classified timeout or unmappable answer as its own kind (not provider_error)', async () => {
+    const adapter = (kind: 'timeout' | 'invalid_provider_response') => new DefaultModelGateway({
+      provider: { providerId: 'adapter-under-test', invoke: () => Promise.reject(new ModelProviderError(kind, `${kind} inside the adapter`, kind === 'timeout')) },
+      logger: createSilentLogger(),
+    });
+    expect(await adapter('timeout').generate(request())).toMatchObject({ ok: false, error: { kind: 'timeout', retryable: true, providerId: 'adapter-under-test' } });
+    expect(await adapter('invalid_provider_response').generate(request())).toMatchObject({ ok: false, error: { kind: 'invalid_provider_response', retryable: false } });
   });
 
   it('enforces the timeout on a provider that honors abort', async () => {

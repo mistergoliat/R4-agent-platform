@@ -133,11 +133,19 @@ export interface ModelProvider {
   invoke(request: ModelRequest, signal: AbortSignal): Promise<unknown>;
 }
 
+/**
+ * What an adapter may classify itself. `timeout` covers an adapter's own
+ * transport deadline (the gateway still enforces the request's); an
+ * `invalid_provider_response` is a vendor answer the adapter cannot map.
+ * `cancelled` stays the gateway's: only it knows why a call was aborted.
+ */
+export type ModelProviderErrorKind = Exclude<ModelErrorKind, 'cancelled'>;
+
 export class ModelProviderError extends Error {
-  readonly kind: 'provider_error' | 'rate_limited';
+  readonly kind: ModelProviderErrorKind;
   readonly retryable: boolean;
 
-  constructor(kind: 'provider_error' | 'rate_limited', message: string, retryable: boolean) {
+  constructor(kind: ModelProviderErrorKind, message: string, retryable: boolean) {
     super(message);
     this.name = 'ModelProviderError';
     this.kind = kind;

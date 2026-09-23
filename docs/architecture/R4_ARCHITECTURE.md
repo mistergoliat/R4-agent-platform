@@ -1,6 +1,6 @@
 ---
-title: R4 — Arquitectura implementada (R4-B + R4-C1 + R4-C2 + R4-D + R4-E)
-status: implemented (R4-B, R4-C1, R4-C2, R4-D); R4-E in working tree, pending audit
+title: R4 — Arquitectura implementada (R4-B + R4-C1 + R4-C2 + R4-D + R4-E) y R4-F (Sales Reference Application)
+status: implemented (R4-B … R4-E, published at 74ed8e7); R4-F in working tree, pending audit
 owner: architecture
 last_reviewed: 2026-09-23
 depends_on:
@@ -28,9 +28,11 @@ depends_on:
   - ../adr/ADR-020-receipt-immutability.md
   - ../adr/ADR-021-temporal-human-runtime.md
   - ../adr/ADR-022-scheduler-reconciliation-and-time-authority.md
+  - ../adr/ADR-023-sales-reference-application.md
+  - ../adr/ADR-024-openai-compatible-model-provider.md
 ---
 
-# R4 — Arquitectura implementada (R4-B + R4-C1 + R4-C2 + R4-D + R4-E)
+# R4 — Arquitectura implementada (R4-B + R4-C1 + R4-C2 + R4-D + R4-E) y R4-F
 
 Este documento describe lo que **existe** en el repositorio tras R4-B (Platform
 Skeleton), R4-C1 (Execution Kernel), R4-C2 (Context Compiler & Memory
@@ -39,6 +41,9 @@ siguen siendo la autoridad (Constitución > PRD > ADR > tarea). Lo que aquí
 figura como "seam" es un punto de extensión deliberado, no una funcionalidad
 implementada. Las secciones 1–10 describen R4-B, actualizadas donde C1/C2 las
 cambiaron; la sección 11 describe R4-C1, la 12 R4-C2, la 13 R4-D y la 14 R4-E.
+La sección 15 describe R4-F: el primer workload (Sales Reference Application),
+que vive **fuera** de Core (`agents/sales`, `adapters/*`) y usa las fronteras
+anteriores sin moverlas.
 
 ## 1. Objetivo de R4-B
 
@@ -77,7 +82,11 @@ R4-agent-platform/
 │   ├── policy-engine/          (D) Autorización determinista de acciones: reglas tipadas, versionadas y con hash. Pura.
 │   └── persistence-postgres/   Migraciones + implementación PostgreSQL de los ports.
 ├── agents/
-│   └── platform-probe/         Única definición de agente: sonda sin dominio para R4-B.
+│   ├── platform-probe/         Sonda sin dominio (R4-B).
+│   └── sales/                  (F) Sales Agent Pack: definición, capabilities, estado Sales (esquema `sales`, 0006 propia), harness. Fuera de Core.
+├── adapters/                   (F) Fuera de Core.
+│   ├── domains/                Ports Customer/Catalog/Shipping/Quote + fixtures deterministas (sin dependencia de R4).
+│   └── models/openai-compatible/  Primer ModelProvider real (protocolo chat-completions genérico).
 ├── tests/{unit,contract,integration,recovery,support,fixtures}
 └── docs/{architecture,adr,roadmap}
 ```
@@ -86,8 +95,9 @@ Paquetes del árbol sugerido que **no** se crearon porque no corresponden a
 R4-B/C1/C2/D/E: `memory` (la memoria de C2 es un contrato + tabla + source, sin
 runtime propio; ADR-013), `artifacts`, `human-collaboration` y `scheduler` como paquetes (E: el
 runtime temporal/humano vive en `task-runtime` porque comparte el lock de la task; el scheduler
-es una app/composition root — ADR-021/022), `evaluation`, `agents/sales`,
-`agents/quality-auditor`, `agents/marketing-analyst`, `adapters/*`. Ver
+es una app/composition root — ADR-021/022), `evaluation`,
+`agents/quality-auditor`, `agents/marketing-analyst`, `adapters/channels/*`,
+`adapters/protocols/*` (F crea `agents/sales`, `adapters/domains` y `adapters/models/*`, §15). Ver
 [roadmap](../roadmap/R4_DELIVERY_ROADMAP.md).
 
 `persistence-postgres` no está en el árbol sugerido del PRD. Existe porque los
@@ -304,7 +314,8 @@ validación de schema, contrato de invocación y creación de observations.
 En R4-B el gateway no estaba cableado. Desde C1 lo invoca únicamente el Agent
 Kernel dentro del worker (§11); la API sigue sin acceso al modelo. No existe
 todavía ningún adapter de proveedor real: el worker recibe su `ModelProvider`
-por composición (`WorkerBindings`).
+por composición (`WorkerBindings`). (F) El primero, `OpenAICompatibleModelProvider`,
+vive fuera de Core (`adapters/models/openai-compatible`, ADR-024, §15.8).
 
 ## 6. Persistencia
 
@@ -1038,3 +1049,129 @@ Eventos (sólo metadata; nunca texto humano o de input): `task.wait.*`,
 aprobación (`latencyMs`), duración de handoff, lag del scheduler (`lagMs`),
 latencia de wake, intentos y tiempo de reconciliación (`elapsedMs`), tasks
 bloqueadas y reanudadas, vida de goals (`lifetimeMs`) y transiciones de goal.
+
+## 15. R4-F — Sales Reference Application (fuera de Core)
+
+Pregunta que responde F: ¿puede la plataforma sostener una conversación
+comercial natural, mantener el objetivo del cliente, consultar sistemas reales
+mediante capabilities, construir progresivamente una solución y producir una
+cotización gobernada sin codificar el flujo comercial como workflow? Diseño:
+ADR-023 (Agent Pack, estado Sales, adapters de dominio) y ADR-024 (primer
+adapter de modelo). Baseline R4-E: `74ed8e7`.
+
+F es un **workload**, no una fase de Core: todo vive en `agents/sales`,
+`adapters/domains` y `adapters/models/openai-compatible`, y se conecta por los
+seams que ya existían (`WorkerBindings.capabilities`, `.contextSources`,
+`.actionPolicy`, `.modelProvider`; input canónico; migrador genérico). Los
+únicos cambios de Core son dos extensiones genéricas de clasificación de
+errores (ADR-023, tabla).
+
+```text
+turno del cliente ─► input canónico (POST /v1/tasks/:id/inputs; el harness lo llama in-process)
+   ─► wake ─► run nueva ─► ContextSnapshot { agent, task, goals, capabilities,
+        authoritativeState: sales.workspace (estado Sales, sin precios),
+        observations (catálogo / envío / cliente, con frescura), conversation (cross-run) }
+   ─► modelo (Fake en CI | OpenAI-compatible en live) ─► AgentDecision v3
+        ├─ read_capability catalog.* | shipping.quote | customer.get_context ─► Observation
+        ├─ propose_action sales.workspace.update ─► policy ALLOW (REVERSIBLE) ─► receipt
+        ├─ manage_goal (objetivo del cliente bajo la raíz; foco explícito)
+        ├─ request_consultation (conocimiento humano no disponible por capability)
+        ├─ propose_action quote.create ─► SALES_ACTION_POLICY (evidencia + identidad)
+        │     ─► comando (executionKey) ─► Quote owner (idempotency key = executionKey)
+        │     ─► receipt ─► Observation ─► el agente informa número y total desde ella
+        └─ respond ─► wait WAIT_FOR_INPUT (fin del turno; nunca "entregado")
+```
+
+### 15.1 Componentes
+
+| Componente | Dónde | Rol |
+|---|---|---|
+| `sales.agent.json` | `agents/sales` | AgentDefinition: instrucciones pequeñas (criterios, no pasos), 5 scopes, sin proveedor/modelo/secreto, sin delegación |
+| `SalesWorkspace` (modelo puro) | `agents/sales/src/workspace/model.ts` | Hechos declarados, destino, selección; operaciones explícitas y atómicas |
+| `PostgresSalesStore` | `agents/sales/src/workspace/store.ts` | Esquema `sales` (0006 del pack); idempotente por execution key; historia append-only |
+| `SalesWorkspaceContextSource` | `agents/sales/src/workspace/context-source.ts` | Ítem `state` AUTHORITATIVE (owner: el pack) + anotación determinista de evidencia aplicable |
+| Capabilities | `agents/sales/src/capabilities/*` | `customer.get_context`, `catalog.search`, `catalog.get_product_context`, `shipping.quote` (READ); `sales.workspace.update` (REVERSIBLE_WRITE); `quote.create` (IRREVERSIBLE_WRITE) |
+| `SALES_ACTION_POLICY` | `agents/sales/src/policy.ts` | Default de la plataforma + `quote.create` autónomo con evidencia e identidad ≥ provisional |
+| `composeSales` | `agents/sales/src/composition.ts` | Registry + fuente de contexto + política → `WorkerBindings` |
+| Ports + fixtures | `adapters/domains` | Customer, Catalog (sólo lectura), Shipping, Quote; `DomainError` clasificado; adapters live pendientes |
+| `OpenAICompatibleModelProvider` | `adapters/models/openai-compatible` | Primer adapter real (ADR-024) |
+| Harness | `agents/sales/src/harness/*`, `agents/sales/src/cli/*` | `SalesHarness` (API + worker in-process), escenarios, invariantes, reporte, `sales:e2e`, `sales:live` |
+
+### 15.2 Qué sabe el agente y qué debe recuperar
+
+| Dato | Owner / autoridad | Cómo llega al agente |
+|---|---|---|
+| Objetivo del cliente | Cognición (goal del agente bajo la raíz del requester) | sección `goals` (raíz + foco) |
+| Presupuesto, espacio, preferencias, correcciones | Pack Sales (hecho declarado) | `sales.workspace`; historia en `sales.workspace_transitions` |
+| Productos seleccionados y cantidades | Pack Sales | `sales.workspace` |
+| Precio y stock actuales, specs | Catalog owner | observation con `validUntil` (15 min); expirada → `history` |
+| Costo de envío | Shipping owner | observation por destino + selección; el workspace marca la que ya no aplica |
+| Identidad del cliente | Binding del ingress + Customer owner | `customer.get_context` (sin argumentos) |
+| Identidad, número, totales, validez del quote | Quote owner | receipt + observation de acción |
+| Lo que se dijo antes | Memoria CONVERSATIONAL + `platform.interaction` | sección `conversation` (cross-run) |
+
+Ninguna memoria, resumen ni texto del modelo puede escribir las filas
+AUTHORITATIVE: la conversación no sobrescribe precio, stock, selección ni quote.
+
+### 15.3 Selección y correcciones
+
+`add_item` sobre algo ya seleccionado → `item_already_selected`;
+`remove_item` / `set_item_quantity` / `replace_item` sobre algo no
+seleccionado → `item_not_selected`; ids que el Catalog owner no conoce →
+`unknown_product`; lotes atómicos; `expectedVersion` opcional. `record_fact`
+sobre una clave existente reemplaza el valor vigente (una sola restricción
+actual); la historia conserva ambos. Claves de precio/stock/costo/total/quote
+se rechazan por esquema.
+
+### 15.4 Cotización gobernada
+
+`quote.create {workspaceVersion, customer}` → validación estricta (el modelo
+no puede poner id, número, líneas, precios ni totales) → `SALES_ACTION_POLICY`
+→ comando con `executionKey` → el handler toma selección y destino del
+workspace en esa versión, los registra con la clave (`quote_requests`) y llama
+al Quote owner con **idempotency key = executionKey** → receipt.
+`workspace_version_mismatch` / `workspace_incomplete` son rechazos (receipt
+`rejected`, nada emitido); owner caído antes de enviar → receipt `failed`;
+timeout / conexión perdida → `unknown` → reconciliación por clave
+(`findByIdempotencyKey`) en la misma run, o `needs_reconciliation` + task
+`blocked` + trabajo del scheduler si no puede establecerse. Nunca hay número
+de cotización sin receipt.
+
+### 15.5 Harness conversacional
+
+`SalesHarness` compone la API (Task/Temporal Runtime) y un worker real con el
+pack sobre PostgreSQL, en un proceso. Un turno = input canónico → ciclos del
+worker hasta quedar ocioso → estado durable inspeccionable (`inspect`). Puede
+reemplazar el worker entre turnos (frontera de proceso), matar al worker a
+mitad de una llamada (pool cerrado; lease expirado en el reloj de la BD) y
+adelantar el reloj de proceso (frescura). `npm run sales:e2e` (interactivo con
+modelo real, o escenario scripted offline) y `npm run sales:live` (escenarios
+representativos con el modelo configurado; artifacts en `artifacts/sales-live/`,
+ignorado por git; sin credenciales informa "not executed").
+
+### 15.6 Escenarios e invariantes
+
+S01–S17 + CENTRAL (`agents/sales/src/harness/scenarios.ts`): turnos del cliente
+(lo que `sales:live` envía), trayectoria scripted (sólo CI) e invariantes
+mecánicas sobre estado durable (`capability_used`, `quotes_issued`,
+`no_unbacked_quote_claim`, `goal_kept`, `fact_history`, `selection_equals`,
+`refreshed_after_expiry`, `waited_and_resumed`, `prior_response_in_context`,
+`one_receipt_per_execution`, …). El orden se toma del log de steps, nunca de
+timestamps de relojes distintos. El reporte estructurado (turnos, decisiones,
+capabilities, observations, goals, workspace, receipts, runs, tokens, contexto
+por kind y fuente) es la entrada reutilizable de R4-G. La trayectoria scripted
+no prueba calidad del modelo.
+
+### 15.7 Contexto y telemetría
+
+Sin cambios de presupuesto (UNBOUNDED, ADR-015: medir primero). El reporte
+incluye, por snapshot, tokens estimados por kind y por fuente (incl.
+`sales.workspace`) y compaction. La telemetría del gateway (perfil de
+proveedor, modelo, tokens, latencia, finish reason, llamadas) queda en los
+artifacts live (sólo metadata).
+
+### 15.8 Adapter de modelo
+
+ADR-024: `OpenAICompatibleModelProvider`, configuración `R4_MODEL_*`, render
+del `CompiledContext` como JSON, envelope físico explícito, errores
+clasificados, secretos sólo en el header saliente.

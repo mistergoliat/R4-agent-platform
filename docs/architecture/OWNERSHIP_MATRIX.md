@@ -1,6 +1,6 @@
 ---
 title: R4 — Ownership Matrix
-status: implemented (R4-B, R4-C1, R4-C2, R4-D); R4-E in working tree + planned rows
+status: implemented (R4-B … R4-E); R4-F (outside Core) in working tree + planned rows
 owner: architecture
 last_reviewed: 2026-09-23
 ---
@@ -85,7 +85,7 @@ Clases de autoridad:
 | Budget de writes | `apps/worker` (`R4_EXEC_MAX_WRITE_ACTIONS`, default 0) + `budget.maxWrites` | Configuración | Entorno; consumo = comandos de la task | Por proceso | — | Consumo derivado del ledger | `unit/agent-kernel/kernel-actions`, `integration/governed-execution` |
 | Resultado incierto | `task-runtime` | Plataforma (declara que no sabe) | `action_executions.status = needs_reconciliation` | Hasta resolución por reconciliación (R4-E, §1e) | run `suspended`, task `blocked` | Nunca se asume éxito ni fallo | `integration/governed-execution-recovery`, `integration/reconciliation` |
 
-## 1e. Implementado en R4-E (working tree, pendiente de auditoría)
+## 1e. Implementado en R4-E (publicado, baseline `74ed8e7`)
 
 | Concepto | Owner (paquete) | Autoridad | Almacenamiento | Mutabilidad | Ciclo de vida | Ante reinicio | Evaluación |
 |---|---|---|---|---|---|---|---|
@@ -105,16 +105,40 @@ Clases de autoridad:
 | Transición de goal | `task-runtime` (`TemporalRuntime`) + trigger | Evidencia | `goal_transitions` (inmutable) | Append-only | created / focused / achieved / abandoned / superseded | Durable | `integration/temporal-waits` |
 | Proyección de interacción cross-run | `context-compiler` (`platform.interaction`) | CONVERSATIONAL / OBSERVED | Derivada (no se persiste aparte) | — | Por compilación | Recompilada | `unit/context-compiler/temporal-sources`, `integration/temporal-waits` |
 
+## 1f. R4-F — Sales Reference Application (fuera de Core; working tree, pendiente de auditoría)
+
+Ninguna de estas filas es una primitiva de Core: pertenecen al Agent Pack
+`agents/sales` o a `adapters/*` (ADR-023, ADR-024).
+
+| Concepto | Owner (paquete) | Autoridad | Almacenamiento | Mutabilidad | Ciclo de vida | Ante reinicio | Evaluación |
+|---|---|---|---|---|---|---|---|
+| Sales AgentDefinition + instrucciones | `agents/sales` (`sales.agent.json`) | Configuración | `agent_definitions` (vía API) | Inmutable por versión | registrada al arrancar la API | Re-sync con hash | `contract/sales-boundaries`, `integration/agent-registry` |
+| Binding conversación → cliente | Ingress Sales (harness / futuro channel adapter) | Plataforma del pack (nunca el modelo) | `sales.conversations` | Write-once (trigger) | al abrir la conversación | Durable | `unit/sales/domain-fixtures`, `integration/sales-reference` |
+| SalesWorkspace (hechos declarados, destino, selección) | `agents/sales` (`PostgresSalesStore`) | Pack Sales — AUTHORITATIVE sólo sobre estado Sales; **nunca** verdad de dominio (sin precio/stock/totales) | `sales.workspaces` | Sólo por `sales.workspace.update` gobernado; `version` +1 por comando | vacío (v0) → v1…n | Durable; sobrevive reinicio de worker, esperas y runs nuevas | `unit/sales/workspace-model`, `integration/sales-reference`, `sales/*` |
+| Transición del workspace | `agents/sales` | Evidencia (auditoría + idempotencia por execution key) | `sales.workspace_transitions` | Append-only (trigger) | una por comando (applied/rejected) | Durable; replay devuelve la respuesta original | `integration/sales-reference` |
+| Proyección del workspace en el contexto | `agents/sales` (`SalesWorkspaceContextSource`) | AUTHORITATIVE (estado Sales) + anotaciones deterministas de evidencia | Derivada; decisión por ítem en `context_snapshot_items` | — | por compilación | Recompilada | `unit/sales/workspace-projection` |
+| Precio, stock, specs | Catalog owner (`adapters/domains/catalog`) | **Dominio** | Fuera de R4 (fixture en memoria; live pendiente) | Del owner | — | — | `unit/sales/domain-fixtures` |
+| Costo de envío | Shipping owner | **Dominio** | Fuera de R4 | Del owner | — | — | `unit/sales/domain-fixtures` |
+| Cliente (perfil, contacto) | Customer owner | **Dominio** (identidad provisional) | Fuera de R4 | Del owner | — | — | `unit/sales/domain-fixtures` |
+| Quote (id, número, líneas, totales, validez, documento) | Quote owner | **Dominio** | Fuera de R4; en R4 sólo su receipt | Emitido = inmutable; cambios ⇒ quote nuevo | emitido | Idempotente por execution key | `integration/sales-reference`, `sales/*` (S07, S11–S13, S17) |
+| Solicitud de quote (selección + destino enviados) | `agents/sales` (`quote.create`) | Evidencia de lo pedido (sin precios) | `sales.quote_requests` | Write-once por execution key | antes de la primera llamada | Replays y reconciliación la reutilizan | `integration/sales-reference` |
+| Referencia de quote | `agents/sales` (desde la respuesta del owner) | Puntero; la verdad es del Quote owner | `sales.quote_references` | Write-once | con el receipt | Durable | `integration/sales-reference` |
+| `SALES_ACTION_POLICY` | `agents/sales` | Configuración (identidad en cada PolicyDecision) | Proceso | Por versión (hash) | — | Recargada | `contract/sales-boundaries`, `integration/sales-reference` |
+| Configuración de modelo (`R4_MODEL_*`) | Despliegue (proceso del worker) | Configuración (nunca en la AgentDefinition) | Entorno | Por proceso | — | Recargada | `unit/sales/openai-compatible-provider` |
+| `OpenAICompatibleModelProvider` | `adapters/models/openai-compatible` | Adapter de proveedor (SPI `ModelProvider`) | Sin estado | — | por llamada | — | `unit/sales/openai-compatible-provider`, `integration/sales-reference` |
+| Escenarios S01–S17 + CENTRAL, invariantes, reporte | `agents/sales/src/harness` | Evaluación (semántica, no calidad) | Artifacts locales (`artifacts/`, git-ignored) | — | por ejecución | — | `tests/sales` |
+
 ## 2. Planificado (sin implementar; owner candidato)
 
 | Concepto | Fase | Owner candidato | Autoridad |
 |---|---|---|---|
-| Escritura de working/episodic memory desde el loop | R4-F+ | `agent-kernel` + contracts (decisión nueva) | Cognición (nunca verdad) |
-| Fuentes de estado de dominio | R4-F+ | Adapters de dominio vía `ContextSource` | Owner del dominio (AUTHORITATIVE) |
-| Decisión Delegate | R4-F+ | `agent-kernel` + contracts | Cognición (propuesta) |
+| Escritura de working/episodic memory desde el loop | R4-G+ (F no la necesitó: el estado Sales estructurado cubre lo durable) | `agent-kernel` + contracts (decisión nueva) | Cognición (nunca verdad) |
+| Fuentes de estado de dominio | F: primera (`sales.workspace`, §1f); fuentes de owners reales pendientes | Adapters de dominio / packs vía `ContextSource` | Owner del estado (AUTHORITATIVE) |
+| Decisión Delegate | con evidencia (F no la necesitó; sin subagentes) | `agent-kernel` + contracts | Cognición (propuesta) |
 | Cancelación cooperativa de efectos en vuelo | con un caso de uso | `task-runtime` + capability | Plataforma |
 | Verificación de identidad (`identityAssurance = verified`) e IAM de operadores | con el primer servicio de identidad | servicio de identidad + plataforma | Plataforma |
 | Artifact | R4-C/E (a decidir) | `artifacts` | Evidencia versionada |
 | Outbox / eventos públicos | con primer consumidor | `persistence-postgres` + `observability` | Plataforma |
 | Evaluation / Finding / FailureCluster | R4-G | `evaluation` | Plataforma + rúbricas de packs |
-| Conceptos Sales (quote, cart, …) | R4-F | `agents/sales` + domain adapters | **Dominio**, nunca Core |
+| Adapters live de Customer / Catalog / Shipping / Quote | cuando exista contrato público documentado | `adapters/domains/*` | **Dominio** |
+| Adapter de canal (mensajería) y entrega de `respond` | R4-H+ | `adapters/channels/*` | Transporte |

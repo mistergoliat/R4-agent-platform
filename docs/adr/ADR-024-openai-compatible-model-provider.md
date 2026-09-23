@@ -1,0 +1,74 @@
+# ADR-024 — Primer adapter real de ModelProvider: OpenAI-compatible (R4-F)
+
+- **Estado:** Aceptado en el working tree de R4-F (pendiente de auditoría y commit)
+- **Fecha:** 2026-09-23
+- **Autoridad superior:** Constitución §20, §25.11; PRD §13; ADR-004, 008, 015
+- **Relacionado:** ADR-023
+
+## Contexto
+
+Hasta R4-E sólo existía `FakeModelProvider`. R4-F debe poder ejecutar el
+Sales Agent con un modelo real sin que Core conozca proveedores, y dejar
+abierta la puerta a endpoints hospedados, vLLM, modelos locales de 70B u
+otros adapters sin cambiar el Sales Agent.
+
+## Decisión
+
+1. **`OpenAICompatibleModelProvider`** (`adapters/models/openai-compatible`,
+   fuera de Core; depende sólo de `@r4/model-gateway`, `@r4/contracts`, `zod`)
+   implementa la SPI `ModelProvider` contra `POST {baseUrl}/chat/completions`.
+   Nombre genérico por protocolo, no por vendor.
+2. **Configuración de despliegue** (`R4_MODEL_PROVIDER=openai_compatible`,
+   `R4_MODEL_BASE_URL`, `R4_MODEL_API_KEY` opcional, `R4_MODEL_NAME`,
+   `R4_MODEL_PROFILE`, `R4_MODEL_TIMEOUT_MS`, `R4_MODEL_CONTEXT_WINDOW_TOKENS`,
+   `R4_MODEL_MAX_OUTPUT_TOKENS`, `R4_MODEL_RESPONSE_FORMAT`,
+   `R4_MODEL_TEMPERATURE`). La `AgentDefinition` sigue sin proveedor, modelo,
+   host ni secreto. `providerId = openai-compatible.<profile>` identifica el
+   perfil lógico en telemetría.
+3. **Renderizado en el adapter**: los mensajes del kernel conservan su rol; el
+   JSON Schema de `AgentDecision` va como instrucción de salida; el
+   `CompiledContext` viaja como un único documento JSON (sólo se omiten campos
+   con valor por defecto). Nada se resume, reordena ni trunca.
+4. **Protocolo de decisiones intacto** (ADR-008): `response_format:
+   json_object` cuando se configura; no se envían tools nativas; tool calls o
+   texto de razonamiento que devuelva un servidor se ignoran (nunca se guarda
+   chain-of-thought). El adapter sólo quita un code fence Markdown alrededor
+   del JSON; cualquier otra cosa la rechaza el parser estricto de la plataforma.
+5. **Envelope físico en el adapter** (ADR-015: input efectivo =
+   min(envelope, presupuesto R4)): estimación conservadora (bytes UTF-8 / 3) +
+   salida reservada > ventana ⇒ `provider_error` no reintentable
+   `model_envelope_exceeded`, sin llamar al servidor; un 400 del servidor por
+   tamaño se mapea igual. Nunca se trunca en silencio. El Context Compiler no
+   conoce el envelope.
+6. **Errores clasificados**: 429 → `rate_limited`; 408/504 y el deadline de
+   transporte propio → `timeout`; 5xx y fallos de transporte →
+   `provider_error` reintentable; otros 4xx → `provider_error`; respuesta no
+   mapeable → `invalid_provider_response`. El abort del gateway lo clasifica
+   el gateway. Requiere el cambio mínimo de Core en `ModelProviderError`
+   (ADR-023, tabla de cambios).
+7. **Secretos**: la clave sólo viaja en el header `Authorization` de la
+   petición saliente; nunca en mensajes de error (redactados), respuestas,
+   logs, snapshots, observations, receipts ni artifacts (tests).
+
+## Alternativas descartadas
+
+- `DeepSeekProvider` u otro nombre de vendor para un protocolo genérico.
+- SDK de vendor como dependencia (el `fetch` de Node basta; sin infraestructura nueva).
+- Tool calling nativo como transporte de decisiones (queda para después de F).
+- Tokenizer de vendor para el envelope (sólo hace falta rechazar lo que no cabe).
+
+## Consecuencias
+
+- Futuros adapters (Anthropic, vLLM con extensiones, local) implementan la
+  misma SPI; el Sales Agent no cambia.
+- Sin reintentos de modelo (C1): un timeout o una decisión inválida terminan
+  la run con una razón clasificada.
+
+## Verificación
+
+`tests/unit/sales/openai-compatible-provider.test.ts` (fetch falso: render,
+JSON, envelope, estados HTTP, deadline propio vs. del gateway, respuesta
+inválida, telemetría sin secretos); `tests/integration/sales-reference.test.ts`
+(turno completo con el adapter, sin secretos en ninguna tabla ni log; timeout
+del adapter → `model_failure/timeout`); `tests/contract/sales-boundaries.test.ts`
+(imports del adapter; Core sin referencias).

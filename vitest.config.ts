@@ -18,6 +18,10 @@ const alias = {
   '@r4/api': src('./apps/api/src/index.ts'),
   '@r4/worker': src('./apps/worker/src/index.ts'),
   '@r4/scheduler': src('./apps/scheduler/src/index.ts'),
+  // R4-F: outside Core (adapters and the Sales agent pack).
+  '@r4-adapters/domains': src('./adapters/domains/src/index.ts'),
+  '@r4-adapters/openai-compatible': src('./adapters/models/openai-compatible/src/index.ts'),
+  '@r4-sales/agent': src('./agents/sales/src/index.ts'),
 };
 
 export default defineConfig({
@@ -40,6 +44,18 @@ export default defineConfig({
           environment: 'node',
           globalSetup: ['tests/support/global-setup.ts'],
           testTimeout: 30_000,
+          hookTimeout: 60_000,
+        },
+      },
+      {
+        // R4-F acceptance scenarios (S01–S17 + central): scripted stand-in model, fixture domain owners, real PostgreSQL.
+        resolve: { alias },
+        test: {
+          name: 'sales',
+          include: ['tests/sales/**/*.test.ts'],
+          environment: 'node',
+          globalSetup: ['tests/support/global-setup.ts'],
+          testTimeout: 60_000,
           hookTimeout: 60_000,
         },
       },

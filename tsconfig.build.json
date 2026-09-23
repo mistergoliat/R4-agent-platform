@@ -13,6 +13,9 @@
     { "path": "packages/agent-kernel" },
     { "path": "apps/api" },
     { "path": "apps/worker" },
-    { "path": "apps/scheduler" }
+    { "path": "apps/scheduler" },
+    { "path": "adapters/domains" },
+    { "path": "adapters/models/openai-compatible" },
+    { "path": "agents/sales" }
   ]
 }

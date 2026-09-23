@@ -1,0 +1,37 @@
+{
+  "name": "@r4-sales/agent",
+  "version": "0.0.0",
+  "private": true,
+  "description": "R4-F Sales Reference Application: the Sales Agent Pack (definition, instructions, capabilities over domain ports, Sales workspace state, context source, action policy) plus its conversational E2E and live behavioral harnesses. A workload on R4 — never a dependency of R4 Core.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "migrations",
+    "sales.agent.json"
+  ],
+  "dependencies": {
+    "@r4-adapters/domains": "*",
+    "@r4-adapters/openai-compatible": "*",
+    "@r4/agent-kernel": "*",
+    "@r4/api": "*",
+    "@r4/capability-runtime": "*",
+    "@r4/context-compiler": "*",
+    "@r4/contracts": "*",
+    "@r4/model-gateway": "*",
+    "@r4/observability": "*",
+    "@r4/persistence-postgres": "*",
+    "@r4/policy-engine": "*",
+    "@r4/worker": "*",
+    "pg": "^8.23.0",
+    "pino": "^10.3.0",
+    "zod": "^4.6.0"
+  }
+}

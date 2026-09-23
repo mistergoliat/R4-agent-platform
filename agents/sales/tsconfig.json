@@ -1,0 +1,23 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../packages/contracts" },
+    { "path": "../../packages/observability" },
+    { "path": "../../packages/model-gateway" },
+    { "path": "../../packages/capability-runtime" },
+    { "path": "../../packages/context-compiler" },
+    { "path": "../../packages/policy-engine" },
+    { "path": "../../packages/persistence-postgres" },
+    { "path": "../../packages/agent-kernel" },
+    { "path": "../../apps/api" },
+    { "path": "../../apps/worker" },
+    { "path": "../../adapters/domains" },
+    { "path": "../../adapters/models/openai-compatible" }
+  ]
+}

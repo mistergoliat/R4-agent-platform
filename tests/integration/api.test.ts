@@ -39,7 +39,7 @@ describe('health and readiness', () => {
   it('GET /ready reports dependency readiness', async () => {
     const res = await platform.app.inject({ method: 'GET', url: '/ready' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ status: 'ready', checks: { database: { ok: true, pendingMigrations: [] }, agentDefinitions: { ok: true, loaded: 1 } } });
+    expect(res.json()).toMatchObject({ status: 'ready', checks: { database: { ok: true, pendingMigrations: [] }, agentDefinitions: { ok: true, loaded: 2 } } }); // platform-probe + the R4-F sales pack
   });
 
   it('refuses to boot against a database without the current schema', async () => {
@@ -146,7 +146,7 @@ describe('GET /v1/agents', () => {
     const res = await platform.app.inject({ method: 'GET', url: '/v1/agents' });
     expect(res.statusCode).toBe(200);
     const { agents } = res.json();
-    expect(agents).toHaveLength(1);
+    expect(agents).toHaveLength(2); // R4-F: the repository also ships the sales reference agent
     expect(agentSummarySchema.parse(agents[0])).toMatchObject({ agentId: 'platform-probe', version: 1 });
   });
 

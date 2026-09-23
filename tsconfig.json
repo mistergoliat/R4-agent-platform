@@ -19,8 +19,11 @@
       "@r4/context-compiler": ["./packages/context-compiler/src/index.ts"],
       "@r4/api": ["./apps/api/src/index.ts"],
       "@r4/worker": ["./apps/worker/src/index.ts"],
-      "@r4/scheduler": ["./apps/scheduler/src/index.ts"]
+      "@r4/scheduler": ["./apps/scheduler/src/index.ts"],
+      "@r4-adapters/domains": ["./adapters/domains/src/index.ts"],
+      "@r4-adapters/openai-compatible": ["./adapters/models/openai-compatible/src/index.ts"],
+      "@r4-sales/agent": ["./agents/sales/src/index.ts"]
     }
   },
-  "include": ["packages/*/src", "apps/*/src", "tests", "vitest.config.ts", "eslint.config.js"]
+  "include": ["packages/*/src", "apps/*/src", "adapters/domains/src", "adapters/models/*/src", "agents/sales/src", "tests", "vitest.config.ts", "eslint.config.js"]
 }

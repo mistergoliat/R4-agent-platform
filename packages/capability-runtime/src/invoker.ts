@@ -172,7 +172,9 @@ export class CapabilityInvoker {
       ]);
     } catch (error) {
       if (controller.signal.aborted) return fail('timeout', `capability exceeded ${definition.timeoutMs}ms`);
-      return fail('handler_error', truncate(error instanceof Error ? error.message : 'capability handler failed'));
+      // The owner's own classification survives as structured evidence; any other error is only a message.
+      const details = error instanceof CapabilityFailure ? jsonValueSchema.safeParse(error.details) : null;
+      return fail('handler_error', truncate(error instanceof Error ? error.message : 'capability handler failed'), details?.success ? details.data : null);
     } finally {
       clearTimeout(timer);
     }
@@ -188,6 +190,23 @@ export class CapabilityInvoker {
       return fail('invalid_capability_output', 'capability output is not JSON-serializable');
     }
     return { kind: 'succeeded', payload: json.data };
+  }
+}
+
+/**
+ * A READ handler's classified failure. The capability owner — never the
+ * platform — knows whether its source was unavailable, refused the arguments
+ * or could not find something; `details` carries that classification into
+ * the observation (`error.details`) so an agent can distinguish it
+ * structurally. The outcome is still `failed`: nothing is inferred from it.
+ */
+export class CapabilityFailure extends Error {
+  readonly details: JsonValue;
+
+  constructor(message: string, details: JsonValue) {
+    super(message);
+    this.name = 'CapabilityFailure';
+    this.details = details;
   }
 }
 

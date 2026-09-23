@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { observationSchema, type TrustedExecutionContext } from '@r4/contracts';
-import { CapabilityInvoker, CapabilityRegistry } from '@r4/capability-runtime';
+import { CapabilityFailure, CapabilityInvoker, CapabilityRegistry } from '@r4/capability-runtime';
 import { createSilentLogger } from '@r4/observability';
 import { FakeClock, idsFrom } from '../../support/deterministic.js';
 import { InMemoryObservationStore } from '../../support/memory-observation-store.js';
@@ -96,7 +96,21 @@ describe('CapabilityInvoker (invocation contract)', () => {
   it('classifies handler exceptions as failed observations', async () => {
     const { invoker } = setup(getTestFactCapability(() => Promise.reject(new Error('backend exploded'))));
     const o = await invoker.invoke({ capabilityId: GET_TEST_FACT_ID, arguments: { factKey: 'alpha' } }, context);
-    expect(o).toMatchObject({ outcome: 'failed', error: { code: 'handler_error', message: 'backend exploded' } });
+    expect(o).toMatchObject({ outcome: 'failed', error: { code: 'handler_error', message: 'backend exploded', details: null } });
+  });
+
+  it('keeps an owner-classified failure (CapabilityFailure) as structured details, still failed', async () => {
+    const failure = new CapabilityFailure('source did not answer', { category: 'temporarily_unavailable', retryable: true });
+    const { invoker } = setup(getTestFactCapability(() => Promise.reject(failure)));
+    const o = await invoker.invoke({ capabilityId: GET_TEST_FACT_ID, arguments: { factKey: 'alpha' } }, context);
+    expect(observationSchema.safeParse(o).success).toBe(true);
+    expect(o).toMatchObject({ outcome: 'failed', payload: null, validUntil: null, error: { code: 'handler_error', message: 'source did not answer', details: { category: 'temporarily_unavailable', retryable: true } } });
+  });
+
+  it('drops non-JSON failure details instead of recording them', async () => {
+    const { invoker } = setup(getTestFactCapability(() => Promise.reject(new CapabilityFailure('odd', { at: new Date() } as never))));
+    const o = await invoker.invoke({ capabilityId: GET_TEST_FACT_ID, arguments: { factKey: 'alpha' } }, context);
+    expect(o).toMatchObject({ outcome: 'failed', error: { code: 'handler_error', details: null } });
   });
 
   it('enforces the declared timeout', async () => {

@@ -6,3 +6,5 @@ coverage/
 .env.*
 !.env.example
 *.log
+# Local sales:live / harness output (may contain conversation text; never committed).
+artifacts/
