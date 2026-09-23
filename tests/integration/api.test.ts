@@ -185,12 +185,12 @@ describe('GET /v1/runs/:id', () => {
 
 describe('surface and observability', () => {
   it('exposes no endpoints for unimplemented features', async () => {
+    // R4-E implemented cancel and attention (human-context gated; see temporal-api.test.ts).
     for (const [method, url] of [
-      ['POST', '/v1/tasks/0190a0a0-0000-7000-8000-000000000000/cancel'],
       ['POST', '/v1/turns'],
       ['GET', '/v1/artifacts/x'],
       ['POST', '/v1/approvals/x/approve'],
-      ['GET', '/v1/attention'],
+      ['POST', '/v1/tasks/0190a0a0-0000-7000-8000-000000000000/delegate'],
     ] as const) {
       const res = await platform.app.inject({ method, url });
       expect(res.statusCode).toBe(404);

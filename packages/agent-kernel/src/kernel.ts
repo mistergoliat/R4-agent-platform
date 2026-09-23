@@ -164,6 +164,18 @@ export class AgentKernel {
       });
 
       switch (decision.type) {
+        case 'wait':
+        case 'request_consultation':
+        case 'request_handoff':
+        case 'manage_goal': {
+          const changed = await this.#call(session, () => {
+            if (!session.executeTemporal) throw new Error('temporal runtime unavailable');
+            return session.executeTemporal(step({ decision, outcome: 'recorded', error: null, usage }), decision);
+          });
+          if (!changed.ok) return changed.outcome;
+          if (changed.value.kind === 'suspended') return { kind: 'terminated', termination: changed.value.termination };
+          continue;
+        }
         case 'read_capability': {
           const readExhausted = checkBeforeRead(context.budget.limits, context.budget.usage);
           if (readExhausted) {

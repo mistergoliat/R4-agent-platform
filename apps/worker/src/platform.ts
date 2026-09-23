@@ -2,7 +2,7 @@ import type { Logger } from 'pino';
 import { PlatformError, systemClock, uuidV7Generator, type Clock, type IdGenerator } from '@r4/contracts';
 import { AgentKernel } from '@r4/agent-kernel';
 import { AgentRegistry } from '@r4/agent-registry';
-import type { CapabilityRegistry } from '@r4/capability-runtime';
+import { ActionExecutor, type CapabilityRegistry } from '@r4/capability-runtime';
 import { ContextCompiler, MemoryContextSource, platformContextSources, type ContextCompactor, type ContextSource } from '@r4/context-compiler';
 import { DefaultModelGateway, type ModelProvider } from '@r4/model-gateway';
 import { createLogger } from '@r4/observability';
@@ -16,9 +16,10 @@ import {
   type Pool,
 } from '@r4/persistence-postgres';
 import { ActionPolicyEngine, DEFAULT_ACTION_POLICY, type ActionPolicyConfigurationInput } from '@r4/policy-engine';
-import { ActionRuntime, ExecutionRuntime } from '@r4/task-runtime';
+import { ActionRuntime, ExecutionRuntime, TemporalRuntime } from '@r4/task-runtime';
 import { validateWorkerConfig, type WorkerConfig } from './config.js';
 import { DurableKernelSession } from './session.js';
+import { Reconciler } from './reconciliation.js';
 import { Worker } from './worker.js';
 
 /**
@@ -51,6 +52,7 @@ export interface WorkerOverrides {
 export interface WorkerPlatform {
   readonly worker: Worker;
   readonly execution: ExecutionRuntime;
+  readonly temporal: TemporalRuntime;
   readonly pool: Pool;
   readonly logger: Logger;
   /** Stops the worker (releasing its lease) and closes connections. */
@@ -79,8 +81,9 @@ export async function createWorkerPlatform(config: WorkerConfig, bindings: Worke
     const observations = new PostgresObservationStore(pool);
     const store = new PostgresExecutionStore(pool);
     const execution = new ExecutionRuntime({ store, ids, clock, logger, maxRunRecoveries: config.maxRunRecoveries });
+    const temporal = new TemporalRuntime({ store, execution, ids, logger });
     // The only authority over effects: policy is evaluated inside the runtime's fenced transactions.
-    const actions = new ActionRuntime({ store, authorizer: new ActionPolicyEngine(bindings.actionPolicy ?? DEFAULT_ACTION_POLICY), ids, clock, logger });
+    const actions = new ActionRuntime({ store, authorizer: new ActionPolicyEngine(bindings.actionPolicy ?? DEFAULT_ACTION_POLICY), temporal, ids, clock, logger });
     const kernel = new AgentKernel({ gateway: new DefaultModelGateway({ provider: bindings.modelProvider, logger }), logger });
     const context = new ContextCompiler({
       sources: [...platformContextSources(), new MemoryContextSource(new PostgresMemoryStore(pool)), ...(bindings.contextSources ?? [])],
@@ -94,10 +97,12 @@ export async function createWorkerPlatform(config: WorkerConfig, bindings: Worke
       execution,
       kernel,
       sessions: ({ lease }) =>
-        new DurableKernelSession({ lease, execution, agents, capabilities: bindings.capabilities, observations, policy: config.execution, context, actions, ids, clock, logger }),
+        new DurableKernelSession({ lease, execution, agents, capabilities: bindings.capabilities, observations, policy: config.execution, context, actions, temporal, ids, clock, logger }),
       leaseDurationMs: config.leaseDurationMs,
       heartbeatIntervalMs: config.heartbeatIntervalMs,
       pollIntervalMs: config.pollIntervalMs,
+      // R4-E: due reconciliation of uncertain effects runs here (capabilities live in the worker), before any claim.
+      reconciler: new Reconciler({ actions, executor: new ActionExecutor({ registry: bindings.capabilities, logger }), workerId: config.workerId, leaseDurationMs: config.leaseDurationMs, logger }),
       logger: logger.child({ workerId: config.workerId }),
     });
 
@@ -105,6 +110,7 @@ export async function createWorkerPlatform(config: WorkerConfig, bindings: Worke
       worker,
       execution,
       pool,
+      temporal,
       logger,
       async close() {
         await worker.stop();

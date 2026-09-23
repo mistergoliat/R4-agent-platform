@@ -101,7 +101,9 @@ describe('C2 contracts are provider- and domain-neutral', () => {
 describe('no model-written canonical truth', () => {
   it('the model can still only read, respond, complete or PROPOSE — no memory or state writes', () => {
     // R4-D adds propose_action: a proposal the platform governs, never a direct write of memory or state.
-    expect([...AGENT_DECISION_TYPES]).toEqual(['read_capability', 'respond', 'complete', 'propose_action']);
+    // R4-E adds wait / consultation / handoff requests and manage_goal, each validated by the
+    // Temporal Runtime: goals are cognitive state, never memory or business state.
+    expect([...AGENT_DECISION_TYPES]).toEqual(['read_capability', 'respond', 'complete', 'propose_action', 'wait', 'request_consultation', 'request_handoff', 'manage_goal']);
     for (const type of AGENT_DECISION_TYPES) expect(type).not.toMatch(/memory|state|write|execute|commit/);
   });
 
@@ -121,11 +123,18 @@ describe('no model-written canonical truth', () => {
       'packages/persistence-postgres/src/memory-store.ts',
       'packages/task-runtime/src/execution-runtime.ts',
       'packages/task-runtime/src/ports.ts',
+      // R4-E: canonical inbound input — the C2 conversation-ingestion seam — recorded by the resolved (non-model) principal.
+      'packages/task-runtime/src/temporal-runtime.ts',
     ]);
     // The execution runtime only ever writes compaction summaries, recorded as the system.
     const runtime = readFileSync(join(ROOT, 'packages/task-runtime/src/execution-runtime.ts'), 'utf8');
     expect(runtime).toMatch(/memoryType: 'DERIVED_SUMMARY'/);
     expect(runtime).toMatch(/recordedBy: CONTEXT_COMPILER_PRINCIPAL/);
+    // The temporal runtime writes exactly one kind of memory: the CONVERSATIONAL text of a submitted input.
+    const temporal = readFileSync(join(ROOT, 'packages/task-runtime/src/temporal-runtime.ts'), 'utf8');
+    expect(temporal.match(/insertMemoryEntry\(/g)).toHaveLength(1);
+    expect(temporal).toMatch(/memoryType: 'CONVERSATIONAL', occurredAt: body\.occurredAt, recordedAt: now, recordedBy: principal/);
+    expect(temporal).not.toMatch(/memoryType: '(WORKING|EPISODIC|DERIVED_SUMMARY)'/);
     // Neither the kernel nor the session port can write memory.
     const kernel = kernelSources.map((file) => readFileSync(file, 'utf8')).join('\n');
     expect(kernel).not.toMatch(/MemoryEntry|memoryType|insertMemoryEntry|MemoryReader/);

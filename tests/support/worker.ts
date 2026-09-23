@@ -1,4 +1,5 @@
 import type { Logger } from 'pino';
+import type { Clock } from '@r4/contracts';
 import type { ExecutionPolicy } from '@r4/agent-kernel';
 import { CapabilityRegistry } from '@r4/capability-runtime';
 import type { ContextCompactor, ContextCompilationPolicyInput, ContextSource } from '@r4/context-compiler';
@@ -28,6 +29,8 @@ export interface TestWorkerOptions {
   readonly contextSources?: readonly ContextSource[];
   /** R4-D: action policy binding (default: the platform's DEFAULT_ACTION_POLICY). */
   readonly actionPolicy?: ActionPolicyConfigurationInput;
+  /** R4-E: injected process clock (C2 freshness), e.g. shifted for long-wait scenarios. */
+  readonly clock?: Clock;
 }
 
 /** Same as a worker booted from an empty environment (loadWorkerConfig): unbounded budget. */
@@ -55,7 +58,7 @@ export function testCapabilities(handler?: Parameters<typeof getTestFactCapabili
   return registry;
 }
 
-export function testWorkerConfig(databaseUrl: string, options: Omit<TestWorkerOptions, 'script' | 'capabilities' | 'logger' | 'compactor' | 'contextSources'>): WorkerConfig {
+export function testWorkerConfig(databaseUrl: string, options: Omit<TestWorkerOptions, 'script' | 'capabilities' | 'logger' | 'compactor' | 'contextSources' | 'clock'>): WorkerConfig {
   return {
     databaseUrl,
     logLevel: 'silent',
@@ -86,7 +89,7 @@ export async function startTestWorker(databaseUrl: string, options: TestWorkerOp
       ...(options.contextSources ? { contextSources: options.contextSources } : {}),
       ...(options.actionPolicy ? { actionPolicy: options.actionPolicy } : {}),
     },
-    { logger: options.logger ?? createSilentLogger() },
+    { logger: options.logger ?? createSilentLogger(), ...(options.clock ? { clock: options.clock } : {}) },
   );
   return { platform, provider, capabilities };
 }

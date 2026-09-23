@@ -69,8 +69,8 @@ afterAll(async () => {
 
 describe('upgrade from the R4-C1 schema', () => {
   it('reports exactly the C2 migration as pending and applies it without touching C1 rows', async () => {
-    expect((await migrationStatus(pool)).pending).toEqual(['0003_context_and_memory', '0004_governed_execution']);
-    expect(await migrate(pool)).toEqual({ applied: ['0003_context_and_memory', '0004_governed_execution'] });
+    expect((await migrationStatus(pool)).pending).toEqual(['0003_context_and_memory', '0004_governed_execution', '0005_temporal_human_runtime']);
+    expect(await migrate(pool)).toEqual({ applied: ['0003_context_and_memory', '0004_governed_execution', '0005_temporal_human_runtime'] });
     const steps = await new PostgresExecutionStore(pool).transaction((uow) => uow.listRunSteps(runId));
     expect(steps).toEqual([expect.objectContaining({ iteration: 1, outcome: 'recorded', contextSnapshotId: null })]);
   });

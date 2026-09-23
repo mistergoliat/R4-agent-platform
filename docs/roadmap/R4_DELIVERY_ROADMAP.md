@@ -20,7 +20,7 @@ requiere autorización explícita (AGENTS.md).
 | R4-C1 | Execution Kernel | Completado y publicado (baseline `834a5f1`) |
 | R4-C2 | Context Compiler & Memory Boundaries | Completado y publicado (baseline `67a124a`) |
 | R4-D | Governed Execution (PRD §40: "Durable Execution") | Completado sobre `67a124a` (gate SIGKILL tras efecto externo verificado) |
-| R4-E | Human Collaboration + Scheduler | No iniciado |
+| R4-E | Temporal + Human Runtime (PRD §40: "Human Collaboration + Scheduler") | Implementado en el working tree sobre `3990652`; pendiente de auditoría final y commit (§3.6) |
 | R4-F | Sales Reference Application | No iniciado |
 | R4-G | Quality & Learning | No iniciado |
 | R4-H | Shadow Production | No iniciado |
@@ -238,17 +238,83 @@ modo que C1/C2 corren sin writes y sus snapshots no cambian de forma.
 **Endurecimiento de C1:** `observations` ahora es inmutable también en la BD
 (trigger); ningún código ni test la modificaba.
 
+## 3.6 R4-E — Temporal + Human Runtime
+
+Pregunta: ¿puede una AgentTask permanecer coherente durante minutos, horas o
+días; esperar tiempo, input o intervención humana; reanudarse después de
+crashes; preservar su objetivo; resolver ejecuciones inciertas y transferir
+temporalmente autoridad a humanos sin convertir el runtime en un workflow
+determinístico? Diseño: [arquitectura §14](../architecture/R4_ARCHITECTURE.md),
+ADR-021, ADR-022. Baseline R4-D: `3990652`. La migración `0005` pertenece a este
+milestone no publicado: se corrigió en su lugar durante R4-E y queda congelada
+al hacer commit.
+
+| # | Criterio de salida | Evidencia |
+|---|---|---|
+| 1–3 | build / lint / typecheck | ver informe de cierre |
+| 4 | Tests previos pasan | suites unit / contract / integration / recovery verdes; cambios listados abajo |
+| 5 | Tests nuevos de E pasan | `integration/{temporal-waits,human-collaboration,reconciliation,temporal-api}`, `unit/{context-compiler/temporal-sources,contracts/temporal-contracts,scheduler/config,agent-kernel/protocol-overhead}`, `contract/temporal-boundaries`, aprobación en `unit/policy-engine` |
+| 6 | Recovery incluye procesos de E | `recovery/temporal-process-crash` (scheduler SIGKILL tras claim; worker SIGKILL a mitad de `reconcile`; reinicio de worker y API) |
+| 7–8 | Continuidad cross-run agente/usuario; pregunta + respuesta de consultation | `platform.interaction`; `temporal-waits` (pregunta propia + respuesta, en orden), `human-collaboration` (consultation) |
+| 9 | Rechazo de aprobación ligado a `proposalId` | Observation `approval_rejected` con `proposalId` + `approvalRequestId` (`human-collaboration`) |
+| 10–11 | `WAIT_UNTIL` despierta antes por input; el timer no duplica | `temporal-waits` (interruptible; timer cancelado; 0 disparos después) |
+| 12–14 | Scheduler proceso independiente, sin dependencia del worker, recuperable tras crash | `apps/scheduler/src/main.ts`, `npm run start:scheduler`; allow-list; `temporal-process-crash` |
+| 15–18 | Reconciliación programada durablemente, sin escaneo, vía ActionRuntime, misma executionKey | trigger + constraint diferido de 0005; `reconciliation` (ambos caminos, backoff, misma clave); contrato de intentos |
+| 19 | Salida operativa tras agotamiento | `POST /v1/executions/:id/reconciliation/reschedule` (`reconciliation`, `temporal-api`) |
+| 20–23 | Handoff iniciado por operador; bloquea ownership autónoma; race; release reanuda | `human-collaboration` (takeover de un agente trabajando, race con claims, gate aislado, release) |
+| 24–26 | Referencias de goal inválidas recuperables; goal sobrevive espera y reinicio; raíz/foco | `temporal-waits`, `temporal-process-crash` |
+| 27 | Espera larga determinista con frescura | `temporal-waits` (tres días en `r4_now()` + reloj inyectado; evidencia expirada a `history`; snapshot nuevo) |
+| 28 | Cancelación de approval / handoff | `human-collaboration` |
+| 29 | Endpoints HTTP con cobertura | `temporal-api` (validación, idempotencia, not found, ciclo de vida inválido, frontera del contexto humano) |
+| 30 | Tests de contrato de fronteras | `contract/temporal-boundaries`, allow-list del scheduler |
+| 31 | Mutaciones significativas | abajo |
+| 32 | Docs | arquitectura §14, ownership §1e, ADR-021/022, README |
+| 33 | `git diff --check` | limpio |
+
+**Pruebas de mutación** (temporales, revertidas y verificadas byte a byte):
+dedupe del claim del scheduler quitado → 1 test; fencing del token del
+schedule quitado → 1; aprobación que salta la re-evaluación de Policy → 1
+integración + 1 contrato; guarda de ownership del handoff (trigger + runtime,
+juntos o por separado) → 1 (el test del gate aislado; ver informe: sin él la
+mutación sobrevivía por la capa redundante de la espera humana); validación
+de goal de la misma task quitada → 1 integración + 1 contrato; nueva
+execution key en la reconciliación → 3 integración + 1 recovery (SIGKILL);
+creación directa de intentos fuera de ActionRuntime → 3 contrato; trigger de
+trabajo de reconciliación quitado → 7; timer no cancelado ante input temprano → 1.
+
+**Cambios en tests de fases previas (todos por extensión de contrato):**
+listas de tipos de decisión (3 tests de contrato) y nombres del JSON Schema
+(ahora con verificación explícita de campos confiables ausentes); base por tipo
+de decisión en el test de campos confiables; lista de migraciones/tablas
+(`migrations`, `migration-upgrade`, `migration-upgrade-c2`); rutas 404 de la API
+(cancel y attention existen ahora); tabla de clases de falla (`waiting`,
+`human_handoff` no son fallas); matriz del lifecycle (`requires_approval →
+blocked`, takeover); lista de fuentes del compilador (`platform.interaction`);
+allow-list de escritores de memoria (ingestión de input, con aserción de que
+sólo escribe CONVERSATIONAL por el principal resuelto); allow-list de
+dependencias (`@r4/scheduler`); el test C1 "READ forever" declara el uso de
+tokens del modelo scriptado para aislar el techo de READs (el techo de tokens
+tiene ahora su propio test de integración); el test D de cancelación con
+llamada en vuelo espera ahora `blocked` + intención de cancelación (una task no
+queda terminal con un efecto incierto). **Arnés:** `FakeModelProvider` acepta
+scripts asíncronos (para probar la race de input durante la decisión) y el
+worker de prueba acepta un reloj inyectado.
+
+**Overhead del protocolo:** `r4.agent_decision.v3` = instrucciones 2 778
+caracteres (824 de E) + JSON Schema 6 216 (≈4 140 de E), fijado por
+`unit/agent-kernel/protocol-overhead`.
+
 ## 4. Decisiones diferidas intencionalmente
 
 | Tema | Por qué se difiere | Seam existente |
 |---|---|---|
 | Autenticación / identidad del llamador | No hay consumidor todavía; no inventar un modelo de identidad | `PrincipalResolver`; `requested_by_*`, `actor_*` |
-| Endpoints cancel/resume, turns, attention, artifacts, approvals | "No inventar endpoints de features no implementadas" | `TaskRuntime.transitionTask` (interno) |
+| Endpoints turns, artifacts, resume explícito | "No inventar endpoints de features no implementadas" (cancel, inputs, attention, respuestas humanas y handoff: R4-E) | `TaskRuntime.transitionTask` (interno) |
 | Llamadas LLM reales y routing de modelos | C1 prueba el harness, no calidad | `ModelProvider` SPI; `WorkerBindings.modelProvider` |
 | Entry point de producción del worker (`main`) | No existe proveedor real ni capabilities de Core: un `main` sería un placeholder | `runWorkerProcess(loadWorkerConfig(env), bindings)` |
 | `/health`, `/ready` del worker | Sin consumidor (sin deploy); liveness observable por telemetría y `last_heartbeat_at` | `createWorkerPlatform` |
 | Protocolo de acción híbrido (tool calls nativas) | Constitución §27.11 sigue abierta; C1 usa salida estructurada | `parseAgentDecision` |
-| Decisiones Delegate, Wait, Consult, Approval, Handoff | R4-E+ (ProposeAction: implementada en R4-D) | `AgentDecision` (unión discriminada) |
+| Decisión Delegate | R4-F+ (ProposeAction: R4-D; Wait, Consult, Handoff, manage_goal: R4-E) | `AgentDecision` (unión discriminada) |
 | Reintentos de modelo y reparación de decisiones inválidas | Política sin evidencia; afecta evaluación | `model_failure` / `invalid_decision` clasificados |
 | Presupuesto de costo / tokens como política | Ownership de pricing sin decidir; `maxTokens` sí se aplica si la task lo declara | `ExecutionPolicy`, `budgetSchema` |
 | Deadline de task (`deadlineAt`) aplicado por el worker | No requerido por C1 | `maxRunDurationMs` |
@@ -274,11 +340,18 @@ modo que C1/C2 corren sin writes y sus snapshots no cambian de forma.
 | (C2) Extracción automática de `assertions` desde texto | Sería un LLM decidiendo; sin él los conflictos en texto libre no se detectan | `assertions` declaradas por la fuente |
 | (C2) Exponer snapshots por HTTP | Sin consumidor; la auditoría lee la BD | `PostgresContextSnapshotStore` |
 | (C2) Renderizado por proveedor del `CompiledContext` | Llega con el primer adapter real | `ModelRequest.context` |
-| (D) Workflow humano de aprobación (ApprovalRequest, API, UI, reanudación tras aprobar) | R4-E | `policy_decisions` `require_approval` + observation + task `requires_approval` |
-| (D) Reconciliador de ejecuciones `needs_reconciliation` y desbloqueo de tasks `blocked` | Requiere operador/scheduler (R4-E+); D sólo garantiza no adivinar | `action_executions.status`, intentos, `reconcile` de la capability |
 | (D) Cancelación cooperativa de un efecto en vuelo | Sin caso de uso; D marca la ejecución `needs_reconciliation` y rechaza la respuesta tardía | `signal` en `WriteHandlerContext`; `finishRunWithin` |
 | (D) Verificación de identidad (`verified`) y tenancy | Sin servicio de identidad ni modelo de tenant; no inventarlos | `identityAssuranceOf`, `TrustedActionContext.actor` |
 | (D) Deduplicación semántica entre propuestas distintas | Depende de la intención del dominio | propuestas y ejecuciones separadas por clave |
 | (D) Política productiva (autonomía por agente, overrides reales) | Decisión de gobierno, no técnica | `ActionPolicyConfiguration`, `WorkerBindings.actionPolicy` |
 | (D) Evaluación textual de afirmaciones del agente | R4-G; D garantiza la verdad estructural (ledger), no la redacción | observations + receipts |
 | (D) Capabilities de escritura de dominio reales | Fuera de Core (ADR-005); D usa sólo el ledger de prueba | `registerWrite` |
+| (E) Heartbeat del lease de reconciliación | `reconcile` es lectura idempotente por clave; un registro tardío es rechazado por la generación | lease del schedule |
+| (E) IAM productivo de operadores | Sin servicio de identidad; no simularlo | `AppDependencies.humanContext` → `TrustedHumanContext` |
+| (E) Operator UI / Operator Plane | Sin consumidor; la API expone los seams | `/v1/attention`, `/v1/tasks/:id/temporal` |
+| (E) Adapters de canal (mensajería, voz) | Fuera de Core; el input es canónico y neutral | `POST /v1/tasks/:id/inputs` |
+| (E) Política productiva de reconciliación y de follow-up | Decisión de gobierno; sin default en código | `R4_RECONCILIATION_*`; `WAIT_UNTIL` |
+| (E) Jerarquía óptima de goals, planning automático, scoring | Sin evidencia; E sólo representa raíz/foco/padre | `manage_goal`, `goal_transitions` |
+| (E) Memoria semántica de largo plazo; resumen de historia de interacción basado en modelo | Sin proveedor real ni evaluación | `platform.interaction` + compaction de C2 |
+| (E) Delegación multi-agente; Quality Auditor | R4-F+ / R4-G | `AgentDecision`, evaluación |
+| (E) Carga de la proyección de interacción acotada en la consulta (no sólo en el compilador) | Sin tasks largas reales todavía; C2 ya acota lo que ve el modelo | `interactionRecords` |

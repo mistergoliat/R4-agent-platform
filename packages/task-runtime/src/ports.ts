@@ -11,12 +11,14 @@ import type {
   LeaseToken,
   MemoryEntry,
   Observation,
+  Principal,
   RegisteredAgentDefinition,
   RunStep,
   TaskLease,
   TaskTransition,
   TaskView,
 } from '@r4/contracts';
+import type { TemporalPersistence } from './temporal-ports.js';
 
 /**
  * Persistence ports for the Task Runtime. The runtime computes every state
@@ -65,6 +67,13 @@ export interface TaskUnitOfWork {
    * ambiguous effect looking like anything but what it is. Returns the count.
    */
   flagUnresolvedActionExecutions(runId: string, timestamp: string): Promise<number>;
+  /** (R4-E) Executions of the task whose outcome is not established (executing / needs_reconciliation). */
+  countUncertainActionExecutions(taskId: string): Promise<number>;
+  /**
+   * (R4-E) Records the terminal status a task must reach once its uncertain
+   * effects are established. Write-once: a second intent for the task is ignored.
+   */
+  recordTerminalIntent(intent: { taskId: string; targetStatus: 'cancelled' | 'failed'; reason: string; actor: Principal; correlationId: string; requestedAt: string }): Promise<void>;
 }
 
 /** Narrow view of the Agent Registry the Task Runtime needs. */
@@ -105,6 +114,8 @@ export interface ExecutionStore {
 }
 
 export interface ExecutionUnitOfWork extends TaskUnitOfWork {
+  /** E adapter, absent only in pre-E in-memory test doubles. */
+  readonly temporal?: TemporalPersistence;
   /**
    * Leases the oldest runnable task (pending/running) that no live lease holds.
    * Atomic under concurrency: candidates are row-locked with SKIP LOCKED and

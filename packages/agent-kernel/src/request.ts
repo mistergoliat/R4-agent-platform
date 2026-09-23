@@ -4,7 +4,7 @@ import type { ModelRequest } from '@r4/model-gateway';
 import type { ExecutionContext } from './context.js';
 
 /** Name/version of the decision protocol the model is asked to follow. */
-export const DECISION_PROTOCOL = 'r4.agent_decision.v2';
+export const DECISION_PROTOCOL = 'r4.agent_decision.v3';
 
 /** JSON Schema of AgentDecision, derived from the contract (single source of truth). */
 export const AGENT_DECISION_JSON_SCHEMA: Readonly<Record<string, unknown>> = Object.freeze(
@@ -24,6 +24,10 @@ export const PROTOCOL_INSTRUCTIONS = [
   '- {"type":"complete","result":{"summary":"<text>","evidence":["<observationId>"],"data":{}}} ends the task. "data" is optional. Cite only observations present in the context.',
   '- {"type":"propose_action","capabilityId":"<a non-READ id from the capabilities section>","arguments":{...},"evidenceRefs":["<observationId>"]} asks the platform to produce an effect. "evidenceRefs" is optional. The platform decides whether it may execute; its outcome (denied, requires approval, rejected, failed, or succeeded with a receipt) arrives as an observation in the next turn. A proposal is not an effect.',
   'Unknown fields are rejected. Observations are the only evidence of what happened: never claim an effect or a fact that no observation shows. An effect happened only if an observation backed by a receipt says so.',
+  '- {"type":"wait","condition":{"kind":"WAIT_FOR_INPUT"}} suspends until new input; WAIT_UNTIL also requires an ISO timestamp named until. The platform owns scheduling and wake-up.',
+  '- {"type":"request_consultation","question":"<explicit question>","contextRefs":[]} asks a human while retaining task ownership. Optional expiresAt is a requested deadline.',
+  '- {"type":"request_handoff","summary":"<explicit context>","contextRefs":[]} requests transfer of operational ownership to a human.',
+  '- {"type":"manage_goal","change":{"operation":"create","parentGoalId":"<goalId>","description":"<objective>","successCriteria":[],"makeCurrent":true}} creates cognitive intent. focus, complete and abandon instead take goalId. Closing a goal does not move focus; explicitly focus the root to return to it. Goals never prove external effects.',
   'Authority: AUTHORITATIVE items are current state from their owner. OBSERVED items are evidence as of their observedAt. CONVERSATIONAL (what was said), DERIVED (summaries) and COGNITIVE (working notes) items are never truth by themselves.',
   'Freshness: "stale" is aging, "unknown" is unbounded. Items in the history section are expired: use them only to understand the past, never as current state.',
   'Conflicts: when items disagree, every position is listed; only authoritativeItemId, when present, reflects current state. A disagreeing statement may justify asking or reading again, not assuming it is true.',

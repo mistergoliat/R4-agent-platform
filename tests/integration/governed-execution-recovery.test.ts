@@ -522,6 +522,11 @@ describe('uncertain outcomes are never guessed', () => {
     expect(ledger.executions).toEqual([expect.objectContaining({ status: 'needs_reconciliation' })]);
     expect(ledger.receipts).toEqual([]);
     expect(await testRecord(platform.pool, 'cancelled')).toMatchObject({ writeCount: 1 });
-    expect((await platform.tasks.getTask(taskId)).task.status).toBe('cancelled');
+    // R4-E: a task never becomes terminal while an effect is uncertain. The cancellation is a
+    // durable intent; the task stays blocked until reconciliation establishes the outcome
+    // (temporal reconciliation tests cover the rest), so it is never closed as if nothing happened.
+    expect((await platform.tasks.getTask(taskId)).task).toMatchObject({ status: 'blocked', statusReason: 'awaiting_reconciliation' });
+    const intent = await platform.pool.query('select target_status from task_terminal_intents where task_id = $1', [taskId]);
+    expect(intent.rows).toEqual([{ target_status: 'cancelled' }]);
   });
 });

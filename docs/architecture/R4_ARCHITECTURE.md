@@ -1,6 +1,6 @@
 ---
-title: R4 — Arquitectura implementada (R4-B + R4-C1 + R4-C2 + R4-D)
-status: implemented (R4-B, R4-C1, R4-C2, R4-D)
+title: R4 — Arquitectura implementada (R4-B + R4-C1 + R4-C2 + R4-D + R4-E)
+status: implemented (R4-B, R4-C1, R4-C2, R4-D); R4-E in working tree, pending audit
 owner: architecture
 last_reviewed: 2026-09-23
 depends_on:
@@ -26,17 +26,19 @@ depends_on:
   - ../adr/ADR-018-write-idempotency-and-reconciliation.md
   - ../adr/ADR-019-external-side-effect-recovery.md
   - ../adr/ADR-020-receipt-immutability.md
+  - ../adr/ADR-021-temporal-human-runtime.md
+  - ../adr/ADR-022-scheduler-reconciliation-and-time-authority.md
 ---
 
-# R4 — Arquitectura implementada (R4-B + R4-C1 + R4-C2 + R4-D)
+# R4 — Arquitectura implementada (R4-B + R4-C1 + R4-C2 + R4-D + R4-E)
 
 Este documento describe lo que **existe** en el repositorio tras R4-B (Platform
 Skeleton), R4-C1 (Execution Kernel), R4-C2 (Context Compiler & Memory
-Boundaries) y R4-D (Governed Execution). No describe la arquitectura final de R4: la Constitución y el PRD
+Boundaries), R4-D (Governed Execution) y R4-E (Temporal + Human Runtime). No describe la arquitectura final de R4: la Constitución y el PRD
 siguen siendo la autoridad (Constitución > PRD > ADR > tarea). Lo que aquí
 figura como "seam" es un punto de extensión deliberado, no una funcionalidad
 implementada. Las secciones 1–10 describen R4-B, actualizadas donde C1/C2 las
-cambiaron; la sección 11 describe R4-C1, la 12 R4-C2 y la 13 R4-D.
+cambiaron; la sección 11 describe R4-C1, la 12 R4-C2, la 13 R4-D y la 14 R4-E.
 
 ## 1. Objetivo de R4-B
 
@@ -61,7 +63,8 @@ fronteras.
 R4-agent-platform/
 ├── apps/
 │   ├── api/                    HTTP /v1 (Fastify). Transporte + composition root.
-│   └── worker/                 (C1) Proceso worker: claim, lease/heartbeat, ejecución del kernel.
+│   ├── worker/                 (C1) Proceso worker: claim, lease/heartbeat, ejecución del kernel; (E) reconciliación despachada.
+│   └── scheduler/              (E) Proceso scheduler: reclama schedules vencidos y despierta/despacha. Sin modelo ni capabilities.
 ├── packages/
 │   ├── contracts/              Esquemas Zod + tipos de las primitivas. Sin lógica de dominio.
 │   ├── observability/          Logger estructurado (pino), correlación (AsyncLocalStorage), eventos.
@@ -80,8 +83,10 @@ R4-agent-platform/
 ```
 
 Paquetes del árbol sugerido que **no** se crearon porque no corresponden a
-R4-B/C1/C2/D: `memory` (la memoria de C2 es un contrato + tabla + source, sin
-runtime propio; ADR-013), `artifacts`, `scheduler`, `human-collaboration`, `evaluation`, `agents/sales`,
+R4-B/C1/C2/D/E: `memory` (la memoria de C2 es un contrato + tabla + source, sin
+runtime propio; ADR-013), `artifacts`, `human-collaboration` y `scheduler` como paquetes (E: el
+runtime temporal/humano vive en `task-runtime` porque comparte el lock de la task; el scheduler
+es una app/composition root — ADR-021/022), `evaluation`, `agents/sales`,
 `agents/quality-auditor`, `agents/marketing-analyst`, `adapters/*`. Ver
 [roadmap](../roadmap/R4_DELIVERY_ROADMAP.md).
 
@@ -105,6 +110,10 @@ agent-kernel (C1)      └──────── persistence-postgres ──�
    └──────────── apps/worker (C1/C2/D): kernel + context-compiler + task-runtime +
                  capability-runtime + agent-registry + persistence-postgres + model-gateway +
                  policy-engine (D; sólo contracts + zod: pura)
+
+apps/scheduler (E): contracts + observability + persistence-postgres + task-runtime + pino + zod
+                 — nunca model-gateway, capability-runtime, policy-engine, agent-kernel,
+                   context-compiler ni apps/worker
 ```
 
 `agent-kernel` depende sólo de `contracts`, `observability` y la interfaz de
@@ -127,6 +136,9 @@ Reglas duras (fallan el build si se violan):
 | Un único call site de handlers de capability (el invoker); sin rutas de desarrollo para writes | `execution-kernel-boundaries.test.ts` |
 | (D) Handlers de escritura: único call site = `ActionExecutor`; política sólo evaluada por `ActionRuntime`; única fuente de execution keys; kernel sin acceso a writes; ningún campo confiable en `AgentDecision`; sin detector textual | `tests/contract/governed-execution-boundaries.test.ts` |
 | (D) `policy-engine` puro (sin I/O, runtimes, modelo ni observabilidad); runtimes independientes del motor | ESLint + allow-list + `dependency-boundaries.test.ts` |
+| (E) El scheduler sólo posee el tiempo: sin modelo, capabilities, policy, kernel ni worker; claims con SKIP LOCKED + generación sobre `r4_now()`; ningún timer en memoria es autoridad | `dependency-boundaries.test.ts`, `tests/contract/temporal-boundaries.test.ts` |
+| (E) La colaboración humana no evalúa política ni crea comandos/intentos/receipts; los intentos (también de reconciliación) sólo los crea `ActionRuntime`; identidad humana sólo desde el adapter confiable | `temporal-boundaries.test.ts`, `governed-execution-boundaries.test.ts` |
+| (E) Guardas durables: sin ejecución autónoma bajo handoff, sin estado terminal con efecto incierto, sin `needs_reconciliation` sin trabajo | triggers de `0005`; `temporal-boundaries.test.ts` |
 | Paquetes Core no importan transportes ni apps | ESLint |
 | Grafo interno acíclico | `dependency-boundaries.test.ts` |
 | Core sin términos de dominio/canal/CRM/vendor | `tests/contract/core-purity.test.ts` |
@@ -389,9 +401,8 @@ Observation que produce la propia plataforma.
 ## 10. Qué queda fuera (deliberadamente)
 
 Memoria de largo plazo/organización/semántica, retrieval vectorial, artifacts,
-scheduler, consultation/approval/handoff (el workflow humano de aprobación es
-R4-E; R4-D sólo produce `REQUIRE_APPROVAL`), reconciliador de ejecuciones
-`needs_reconciliation`, delegación, evaluation runtime, llamadas LLM reales,
+(scheduler, consultation/approval/handoff y reconciliador: implementados en R4-E, §14),
+delegación, evaluation runtime, llamadas LLM reales,
 autenticación y verificación de identidad, outbox de eventos, MCP, Sales y
 cualquier write de dominio de producción. (ActionProposal/Receipt, Policy
 Engine y writes gobernados: §13, R4-D.) Ver
@@ -823,3 +834,207 @@ R4), a lo sumo un efecto por clave, replay idempotente, reconciliación por
 clave, `expectedVersion` opcional y ganchos de fallo. Agente de prueba
 `tests/fixtures/agents/action-probe` (el `platform-probe` del repo sigue sin
 scopes de escritura).
+
+## 14. R4-E — Temporal + Human Runtime
+
+Pregunta que responde E: ¿puede una AgentTask permanecer coherente durante
+minutos, horas o días; esperar tiempo, input o intervención humana;
+reanudarse después de crashes; preservar su objetivo; resolver ejecuciones
+inciertas y transferir temporalmente autoridad a humanos, sin convertir el
+runtime en un workflow determinístico? Diseño: ADR-021 (runtime temporal y
+humano) y ADR-022 (scheduler, reconciliación y autoridad del tiempo).
+
+No es un workflow engine: es un runtime durable capaz de esperar. La
+plataforma gobierna durabilidad, ownership, transiciones válidas, tiempo,
+permisos, autoridad humana y recuperación; el agente decide qué intenta
+lograr, cuándo necesita información o ayuda humana y qué hacer con evidencia
+nueva. Un wake no decide nada: sólo vuelve runnable la task; el kernel de la
+siguiente run decide desde un ContextSnapshot nuevo.
+
+```text
+work ─► wait {WAIT_FOR_INPUT | WAIT_UNTIL} ─► run suspended (waiting) ─► task waiting (TaskWait)
+          ├─ input (idempotente) ─────────────┐   (WAIT_UNTIL es interrumpible: su timer se cancela)
+          └─ scheduler: schedule vencido ─────┴─► wake (una vez) ─► task running ─► run nueva ─► snapshot nuevo
+work ─► request_consultation ─► WAIT_FOR_HUMAN ─► respuesta humana (texto + procedencia) ─► wake
+propose_action ─► REQUIRE_APPROVAL ─► ApprovalRequest (propuesta + versión + hash de argumentos)
+          ├─ approve ─► run nueva: la MISMA propuesta vuelve a Policy ─► nueva decisión ─► ALLOW ─► ejecuta 1 vez
+          └─ reject/expire/withdraw ─► Observation approval_* ligada a proposalId + approvalRequestId
+work ─► request_handoff / takeover del operador ─► humano dueño (task blocked, sin claims) ─► release ─► wake
+efecto desconocido ─► needs_reconciliation + trabajo de reconciliación (misma tx, trigger)
+          ─► scheduler (política durable) ─► dispatched ─► worker: ActionRuntime reconcile (misma executionKey)
+          ├─ conocido ─► receipt + observation ─► task runnable (o su estado terminal diferido)
+          └─ desconocido ─► backoff durable ─► ... ─► exhausted ─► operador re-arma (nunca "asumir")
+```
+
+### 14.1 Componentes
+
+| Componente | Paquete | Rol |
+|---|---|---|
+| `wait`, `request_consultation`, `request_handoff`, `manage_goal` (AgentDecision, protocolo `r4.agent_decision.v3`); `TaskWait`, `Schedule`, `HumanRequest`, `TrustedHumanContext`, `InputSubmission`, `ReconciliationPolicy`, `TaskOwnership` | `contracts` | Contratos estrictos; el modelo sólo *pide* |
+| `TemporalRuntime` | `task-runtime` | Autoridad durable de esperas, wakes, input, colaboración humana, takeover, cancelación, goals y disparo de schedules (una tx por operación, lock de la task primero) |
+| `ActionRuntime.claimReconciliation` / `recordReconciliation` / `observeApprovalOutcome` / `pendingApproval` / `deferRetry` | `task-runtime` | Única autoridad de intentos, también de reconciliación (fenced por el token del schedule) |
+| `transitionTaskWithin` (intención terminal diferida) | `task-runtime` | Ninguna task queda `cancelled`/`failed` con un efecto incierto |
+| `PostgresTemporalPersistence` | `persistence-postgres` | SQL temporal sobre `r4_now()`; claims SKIP LOCKED + generación |
+| `interactionSource`, `goalSource` (E) | `context-compiler` | Proyección cross-run de interacción; goals raíz/foco vivos, cerrados como historia |
+| `Scheduler`, `createSchedulerPlatform`, `main.ts` | `apps/scheduler` | Proceso independiente: reclama y dispara; nunca razona ni ejecuta capabilities |
+| `Reconciler` | `apps/worker` | Secuencia claim → `reconcile` (ActionExecutor) → registro; antes de cualquier claim de task |
+| Rutas `/v1/tasks/:id/{inputs,cancel,handoff,temporal}`, `/v1/human-requests/:id/respond`, `/v1/executions/:id/reconciliation/reschedule`, `/v1/attention` | `apps/api` | Seams del Operator Plane; identidad humana sólo vía adapter (`humanContext`) |
+
+### 14.2 Autoridad del tiempo
+
+| Concepto | Reloj |
+|---|---|
+| Leases, heartbeat y fencing de C1 | PostgreSQL `clock_timestamp()` (sin cambios) |
+| Due de schedules, leases de schedules, esperas, registros humanos, eventos temporales | PostgreSQL `r4_now()` (reloj temporal; = `clock_timestamp()` en producción) |
+| Reconciliación: backoff, deadline, attempts | `r4_now()` + política durable en el schedule |
+| Timestamps del ledger D escritos por `ActionRuntime` (decisiones, comandos, intentos, receipts, observations de acción) | `r4_now()` cuando hay persistencia temporal (una sola fuente por transacción) |
+| Steps, runs y snapshots escritos por `ExecutionRuntime` (C1/C2) | Reloj inyectado del proceso (sin cambios) |
+| Frescura del contexto (C2) | Reloj inyectado del proceso (sin cambios) |
+
+Dentro de una transacción de E todos los timestamps salen de una única
+lectura de `r4_now()`. Una base de prueba desechable puede redefinir
+`r4_now()` (`tests/support/temporal.ts`) para avanzar el tiempo temporal sin
+sleeps; los leases de C1 no se ven afectados. Ningún timer en memoria es
+autoridad: el del scheduler y el del worker sólo marcan el ritmo de sondeo.
+
+### 14.3 Esperas, input y wakes
+
+Una espera cierra su run como `suspended` (`waiting` o `human_handoff`) y
+abre un único `TaskWait` (índice único parcial). Una task puede existir sin
+run activa mientras espera, requiere aprobación, está bloqueada o es de un
+humano; al reanudarse, el claim crea **una run nueva** (una run caída a mitad
+sigue la recuperación same-run de C1). El input canónico (`POST
+/v1/tasks/:id/inputs`) es idempotente por (task, source, externalKey): el
+mismo evento re-entregado es un input durable y un wake efectivo; su texto es
+memoria CONVERSATIONAL (el seam de ingestión de C2). `WAIT_UNTIL` es
+interrumpible por input: el input despierta ahora, la espera se cierra con
+`resolution = input` y el timer se cancela, así que no puede despertarla otra
+vez. Un input que llega mientras el modelo decide esperar no queda varado: si
+el snapshot de esa decisión no lo evaluó, la espera se satisface al abrirse.
+Si un evento satisface una espera pero la task tiene un efecto incierto, la
+espera se cierra (queda registrado qué la satisfizo) y la task pasa a esperar
+la reconciliación.
+
+### 14.4 Scheduler
+
+`apps/scheduler` es un composition root separado (`npm run start:scheduler`)
+que comparte sólo PostgreSQL. Cada ciclo reclama un schedule vencido (SKIP
+LOCKED, lease + generación sobre `r4_now()`) y lo dispara por el Temporal
+Runtime: `wake` despierta su espera, `human_expiry` expira su request,
+`action_retry` libera la task para el claim (backoff durable de D) y
+`reconciliation` queda `dispatched` para los workers. Un scheduler que muere
+tras el claim deja un lease que expira; otro reclama con generación mayor y el
+token viejo es rechazado. La política de reconciliación (intentos, backoff,
+deadline) es configuración explícita sin default productivo: el proceso no
+arranca sin ella, y la estampa en el trabajo la primera vez que lo reclama.
+
+### 14.5 Reconciliación
+
+El trabajo nace con la incertidumbre, por cualquier camino (intento con
+resultado desconocido, run que termina con una llamada en vuelo, run
+abandonada por límite de recuperación, cancelación durante una acción), en la
+misma transacción: un trigger sobre `action_executions` crea el schedule y un
+constraint trigger diferido hace irrepresentable `needs_reconciliation` sin
+trabajo. El scheduler lo despacha; un worker (que tiene las capabilities) lo
+reclama con el lease del schedule y `ActionRuntime` concede un intento
+`reconcile` del **mismo comando** (misma execution key, número de intento
+siguiente). Resultado conocido → receipt + observation (+ el step de la
+propuesta) y la task vuelve a ser runnable, o alcanza su estado terminal
+diferido; `not_applied` se registra como "no aplicado" (la reconciliación
+nunca re-ejecuta). Resultado desconocido → el intento queda desconocido y el
+trabajo se reprograma con la política durable, hasta `exhausted`. Mientras un
+efecto es ambiguo no hay claim ni llamada al modelo. Un trabajo agotado
+aparece en `/v1/attention` y sólo un operador con `reconciliation.manage`
+puede re-armarlo (presupuesto y deadline nuevos); nadie puede declarar el
+resultado.
+
+### 14.6 Colaboración humana
+
+`TrustedHumanContext` (referencia + scopes cerrados) lo construye el adapter
+de autenticación de la API; sin adapter, toda operación humana responde 422
+`trusted_human_required` (no hay IAM productivo). Consultation y approval
+conservan la ownership semántica del agente; el handoff la transfiere. Toda
+respuesta es idempotente por (request, responseKey) y hay una sola decisión
+terminal por request (el lock de la task serializa carreras). El texto humano
+es evidencia durable con procedencia humana (`temporal_events`), proyectada
+como CONVERSATIONAL — nunca estado canónico. La aprobación no ejecuta nada:
+es evidencia para una **nueva** evaluación de política de la misma propuesta
+(la decisión `REQUIRE_APPROVAL` original no se modifica); cualquier cambio de
+capability, versión o argumentos la invalida (`approval_scope_mismatch`) y el
+resto de las reglas sigue aplicando. Rechazo, expiración o retiro producen una
+Observation `approval_rejected|expired|cancelled` ligada a `proposalId` y
+`approvalRequestId`, antes de que el agente vuelva a razonar.
+
+### 14.7 Handoff y ownership
+
+El handoff puede pedirlo el agente (`request_handoff`) o iniciarlo un
+operador (`POST /v1/tasks/:id/handoff`) sobre una task en cualquier estado no
+terminal: la run activa se suspende en la misma transacción (el worker falla
+en su siguiente escritura fenced o heartbeat), la espera abierta se
+reemplaza y la task queda `blocked` con `statusReason = human_handoff`.
+Mientras hay un handoff pedido o activo, un trigger impide `running` y claims
+autónomos, y el runtime rechaza wakes. `release` (sólo el humano dueño)
+despierta la task; la run nueva ve el resumen, las notas del humano y el
+input recibido durante el período humano. `GET /v1/tasks/:id/temporal`
+devuelve `ownership = {owner, humanRef, blockedBy[], terminalIntent}`, que
+distingue sin ambigüedad `human_handoff` de `uncertain_action`.
+
+### 14.8 Cancelación
+
+`POST /v1/tasks/:id/cancel` cancela durablemente la run, la espera, las
+requests humanas abiertas y los timers. Si hay un efecto en vuelo o incierto,
+la cancelación **no** afirma que no ocurrió: la task queda `blocked` con una
+intención terminal durable y pasa a `cancelled` cuando la reconciliación
+establece el resultado. La misma regla vale para cualquier estado terminal
+(p. ej. la falla de una run abandonada), impuesta también por trigger.
+
+### 14.9 Goals
+
+La extensión es mínima sobre la primitiva existente (raíz, foco actual,
+padre). `manage_goal` (`create` con padre, `focus`, `complete`, `abandon`) es
+estado cognitivo: no pasa por la Policy Engine, sí por la validación del
+Temporal Runtime (el goal existe, es de esta task, está activo; el foco nunca
+se mueve implícitamente al cerrar un goal). Una referencia inválida u obsoleta
+del modelo se rechaza de forma recuperable (step `refused` + episodio
+`goal.change.rejected` en el contexto siguiente), nunca falla la task. Toda
+transición queda en `goal_transitions` (append-only, con backfill). Un goal
+nunca es verdad de negocio ni prueba de efecto.
+
+### 14.10 Contexto
+
+Toda continuidad entra por durable records → ContextSource → Context
+Compiler → ContextSnapshot. `platform.interaction` proyecta, desde el log de
+steps de todas las runs, `human_requests`, las decisiones humanas y las
+esperas: lo que el agente dijo en runs anteriores, las preguntas que hizo a
+humanos, las respuestas y notas humanas, cómo terminó cada espera (con la
+razón declarada) y los cambios de goal rechazados. Los turnos compiten por el
+presupuesto de conversación (y la compaction) como cualquier otro; con
+`FIXED(N)` los viejos se excluyen o compactan. `platform.goal` expone raíz y
+foco como goals vivos y los goals cerrados como episodios de historia. Tras
+una espera larga, la run nueva compila con el reloj actual: la frescura se
+recalcula y la evidencia expirada pasa a `history`.
+
+### 14.11 Persistencia (0005)
+
+`r4_now()`; `task_waits`, `human_requests`, `schedules`, `temporal_events`
+(inmutable), `task_inputs` (inmutable), `task_terminal_intents` (inmutable),
+`goal_transitions` (inmutable, con backfill); triggers de guarda de task,
+historia de goals, reconciliación nacida con la incertidumbre (+ backfill de
+`needs_reconciliation` preexistentes) y constraint diferido; `policy_decisions`
+admite una segunda decisión por propuesta (a lo sumo un ALLOW) y
+`observations` una por evidencia (`action_evidence_key`, `approval_request_id`).
+Índices por los accesos reales: schedules vencidos, reconciliación
+despachada, `schedules(task_id)`, esperas y requests por task. 0001–0004
+intactas. 0005 pertenece a R4-E no publicado y se corrigió en su lugar durante
+el milestone; queda congelada al hacer commit.
+
+### 14.12 Telemetría y métricas
+
+Eventos (sólo metadata; nunca texto humano o de input): `task.wait.*`,
+`task.woken`, `task.input.received`, `task.cancelled`, `task.terminal.*`,
+`schedule.*`, `goal.*`, `consultation.*`, `approval.*`, `handoff.*`,
+`reconciliation.*`. Derivables de `temporal_events`, `task_waits` y
+`schedules`: duración de esperas (`durationMs`), tiempo a respuesta humana y a
+aprobación (`latencyMs`), duración de handoff, lag del scheduler (`lagMs`),
+latencia de wake, intentos y tiempo de reconciliación (`elapsedMs`), tasks
+bloqueadas y reanudadas, vida de goals (`lifetimeMs`) y transiciones de goal.

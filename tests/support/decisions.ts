@@ -64,7 +64,7 @@ export function completeFromObservations(summary = 'done'): (request: ModelReque
   };
 }
 
-export type ScriptEntry = FakeModelStep | ((request: ModelRequest) => FakeModelStep);
+export type ScriptEntry = FakeModelStep | ((request: ModelRequest) => FakeModelStep | Promise<FakeModelStep>);
 
 /** Sequential script whose entries may inspect the request. */
 export function sequence(entries: readonly ScriptEntry[]): FakeModelScript {

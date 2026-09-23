@@ -167,6 +167,7 @@ export function observationFromRow(row: Row): Observation {
             policyDecisionId: (row.policy_decision_id as string | null) ?? null,
             executionId: (row.execution_id as string | null) ?? null,
             receiptId: (row.receipt_id as string | null) ?? null,
+            approvalRequestId: (row.approval_request_id as string | null) ?? null,
           }
         : {
             kind: 'capability',

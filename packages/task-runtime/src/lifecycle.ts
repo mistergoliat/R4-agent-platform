@@ -15,13 +15,16 @@ import {
  *     │           │  └────  requires_approval
  *     ▼           ▼
  *   cancelled / failed / completed   (terminal)
+ *
+ * (R4-E) `requires_approval → blocked`: a human operator takes ownership of a
+ * task that was waiting for an approval (the request stays open).
  */
 const TASK_TRANSITIONS: Readonly<Record<TaskStatus, readonly TaskStatus[]>> = {
   pending: ['running', 'blocked', 'cancelled', 'failed'],
   running: ['waiting', 'blocked', 'requires_approval', 'completed', 'failed', 'cancelled'],
   waiting: ['running', 'blocked', 'cancelled', 'failed'],
   blocked: ['pending', 'running', 'cancelled', 'failed'],
-  requires_approval: ['running', 'cancelled', 'failed'],
+  requires_approval: ['running', 'blocked', 'cancelled', 'failed'],
   completed: [],
   failed: [],
   cancelled: [],

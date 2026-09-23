@@ -12,7 +12,12 @@ el agente propone efectos
 (`propose_action`); una Policy Engine determinista decide; la plataforma crea
 un comando con execution key propia, lo ejecuta mediante un `ActionExecutor`
 separado, se recupera de crashes sin duplicar efectos y sólo informa el
-resultado con un `ActionReceipt` inmutable. No contiene llamadas LLM reales,
+resultado con un `ActionReceipt` inmutable. **R4-E — Temporal + Human Runtime**
+(en el working tree, pendiente de auditoría): esperas durables (`WAIT_FOR_INPUT`,
+`WAIT_UNTIL` interrumpible por input), scheduler como proceso independiente,
+consultation / approval / handoff (también iniciado por un operador),
+reconciliación durable de efectos inciertos, cancelación honesta, goals con raíz
+y foco y continuidad conversacional entre runs. No contiene llamadas LLM reales,
 writes de dominio de producción ni ningún agente de negocio.
 
 Lectura obligatoria antes de cambios de arquitectura: [AGENTS.md](AGENTS.md),
@@ -91,8 +96,33 @@ plataforma y debe aplicar a lo sumo un efecto por clave. La política se inyecta
 con `actionPolicy` en los bindings (default `DEFAULT_ACTION_POLICY`: reversible
 autónomo; irreversible, financiero y comunicación externa requieren aprobación
 o identidad verificada; privilegiado denegado). `REQUIRE_APPROVAL` deja la task
-en `requires_approval` (el workflow de aprobación es R4-E); un resultado que no
-puede establecerse deja la task `blocked` y la ejecución `needs_reconciliation`.
+en `requires_approval` hasta que un humano decide (R4-E); un resultado que no
+puede establecerse deja la task `blocked` y la ejecución `needs_reconciliation`,
+con su trabajo de reconciliación creado en la misma transacción (R4-E). Cada
+worker, antes de reclamar tasks, resuelve la reconciliación despachada por el
+scheduler con sus capabilities (`reconcile`, misma execution key).
+
+### Scheduler (R4-E)
+
+Proceso separado que sólo comparte PostgreSQL y sólo posee el tiempo: reclama
+schedules vencidos (esperas hasta una fecha, expiraciones, backoff de
+reintentos, reconciliación) y despierta o despacha. Sin modelo ni capabilities.
+
+```bash
+npm run build
+R4_DATABASE_URL=postgres://r4:r4_local_only@127.0.0.1:55432/r4 \
+R4_RECONCILIATION_MAX_ATTEMPTS=5 R4_RECONCILIATION_INITIAL_BACKOFF_MS=1000 \
+R4_RECONCILIATION_MAX_BACKOFF_MS=60000 R4_RECONCILIATION_DEADLINE_MS=86400000 \
+npm run start:scheduler
+```
+
+| Variable | Default | Uso |
+|---|---|---|
+| `R4_SCHEDULER_ID` | `scheduler-<host>-<pid>` | Owner de los leases de schedules |
+| `R4_SCHEDULER_LEASE_MS` | `30000` | Lease de un schedule reclamado |
+| `R4_SCHEDULER_POLL_MS` | `1000` | Ritmo de sondeo (no afecta qué vence) |
+| `R4_RECONCILIATION_MAX_ATTEMPTS`, `_INITIAL_BACKOFF_MS`, `_MAX_BACKOFF_MS`, `_DEADLINE_MS` | **sin default** | Política de reconciliación: el proceso no arranca sin ella |
+
 Para detener PostgreSQL: `npm run db:down` (el volumen `r4-postgres-data` se conserva).
 
 ## API smoke
@@ -115,7 +145,17 @@ curl -s -X POST $B/v1/tasks \
 
 curl -s $B/v1/tasks/<taskId>            # 200 | 400 id inválido | 404
 curl -s $B/v1/runs/<runId>              # 200 | 404
+
+# R4-E: input canónico (idempotente por externalKey) — cualquier canal
+curl -s -X POST $B/v1/tasks/<taskId>/inputs -H 'content-type: application/json' \
+  -d '{"externalKey":"evt-1","content":"hello","sourceRef":"smoke","occurredAt":"2026-09-23T12:00:00Z"}'
 ```
+
+Las operaciones humanas (`/v1/tasks/:id/{cancel,handoff,temporal}`,
+`/v1/human-requests/:id/respond`, `/v1/executions/:id/reconciliation/reschedule`,
+`/v1/attention`) requieren un `TrustedHumanContext` del adapter de
+autenticación (`humanContext` en `createPlatform`). R4 no incluye IAM
+productivo: sin adapter responden 422 `trusted_human_required`.
 
 Errores: `{"error":{"code","message","details?","correlationId"}}` con
 400 validación · 404 no encontrado · 409 conflicto · 415 media type ·
@@ -130,7 +170,7 @@ npm run typecheck       # repo completo, incluidos tests
 npm run test:unit       # sin dependencias externas
 npm run test:contract   # pureza de Core, fronteras de dependencias, neutralidad de proveedor
 npm run test:integration  # requiere `npm run db:up`; crea y borra BDs efímeras
-npm run test:recovery   # detiene/arranca el contenedor PostgreSQL y mata workers reales (SIGKILL, incl. tras un efecto externo); requiere `npm run build`; correr aislado
+npm run test:recovery   # detiene/arranca el contenedor PostgreSQL y mata workers y schedulers reales (SIGKILL, incl. tras un efecto externo y a mitad de una reconciliación); requiere `npm run build`; correr aislado
 npm test                # unit + contract + integration
 npm run check           # build + lint + typecheck + test
 ```
@@ -144,12 +184,13 @@ ni proveedores de modelos: `FakeModelProvider` los reemplaza.
 
 ```text
 apps/api                     HTTP /v1 + composition root + CLI de migraciones
-apps/worker                  worker: claim, lease/heartbeat, kernel (R4-C1)
+apps/worker                  worker: claim, lease/heartbeat, kernel (R4-C1); (E) reconciliación despachada
+apps/scheduler               scheduler: schedules durables, wake/dispatch; sin modelo ni capabilities (R4-E)
 packages/contracts           esquemas/tipos de primitivas
 packages/observability       logs estructurados, correlación, eventos
 packages/model-gateway       ModelGateway + FakeModelProvider
 packages/capability-runtime  registry, discovery, invocación READ, observations; (D) writes + ActionExecutor
-packages/task-runtime        AgentTask / AgentRun / Goal (sobre ports); (D) ActionRuntime: propuesta → decisión → comando → intentos → receipt
+packages/task-runtime        AgentTask / AgentRun / Goal (sobre ports); (D) ActionRuntime: propuesta → decisión → comando → intentos → receipt; (E) TemporalRuntime: esperas, input, humanos, handoff, cancelación, goals
 packages/agent-registry      AgentDefinitions versionadas e inmutables
 packages/agent-kernel        loop model → decisión → READ | propose_action → observation (R4-C1, R4-D)
 packages/context-compiler    contexto estructurado por decisión: sources, autoridad, frescura, budget, compaction (R4-C2)

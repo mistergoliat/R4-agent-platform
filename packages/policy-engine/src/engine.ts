@@ -63,16 +63,18 @@ export class ActionPolicyEngine implements ActionAuthorizer {
     if (rule.autonomy === 'deny') {
       return deny('risk_class_not_permitted', `${ruleId}.autonomy`, `${capability.riskClass} actions are not permitted by policy`);
     }
-    if (capability.approvalPolicy === 'required') {
+    const approved = input.approval?.proposalId === proposal.proposalId && input.approval.capabilityId === capability.capabilityId && input.approval.capabilityVersion === capability.version && input.approval.argumentsMatch;
+    if (input.approval && !approved) return deny('approval_scope_mismatch', 'governance.approval_scope', 'approval does not match the validated proposal');
+    if (capability.approvalPolicy === 'required' && !approved) {
       return requireApproval('capability_requires_approval', 'capability.approval_policy', `${capability.capabilityId} requires approval`);
     }
-    if (capability.confirmationPolicy === 'required') {
+    if (capability.confirmationPolicy === 'required' && !approved) {
       return requireApproval('confirmation_required', 'capability.confirmation_policy', `${capability.capabilityId} requires confirmation, which only a human decision can provide`);
     }
-    if (rule.autonomy === 'require_approval') {
+    if (rule.autonomy === 'require_approval' && !approved) {
       return requireApproval('risk_class_requires_approval', `${ruleId}.autonomy`, `${capability.riskClass} actions require approval`);
     }
-    return { outcome: 'allow', reasonCode: 'autonomous', rule: `${ruleId}.autonomy`, message: `${capability.riskClass} actions are autonomous under this policy` };
+    return { outcome: 'allow', reasonCode: approved ? 'human_approved' : 'autonomous', rule: `${ruleId}.autonomy`, message: approved ? 'proposal-specific approval satisfies the approval requirement; all other rules passed' : `${capability.riskClass} actions are autonomous under this policy` };
   }
 
   #ruleFor(capabilityId: string, riskClass: Exclude<RiskClass, 'READ'>): { rule: ActionRule; ruleId: string } {

@@ -18,7 +18,8 @@
       "@r4/agent-kernel": ["./packages/agent-kernel/src/index.ts"],
       "@r4/context-compiler": ["./packages/context-compiler/src/index.ts"],
       "@r4/api": ["./apps/api/src/index.ts"],
-      "@r4/worker": ["./apps/worker/src/index.ts"]
+      "@r4/worker": ["./apps/worker/src/index.ts"],
+      "@r4/scheduler": ["./apps/scheduler/src/index.ts"]
     }
   },
   "include": ["packages/*/src", "apps/*/src", "tests", "vitest.config.ts", "eslint.config.js"]

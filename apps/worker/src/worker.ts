@@ -2,6 +2,7 @@ import type { AgentTask, TaskLease } from '@r4/contracts';
 import { KernelInterrupt, type AgentKernel, type KernelOutcome, type KernelSession } from '@r4/agent-kernel';
 import { emitTelemetry, runWithCorrelation, type StructuredLogger } from '@r4/observability';
 import type { ExecutionRuntime } from '@r4/task-runtime';
+import type { Reconciler } from './reconciliation.js';
 
 export interface WorkerOptions {
   readonly workerId: string;
@@ -12,11 +13,15 @@ export interface WorkerOptions {
   readonly leaseDurationMs: number;
   readonly heartbeatIntervalMs: number;
   readonly pollIntervalMs: number;
+  /** (R4-E) Settles due reconciliation of uncertain effects before any task is claimed. */
+  readonly reconciler?: Reconciler;
   readonly logger: StructuredLogger;
 }
 
 export type WorkerCycle =
   | { readonly kind: 'idle' }
+  /** (R4-E) One reconcile attempt of an uncertain effect was made; no task was executed. */
+  | { readonly kind: 'reconciled'; readonly taskId: string; readonly executionId: string; readonly outcome: 'resolved' | 'rescheduled' | 'exhausted' }
   /** The claimed run had exhausted its recoveries and was abandoned by the platform. */
   | { readonly kind: 'abandoned'; readonly taskId: string; readonly runId: string }
   | {
@@ -84,9 +89,14 @@ export class Worker {
     emitTelemetry(this.#options.logger, 'worker.stopped', { workerId: this.#options.workerId });
   }
 
-  /** Claims at most one task and executes it until the run ends or is interrupted. */
+  /** Settles one due reconciliation, or claims at most one task and executes it until the run ends or is interrupted. */
   async runOnce(): Promise<WorkerCycle> {
-    const { execution, workerId, leaseDurationMs } = this.#options;
+    const { execution, workerId, leaseDurationMs, reconciler } = this.#options;
+    // Reconciliation before cognition: no effect stays ambiguous while this worker could settle it.
+    if (reconciler) {
+      const reconciled = await reconciler.runOnce();
+      if (reconciled.kind === 'reconciled') return reconciled;
+    }
     const claim = await execution.claimNext({ workerId, leaseDurationMs });
     if (!claim) return { kind: 'idle' };
     if (claim.kind === 'abandoned') return { kind: 'abandoned', taskId: claim.task.taskId, runId: claim.run.runId };

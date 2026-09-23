@@ -231,7 +231,10 @@ describe('classified failures', () => {
 describe('budgets', () => {
   it('stops a model that READs forever, deterministically', async () => {
     const taskId = await createTask();
-    const w = await worker({ script: () => read(GET_TEST_FACT_ID, { factKey: 'alpha' }), policy: { maxReadCapabilityCalls: 3 } });
+    // The property under test is the READ-call ceiling. The scripted model declares its own
+    // (small) usage so the token ceiling — covered separately below — cannot bind first,
+    // whatever the size of the decision protocol the request carries.
+    const w = await worker({ script: () => ({ ...read(GET_TEST_FACT_ID, { factKey: 'alpha' }), usage: { inputTokens: 100, outputTokens: 20 } }), policy: { maxReadCapabilityCalls: 3 } });
     executed(await w.platform.worker.runOnce());
     const run = await runOnly(taskId);
     expect(run).toMatchObject({
@@ -241,6 +244,21 @@ describe('budgets', () => {
     });
     expect((await stepsOf(platform.pool, run.runId)).map((s) => s.outcome)).toEqual(['observed', 'observed', 'observed', 'refused']);
     expect(await observationsOf(platform.pool, taskId)).toHaveLength(3);
+    expect((await platform.tasks.getTask(taskId)).task).toMatchObject({ status: 'failed', statusReason: 'budget_exhausted' });
+  });
+
+  it('stops a token-heavy loop at the token ceiling (max_tokens), independently of the READ ceiling', async () => {
+    const taskId = await createTask();
+    // 9 100 tokens per call against the agent's 20 000 ceiling: two calls fit, the third crosses it.
+    const w = await worker({ script: () => ({ ...respond('still thinking'), usage: { inputTokens: 9_000, outputTokens: 100 } }), policy: { maxReadCapabilityCalls: 50 } });
+    executed(await w.platform.worker.runOnce());
+    const run = await runOnly(taskId);
+    expect(run).toMatchObject({
+      status: 'failed',
+      termination: { reason: 'budget_exhausted', failureClass: 'budget', code: 'max_tokens', details: { dimension: 'maxTokens', limit: 20_000, used: 27_300 } },
+      usage: { modelCalls: 3, capabilityCalls: 0, inputTokens: 27_000, outputTokens: 300 },
+    });
+    expect(w.provider.callCount).toBe(3);
     expect((await platform.tasks.getTask(taskId)).task).toMatchObject({ status: 'failed', statusReason: 'budget_exhausted' });
   });
 

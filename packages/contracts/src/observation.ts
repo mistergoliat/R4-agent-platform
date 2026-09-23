@@ -47,6 +47,8 @@ export const observationSourceSchema = z.discriminatedUnion('kind', [
     executionId: uuidSchema.nullable(),
     /** Present only when the outcome is backed by an ActionReceipt. */
     receiptId: uuidSchema.nullable(),
+    /** (R4-E) The human approval request whose outcome (rejected/expired/cancelled) this observes. */
+    approvalRequestId: uuidSchema.nullable().optional(),
   }),
 ]);
 export type ObservationSource = z.infer<typeof observationSourceSchema>;
@@ -70,6 +72,12 @@ export const ACTION_REJECTION_CODES = [
   'approval_required',
   /** The domain refused the command (e.g. optimistic-concurrency conflict); receipt-backed, no effect. */
   'action_rejected',
+  /** (R4-E) A human rejected the approval request for this proposal; nothing was executed. */
+  'approval_rejected',
+  /** (R4-E) The approval request expired without a decision; nothing was executed. */
+  'approval_expired',
+  /** (R4-E) The approval request was withdrawn by a human; nothing was executed. */
+  'approval_cancelled',
 ] as const;
 export const ACTION_FAILURE_CODES = [
   /** The domain reported a definitive failure (no effect); receipt-backed. */
@@ -109,6 +117,10 @@ export const observationSchema = z
   .refine((o) => o.source.kind !== 'action' || o.outcome !== 'succeeded' || o.source.receiptId !== null, {
     message: 'a succeeded action observation must reference its receipt',
     path: ['source', 'receiptId'],
+  })
+  .refine((o) => o.source.kind !== 'action' || !o.source.approvalRequestId || o.source.receiptId === null, {
+    message: 'an approval outcome is never receipt-backed: nothing was executed',
+    path: ['source', 'approvalRequestId'],
   })
   .refine((o) => o.source.kind !== 'action' || ((o.source.receiptId === null || o.source.executionId !== null) && (o.source.executionId === null || o.source.policyDecisionId !== null)), {
     message: 'an action receipt implies an execution, and an execution implies a policy decision',

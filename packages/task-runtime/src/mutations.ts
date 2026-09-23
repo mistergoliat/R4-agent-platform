@@ -51,6 +51,16 @@ export interface FinishRunInput {
   readonly correlationId: string;
 }
 
+/** Status reason of a task whose terminal status waits for its uncertain effects (R4-E). */
+export const AWAITING_RECONCILIATION = 'awaiting_reconciliation';
+
+/**
+ * (R4-E) A task never becomes `cancelled` or `failed` while one of its
+ * effects is uncertain: that would close it as if the effect did or did not
+ * happen. The requested terminal status is recorded as a durable intent and
+ * the task is `blocked` until reconciliation establishes every outcome; the
+ * Temporal Runtime then applies the intent. Callers get the task as it is.
+ */
 export async function transitionTaskWithin(
   uow: TaskUnitOfWork,
   ids: IdGenerator,
@@ -63,6 +73,12 @@ export async function transitionTaskWithin(
   events: PendingEvent[],
   changes: Partial<Pick<AgentTask, 'result'>> = {},
 ): Promise<AgentTask> {
+  if ((to === 'cancelled' || to === 'failed') && (await uow.countUncertainActionExecutions(task.taskId)) > 0) {
+    await uow.recordTerminalIntent({ taskId: task.taskId, targetStatus: to, reason: reason ?? to, actor, correlationId, requestedAt: timestamp });
+    events.push(['task.terminal.deferred', { taskId: task.taskId, targetStatus: to, reason }]);
+    if (task.status === 'blocked') return task;
+    return transitionTaskWithin(uow, ids, task, 'blocked', AWAITING_RECONCILIATION, actor, correlationId, timestamp, events, changes);
+  }
   assertTaskTransition(task.status, to);
   const updated: AgentTask = { ...task, ...changes, status: to, statusReason: reason, version: task.version + 1, updatedAt: timestamp };
   await updateTaskOrThrow(uow, updated, task.version);

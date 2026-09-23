@@ -10,6 +10,7 @@ import {
   type RegisteredAgentDefinition,
   type RunStep,
   type TaskLease,
+  type TemporalDecision,
 } from '@r4/contracts';
 import {
   KernelInterrupt,
@@ -28,7 +29,7 @@ import {
 import { ActionExecutor, CapabilityInvoker, type CapabilityRegistry, type ObservationStore } from '@r4/capability-runtime';
 import { ContextCompiler, platformContextSources, snapshotComposition, type ContextCompileRequest } from '@r4/context-compiler';
 import { emitTelemetry, type StructuredLogger } from '@r4/observability';
-import type { ActionProgress, ActionRuntime, AgentDefinitionResolver, DurableExecution, ExecutionRuntime } from '@r4/task-runtime';
+import type { ActionProgress, ActionRuntime, AgentDefinitionResolver, DurableExecution, ExecutionRuntime, TemporalRuntime, TemporalDecisionOutcome } from '@r4/task-runtime';
 import { DEFAULT_CONTEXT_POLICY } from './config.js';
 
 export interface DurableSessionOptions {
@@ -50,13 +51,11 @@ export interface DurableSessionOptions {
    * attempts → receipt). Without it no proposed action can be resolved.
    */
   readonly actions?: ActionRuntime;
+  readonly temporal?: TemporalRuntime;
   readonly ids: IdGenerator;
   readonly clock: Clock;
   readonly logger: StructuredLogger;
 }
-
-/** Upper bound for the in-process pause between attempts of one command (declared backoff doubles). */
-const MAX_ATTEMPT_BACKOFF_MS = 30_000;
 
 /**
  * KernelSession backed by durable state. Pure glue: every rule lives in the
@@ -96,10 +95,17 @@ export class DurableKernelSession implements KernelSession {
     this.#executor = new ActionExecutor({ registry: options.capabilities, logger: options.logger });
   }
 
+  /**
+   * Observational: reads durable state only. (R4-E) A proposal of an earlier
+   * run still to be resolved (human approval outcome) is returned as the
+   * pending action; the kernel drives it through `executeAction` — the
+   * explicit governed phase — before any model call.
+   */
   load(): Promise<ExecutionState> {
     return translate(async () => {
       const durable = await this.#options.execution.loadExecution(this.#options.lease);
       const agent = await this.#agentOf(durable.task);
+      const carriedAction = (await this.#options.actions?.pendingApproval(this.#options.lease)) ?? null;
       this.#loaded = durable;
       return buildExecutionState({
         agent,
@@ -112,6 +118,7 @@ export class DurableKernelSession implements KernelSession {
         policy: this.#options.policy,
         now: this.#options.clock.now(),
         writeActions: durable.writeActions,
+        carriedAction,
       });
     });
   }
@@ -162,7 +169,16 @@ export class DurableKernelSession implements KernelSession {
     if (!loaded || loaded.run.runId !== context.run.runId) {
       throw new PlatformError('internal', 'session_not_loaded', 'load() must precede prepareContext()');
     }
-    return contextCompileRequest(context, loaded.steps, this.#options.clock.now());
+    const request = contextCompileRequest(context, loaded.steps, this.#options.clock.now());
+    // (R4-E) Every goal and the cross-run interaction records, as durable facts for the platform sources.
+    return { ...request, execution: { ...request.execution, ...(loaded.goals ? { goals: loaded.goals } : {}), ...(loaded.interactions ? { interactions: loaded.interactions } : {}) } };
+  }
+
+  executeTemporal(step: StepRecord, decision: TemporalDecision): Promise<TemporalDecisionOutcome> {
+    return translate(() => {
+      if (!this.#options.temporal) throw new PlatformError('precondition', 'temporal_unavailable', 'temporal runtime is required');
+      return this.#options.temporal.decide(this.#options.lease, step, decision);
+    });
   }
 
   recordStep(step: StepRecord): Promise<RunStep> {
@@ -229,6 +245,10 @@ export class DurableKernelSession implements KernelSession {
           return { kind: 'suspended', termination: { reason, code, message, details } };
         }
         const { state } = progress;
+        if (state.phase === 'awaiting_approval_outcome') {
+          progress = await actions.observeApprovalOutcome(lease, proposalId);
+          continue;
+        }
         if (state.phase === 'awaiting_authorization') {
           const prepared = this.#executor.prepare({ capabilityId: state.proposal.capabilityId, arguments: state.proposal.arguments });
           progress = prepared.ok
@@ -236,7 +256,7 @@ export class DurableKernelSession implements KernelSession {
             : await actions.rejectAction(lease, { proposalId, cause: prepared.cause, message: prepared.message, details: prepared.details });
           continue;
         }
-        if (state.attempts.length > 0 && state.execution) await pause(backoff(state.execution.semantics.initialBackoffMs, state.attempts.length));
+        if (await actions.deferRetry(lease, proposalId)) throw new KernelInterrupt('stopped', 'action retry is scheduled durably');
         const advanced = await actions.advanceAction(lease, proposalId);
         if (advanced.kind !== 'attempt') {
           progress = advanced;
@@ -357,14 +377,4 @@ async function translate<T>(fn: () => Promise<T>): Promise<T> {
     }
     throw error;
   }
-}
-
-/** Declared initial backoff, doubling per attempt already made, bounded. */
-function backoff(initialMs: number, attemptsSoFar: number): number {
-  if (initialMs <= 0) return 0;
-  return Math.min(MAX_ATTEMPT_BACKOFF_MS, initialMs * 2 ** Math.max(0, attemptsSoFar - 1));
-}
-
-function pause(ms: number): Promise<void> {
-  return ms <= 0 ? Promise.resolve() : new Promise((resolve) => setTimeout(resolve, ms));
 }

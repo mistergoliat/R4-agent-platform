@@ -112,6 +112,11 @@ describe('the model cannot generate trusted fields', () => {
       respond: { type: 'respond', content: 'x' },
       complete: { type: 'complete', result: { summary: 's', evidence: [] } },
       propose_action: { type: 'propose_action', capabilityId: 'x.y', arguments: {} },
+      // R4-E
+      wait: { type: 'wait', condition: { kind: 'WAIT_FOR_INPUT' } },
+      request_consultation: { type: 'request_consultation', question: 'q', contextRefs: [] },
+      request_handoff: { type: 'request_handoff', summary: 's', contextRefs: [] },
+      manage_goal: { type: 'manage_goal', change: { operation: 'focus', goalId: '00000000-0000-4000-8000-000000000000' } },
     };
     for (const type of AGENT_DECISION_TYPES) {
       expect(agentDecisionSchema.safeParse(bases[type]).success, type).toBe(true);

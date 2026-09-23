@@ -277,6 +277,8 @@ export type ActionReceipt = z.infer<typeof actionReceiptSchema>;
  * policy does not interpret.
  */
 export interface PolicyInput {
+  /** Runtime-validated, proposal-specific human evidence, never supplied by the model. */
+  readonly approval?: { readonly requestId: string; readonly proposalId: string; readonly capabilityId: string; readonly capabilityVersion: number; readonly argumentsMatch: boolean };
   readonly proposal: { readonly proposalId: string; readonly evidenceRefs: readonly string[] };
   readonly agent: { readonly agentId: string; readonly version: number; readonly capabilityScopes: readonly string[] };
   readonly task: { readonly taskId: string; readonly status: TaskStatus };

@@ -2,7 +2,7 @@
   "name": "r4-agent-platform",
   "version": "0.0.0",
   "private": true,
-  "description": "R4 Agentic Platform — reusable, CRM-independent agent runtime (R4-B platform skeleton + R4-C1 execution kernel + R4-C2 context compiler).",
+  "description": "R4 Agentic Platform — reusable, CRM-independent agent runtime (R4-B platform skeleton + R4-C1 execution kernel + R4-C2 context compiler + R4-D governed execution + R4-E temporal/human runtime).",
   "type": "module",
   "engines": {
     "node": ">=20.19.0"
@@ -25,6 +25,7 @@
     "db:down": "docker compose down",
     "db:migrate": "node apps/api/dist/migrate.js",
     "start": "node apps/api/dist/main.js",
+    "start:scheduler": "node apps/scheduler/dist/main.js",
     "check": "npm run build && npm run lint && npm run typecheck && npm run test"
   },
   "devDependencies": {

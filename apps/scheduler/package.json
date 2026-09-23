@@ -1,0 +1,26 @@
+{
+  "name": "@r4/scheduler",
+  "version": "0.0.0",
+  "private": true,
+  "description": "R4 scheduler: claims durable due schedules and wakes/dispatches work. No model, no capabilities, no cognition.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@r4/contracts": "*",
+    "@r4/observability": "*",
+    "@r4/persistence-postgres": "*",
+    "@r4/task-runtime": "*",
+    "pino": "^10.3.0",
+    "zod": "^4.6.0"
+  }
+}

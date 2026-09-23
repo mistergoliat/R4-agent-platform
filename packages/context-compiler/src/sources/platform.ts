@@ -14,6 +14,7 @@ export const PLATFORM_SOURCE_IDS = {
   goal: 'platform.goal',
   capability: 'platform.capability',
   observation: 'platform.observation',
+  interaction: 'platform.interaction',
 } as const;
 
 class MappingSource implements ContextSource {
@@ -88,21 +89,151 @@ export const runSource: ContextSource = new MappingSource(PLATFORM_SOURCE_IDS.ru
 ]);
 
 /**
- * The current goal. Requester-set goals are AUTHORITATIVE about what was
- * asked; goals the agent formed itself are COGNITIVE. Neither is business truth.
+ * Goals. Requester-set goals are AUTHORITATIVE about what was asked; goals
+ * the agent formed itself are COGNITIVE. Neither is business truth.
+ *
+ * (R4-E) With several goals, each item says whether it is the root and
+ * whether it is the current focus. Active goals and the current focus are
+ * live `goal` items (required kind); a closed goal that is no longer the
+ * focus becomes an OBSERVED `episode` of its closing — history that competes
+ * for budget and selection like any other, never a privileged objective.
  */
-export const goalSource: ContextSource = new MappingSource(PLATFORM_SOURCE_IDS.goal, ({ execution: { goal } }) => [
-  {
-    itemId: `goal:${goal.goalId}`,
-    kind: 'goal',
-    authority: goal.origin === 'requester' ? 'AUTHORITATIVE' : 'COGNITIVE',
-    temporality: 'live',
-    content: { goalId: goal.goalId, description: goal.description, successCriteria: goal.successCriteria, status: goal.status, origin: goal.origin },
-    provenance: { recordType: 'goal', recordId: goal.goalId, recordVersion: String(goal.version) },
-    createdAt: goal.createdAt,
-    taskId: goal.taskId,
-  },
-]);
+export const goalSource: ContextSource = new MappingSource(PLATFORM_SOURCE_IDS.goal, ({ execution: { goal: current, goals, task } }) => {
+  const all = goals ?? [current];
+  const structured = all.length > 1;
+  return all.map((goal): ContextContributionInput => {
+    const relation = structured ? { parentGoalId: goal.parentGoalId, isRoot: goal.goalId === task.rootGoalId, isCurrent: goal.goalId === task.currentGoalId } : {};
+    const provenance = { recordType: 'goal', recordId: goal.goalId, recordVersion: String(goal.version) };
+    if (goal.status === 'active' || goal.goalId === task.currentGoalId) {
+      return {
+        itemId: `goal:${goal.goalId}`,
+        kind: 'goal',
+        authority: goal.origin === 'requester' ? 'AUTHORITATIVE' : 'COGNITIVE',
+        temporality: 'live',
+        content: { goalId: goal.goalId, description: goal.description, successCriteria: goal.successCriteria, status: goal.status, origin: goal.origin, ...relation },
+        provenance,
+        createdAt: goal.createdAt,
+        taskId: goal.taskId,
+      };
+    }
+    return {
+      itemId: `goal_history:${goal.goalId}`,
+      kind: 'episode',
+      authority: 'OBSERVED',
+      temporality: 'point_in_time',
+      content: { event: `goal.${goal.status}`, goalId: goal.goalId, description: goal.description, origin: goal.origin, ...relation },
+      provenance,
+      createdAt: goal.updatedAt,
+      observedAt: goal.updatedAt,
+      taskId: goal.taskId,
+    };
+  });
+});
+
+/**
+ * (R4-E) Cross-run interaction projection over durable records, so a run
+ * that starts after a wait, a consultation or a handoff knows what was said
+ * before it — the question the agent asked, not only the answer:
+ *
+ *   - the agent's `respond` outputs of earlier runs (this run's come from `platform.run`)
+ *   - questions to a human (consultation) and handoff summaries the agent wrote
+ *   - every human decision with the human's own text (answer, approval note,
+ *     takeover/release note) — CONVERSATIONAL with human provenance, never truth
+ *   - the waits between runs and how each ended, with the agent's stated reason
+ *   - goal changes the platform refused, so the agent can recover
+ *
+ * Conversation turns compete for the conversation budget (and compaction)
+ * like any other turn; episodes like any other episode. No transcript is
+ * ever forced into the context.
+ */
+export const interactionSource: ContextSource = new MappingSource(PLATFORM_SOURCE_IDS.interaction, ({ execution: { interactions, run, agent, task } }) => {
+  if (!interactions) return [];
+  const items: ContextContributionInput[] = [];
+  const humans = new Map(interactions.humans.map((h) => [h.requestId, h]));
+  const waitReason = new Map<string, string>();
+  for (const step of interactions.steps) {
+    const decision = step.decision;
+    if (!decision) continue;
+    if (decision.type === 'wait' && decision.reason !== undefined) waitReason.set(step.runId, decision.reason);
+    if (decision.type === 'respond' && step.runId !== run.runId) {
+      items.push({
+        itemId: `response:${step.stepId}`,
+        kind: 'conversation_turn',
+        authority: 'CONVERSATIONAL',
+        temporality: 'point_in_time',
+        content: { actor: { role: 'agent', ref: agent.agentId }, text: decision.content, iteration: step.iteration, earlierRun: true },
+        provenance: { recordType: 'agent_run_step', recordId: step.stepId },
+        createdAt: step.createdAt,
+        observedAt: step.createdAt,
+        taskId: task.taskId,
+      });
+    }
+    if (decision.type === 'manage_goal' && step.outcome === 'refused' && step.error) {
+      items.push({
+        itemId: `goal_rejection:${step.stepId}`,
+        kind: 'episode',
+        authority: 'OBSERVED',
+        temporality: 'point_in_time',
+        content: { event: 'goal.change.rejected', change: decision.change, code: step.error.code, text: step.error.message },
+        provenance: { recordType: 'agent_run_step', recordId: step.stepId },
+        createdAt: step.createdAt,
+        observedAt: step.createdAt,
+        taskId: task.taskId,
+      });
+    }
+  }
+  for (const h of interactions.humans) {
+    const said = h.kind === 'consultation' ? { text: h.payload.question, refs: h.payload.contextRefs } : h.kind === 'handoff' && h.payload.initiatedBy === 'agent' ? { text: h.payload.summary, refs: h.payload.contextRefs } : null;
+    if (said === null) continue;
+    items.push({
+      itemId: `human_request:${h.requestId}`,
+      kind: 'conversation_turn',
+      authority: 'CONVERSATIONAL',
+      temporality: 'point_in_time',
+      content: { actor: { role: 'agent', ref: agent.agentId }, text: said.text, interaction: { kind: h.kind, requestId: h.requestId, status: h.status, contextRefs: said.refs } },
+      provenance: { recordType: 'human_request', recordId: h.requestId },
+      createdAt: h.createdAt,
+      observedAt: h.createdAt,
+      taskId: task.taskId,
+    });
+  }
+  for (const e of interactions.responses) {
+    if (typeof e.data.content !== 'string') continue;
+    const requestId = typeof e.data.requestId === 'string' ? e.data.requestId : e.entityId;
+    const request = humans.get(requestId);
+    items.push({
+      itemId: `human_response:${e.eventId}`,
+      kind: 'conversation_turn',
+      authority: 'CONVERSATIONAL',
+      temporality: 'point_in_time',
+      content: {
+        actor: { role: 'operator', ref: e.actorRef },
+        text: e.data.content,
+        interaction: { kind: request?.kind ?? 'handoff', requestId, outcome: typeof e.data.outcome === 'string' ? e.data.outcome : null, ...(request?.kind === 'approval' ? { proposalId: request.payload.proposalId } : {}) },
+      },
+      provenance: { recordType: 'temporal_event', recordId: e.eventId, producedBy: `user:${e.actorRef}` },
+      createdAt: e.occurredAt,
+      observedAt: e.occurredAt,
+      taskId: task.taskId,
+    });
+  }
+  for (const w of interactions.waits) {
+    if (w.status === 'waiting') continue;
+    const reason = w.runId === null ? undefined : waitReason.get(w.runId);
+    items.push({
+      itemId: `wait:${w.waitId}`,
+      kind: 'episode',
+      authority: 'OBSERVED',
+      temporality: 'point_in_time',
+      content: { event: 'task.wait', kind: w.kind, status: w.status, resolution: w.resolution, startedAt: w.createdAt, endedAt: w.completedAt, dueAt: w.dueAt, ...(reason === undefined ? {} : { statedReason: reason }) },
+      provenance: { recordType: 'task_wait', recordId: w.waitId },
+      createdAt: w.completedAt ?? w.createdAt,
+      observedAt: w.completedAt ?? w.createdAt,
+      taskId: task.taskId,
+    });
+  }
+  return items;
+});
 
 /**
  * Capabilities visible to the model. Visible ≠ executable: whether a decided
@@ -146,7 +277,9 @@ export const observationSource: ContextSource = new MappingSource(PLATFORM_SOURC
       payload: o.payload,
       error: o.error,
       // R4-D: an action outcome says which proposal it answers and whether a receipt backs it.
-      ...(o.source.kind === 'action' ? { action: { proposalId: o.source.proposalId, receiptId: o.source.receiptId } } : {}),
+      ...(o.source.kind === 'action'
+        ? { action: { proposalId: o.source.proposalId, receiptId: o.source.receiptId, ...(o.source.approvalRequestId ? { approvalRequestId: o.source.approvalRequestId } : {}) } }
+        : {}),
     },
     provenance: {
       recordType: 'observation',
@@ -171,5 +304,5 @@ function latestOf(observations: readonly Observation[]): Observation | undefined
 
 /** Every built-in platform source, in registration order. */
 export function platformContextSources(): ContextSource[] {
-  return [agentDefinitionSource, taskSource, runSource, goalSource, capabilitySource, observationSource];
+  return [agentDefinitionSource, taskSource, runSource, goalSource, capabilitySource, observationSource, interactionSource];
 }

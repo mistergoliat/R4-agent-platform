@@ -6,9 +6,14 @@ import {
   createTaskRequestSchema,
   idempotencyKeySchema,
   uuidSchema,
+  handoffTakeoverSchema,
+  inputSubmissionSchema,
+  humanResponseSchema,
+  trustedHumanContextSchema,
+  type TrustedHumanContext,
 } from '@r4/contracts';
 import type { AgentRegistry } from '@r4/agent-registry';
-import type { TaskRuntime } from '@r4/task-runtime';
+import type { TaskRuntime, TemporalRuntime } from '@r4/task-runtime';
 import { resolveCorrelationId, runWithCorrelation } from '@r4/observability';
 import { toErrorResponse } from './errors.js';
 import { unauthenticatedPrincipalResolver, type PrincipalResolver } from './principal.js';
@@ -24,6 +29,9 @@ export interface AppDependencies {
   readonly agents: AgentRegistry;
   readonly readiness: () => Promise<ReadinessReport>;
   readonly principal?: PrincipalResolver;
+  readonly temporal?: TemporalRuntime;
+  /** Auth adapter seam: absent by default; no header/body impersonation fallback. */
+  readonly humanContext?: (request: FastifyRequest) => TrustedHumanContext | null;
 }
 
 export const CORRELATION_HEADER = 'x-correlation-id';
@@ -138,6 +146,69 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       return deps.tasks.getRun(id);
     }),
   );
+
+  if (deps.temporal) {
+    // R4-E. Operator-plane seams (no UI): every human operation needs a
+    // TrustedHumanContext from the authentication adapter. There is no
+    // production IAM yet, so without an adapter these routes refuse (422
+    // trusted_human_required) — identity is never read from headers or bodies.
+    const temporal = deps.temporal;
+    const human = (request: FastifyRequest): TrustedHumanContext => {
+      const context = deps.humanContext?.(request);
+      if (!context) throw new PlatformError('precondition', 'trusted_human_required', 'an authenticated human context adapter is required');
+      return parse(trustedHumanContextSchema, { ...context, correlationId: request.id }, 'trusted human context');
+    };
+    const executionParams = z.strictObject({ id: uuidSchema });
+    const responseKeyBody = z.strictObject({ responseKey: z.string().min(1).max(256) });
+
+    // Canonical inbound input (any channel adapter): the caller is the resolved principal.
+    app.post('/v1/tasks/:id/inputs', (request, reply) =>
+      inContext(request, async () => {
+        const { id } = parse(taskParams, request.params, 'path');
+        const result = await temporal.submitInput(id, parse(inputSubmissionSchema, request.body ?? undefined, 'body'), resolvePrincipal(request), request.id);
+        return reply.status(result.replayed ? 200 : 201).header('idempotency-replayed', String(result.replayed)).send(result);
+      }),
+    );
+    app.post('/v1/tasks/:id/cancel', (request) =>
+      inContext(request, async () => {
+        parse(z.strictObject({}), request.body ?? {}, 'body');
+        return { task: await temporal.cancelTask(parse(taskParams, request.params, 'path').id, human(request)) };
+      }),
+    );
+    // Operator-initiated handoff: a human takes ownership without the agent asking.
+    app.post('/v1/tasks/:id/handoff', (request) =>
+      inContext(request, async () => {
+        const { id } = parse(taskParams, request.params, 'path');
+        return { request: await temporal.takeOver(id, parse(handoffTakeoverSchema, request.body ?? undefined, 'body'), human(request)) };
+      }),
+    );
+    app.get('/v1/tasks/:id/temporal', (request) =>
+      inContext(request, async () => {
+        human(request);
+        return temporal.inspect(parse(taskParams, request.params, 'path').id);
+      }),
+    );
+    app.get('/v1/attention', (request) =>
+      inContext(request, async () => {
+        human(request);
+        return temporal.attention();
+      }),
+    );
+    // Consultation answer, approve / reject, handoff accept / release, withdraw.
+    app.post('/v1/human-requests/:id/respond', (request) =>
+      inContext(request, async () => {
+        const { id } = parse(taskParams, request.params, 'path');
+        return { request: await temporal.respondHuman(id, parse(humanResponseSchema, request.body ?? undefined, 'body'), human(request)) };
+      }),
+    );
+    // Exhausted reconciliation: a fresh attempt budget. The outcome stays unknown until evidence exists.
+    app.post('/v1/executions/:id/reconciliation/reschedule', (request) =>
+      inContext(request, async () => {
+        const { id } = parse(executionParams, request.params, 'path');
+        return { schedule: await temporal.rescheduleReconciliation(id, parse(responseKeyBody, request.body ?? undefined, 'body'), human(request)) };
+      }),
+    );
+  }
 
   return app;
 }

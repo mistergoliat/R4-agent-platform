@@ -47,6 +47,8 @@ export const TERMINATION_REASONS = [
   // R4-D governed execution
   'approval_required',
   'write_outcome_uncertain',
+  'waiting',
+  'human_handoff',
 ] as const;
 export const terminationReasonSchema = z.enum(TERMINATION_REASONS);
 export type TerminationReason = z.infer<typeof terminationReasonSchema>;
@@ -71,6 +73,8 @@ const FAILURE_CLASS_BY_REASON: Readonly<Record<TerminationReason, FailureClass |
   // Waiting for a human decision is not a failure.
   approval_required: null,
   write_outcome_uncertain: 'action',
+  waiting: null,
+  human_handoff: null,
 };
 
 export function failureClassOf(reason: TerminationReason): FailureClass | null {
@@ -88,6 +92,8 @@ export function runStatusForTermination(reason: TerminationReason): Exclude<RunS
       return 'abandoned';
     case 'approval_required':
     case 'write_outcome_uncertain':
+    case 'waiting':
+    case 'human_handoff':
       return 'suspended';
     default:
       return 'failed';

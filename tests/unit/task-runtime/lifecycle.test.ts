@@ -16,7 +16,8 @@ const EXPECTED: Record<TaskStatus, TaskStatus[]> = {
   running: ['waiting', 'blocked', 'requires_approval', 'completed', 'failed', 'cancelled'],
   waiting: ['running', 'blocked', 'cancelled', 'failed'],
   blocked: ['pending', 'running', 'cancelled', 'failed'],
-  requires_approval: ['running', 'cancelled', 'failed'],
+  // R4-E: an operator may take over a task waiting for approval (the request stays open).
+  requires_approval: ['running', 'blocked', 'cancelled', 'failed'],
   completed: [],
   failed: [],
   cancelled: [],

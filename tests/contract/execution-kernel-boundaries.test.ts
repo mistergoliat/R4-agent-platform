@@ -50,8 +50,9 @@ describe('Agent Kernel boundary (ADR-009)', () => {
 });
 
 describe('AgentDecision protocol', () => {
-  it('is the C1 subset of the PRD §7 decisions plus R4-D propose_action, and nothing else', () => {
-    expect([...AGENT_DECISION_TYPES]).toEqual(['read_capability', 'respond', 'complete', 'propose_action']);
+  it('is the C1 subset of the PRD §7 decisions plus R4-D propose_action and the R4-E temporal/human decisions, and nothing else', () => {
+    // R4-E (ADR-021): wait, consult, hand off and manage cognitive goals. Delegate stays deferred.
+    expect([...AGENT_DECISION_TYPES]).toEqual(['read_capability', 'respond', 'complete', 'propose_action', 'wait', 'request_consultation', 'request_handoff', 'manage_goal']);
   });
 
   it('exposes no vendor, model or trusted effect fields to the model', () => {
@@ -66,7 +67,17 @@ describe('AgentDecision protocol', () => {
     };
     walk(AGENT_DECISION_JSON_SCHEMA);
     // R4-D adds only `evidenceRefs` (observation ids the platform verifies).
-    expect([...names].sort()).toEqual(['arguments', 'capabilityId', 'content', 'data', 'evidence', 'evidenceRefs', 'result', 'summary', 'type']);
+    // R4-E adds the wait condition, the explicit question/summary for a human with
+    // observation references, and goal changes by goal id. `until`/`expiresAt` are
+    // requested deadlines the platform validates, never trusted timestamps.
+    expect([...names].sort()).toEqual([
+      'arguments', 'capabilityId', 'change', 'condition', 'content', 'contextRefs', 'data', 'description', 'evidence', 'evidenceRefs', 'expiresAt',
+      'goalId', 'kind', 'makeCurrent', 'operation', 'parentGoalId', 'question', 'reason', 'result', 'successCriteria', 'summary', 'type', 'until',
+    ]);
+    // No identity, ownership, scheduling or record-keeping field is model-writable.
+    for (const trusted of ['taskId', 'runId', 'humanRef', 'owner', 'generation', 'createdAt', 'updatedAt', 'version', 'status', 'scopes', 'leaseExpiresAt', 'dueAt', 'actor']) {
+      expect(names.has(trusted), trusted).toBe(false);
+    }
   });
 });
 

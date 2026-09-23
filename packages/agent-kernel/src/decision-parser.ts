@@ -92,6 +92,12 @@ export function parseAgentDecision(response: ModelResponse, context: DecisionVal
       return { ok: true, decision };
     }
     case 'respond':
+    case 'wait':
+    case 'manage_goal':
+      return { ok: true, decision };
+    case 'request_consultation':
+    case 'request_handoff':
+      if (decision.contextRefs.some(id => !context.observationIds.has(id))) return fail('unknown_evidence', 'human context references must be observations of this task');
       return { ok: true, decision };
   }
 }

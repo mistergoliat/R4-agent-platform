@@ -1,5 +1,6 @@
 import {
   PlatformError,
+  fingerprint,
   actionAttemptSchema,
   actionExecutionSchema,
   actionReceiptSchema,
@@ -24,7 +25,10 @@ import {
   type LeaseToken,
   type Observation,
   type PolicyDecision,
+  type ProposeActionDecision,
   type RunStep,
+  type Schedule,
+  type ScheduleToken,
   type RunTermination,
   type TrustedActionContext,
   type WriteExecutionSemantics,
@@ -34,8 +38,10 @@ import { assertExecutionTransition, nextActionStep, receiptStatusFor, type Actio
 import { lockOwnedExecution, taskStatusForTermination, workerPrincipal, type OwnedExecution } from './execution-runtime.js';
 import { finishRunWithin, parseOrThrow, transitionTaskWithin, truncate, type PendingEvent } from './mutations.js';
 import type { ExecutionStore, ExecutionUnitOfWork } from './ports.js';
+import { temporalOf, type TemporalRuntime } from './temporal-runtime.js';
 
 export interface ActionRuntimeOptions {
+  temporal?: TemporalRuntime;
   store: ExecutionStore;
   /** The Policy Engine. Only this runtime calls it, inside the fenced transaction that records its decision. */
   authorizer: ActionAuthorizer;
@@ -54,11 +60,14 @@ export interface ActionState {
   readonly receipt: ActionReceipt | null;
   readonly observation: Observation | null;
   /**
-   * awaiting_authorization  proposal durable; no policy decision yet (crash window A)
-   * executing               command durable; outcome not established yet (windows B, C)
-   * observed                outcome durable as an observation (window D)
+   * awaiting_authorization     proposal durable; no policy decision yet (crash window A),
+   *                            or (R4-E) approved by a human: to be evaluated again
+   * awaiting_approval_outcome  (R4-E) a human rejected / let expire / withdrew the approval
+   *                            request: its outcome is not observed yet
+   * executing                  command durable; outcome not established yet (windows B, C)
+   * observed                   outcome durable as an observation (window D)
    */
-  readonly phase: 'awaiting_authorization' | 'executing' | 'observed';
+  readonly phase: 'awaiting_authorization' | 'awaiting_approval_outcome' | 'executing' | 'observed';
   /** For `executing`: what the durable attempt log permits next. */
   readonly next: ActionNextStep | null;
 }
@@ -75,6 +84,17 @@ export type ActionProgress =
 export interface ActionAttemptGrant {
   readonly kind: 'attempt';
   readonly state: ActionState;
+  readonly attempt: ActionAttempt;
+  readonly command: ActionCommand;
+  readonly decision: PolicyDecision;
+}
+
+/**
+ * (R4-E) Permission to perform exactly one `reconcile` call of an uncertain
+ * command — same command, same execution key — fenced by the schedule token.
+ */
+export interface ReconciliationGrant {
+  readonly token: ScheduleToken;
   readonly attempt: ActionAttempt;
   readonly command: ActionCommand;
   readonly decision: PolicyDecision;
@@ -125,6 +145,7 @@ export class ActionRuntime {
   readonly #ids: IdGenerator;
   readonly #clock: Clock;
   readonly #logger: StructuredLogger;
+  readonly #temporal: TemporalRuntime | undefined;
 
   constructor(options: ActionRuntimeOptions) {
     this.#store = options.store;
@@ -132,10 +153,81 @@ export class ActionRuntime {
     this.#ids = options.ids;
     this.#clock = options.clock;
     this.#logger = options.logger;
+    this.#temporal = options.temporal;
   }
 
   get policy(): ActionAuthorizer['identity'] {
     return this.#authorizer.identity;
+  }
+
+  /**
+   * (R4-E) A proposal of an earlier run that the platform must resolve before
+   * the model is asked anything: approved by a human (evaluate it again), or
+   * rejected / expired / withdrawn (observe that outcome). Read-only — the
+   * kernel drives it through `executeAction` like any pending action.
+   */
+  pendingApproval(token: LeaseToken): Promise<{ step: RunStep; decision: ProposeActionDecision } | null> {
+    return this.#store.transaction(async (uow) => {
+      const owned = await lockOwnedExecution(uow, token);
+      const proposalId = await uow.temporal?.pendingApprovalProposal(owned.task.taskId);
+      if (!proposalId) return null;
+      const { step } = await loadState(uow, owned, proposalId);
+      return step.decision?.type === 'propose_action' ? { step, decision: step.decision } : null;
+    });
+  }
+
+  /**
+   * Durable retry backoff (R4-E): between two attempts of one command the run
+   * keeps its place but gives up its lease, and an `action_retry` schedule
+   * holds the task back until the delay passes — no worker sleeps on it.
+   * The delay is the command's declared semantics (initial backoff, doubling
+   * per attempt made; bounded by its declared maximum attempts).
+   */
+  deferRetry(token: LeaseToken, proposalId: string): Promise<boolean> {
+    return this.#write(token, async (uow, owned, events, timestamp) => {
+      const state = await loadState(uow, owned, proposalId);
+      const last = state.attempts.at(-1);
+      const execution = state.execution;
+      if (!last || !execution || execution.semantics.initialBackoffMs === 0 || state.next?.kind !== 'attempt') return false;
+      const delay = execution.semantics.initialBackoffMs * 2 ** Math.max(0, state.attempts.length - 1);
+      const dueAt = new Date(Date.parse(last.finishedAt ?? last.startedAt) + delay).toISOString();
+      if (Date.parse(timestamp) >= Date.parse(dueAt)) return false;
+      if (!this.#temporal) throw new PlatformError('precondition', 'temporal_unavailable', 'durable retry scheduling requires the temporal runtime');
+      await this.#temporal.scheduleWithin(uow, owned.task, 'action_retry', last.attemptId, dueAt, timestamp, events);
+      await uow.releaseLease(token);
+      return true;
+    });
+  }
+
+  /**
+   * (R4-E) Makes a human's rejection (or expiry / withdrawal) of the approval
+   * request an observation of the proposal: the agent sees "this action was
+   * rejected", linked to the proposal and the request. Nothing was executed.
+   */
+  async observeApprovalOutcome(token: LeaseToken, proposalId: string): Promise<ActionProgress> {
+    return this.#write(token, async (uow, owned, events, timestamp) => {
+      const state = await loadState(uow, owned, proposalId);
+      if (state.phase !== 'awaiting_approval_outcome') return progressOf(state);
+      const approval = (await temporalOf(uow).humanByProposal(proposalId))!;
+      const code = approval.status === 'rejected' ? 'approval_rejected' : approval.status === 'expired' ? 'approval_expired' : 'approval_cancelled';
+      const observation = this.#observation(state, {
+        timestamp,
+        capabilityVersion: approval.payload.capabilityVersion,
+        policyDecisionId: approval.payload.policyDecisionId,
+        executionId: null,
+        receiptId: null,
+        approvalRequestId: approval.requestId,
+        outcome: 'rejected',
+        payload: null,
+        error: {
+          code,
+          message: approval.status === 'rejected' ? 'a human rejected the approval request; the action was not executed' : `the approval request was ${approval.status}; the action was not executed`,
+          details: { approvalRequestId: approval.requestId, proposalId, decision: approval.status, decidedBy: approval.humanRef, policyDecisionId: approval.payload.policyDecisionId },
+        },
+        provenance: { runtime: RUNTIME, stage: 'approval', approvalRequestId: approval.requestId, decision: approval.status },
+      });
+      return this.#observe(uow, state, observation, token, events, timestamp);
+    });
   }
 
   /** Where the proposal of the active run stands (recovery starts here). */
@@ -204,7 +296,13 @@ export class ActionRuntime {
         actor: task.requestedBy,
         identityAssurance: identityAssuranceOf(task.requestedBy),
       });
+      const approval = await uow.temporal?.humanByProposal(proposal.proposalId);
+      const approvalEvidence = approval?.status === 'approved' ? {
+        requestId: approval.requestId, proposalId: approval.payload.proposalId, capabilityId: approval.payload.capabilityId,
+        capabilityVersion: approval.payload.capabilityVersion, argumentsMatch: approval.payload.argumentsHash === fingerprint(command.validatedArguments),
+      } : undefined;
       const evaluation = this.#authorizer.evaluate({
+        ...(approvalEvidence ? { approval: approvalEvidence } : {}),
         proposal: { proposalId: proposal.proposalId, evidenceRefs: proposal.evidenceRefs },
         agent: { agentId: agent.agentId, version: agent.version, capabilityScopes: agent.capabilityScopes },
         task: { taskId: task.taskId, status: task.status },
@@ -297,12 +395,25 @@ export class ActionRuntime {
       }
       events.push(['action.approval_required', { ...base, capabilityId: decision.capabilityId, riskClass: decision.riskClass, reasonCode: decision.reasonCode }]);
       const observed = await this.#observe(uow, decided, observation, token, events, timestamp);
-      return this.#suspend(uow, owned, observed.state, token, {
+      const suspended = await this.#suspend(uow, owned, observed.state, token, {
         reason: 'approval_required',
         code: decision.reasonCode,
         message: decision.message,
         details: { proposalId: proposal.proposalId, policyDecisionId: decision.decisionId, capabilityId: decision.capabilityId, riskClass: decision.riskClass },
       }, timestamp, events);
+      // (R4-E) The approval request is bound to exactly this proposal, capability version and validated arguments.
+      if (this.#temporal && uow.temporal) {
+        const suspendedTask = (await uow.lockTask(task.taskId))!;
+        await this.#temporal.requestApprovalWithin(uow, suspendedTask, {
+          requestId: this.#ids.next(), taskId: task.taskId, runId: run.runId, kind: 'approval', status: 'requested', humanRef: null,
+          createdAt: timestamp, updatedAt: timestamp, expiresAt: null, correlationId: task.correlationId,
+          payload: {
+            proposalId: proposal.proposalId, policyDecisionId: decision.decisionId, capabilityId: capability.capabilityId, capabilityVersion: capability.version,
+            argumentsHash: fingerprint(command.validatedArguments), validatedArguments: command.validatedArguments,
+          },
+        }, timestamp, events);
+      }
+      return suspended;
     });
   }
 
@@ -325,7 +436,7 @@ export class ActionRuntime {
         case 'uncertain':
           return this.#uncertain(uow, owned, state, token, next.code, timestamp, events);
         case 'not_applied':
-          return this.#resolve(uow, state, next.attempt, null, token, events, timestamp);
+          return this.settleWithin(uow, state, next.attempt, null, token, events, timestamp);
         case 'attempt': {
           const attempt = parseOrThrow(actionAttemptSchema, {
             attemptId: this.#ids.next(),
@@ -381,17 +492,149 @@ export class ActionRuntime {
       const updated: ActionState = { ...state, attempts };
 
       if (report.outcome === 'applied' || report.outcome === 'rejected' || report.outcome === 'failed') {
-        return this.#resolve(uow, updated, finished, report, token, events, timestamp);
+        return this.settleWithin(uow, updated, finished, report, token, events, timestamp);
       }
       const next = nextActionStep(execution, attempts);
       if (next.kind === 'uncertain') return this.#uncertain(uow, owned, { ...updated, next }, token, next.code, timestamp, events);
-      if (next.kind === 'not_applied') return this.#resolve(uow, updated, next.attempt, null, token, events, timestamp);
+      if (next.kind === 'not_applied') return this.settleWithin(uow, updated, next.attempt, null, token, events, timestamp);
       return progressOf({ ...updated, next });
     });
   }
 
+  // -------------------------------------------------------------------------
+  // (R4-E) Reconciliation of uncertain effects
+  // -------------------------------------------------------------------------
+
+  /**
+   * Claims dispatched reconciliation work (the scheduler decided it is due)
+   * and grants exactly one `reconcile` attempt of the SAME command — same
+   * execution key, next attempt number — after making it durable. Fenced by
+   * the schedule's lease + generation instead of a task lease: reconciliation
+   * runs no cognition and needs no run, so it also settles the effects of
+   * tasks that are cancelling or already failed. Returns null when no work is
+   * dispatched; work found already settled or out of attempts/time is closed
+   * on the way (exhausted work waits for an operator, the outcome stays unknown).
+   */
+  async claimReconciliation(command: { workerId: string; leaseDurationMs: number }): Promise<ReconciliationGrant | null> {
+    for (;;) {
+      const claimed = await this.#store.transaction((uow) => temporalOf(uow).claimReconciliation(command.workerId, command.leaseDurationMs));
+      if (!claimed) return null;
+      const token: ScheduleToken = { scheduleId: claimed.scheduleId, taskId: claimed.taskId, owner: command.workerId, generation: claimed.generation };
+      const grant = await this.#scheduleWrite(token, async (uow, schedule, events, timestamp) => {
+        const temporal = this.#requireTemporal();
+        const task = (await uow.lockTask(schedule.taskId))!;
+        const execution = await temporalOf(uow).execution(schedule.referenceId);
+        if (!execution || execution.taskId !== schedule.taskId) throw new PlatformError('internal', 'reconciliation_target_mismatch', 'reconciliation work must reference an execution of its task');
+        const close = async (status: 'completed' | 'exhausted', data: Record<string, unknown>) => {
+          await temporalOf(uow).updateSchedule({ ...schedule, status, owner: null, leaseExpiresAt: null, updatedAt: timestamp });
+          await temporal.event(uow, task, schedule.scheduleId, status === 'completed' ? 'reconciliation.resolved' : 'reconciliation.unresolved', timestamp, events, { executionId: execution.executionId, attempts: schedule.attempts, ...data }, command.workerId);
+        };
+        if (execution.status !== 'needs_reconciliation' && execution.status !== 'executing') {
+          await close('completed', { alreadySettled: true });
+          return null;
+        }
+        const policy = schedule.policy!;
+        if (schedule.attempts >= policy.maxAttempts || Date.parse(timestamp) >= Date.parse(schedule.deadlineAt!)) {
+          await close('exhausted', { exhausted: true });
+          return null;
+        }
+        const state = await readActionState(uow, execution.proposalId);
+        if (state.decision?.outcome !== 'allow' || state.decision.decisionId !== execution.policyDecisionId) {
+          throw new PlatformError('internal', 'command_not_authorized', 'an uncertain command must stand on its ALLOW decision');
+        }
+        const attempt = parseOrThrow(actionAttemptSchema, {
+          attemptId: this.#ids.next(),
+          executionId: execution.executionId,
+          attemptNumber: state.attempts.length + 1,
+          kind: 'reconcile',
+          workerId: command.workerId,
+          leaseGeneration: token.generation,
+          startedAt: timestamp,
+          finishedAt: null,
+          outcome: null,
+          errorCode: null,
+          detail: null,
+        });
+        await uow.insertActionAttempt(attempt);
+        const current = execution.status === 'executing' ? execution : await this.#setStatus(uow, execution, 'executing', timestamp);
+        await temporalOf(uow).updateSchedule({ ...schedule, attempts: schedule.attempts + 1, updatedAt: timestamp });
+        await temporal.event(uow, task, schedule.scheduleId, 'reconciliation.attempted', timestamp, events, { executionId: execution.executionId, attempt: attempt.attemptNumber, reconciliationAttempt: schedule.attempts + 1 }, command.workerId);
+        return { token, attempt, command: commandOf(current), decision: state.decision } satisfies ReconciliationGrant;
+      });
+      if (grant) return grant;
+    }
+  }
+
+  /**
+   * Records what a reconcile attempt established. Known → receipt +
+   * observation (+ the proposal's step), the work completes, and the task
+   * becomes runnable (or reaches its deferred terminal status). Unknown →
+   * the attempt stays unknown, the execution uncertain, and the work is
+   * rescheduled by its durable policy (or exhausted). Never guessed.
+   */
+  async recordReconciliation(token: ScheduleToken, attemptId: string, report: ActionAttemptReport): Promise<'resolved' | 'rescheduled' | 'exhausted'> {
+    return this.#scheduleWrite(token, async (uow, schedule, events, timestamp) => {
+      const temporal = this.#requireTemporal();
+      const p = temporalOf(uow);
+      const task = (await uow.lockTask(schedule.taskId))!;
+      const execution = (await p.execution(schedule.referenceId))!;
+      const state = await readActionState(uow, execution.proposalId);
+      const attempt = state.attempts.find((a) => a.attemptId === attemptId);
+      if (!attempt || attempt.kind !== 'reconcile') throw new PlatformError('conflict', 'unknown_attempt', `attempt ${attemptId} is not a reconciliation of this work`);
+      if (state.attempts.at(-1)?.attemptId !== attemptId || attempt.outcome !== null) throw new PlatformError('conflict', 'attempt_superseded', 'a newer reconciliation owns this execution');
+      const finished = parseOrThrow(actionAttemptSchema, {
+        ...attempt,
+        finishedAt: timestamp,
+        outcome: report.outcome,
+        errorCode: report.errorCode,
+        detail: { message: report.message === null ? null : truncate(report.message), replayed: report.replayed, durationMs: report.durationMs, details: report.details, fencedBy: 'schedule', scheduleId: schedule.scheduleId },
+      });
+      if (!(await uow.finishActionAttempt(finished))) throw new PlatformError('conflict', 'attempt_already_recorded', `attempt ${attemptId} already has an outcome`);
+      const updated: ActionState = { ...state, attempts: state.attempts.map((a) => (a.attemptId === attemptId ? finished : a)) };
+      const telemetryToken: LeaseToken = { taskId: token.taskId, owner: token.owner, generation: token.generation };
+      events.push(['action.attempt.recorded', { ...telemetryOf(state, telemetryToken), executionId: execution.executionId, capabilityId: execution.capabilityId, riskClass: execution.riskClass, attempt: finished.attemptNumber, kind: finished.kind, outcome: finished.outcome, errorCode: finished.errorCode, replayed: report.replayed, durationMs: report.durationMs }]);
+
+      if (report.outcome !== 'unknown') {
+        // `not_applied` settles as a definitive "not applied" receipt: reconciliation never re-executes.
+        await this.settleWithin(uow, updated, finished, report, telemetryToken, events, timestamp);
+        await p.updateSchedule({ ...schedule, status: 'completed', owner: null, leaseExpiresAt: null, updatedAt: timestamp });
+        await temporal.event(uow, task, schedule.scheduleId, 'reconciliation.resolved', timestamp, events, { executionId: execution.executionId, attempts: schedule.attempts, outcome: report.outcome, elapsedMs: Date.parse(timestamp) - Date.parse(schedule.createdAt) }, token.owner);
+        await temporal.settleAfterReconciliationWithin(uow, (await uow.lockTask(task.taskId))!, timestamp, events);
+        return 'resolved';
+      }
+      await this.#setStatus(uow, (await p.execution(execution.executionId))!, 'needs_reconciliation', timestamp);
+      const policy = schedule.policy!;
+      const exhausted = schedule.attempts >= policy.maxAttempts || Date.parse(timestamp) >= Date.parse(schedule.deadlineAt!);
+      const delay = Math.min(policy.maxBackoffMs, policy.initialBackoffMs * 2 ** Math.max(0, schedule.attempts - 1));
+      const dueAt = new Date(Math.min(Date.parse(schedule.deadlineAt!), Date.parse(timestamp) + delay)).toISOString();
+      const next: Schedule = { ...schedule, status: exhausted ? 'exhausted' : 'pending', dueAt: exhausted ? schedule.dueAt : dueAt, owner: null, leaseExpiresAt: null, updatedAt: timestamp };
+      await p.updateSchedule(next);
+      await temporal.event(uow, task, schedule.scheduleId, 'reconciliation.unresolved', timestamp, events, { executionId: execution.executionId, attempts: schedule.attempts, exhausted, nextDueAt: exhausted ? null : dueAt, errorCode: report.errorCode }, token.owner);
+      return exhausted ? 'exhausted' : 'rescheduled';
+    });
+  }
+
+  #requireTemporal(): TemporalRuntime {
+    if (!this.#temporal) throw new PlatformError('precondition', 'temporal_unavailable', 'reconciliation requires the temporal runtime');
+    return this.#temporal;
+  }
+
+  /** One transaction fenced by a schedule token (task row lock first, then the schedule). */
+  async #scheduleWrite<T>(token: ScheduleToken, fn: (uow: ExecutionUnitOfWork, schedule: Schedule, events: PendingEvent[], timestamp: string) => Promise<T>): Promise<T> {
+    const events: PendingEvent[] = [];
+    const result = await this.#store.transaction(async (uow) => {
+      if (!(await uow.lockTask(token.taskId))) throw new PlatformError('not_found', 'task_not_found', 'task not found');
+      const p = temporalOf(uow);
+      const schedule = await p.lockSchedule(token);
+      if (schedule.kind !== 'reconciliation' || schedule.status !== 'in_progress') throw new PlatformError('conflict', 'schedule_lease_lost', 'reconciliation work is not held');
+      return fn(uow, schedule, events, await p.now());
+    });
+    for (const [name, fields] of events) emitTelemetry(this.#logger, name, fields);
+    return result;
+  }
+
   /** Receipt + observation + step, one transaction: the agent sees an outcome only with its evidence. */
-  async #resolve(
+  async settleWithin(
     uow: ExecutionUnitOfWork,
     state: ActionState,
     attempt: ActionAttempt,
@@ -476,7 +719,8 @@ export class ActionRuntime {
     const flagged = execution.status === 'needs_reconciliation' ? execution : await this.#setStatus(uow, execution, 'needs_reconciliation', timestamp);
     const last = state.attempts.at(-1) ?? null;
     events.push(['action.outcome_uncertain', { ...telemetryOf(state, token), executionId: execution.executionId, capabilityId: execution.capabilityId, riskClass: execution.riskClass, attempts: state.attempts.length, code, cause: 'unresolvable' }]);
-    return this.#suspend(uow, owned, { ...state, execution: flagged, next: { kind: 'uncertain', code } }, token, {
+    // The reconciliation work itself is created with the flag, in this transaction (0005 trigger).
+    const suspended = await this.#suspend(uow, owned, { ...state, execution: flagged, next: { kind: 'uncertain', code } }, token, {
       reason: 'write_outcome_uncertain',
       code,
       message: code === 'write_reconciliation_failure' ? 'the action outcome could not be reconciled; it is not known whether the effect happened' : 'the action outcome is unknown and no safe attempt remains',
@@ -487,6 +731,10 @@ export class ActionRuntime {
         lastAttempt: last === null ? null : { kind: last.kind, outcome: last.outcome, errorCode: last.errorCode },
       },
     }, timestamp, events);
+    if (this.#temporal && uow.temporal) {
+      await this.#temporal.blockOnUncertainWithin(uow, (await uow.lockTask(owned.task.taskId))!, owned.run.runId, execution.executionId, timestamp, events);
+    }
+    return suspended;
   }
 
   /** Ends the run as suspended and moves the task to where it waits, releasing the lease — atomically. */
@@ -515,7 +763,7 @@ export class ActionRuntime {
   async #observe(uow: ExecutionUnitOfWork, state: ActionState, observation: Observation, token: LeaseToken, events: PendingEvent[], timestamp: string): Promise<ActionProgress & { kind: 'observed' }> {
     const stored = await uow.insertObservation(observation);
     const observed: RunStep = { ...state.step, outcome: 'observed', observationId: stored.observationId, completedAt: timestamp };
-    if (!(await uow.completePendingStep(observed))) {
+    if (state.step.outcome === 'pending' && !(await uow.completePendingStep(observed))) {
       throw new PlatformError('conflict', 'step_not_pending', `step ${state.step.stepId} is no longer pending`);
     }
     events.push(['action.observation.persisted', { ...telemetryOf(state, token), observationId: stored.observationId, outcome: stored.outcome, errorCode: stored.error?.code ?? null, executionId: state.execution?.executionId ?? null }]);
@@ -530,6 +778,7 @@ export class ActionRuntime {
       policyDecisionId: string | null;
       executionId: string | null;
       receiptId: string | null;
+      approvalRequestId?: string | null;
       outcome: Observation['outcome'];
       payload: JsonValue | null;
       error: Observation['error'];
@@ -550,6 +799,7 @@ export class ActionRuntime {
         policyDecisionId: fields.policyDecisionId,
         executionId: fields.executionId,
         receiptId: fields.receiptId,
+        approvalRequestId: fields.approvalRequestId ?? null,
       },
       outcome: fields.outcome,
       payload: fields.payload,
@@ -577,7 +827,7 @@ export class ActionRuntime {
     const events: PendingEvent[] = [];
     const result = await this.#store.transaction(async (uow) => {
       const owned = await lockOwnedExecution(uow, token);
-      return fn(uow, owned, events, this.#clock.now().toISOString());
+      return fn(uow, owned, events, uow.temporal ? await uow.temporal.now() : this.#clock.now().toISOString());
     });
     for (const [name, fields] of events) emitTelemetry(this.#logger, name, fields);
     return result;
@@ -595,20 +845,46 @@ export function executionKeyFor(executionId: string): string {
   return `r4x_${executionId.replace(/-/g, '')}`;
 }
 
+/** Human approval outcomes the agent must observe (nothing was executed). */
+const UNAPPROVED = new Set(['rejected', 'expired', 'cancelled']);
+
+/**
+ * A proposal of the active run — or (R4-E) of an earlier run of the same
+ * task whose human approval outcome must still be resolved by this run.
+ */
 async function loadState(uow: ExecutionUnitOfWork, owned: OwnedExecution, proposalId: string): Promise<ActionState> {
   const proposal = await uow.findActionProposal(proposalId);
-  if (!proposal || proposal.runId !== owned.run.runId) {
+  const approval = await uow.temporal?.humanByProposal(proposalId);
+  const carried = approval !== null && approval !== undefined && (approval.status === 'approved' || UNAPPROVED.has(approval.status));
+  if (!proposal || proposal.taskId !== owned.task.taskId || (proposal.runId !== owned.run.runId && !carried)) {
     throw new PlatformError('conflict', 'unknown_proposal', `proposal ${proposalId} is not an action of the active run`);
   }
-  const step = (await uow.listRunSteps(owned.run.runId)).find((s) => s.stepId === proposal.stepId);
+  return readActionState(uow, proposalId);
+}
+
+/** Internal ledger reader; callers must enforce task, lease or schedule ownership first. */
+export async function readActionState(uow: ExecutionUnitOfWork, proposalId: string): Promise<ActionState> {
+  const proposal = await uow.findActionProposal(proposalId);
+  if (!proposal) throw new PlatformError('not_found', 'proposal_not_found', 'proposal not found');
+  const step = (await uow.listRunSteps(proposal.runId)).find((s) => s.stepId === proposal.stepId);
   if (!step) throw new PlatformError('internal', 'proposal_step_missing', `proposal ${proposalId} has no step`);
+  // The latest decision: after a human approval there may be a second one; the first is never edited.
   const decision = await uow.findPolicyDecisionByProposal(proposalId);
   const execution = await uow.findActionExecutionByProposal(proposalId);
   const attempts = execution ? await uow.listActionAttempts(execution.executionId) : [];
   const receipt = execution ? await uow.findActionReceiptByExecution(execution.executionId) : null;
   const observation = await uow.findObservationByProposal(proposalId);
+  if (execution && !receipt) return { proposal, step, decision, execution, attempts, receipt, observation: null, phase: 'executing', next: nextActionStep(execution, attempts) };
+  const approval = await uow.temporal?.humanByProposal(proposalId);
+  const stillOriginal = approval !== null && approval !== undefined && decision?.decisionId === approval.payload.policyDecisionId;
+  if (stillOriginal && approval.status === 'approved') {
+    // Approval is evidence for a NEW policy evaluation, never an ALLOW by itself.
+    return { proposal, step, decision, execution, attempts, receipt, observation: null, phase: 'awaiting_authorization', next: null };
+  }
+  if (stillOriginal && UNAPPROVED.has(approval.status) && observation?.source.kind === 'action' && observation.source.approvalRequestId !== approval.requestId) {
+    return { proposal, step, decision, execution, attempts, receipt, observation, phase: 'awaiting_approval_outcome', next: null };
+  }
   if (observation) return { proposal, step, decision, execution, attempts, receipt, observation, phase: 'observed', next: null };
-  if (execution) return { proposal, step, decision, execution, attempts, receipt, observation, phase: 'executing', next: nextActionStep(execution, attempts) };
   if (decision) throw new PlatformError('internal', 'unconsequenced_decision', `proposal ${proposalId} has a ${decision.outcome} decision without its consequence`);
   return { proposal, step, decision, execution, attempts, receipt, observation, phase: 'awaiting_authorization', next: null };
 }

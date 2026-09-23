@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { jsonObjectSchema, uniqueArray, uuidSchema } from './primitives.js';
+import { waitDecisionSchema, consultationDecisionSchema, handoffDecisionSchema, manageGoalDecisionSchema } from './temporal.js';
 
 /**
  * AgentDecision: the ONLY thing a model may produce inside the execution loop.
@@ -27,7 +28,7 @@ import { jsonObjectSchema, uniqueArray, uuidSchema } from './primitives.js';
  * The remaining PRD §7 decisions (Delegate, Wait, ...) arrive with the phases
  * that implement them.
  */
-export const AGENT_DECISION_TYPES = ['read_capability', 'respond', 'complete', 'propose_action'] as const;
+export const AGENT_DECISION_TYPES = ['read_capability', 'respond', 'complete', 'propose_action', 'wait', 'request_consultation', 'request_handoff', 'manage_goal'] as const;
 export const agentDecisionTypeSchema = z.enum(AGENT_DECISION_TYPES);
 export type AgentDecisionType = z.infer<typeof agentDecisionTypeSchema>;
 
@@ -74,6 +75,10 @@ export const agentDecisionSchema = z.discriminatedUnion('type', [
   respondDecisionSchema,
   completeDecisionSchema,
   proposeActionDecisionSchema,
+  waitDecisionSchema,
+  consultationDecisionSchema,
+  handoffDecisionSchema,
+  manageGoalDecisionSchema,
 ]);
 export type AgentDecision = z.infer<typeof agentDecisionSchema>;
 

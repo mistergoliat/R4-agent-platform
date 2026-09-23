@@ -1,6 +1,6 @@
 ---
 title: R4 — Ownership Matrix
-status: implemented (R4-B, R4-C1, R4-C2, R4-D) + planned rows
+status: implemented (R4-B, R4-C1, R4-C2, R4-D); R4-E in working tree + planned rows
 owner: architecture
 last_reviewed: 2026-09-23
 ---
@@ -83,20 +83,37 @@ Clases de autoridad:
 | Observation de acción | `task-runtime` (`ActionRuntime`) | Evidencia (`OBSERVED`) | `observations` (`source_kind = action`) | Inmutable (trigger, también para READ) | con receipt/decisión/rechazo | Llega al siguiente ContextSnapshot | `integration/governed-execution*` |
 | Write capability (handlers de escritura) | Owner declarado (dominio / pack), gobernada por `capability-runtime` | Dominio (ejecuta) | En memoria (`registerWrite`) | Inmutable por `(id, version)` | registrada en boot con estrategia | Reconstruida deterministamente | `unit/capability-runtime/action-executor` |
 | Budget de writes | `apps/worker` (`R4_EXEC_MAX_WRITE_ACTIONS`, default 0) + `budget.maxWrites` | Configuración | Entorno; consumo = comandos de la task | Por proceso | — | Consumo derivado del ledger | `unit/agent-kernel/kernel-actions`, `integration/governed-execution` |
-| Resultado incierto | `task-runtime` | Plataforma (declara que no sabe) | `action_executions.status = needs_reconciliation` | Hasta resolución (R4-E+) | run `suspended`, task `blocked` | Nunca se asume éxito ni fallo | `integration/governed-execution-recovery` |
+| Resultado incierto | `task-runtime` | Plataforma (declara que no sabe) | `action_executions.status = needs_reconciliation` | Hasta resolución por reconciliación (R4-E, §1e) | run `suspended`, task `blocked` | Nunca se asume éxito ni fallo | `integration/governed-execution-recovery`, `integration/reconciliation` |
+
+## 1e. Implementado en R4-E (working tree, pendiente de auditoría)
+
+| Concepto | Owner (paquete) | Autoridad | Almacenamiento | Mutabilidad | Ciclo de vida | Ante reinicio | Evaluación |
+|---|---|---|---|---|---|---|---|
+| `wait` / `request_consultation` / `request_handoff` / `manage_goal` (AgentDecision v3) | Modelo (pide), `agent-kernel` (valida), `task-runtime` (`TemporalRuntime`, aplica) | Cognición validada por plataforma | En su step | Inmutable | — | Durable | `contract/temporal-boundaries`, `integration/temporal-waits` |
+| TaskWait | `task-runtime` (`TemporalRuntime`) | Autoridad de plataforma | `task_waits` | Una abierta por task; sólo su cierre (status, resolution) | `waiting → completed \| cancelled` con `resolution` | Durable; el wake la cierra en la misma tx | `integration/temporal-waits`, `recovery/temporal-process-crash` |
+| Input canónico | `task-runtime` (`TemporalRuntime.submitInput`) | Evidencia (texto CONVERSATIONAL) | `task_inputs` (inmutable) + `memory_entries` | Write-once; idempotente por (task, source, externalKey) | — | Durable | `integration/temporal-waits`, `integration/temporal-api` |
+| Schedule (wake, expiry, retry, reconciliation) | `task-runtime` (decide), `apps/scheduler` (reclama y dispara) | Autoridad de plataforma (cuándo; nunca qué) | `schedules` | Lease + generación; transiciones por tipo | `pending → claimed → fired \| cancelled`; reconciliación: `→ dispatched → in_progress → pending \| completed \| exhausted` | Lease expira en `r4_now()`; otro reclama | `integration/temporal-waits`, `integration/reconciliation`, `recovery/temporal-process-crash` |
+| Reloj temporal | PostgreSQL (`r4_now()`) | Autoridad de plataforma | Función de 0005 | Sólo redefinible en BD de prueba desechable | — | — | `contract/temporal-boundaries` |
+| Política de reconciliación | `apps/scheduler` (config explícita) | Configuración | Estampada en el schedule | Por schedule | — | Durable | `unit/scheduler/config` |
+| Trabajo de reconciliación | trigger de 0005 (nace) + `ActionRuntime` (intentos) + worker (`Reconciler`, secuencia) | Plataforma (nunca adivina) | `schedules` + `action_execution_attempts` | Append-only de intentos | nace con `needs_reconciliation` (misma tx) | Lease del schedule; otro worker retoma | `integration/reconciliation`, `recovery/temporal-process-crash` |
+| HumanRequest (consultation / approval / handoff) | `task-runtime` (`TemporalRuntime`) | Humano (decisión) + plataforma (estado) | `human_requests` | Sólo transiciones válidas (trigger) | consultation `requested → answered \| cancelled \| expired`; approval `→ approved \| rejected \| cancelled \| expired`; handoff `requested → active → released`, `→ cancelled` | Durable | `integration/human-collaboration` |
+| Decisión humana (texto + procedencia) | Humano vía `TrustedHumanContext` | Evidencia (CONVERSATIONAL; nunca AUTHORITATIVE) | `temporal_events` (inmutable) | Idempotente por (request, responseKey) | — | Durable | `integration/human-collaboration`, `integration/temporal-api` |
+| TrustedHumanContext | `apps/api` (adapter `humanContext`) | Autoridad de plataforma | No persistido (se registra `humanRef`) | — | Por request | — | `integration/temporal-api`, `contract/temporal-boundaries` |
+| Observation de aprobación | `task-runtime` (`ActionRuntime.observeApprovalOutcome`) | Evidencia (`OBSERVED`) | `observations` (`approval_request_id`) | Inmutable | antes de la siguiente cognición | Durable | `integration/human-collaboration` |
+| Ownership (agente / humano) | `task-runtime` (proyección) + trigger de 0005 | Autoridad de plataforma | Derivada de `human_requests`, `task_waits`, ledger, intents | — | — | Recalculada | `integration/human-collaboration`, `integration/reconciliation` |
+| Intención terminal diferida | `task-runtime` (`transitionTaskWithin`) | Autoridad de plataforma | `task_terminal_intents` (inmutable) | Write-once | aplicada tras la reconciliación | Durable | `integration/reconciliation`, `integration/governed-execution-recovery` |
+| Transición de goal | `task-runtime` (`TemporalRuntime`) + trigger | Evidencia | `goal_transitions` (inmutable) | Append-only | created / focused / achieved / abandoned / superseded | Durable | `integration/temporal-waits` |
+| Proyección de interacción cross-run | `context-compiler` (`platform.interaction`) | CONVERSATIONAL / OBSERVED | Derivada (no se persiste aparte) | — | Por compilación | Recompilada | `unit/context-compiler/temporal-sources`, `integration/temporal-waits` |
 
 ## 2. Planificado (sin implementar; owner candidato)
 
 | Concepto | Fase | Owner candidato | Autoridad |
 |---|---|---|---|
-| Escritura de working/episodic memory desde el loop | R4-D+ | `agent-kernel` + contracts (decisión nueva) | Cognición (nunca verdad) |
+| Escritura de working/episodic memory desde el loop | R4-F+ | `agent-kernel` + contracts (decisión nueva) | Cognición (nunca verdad) |
 | Fuentes de estado de dominio | R4-F+ | Adapters de dominio vía `ContextSource` | Owner del dominio (AUTHORITATIVE) |
-| Decisiones Delegate / Wait / Consult / Approval / Handoff | R4-E+ | `agent-kernel` + contracts | Cognición (propuesta) |
-| ApprovalRequest / resolución de `REQUIRE_APPROVAL` | R4-E | `human-collaboration` | Humano (decisión) + plataforma (estado) |
-| Reconciliador de ejecuciones `needs_reconciliation`; cancelación cooperativa de efectos en vuelo | R4-E+ | `task-runtime` | Plataforma |
-| Verificación de identidad (`identityAssurance = verified`) | con el primer servicio de identidad | servicio de identidad + plataforma | Plataforma |
-| Consultation / Approval / Handoff | R4-E | `human-collaboration` | Humano (decisión) + plataforma (estado) |
-| Scheduler / wake-ups | R4-E | `scheduler` | Plataforma (despierta; no decide) |
+| Decisión Delegate | R4-F+ | `agent-kernel` + contracts | Cognición (propuesta) |
+| Cancelación cooperativa de efectos en vuelo | con un caso de uso | `task-runtime` + capability | Plataforma |
+| Verificación de identidad (`identityAssurance = verified`) e IAM de operadores | con el primer servicio de identidad | servicio de identidad + plataforma | Plataforma |
 | Artifact | R4-C/E (a decidir) | `artifacts` | Evidencia versionada |
 | Outbox / eventos públicos | con primer consumidor | `persistence-postgres` + `observability` | Plataforma |
 | Evaluation / Finding / FailureCluster | R4-G | `evaluation` | Plataforma + rúbricas de packs |

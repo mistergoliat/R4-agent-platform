@@ -4,8 +4,12 @@ import type {
   AgentTask,
   ContextContributionInput,
   Goal,
+  HumanRequest,
   Observation,
   RiskClass,
+  RunStep,
+  TaskWait,
+  TemporalEvent,
 } from '@r4/contracts';
 
 /** Who the context is for: one iteration of one run. */
@@ -53,11 +57,29 @@ export interface ExecutionFacts {
   readonly task: AgentTask;
   readonly run: AgentRun;
   readonly goal: Goal;
+  /** (R4-E) Every goal of the task — root, current focus, incidental, closed. All remain intention. */
+  readonly goals?: readonly Goal[];
+  /** (R4-E) Durable interaction records across the task's runs. */
+  readonly interactions?: InteractionFacts;
   readonly observations: readonly Observation[];
   /** `respond` outputs recorded by this run, in order. */
   readonly responses: readonly { readonly stepId: string; readonly iteration: number; readonly content: string; readonly recordedAt: string }[];
   readonly capabilities: readonly VisibleCapability[];
   readonly constraints: ExecutionConstraints;
+}
+
+/**
+ * (R4-E) What was said and decided around the task across runs, as the
+ * platform recorded it: the agent's decisions (step log of every run), human
+ * requests and the human decisions on them (with the human's own text), and
+ * the waits between runs. A projection of existing records — never a second
+ * store of the conversation.
+ */
+export interface InteractionFacts {
+  readonly steps: readonly RunStep[];
+  readonly humans: readonly HumanRequest[];
+  readonly responses: readonly TemporalEvent[];
+  readonly waits: readonly TaskWait[];
 }
 
 export interface ContextSourceRequest {

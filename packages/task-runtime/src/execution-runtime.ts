@@ -39,6 +39,7 @@ import {
   type TerminationInput,
 } from './mutations.js';
 import type { ExecutionStore, ExecutionUnitOfWork } from './ports.js';
+import type { InteractionRecords } from './temporal-ports.js';
 
 export interface ExecutionRuntimeOptions {
   store: ExecutionStore;
@@ -78,6 +79,10 @@ export interface DurableExecution {
   readonly task: AgentTask;
   readonly run: AgentRun;
   readonly goal: Goal;
+  /** (R4-E) Every goal of the task: root, current focus, incidental and closed ones. */
+  readonly goals?: readonly Goal[];
+  /** (R4-E) Durable interaction records across runs (cross-run conversation projection). */
+  readonly interactions?: InteractionRecords;
   readonly steps: readonly RunStep[];
   readonly observations: readonly Observation[];
   /** (R4-D) Action commands created for the task so far — the write budget's usage. Task-scoped: a later run does not reset it. */
@@ -140,7 +145,7 @@ export interface FinishExecutionCommand {
  * `requires_approval` for a human decision, `blocked` for an action whose
  * outcome is unknown.
  */
-export function taskStatusForTermination(reason: TerminationReason): Extract<TaskStatus, 'completed' | 'failed' | 'cancelled' | 'requires_approval' | 'blocked'> {
+export function taskStatusForTermination(reason: TerminationReason): Extract<TaskStatus, 'completed' | 'failed' | 'cancelled' | 'requires_approval' | 'blocked' | 'waiting'> {
   switch (reason) {
     case 'completed':
       return 'completed';
@@ -149,7 +154,10 @@ export function taskStatusForTermination(reason: TerminationReason): Extract<Tas
     case 'approval_required':
       return 'requires_approval';
     case 'write_outcome_uncertain':
+    case 'human_handoff':
       return 'blocked';
+    case 'waiting':
+      return 'waiting';
     default:
       return 'failed';
   }
@@ -325,7 +333,9 @@ export class ExecutionRuntime {
       const steps = await uow.listRunSteps(run.runId);
       const observations = await uow.listObservations(task.taskId);
       const writeActions = await uow.countActionExecutions(task.taskId);
-      return { lease, task, run, goal, steps, observations, writeActions };
+      const goals = await uow.temporal?.listGoals(task.taskId);
+      const interactions = await uow.temporal?.interactionRecords(task.taskId);
+      return { lease, task, run, goal, steps, observations, writeActions, ...(goals ? { goals } : {}), ...(interactions ? { interactions } : {}) };
     });
   }
 
@@ -350,7 +360,7 @@ export class ExecutionRuntime {
     const events: PendingEvent[] = [];
     const step = await this.#store.transaction(async (uow) => {
       const owned = await this.#owned(uow, token);
-      return this.#appendStep(uow, owned, token, command, this.#clock.now().toISOString(), events);
+      return this.appendStepWithin(uow, owned, token, command, this.#clock.now().toISOString(), events);
     });
     this.#emit(events);
     return step;
@@ -508,7 +518,7 @@ export class ExecutionRuntime {
         if (command.finalStep.outcome === 'pending') {
           throw new PlatformError('validation', 'validation_failed', 'a pending READ cannot end a run');
         }
-        await this.#appendStep(uow, owned, token, command.finalStep, timestamp, events);
+        await this.appendStepWithin(uow, owned, token, command.finalStep, timestamp, events);
         current = (await uow.findActiveRun(owned.task.taskId)) ?? current;
       }
       const run = await finishRunWithin(
@@ -545,7 +555,8 @@ export class ExecutionRuntime {
     return finished;
   }
 
-  async #appendStep(
+  /** Internal composition seam: caller must hold the verified task lease in this transaction. */
+  async appendStepWithin(
     uow: ExecutionUnitOfWork,
     owned: { task: AgentTask; run: AgentRun },
     token: LeaseToken,

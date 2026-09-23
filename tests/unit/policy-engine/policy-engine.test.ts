@@ -128,3 +128,38 @@ describe('policy configuration: versioned, hashed, validated', () => {
     expect(() => new ActionPolicyEngine({ ...DEFAULT_ACTION_POLICY, bypassAll: true })).toThrow(/invalid action policy/);
   });
 });
+
+describe('R4-E: human approval is evidence for a new evaluation, never a bypass', () => {
+  const PROPOSAL = '0190e7a3-0000-7000-8000-000000000003';
+  const approval = (overrides: Partial<NonNullable<PolicyInput['approval']>> = {}): NonNullable<PolicyInput['approval']> => ({
+    requestId: '0190e7a3-0000-7000-8000-000000000009', proposalId: PROPOSAL, capabilityId: 'test.set_thing', capabilityVersion: 1, argumentsMatch: true, ...overrides,
+  });
+  const withApproval = (a: NonNullable<PolicyInput['approval']>, overrides: Parameters<typeof input>[0] = {}): PolicyInput => ({ ...input(overrides), approval: a });
+
+  it('a matching approval satisfies exactly the approval requirement → ALLOW (human_approved)', () => {
+    expect(engine.evaluate(input({ riskClass: 'IRREVERSIBLE_WRITE' }))).toMatchObject({ outcome: 'require_approval' });
+    expect(engine.evaluate(withApproval(approval(), { riskClass: 'IRREVERSIBLE_WRITE' }))).toMatchObject({ outcome: 'allow', reasonCode: 'human_approved' });
+    expect(engine.evaluate(withApproval(approval(), { capability: { approvalPolicy: 'required' } }))).toMatchObject({ outcome: 'allow', reasonCode: 'human_approved' });
+    expect(engine.evaluate(withApproval(approval(), { capability: { confirmationPolicy: 'required' } }))).toMatchObject({ outcome: 'allow', reasonCode: 'human_approved' });
+  });
+
+  it('is bound to proposal, capability version and validated arguments: any mismatch → DENY, never reusable', () => {
+    for (const mismatch of [{ proposalId: '0190e7a3-0000-7000-8000-00000000000a' }, { capabilityId: 'test.other' }, { capabilityVersion: 2 }, { argumentsMatch: false }]) {
+      expect(engine.evaluate(withApproval(approval(mismatch), { riskClass: 'IRREVERSIBLE_WRITE' }))).toMatchObject({ outcome: 'deny', reasonCode: 'approval_scope_mismatch', rule: 'governance.approval_scope' });
+    }
+  });
+
+  it('cannot override any other rule: denied risk classes, scopes, identity, task state and unsafe semantics still deny', () => {
+    expect(engine.evaluate(withApproval(approval(), { riskClass: 'PRIVILEGED' }))).toMatchObject({ outcome: 'deny', reasonCode: 'risk_class_not_permitted' });
+    expect(engine.evaluate(withApproval(approval(), { riskClass: 'FINANCIAL' }))).toMatchObject({ outcome: 'deny', reasonCode: 'insufficient_identity' });
+    expect(engine.evaluate(withApproval(approval(), { riskClass: 'IRREVERSIBLE_WRITE', agentScopes: [] }))).toMatchObject({ outcome: 'deny', reasonCode: 'scope_denied' });
+    expect(engine.evaluate(withApproval(approval(), { riskClass: 'IRREVERSIBLE_WRITE', taskStatus: 'requires_approval' }))).toMatchObject({ outcome: 'deny', reasonCode: 'task_not_running' });
+    expect(engine.evaluate(withApproval(approval(), { riskClass: 'IRREVERSIBLE_WRITE', capability: { writeRecovery: null } }))).toMatchObject({ outcome: 'deny', reasonCode: 'unsafe_write_semantics' });
+    expect(engine.evaluate(withApproval(approval(), { capability: { identityRequirement: 'verified' } }))).toMatchObject({ outcome: 'deny', reasonCode: 'identity_requirement_unmet' });
+  });
+
+  it('is deterministic: same input and approval evidence → same evaluation', () => {
+    const a = withApproval(approval(), { riskClass: 'IRREVERSIBLE_WRITE' });
+    expect(engine.evaluate(a)).toEqual(engine.evaluate(structuredClone(a)));
+  });
+});

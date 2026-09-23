@@ -28,9 +28,14 @@ export type FakeModelStep =
   /** Returns a response that violates the provider contract. */
   | { readonly type: 'malformed'; readonly raw: unknown };
 
+/**
+ * A fixed list, or a function of the request. A function may be async: the
+ * call then stays in flight until it resolves, so tests can interleave
+ * durable events with a model call that is still deciding.
+ */
 export type FakeModelScript =
   | readonly FakeModelStep[]
-  | ((request: ModelRequest, callIndex: number) => FakeModelStep);
+  | ((request: ModelRequest, callIndex: number) => FakeModelStep | Promise<FakeModelStep>);
 
 export const FAKE_PROVIDER_ID = 'fake';
 export const FAKE_MODEL_ID = 'fake-deterministic-1';
@@ -62,7 +67,7 @@ export class FakeModelProvider implements ModelProvider {
   async invoke(request: ModelRequest, signal: AbortSignal): Promise<unknown> {
     const index = this.#requests.length;
     this.#requests.push(request);
-    const step = this.#nextStep(request, index);
+    const step = await this.#nextStep(request, index);
     const inputTokens = request.messages.reduce((sum, m) => sum + m.content.length, 0) + (request.context ? JSON.stringify(request.context).length : 0);
 
     switch (step.type) {
@@ -101,7 +106,7 @@ export class FakeModelProvider implements ModelProvider {
     }
   }
 
-  #nextStep(request: ModelRequest, index: number): FakeModelStep {
+  async #nextStep(request: ModelRequest, index: number): Promise<FakeModelStep> {
     if (typeof this.#script === 'function') return this.#script(request, index);
     const step = this.#script[index];
     if (!step) {

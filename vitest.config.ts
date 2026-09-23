@@ -17,6 +17,7 @@ const alias = {
   '@r4/context-compiler': src('./packages/context-compiler/src/index.ts'),
   '@r4/api': src('./apps/api/src/index.ts'),
   '@r4/worker': src('./apps/worker/src/index.ts'),
+  '@r4/scheduler': src('./apps/scheduler/src/index.ts'),
 };
 
 export default defineConfig({

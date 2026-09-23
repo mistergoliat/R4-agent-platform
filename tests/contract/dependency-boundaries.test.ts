@@ -54,6 +54,10 @@ const ALLOWED: Record<string, string[]> = {
     '@r4/contracts', '@r4/observability', '@r4/model-gateway', '@r4/capability-runtime', '@r4/task-runtime',
     '@r4/agent-registry', '@r4/persistence-postgres', '@r4/agent-kernel', '@r4/context-compiler', '@r4/policy-engine', 'pino', 'zod',
   ],
+  // R4-E (ADR-022): the scheduler is a composition root whose only authority is
+  // time — no model gateway, no capability runtime, no policy engine, no kernel,
+  // no context compiler, and never the worker app.
+  '@r4/scheduler': ['@r4/contracts', '@r4/observability', '@r4/persistence-postgres', '@r4/task-runtime', 'pino', 'zod'],
 };
 
 describe('dependency boundaries', () => {

@@ -340,7 +340,8 @@ describe('context telemetry', () => {
 
     expect(logs.events('context.compile.started')).toHaveLength(1);
     expect(logs.events('context.source.loaded').map((e) => e.sourceId)).toEqual([
-      'platform.agent', 'platform.task', 'platform.run', 'platform.goal', 'platform.capability', 'platform.observation', 'platform.memory', 'fixture.state',
+      // R4-E adds the cross-run interaction projection (empty without interaction records).
+      'platform.agent', 'platform.task', 'platform.run', 'platform.goal', 'platform.capability', 'platform.observation', 'platform.interaction', 'platform.memory', 'fixture.state',
     ]);
     expect(logs.events('context.item.included').length).toBeGreaterThan(0);
     expect(logs.events('context.item.excluded')).toEqual([expect.objectContaining({ exclusionReason: 'sensitivity', count: 1, taskId: TASK.taskId, iteration: 1 })]);

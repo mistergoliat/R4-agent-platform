@@ -6,13 +6,14 @@ import { createLogger } from '@r4/observability';
 import {
   PostgresAgentDefinitionStore,
   PostgresTaskRuntimeStore,
+  PostgresExecutionStore,
   checkDatabaseReadiness,
   createPool,
   migrationStatus,
   type Pool,
 } from '@r4/persistence-postgres';
-import { TaskRuntime } from '@r4/task-runtime';
-import { buildApp, type ReadinessReport } from './app.js';
+import { TaskRuntime, ExecutionRuntime, TemporalRuntime } from '@r4/task-runtime';
+import { buildApp, type ReadinessReport, type AppDependencies } from './app.js';
 import type { ApiConfig } from './config.js';
 import type { PrincipalResolver } from './principal.js';
 
@@ -20,6 +21,7 @@ export interface Platform {
   readonly app: FastifyInstance;
   readonly pool: Pool;
   readonly tasks: TaskRuntime;
+  readonly temporal: TemporalRuntime;
   readonly agents: AgentRegistry;
   readonly logger: Logger;
   close(): Promise<void>;
@@ -30,6 +32,7 @@ export interface PlatformOverrides {
   readonly clock?: Clock;
   readonly ids?: IdGenerator;
   readonly principal?: PrincipalResolver;
+  readonly humanContext?: AppDependencies['humanContext'];
 }
 
 /**
@@ -55,6 +58,9 @@ export async function createPlatform(config: ApiConfig, overrides: PlatformOverr
     await agents.sync(loaded.map((entry) => entry.definition));
 
     const tasks = new TaskRuntime({ store: new PostgresTaskRuntimeStore(pool), agents, ids, clock, logger });
+    const executionStore = new PostgresExecutionStore(pool);
+    const execution = new ExecutionRuntime({ store: executionStore, ids, clock, logger, maxRunRecoveries: 0 });
+    const temporal = new TemporalRuntime({ store: executionStore, execution, ids, logger });
 
     const readiness = async (): Promise<ReadinessReport> => {
       const database = await checkDatabaseReadiness(pool);
@@ -67,13 +73,16 @@ export async function createPlatform(config: ApiConfig, overrides: PlatformOverr
       };
     };
 
-    const app = buildApp({ logger, tasks, agents, readiness, ...(overrides.principal ? { principal: overrides.principal } : {}) });
+    const app = buildApp({ logger, tasks, agents, readiness, temporal,
+      ...(overrides.humanContext ? { humanContext: overrides.humanContext } : {}),
+      ...(overrides.principal ? { principal: overrides.principal } : {}) });
     await app.ready();
 
     return {
       app,
       pool,
       tasks,
+      temporal,
       agents,
       logger,
       async close() {

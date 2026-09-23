@@ -54,6 +54,9 @@ describe('run termination contract', () => {
       // R4-D
       ['approval_required', null],
       ['write_outcome_uncertain', 'action'],
+      // R4-E: a durable wait and a transfer to human ownership are suspensions, not failures.
+      ['waiting', null],
+      ['human_handoff', null],
     ]);
     // Every class is reachable.
     expect(new Set(TERMINATION_REASONS.map(failureClassOf).filter(Boolean))).toEqual(new Set(FAILURE_CLASSES));

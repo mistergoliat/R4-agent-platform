@@ -20,6 +20,7 @@ import { recordObservation } from './observation-store.js';
 import { query, withTransaction, type Pool } from './pool.js';
 import { iso, jsonb, leaseFromRow, observationFromRow, stepFromRow, taskFromRow, type Row } from './rows.js';
 import { PostgresTaskUnitOfWork } from './task-store.js';
+import { PostgresTemporalPersistence } from './temporal-store.js';
 
 const LEASE_COLUMNS = 'task_id, lease_owner, lease_generation, lease_acquired_at, lease_expires_at, last_heartbeat_at';
 
@@ -57,6 +58,7 @@ export class PostgresExecutionStore implements ExecutionStore {
 }
 
 class PostgresExecutionUnitOfWork extends PostgresTaskUnitOfWork implements ExecutionUnitOfWork {
+  readonly temporal = new PostgresTemporalPersistence(this.client);
   /**
    * One statement: pick the oldest runnable task whose lease is absent or
    * expired, row-lock it (SKIP LOCKED: concurrent claimers move on instead of
@@ -72,6 +74,8 @@ class PostgresExecutionUnitOfWork extends PostgresTaskUnitOfWork implements Exec
          select task_id, lease_owner as previous_owner
            from agent_tasks
           where status in ('pending', 'running')
+            and not exists (select 1 from schedules s where s.task_id=agent_tasks.task_id and s.kind='action_retry' and s.status in ('pending','claimed'))
+            and not exists (select 1 from action_executions e where e.task_id=agent_tasks.task_id and e.status='needs_reconciliation')
             and (lease_expires_at is null or lease_expires_at <= (select now from clock))
           order by created_at, task_id
           limit 1
@@ -185,7 +189,7 @@ class PostgresExecutionUnitOfWork extends PostgresTaskUnitOfWork implements Exec
   }
 
   findPolicyDecisionByProposal(proposalId: string): Promise<PolicyDecision | null> {
-    return one(this.client, 'select * from policy_decisions where proposal_id = $1', [proposalId], policyDecisionFromRow);
+    return one(this.client, 'select * from policy_decisions where proposal_id = $1 order by evaluated_at desc, decision_id desc limit 1', [proposalId], policyDecisionFromRow);
   }
 
   insertActionExecution(execution: ActionExecution): Promise<void> {
@@ -228,6 +232,6 @@ class PostgresExecutionUnitOfWork extends PostgresTaskUnitOfWork implements Exec
   }
 
   findObservationByProposal(proposalId: string): Promise<Observation | null> {
-    return one(this.client, 'select * from observations where proposal_id = $1', [proposalId], observationFromRow);
+    return one(this.client, 'select * from observations where proposal_id = $1 order by observed_at desc, observation_id desc limit 1', [proposalId], observationFromRow);
   }
 }

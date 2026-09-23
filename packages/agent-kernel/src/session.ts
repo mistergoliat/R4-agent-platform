@@ -8,6 +8,7 @@ import type {
   ReadCapabilityDecision,
   RunStep,
   TerminationReason,
+  TemporalDecision,
 } from '@r4/contracts';
 import type { ExecutionContext, ExecutionState } from './context.js';
 
@@ -18,6 +19,8 @@ import type { ExecutionContext, ExecutionState } from './context.js';
  * (fenced) write — or refuse it.
  */
 export interface KernelSession {
+  /** E decisions are persisted atomically with their runtime consequence. */
+  executeTemporal?(step: StepRecord, decision: TemporalDecision): Promise<{ kind: 'continued' } | { kind: 'suspended'; termination: KernelTermination }>;
   /** Rebuilds the execution state from durable storage after verifying ownership. */
   load(): Promise<ExecutionState>;
   /**

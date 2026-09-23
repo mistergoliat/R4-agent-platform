@@ -12,6 +12,7 @@
     { "path": "packages/persistence-postgres" },
     { "path": "packages/agent-kernel" },
     { "path": "apps/api" },
-    { "path": "apps/worker" }
+    { "path": "apps/worker" },
+    { "path": "apps/scheduler" }
   ]
 }

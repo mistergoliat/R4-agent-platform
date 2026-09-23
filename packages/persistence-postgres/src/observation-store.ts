@@ -36,19 +36,20 @@ interface Queryable {
 
 /**
  * Inserts an observation unless one already exists for its idempotency key —
- * the invocation id of a READ, or (R4-D) the proposal id of an action — and
+ * the invocation id of a READ, or (R4-D/E) the action evidence it records
+ * (receipt, human approval outcome, policy decision, or proposal) — and
  * returns the stored row either way. Works on a pool or inside a transaction.
  */
 export async function recordObservation(db: Queryable, o: Observation): Promise<Observation> {
   const action = o.source.kind === 'action' ? o.source : null;
-  const key = o.source.kind === 'action' ? { column: 'proposal_id', value: o.source.proposalId } : { column: 'invocation_id', value: o.source.invocationId };
+  const key = o.source.kind === 'action' ? { column: 'action_evidence_key', value: o.source.receiptId ?? o.source.approvalRequestId ?? o.source.policyDecisionId ?? o.source.proposalId } : { column: 'invocation_id', value: o.source.invocationId };
   const inserted = await db.query(
     `insert into observations (
        observation_id, task_id, run_id, agent_id, source_kind, capability_id, capability_version,
        invocation_id, outcome, payload, error_code, error_message, error_details,
        observed_at, valid_until, provenance, correlation_id,
-       proposal_id, policy_decision_id, execution_id, receipt_id)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13::jsonb, $14, $15, $16::jsonb, $17, $18, $19, $20, $21)
+       proposal_id, policy_decision_id, execution_id, receipt_id, approval_request_id)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13::jsonb, $14, $15, $16::jsonb, $17, $18, $19, $20, $21, $22)
      on conflict (${key.column}) do nothing
      returning *`,
     [
@@ -56,7 +57,7 @@ export async function recordObservation(db: Queryable, o: Observation): Promise<
       o.source.kind === 'capability' ? o.source.invocationId : null, o.outcome, o.outcome === 'succeeded' ? JSON.stringify(o.payload) : null,
       o.error?.code ?? null, o.error?.message ?? null, jsonb(o.error?.details),
       o.observedAt, o.validUntil, jsonb(o.provenance), o.correlationId,
-      action?.proposalId ?? null, action?.policyDecisionId ?? null, action?.executionId ?? null, action?.receiptId ?? null,
+      action?.proposalId ?? null, action?.policyDecisionId ?? null, action?.executionId ?? null, action?.receiptId ?? null, action?.approvalRequestId ?? null,
     ],
   );
   if (inserted.rows[0]) return observationFromRow(inserted.rows[0]);

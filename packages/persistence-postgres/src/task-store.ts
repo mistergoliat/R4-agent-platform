@@ -197,4 +197,20 @@ export class PostgresTaskUnitOfWork implements TaskUnitOfWork {
     );
     return result.rowCount ?? 0;
   }
+
+  async countUncertainActionExecutions(taskId: string): Promise<number> {
+    const result = await this.client.query<{ n: string }>(
+      "select count(*) as n from action_executions where task_id = $1 and status in ('executing', 'needs_reconciliation')",
+      [taskId],
+    );
+    return Number(result.rows[0]!.n);
+  }
+
+  async recordTerminalIntent(intent: Parameters<TaskUnitOfWork['recordTerminalIntent']>[0]): Promise<void> {
+    await this.client.query(
+      `insert into task_terminal_intents (task_id, target_status, reason, actor_kind, actor_ref, correlation_id, requested_at)
+       values ($1, $2, $3, $4, $5, $6, $7) on conflict (task_id) do nothing`,
+      [intent.taskId, intent.targetStatus, intent.reason, intent.actor.kind, intent.actor.ref, intent.correlationId, intent.requestedAt],
+    );
+  }
 }

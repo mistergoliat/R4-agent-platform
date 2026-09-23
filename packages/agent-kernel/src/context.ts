@@ -81,6 +81,12 @@ export interface ExecutionStateInput {
   readonly now: Date;
   /** (R4-D) Write commands already created for the task (action ledger). */
   readonly writeActions?: number;
+  /**
+   * (R4-E) A proposal of an earlier run of this task that the platform must
+   * resolve before the model is asked anything (a human approved, rejected,
+   * let expire or withdrew its approval request). Loaded, never executed, here.
+   */
+  readonly carriedAction?: { readonly step: RunStep; readonly decision: ProposeActionDecision } | null;
 }
 
 /** Pure: the same durable state always yields the same context. */
@@ -100,7 +106,7 @@ export function buildExecutionState(input: ExecutionStateInput): ExecutionState 
   const pendingRead =
     last && last.outcome === 'pending' && last.decision?.type === 'read_capability' ? { step: last, decision: last.decision } : null;
   const pendingAction =
-    last && last.outcome === 'pending' && last.decision?.type === 'propose_action' ? { step: last, decision: last.decision } : null;
+    last && last.outcome === 'pending' && last.decision?.type === 'propose_action' ? { step: last, decision: last.decision } : (input.carriedAction ?? null);
 
   return {
     context: {
