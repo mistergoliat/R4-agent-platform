@@ -26,7 +26,9 @@ function sources(dir: string): string[] {
   return out;
 }
 
-const runtime = [...sources(join(ROOT, 'packages')), ...sources(join(ROOT, 'apps'))];
+// R4-G: post-hoc Quality inspects finished text by design (claim detection, ADR-025); it decides
+// nothing at runtime and is excluded here. contract/quality-boundaries re-checks these rules on runtime code.
+const runtime = [...sources(join(ROOT, 'packages')), ...sources(join(ROOT, 'apps'))].filter((f) => !/[\\/](packages[\\/]evaluation|apps[\\/]evaluator)[\\/]/.test(f));
 const rel = (file: string) => relative(ROOT, file).split('\\').join('/');
 const text = (file: string) => readFileSync(file, 'utf8');
 const filesMatching = (pattern: RegExp) => runtime.filter((file) => pattern.test(text(file))).map(rel).sort();

@@ -1,6 +1,6 @@
 ---
 title: R4 — Arquitectura implementada (R4-B + R4-C1 + R4-C2 + R4-D + R4-E) y R4-F (Sales Reference Application)
-status: implemented (R4-B … R4-E, published at 74ed8e7); R4-F published at 1927499 (R4-F BASELINE)
+status: implemented (R4-B … R4-E, published at 74ed8e7); R4-F published at 1927499 (R4-F BASELINE); R4-G Quality & Learning COMPLETED (on 001b7a8)
 owner: architecture
 last_reviewed: 2026-09-23
 depends_on:
@@ -30,6 +30,8 @@ depends_on:
   - ../adr/ADR-022-scheduler-reconciliation-and-time-authority.md
   - ../adr/ADR-023-sales-reference-application.md
   - ../adr/ADR-024-openai-compatible-model-provider.md
+  - ../adr/ADR-025-post-hoc-evaluation-boundary.md
+  - ../adr/ADR-026-learning-as-regression-knowledge.md
 ---
 
 # R4 — Arquitectura implementada (R4-B + R4-C1 + R4-C2 + R4-D + R4-E) y R4-F
@@ -43,7 +45,9 @@ implementada. Las secciones 1–10 describen R4-B, actualizadas donde C1/C2 las
 cambiaron; la sección 11 describe R4-C1, la 12 R4-C2, la 13 R4-D y la 14 R4-E.
 La sección 15 describe R4-F: el primer workload (Sales Reference Application),
 que vive **fuera** de Core (`agents/sales`, `adapters/*`) y usa las fronteras
-anteriores sin moverlas.
+anteriores sin moverlas. La sección 16 describe R4-G (Quality & Learning,
+completado): evaluación post-hoc de trayectorias terminadas, fuera de la
+ejecución de Core.
 
 ## 1. Objetivo de R4-B
 
@@ -69,6 +73,7 @@ R4-agent-platform/
 ├── apps/
 │   ├── api/                    HTTP /v1 (Fastify). Transporte + composition root.
 │   ├── worker/                 (C1) Proceso worker: claim, lease/heartbeat, ejecución del kernel; (E) reconciliación despachada.
+│   ├── evaluator/              (G) Runtime de evaluación: lector de trayectorias (sólo lectura), artifacts, juez sobre el ModelGateway. Nunca importado por Core.
 │   └── scheduler/              (E) Proceso scheduler: reclama schedules vencidos y despierta/despacha. Sin modelo ni capabilities.
 ├── packages/
 │   ├── contracts/              Esquemas Zod + tipos de las primitivas. Sin lógica de dominio.
@@ -80,10 +85,12 @@ R4-agent-platform/
 │   ├── agent-kernel/           (C1) Loop model → decisión → READ → observation. Sin estado ni persistencia.
 │   ├── context-compiler/       (C2) Contexto estructurado por decisión: sources, autoridad, frescura, budget, compaction.
 │   ├── policy-engine/          (D) Autorización determinista de acciones: reglas tipadas, versionadas y con hash. Pura.
+│   ├── evaluation/             (G) Framework de Quality: subject, findings, taxonomía, outcomes, evaluadores, benchmark, experiment. Puro y sin dominio.
 │   └── persistence-postgres/   Migraciones + implementación PostgreSQL de los ports.
 ├── agents/
 │   ├── platform-probe/         Sonda sin dominio (R4-B).
 │   └── sales/                  (F) Sales Agent Pack: definición, capabilities, estado Sales (esquema `sales`, 0006 propia), harness. Fuera de Core.
+│                               (G) `src/evaluations`: evaluadores, rúbricas, fixtures y regresiones de Sales (entrada `@r4-sales/agent/evaluations`).
 ├── adapters/                   (F) Fuera de Core.
 │   ├── domains/                Ports Customer/Catalog/Shipping/Quote + fixtures deterministas (sin dependencia de R4).
 │   └── models/openai-compatible/  Primer ModelProvider real (protocolo chat-completions genérico).
@@ -95,8 +102,8 @@ Paquetes del árbol sugerido que **no** se crearon porque no corresponden a
 R4-B/C1/C2/D/E: `memory` (la memoria de C2 es un contrato + tabla + source, sin
 runtime propio; ADR-013), `artifacts`, `human-collaboration` y `scheduler` como paquetes (E: el
 runtime temporal/humano vive en `task-runtime` porque comparte el lock de la task; el scheduler
-es una app/composition root — ADR-021/022), `evaluation`,
-`agents/quality-auditor`, `agents/marketing-analyst`, `adapters/channels/*`,
+es una app/composition root — ADR-021/022) (G crea `evaluation` y la app `evaluator`, §16),
+`agents/quality-auditor` (G: la frontera semántica es su seam; ADR-026), `agents/marketing-analyst`, `adapters/channels/*`,
 `adapters/protocols/*` (F crea `agents/sales`, `adapters/domains` y `adapters/models/*`, §15). Ver
 [roadmap](../roadmap/R4_DELIVERY_ROADMAP.md).
 
@@ -153,6 +160,7 @@ Reglas duras (fallan el build si se violan):
 | Grafo interno acíclico | `dependency-boundaries.test.ts` |
 | Core sin términos de dominio/canal/CRM/vendor | `tests/contract/core-purity.test.ts` |
 | Contratos públicos sin campos de proveedor ni de dominio | `tests/contract/provider-neutrality.test.ts` |
+| (G) Core no depende de Quality; `evaluation` sólo contracts + zod; `evaluator` sólo APIs de lectura, gateway y FS de artifacts; Quality sin términos de dominio; evaluadores de Sales fuera del runtime del pack; Quality no importa definiciones/registry/política ni escribe fuera de artifacts | `dependency-boundaries.test.ts`, `tests/contract/quality-boundaries.test.ts` |
 
 ## 3. Flujo de una petición
 
@@ -1175,3 +1183,60 @@ artifacts live (sólo metadata).
 ADR-024: `OpenAICompatibleModelProvider`, configuración `R4_MODEL_*`, render
 del `CompiledContext` como JSON, envelope físico explícito, errores
 clasificados, secretos sólo en el header saliente.
+
+## 16. R4-G — Quality & Learning (completado)
+
+Pregunta: ¿cómo sabemos sistemáticamente si un agente hizo un buen trabajo,
+por qué falló y si una versión nueva realmente mejora? Diseño: ADR-025
+(evaluación post-hoc, determinista antes que semántica) y ADR-026 (learning =
+conocimiento de regresión; artifacts, no tablas). Baseline: R4-F
+LIVE-VALIDATED `001b7a8`. Sin cambios de Core de ejecución ni migraciones.
+
+```text
+trayectoria durable (tablas existentes, sin copia)
+   ─► PostgresTrajectoryReader (apps/evaluator, sólo lectura) + proyecciones del pack
+   ─► EvaluationSubject (r4.evaluation_subject.v1, congelado)
+   ─► evaluadores deterministas (autoritativos para lo que R4 puede probar)
+   ─► evaluadores semánticos (juez sobre proyección de privacidad; fallo ⇒ inconclusive)
+   ─► merge/dedupe ─► EvaluationRun { TaskOutcome, vector, findings, evaluadores, reproducibilidad }
+   ─► artifacts inmutables ─► RegressionCase (humano) ─► BenchmarkRun (N repeticiones) ─► Experiment (deltas, sin ganador)
+```
+
+### 16.1 Componentes
+
+| Componente | Dónde | Rol |
+|---|---|---|
+| `EvaluationSubject`, `buildEvaluationSubject` | `packages/evaluation` | Trayectoria canónica: runs/steps, metadata de snapshots, turnos (inputs y respuestas humanas, ordenados por el reloj temporal), respuestas con la evidencia que cada una vio, observations, ledger, goals/transiciones, esperas, dominio y llamadas grabadas por un harness (opcional, rotulado) |
+| `PostgresTrajectoryReader` | `apps/evaluator` | Llena `TrajectoryRecords` con las APIs de lectura existentes; no escribe (test de conteo de filas) |
+| `FindingTaxonomy` | `packages/evaluation` | 10 categorías (PLATFORM, PROVIDER, MODEL_PROTOCOL, CONTEXT, CAPABILITY, DOMAIN, GOAL, STATE, GOVERNANCE, BEHAVIOR_QUALITY); códigos desde evidencia R4-F; extensible por packs, sin redefinir |
+| `Finding` | `packages/evaluation` | categoría (de la taxonomía) ≠ severidad; fuente determinista/semántica; confianza y rúbrica sólo semánticas; rationale ≤ 280; id estable; sin razonamiento |
+| `TaskOutcome` | `packages/evaluation` | technical / goal / business / quality / governance separados; esperar input es una parada válida |
+| Evaluadores deterministas genéricos | `packages/evaluation/src/evaluators` | protocolo (con forma de salida si hay grabación), resultados de runs y dominio, invariantes de gobierno, afirmaciones respaldadas por receipt (detector del pack), continuidad de goal, continuidad de estado, preguntas ya conocidas, uso de capabilities, eficiencia, composición de contexto |
+| Frontera semántica | `semantic.ts`, `RubricEvaluator`, `GroundingEvaluator` | juez como puerto, rúbricas versionadas, validación estricta, inconclusive honesto |
+| `ModelGatewayJudge` | `apps/evaluator` | juez sobre el `ModelGateway` existente; perfil de evaluador distinto del evaluado |
+| `RegressionCase`, `BenchmarkRun`, `Experiment` | `packages/evaluation` | casos versionados con revisión humana; N repeticiones con resultados individuales y agregados honestos; comparación controlada sin ganador |
+| Sales evaluator pack | `agents/sales/src/evaluations` | taxonomía (`quote_claim_without_receipt`, `quote_figure_not_from_receipt`, `quote_without_catalog_evidence`, `nonexistent_product_or_category_claim`), proyección del workspace, verificador de claims contra el catálogo observado, quote, corrección de presupuesto, preguntas, rúbricas + lock, fixtures, 12 regresiones + lock, corpus y productores |
+| CLIs | `agents/sales/src/cli` | `eval:sales`, `eval:sales:live`, `benchmark:sales`, `experiment:sales`, `regression:promote` |
+
+### 16.2 Qué es determinista y qué semántico
+
+| Pregunta | Cómo se responde |
+|---|---|
+| ¿La decisión respetó el protocolo? ¿dos documentos o texto extra? | Determinista (step log + forma grabada por el harness, nunca el texto) |
+| ¿Hubo efecto sin propuesta, comando sin ALLOW, receipt duplicado, clave cambiada? | Determinista (ledger) |
+| ¿Se afirmó un quote sin receipt visible? ¿el total coincide? | Determinista (detector del pack + receipts) |
+| ¿El goal raíz existe y siguió válido? | Determinista (no premia `manage_goal`) |
+| ¿La corrección reemplazó el valor vigente? | Determinista (transiciones del workspace) |
+| ¿Se preguntó algo ya registrado? | Determinista sólo con clasificación inequívoca; si no, rúbrica |
+| ¿Qué se afirmó en cada respuesta? | Juez (extracción); la verificación contra la evidencia es determinista |
+| ¿Se preservó el objetivo? ¿preguntas innecesarias? ¿timing de writes? ¿elección de capability? | Rúbrica semántica versionada |
+
+### 16.3 Artifacts
+
+`artifacts/evaluations/<ts>/<evaluationRunId>/` (`manifest.json`, `summary.json`,
+`findings.jsonl`, `metrics.json`, `data.json`, `report.md`, `subject.json`),
+`artifacts/benchmarks/<benchmarkRunId>/` (`benchmark/` con `manifest.json`,
+`aggregate.json`, `scenario-results.jsonl`, `report.md`, más una evaluación por
+repetición) y `artifacts/experiments/<id>_<ts>/`. Serialización estable;
+directorios inmutables; privacidad verificada al producir y al escribir.
+Todos ignorados por git.

@@ -11,9 +11,11 @@
     { "path": "packages/agent-registry" },
     { "path": "packages/persistence-postgres" },
     { "path": "packages/agent-kernel" },
+    { "path": "packages/evaluation" },
     { "path": "apps/api" },
     { "path": "apps/worker" },
     { "path": "apps/scheduler" },
+    { "path": "apps/evaluator" },
     { "path": "adapters/domains" },
     { "path": "adapters/models/openai-compatible" },
     { "path": "agents/sales" }

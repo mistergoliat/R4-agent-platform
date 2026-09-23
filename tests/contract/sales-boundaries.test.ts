@@ -32,8 +32,12 @@ const CORE = [...files(join(ROOT, 'packages')), ...files(join(ROOT, 'apps'))];
 const SALES = files(join(ROOT, 'agents/sales/src'));
 const DOMAINS = files(join(ROOT, 'adapters/domains/src'));
 const PROVIDER = files(join(ROOT, 'adapters/models/openai-compatible/src'));
-/** The pack's runtime (what a deployment runs), as opposed to its harness and CLIs. */
-const SALES_RUNTIME = SALES.filter((f) => !/[\\/](harness|cli)[\\/]/.test(f));
+/**
+ * The pack's runtime (what a deployment runs), as opposed to its harness, CLIs
+ * and (R4-G) its post-hoc evaluator pack — which reads durable state and is
+ * never part of what the agent executes (see contract/quality-boundaries).
+ */
+const SALES_RUNTIME = SALES.filter((f) => !/[\\/](harness|cli|evaluations)[\\/]/.test(f));
 
 const noDb = { query: () => Promise.reject(new Error('no database in contract tests')), connect: () => Promise.reject(new Error('no database')) } as never;
 const sales = composeSales({ pool: noDb, domains: createFixtureDomains(), modelProvider: { providerId: 'none', invoke: () => Promise.reject(new Error('unused')) } });
@@ -171,7 +175,7 @@ describe('domain adapters and the provider adapter stay behind their seams', () 
     expect(manifest('adapters/domains')).toEqual([]);
     expect(manifest('adapters/models/openai-compatible')).toEqual(['@r4/contracts', '@r4/model-gateway', 'zod']);
     const salesDeps = manifest('agents/sales');
-    expect(salesDeps.filter((d) => !/^(@r4\/(contracts|observability|model-gateway|capability-runtime|context-compiler|policy-engine|persistence-postgres|agent-kernel|api|worker)|@r4-adapters\/(domains|openai-compatible)|pg|pino|zod)$/.test(d))).toEqual([]);
+    expect(salesDeps.filter((d) => !/^(@r4\/(contracts|observability|model-gateway|capability-runtime|context-compiler|policy-engine|persistence-postgres|agent-kernel|api|worker|evaluation|evaluator)|@r4-adapters\/(domains|openai-compatible)|pg|pino|zod)$/.test(d))).toEqual([]);
     expect(salesDeps).not.toContain('@r4/task-runtime');
   });
 });

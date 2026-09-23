@@ -1,6 +1,6 @@
 ---
 title: R4 — Ownership Matrix
-status: implemented (R4-B … R4-E); R4-F (outside Core, published at 1927499) + planned rows
+status: implemented (R4-B … R4-E); R4-F (outside Core, published at 1927499); R4-G (completed, outside Core execution) + planned rows
 owner: architecture
 last_reviewed: 2026-09-23
 ---
@@ -128,6 +128,26 @@ Ninguna de estas filas es una primitiva de Core: pertenecen al Agent Pack
 | `OpenAICompatibleModelProvider` | `adapters/models/openai-compatible` | Adapter de proveedor (SPI `ModelProvider`) | Sin estado | — | por llamada | — | `unit/sales/openai-compatible-provider`, `integration/sales-reference` |
 | Escenarios S01–S17 + CENTRAL, invariantes, reporte | `agents/sales/src/harness` | Evaluación (semántica, no calidad) | Artifacts locales (`artifacts/`, git-ignored) | — | por ejecución | — | `tests/sales` |
 
+## 1g. R4-G — Quality & Learning (completado; fuera de la ejecución de Core)
+
+**El evaluador no es dueño de la verdad de ejecución.** La trayectoria sigue
+perteneciendo a sus owners (tablas de R4 y del pack); Quality sólo la lee y
+produce evidencia derivada, versionada y reproducible.
+
+| Concepto | Owner (paquete) | Autoridad | Almacenamiento | Mutabilidad | Ciclo de vida | Ante reinicio | Evaluación |
+|---|---|---|---|---|---|---|---|
+| Verdad de trayectoria (steps, observations, ledger, goals, esperas, workspace) | Sus owners de siempre (`task-runtime`, `persistence-postgres`, pack) | Autoridad de plataforma / Evidencia | Tablas existentes (sin copia) | Sin cambios | — | Durable | `integration/evaluation-trajectory` (lectura sin escrituras) |
+| EvaluationSubject | `@r4/evaluation` (forma), `@r4/evaluator` (lector) | Evidencia derivada (proyección de lectura) | En memoria; copia inmutable opcional en `subject.json` | Congelado para los evaluadores | por evaluación | Reconstruible desde BD | `integration/evaluation-trajectory`, `sales/evaluation-durable` |
+| EvaluationRun (TaskOutcome, vector, findings, resultados por evaluador, reproducibilidad) | `@r4/evaluation` (`runEvaluation`) | Evaluación (nunca verdad de ejecución) | Artifacts inmutables (`artifacts/evaluations`) | Inmutable (directorio no se sobrescribe) | por evaluación | Reproducible: subject + definición versionada | `unit/evaluation/*` |
+| Finding | Evaluador que lo emite (id@versión) | Determinista: plataforma; semántico: juicio con confianza y rúbrica | `findings.jsonl` | Inmutable; id por contenido | — | Reproducible | `unit/evaluation/taxonomy-and-findings` |
+| Taxonomía | `@r4/evaluation` (genérica) + packs (extensión) | Configuración versionada | Código | Sólo adición; nunca redefinición | — | — | `unit/evaluation/taxonomy-and-findings` |
+| Salida de evaluador semántico | Juez (modelo) vía `SemanticJudge` | **Juicio no confiable**, validado; nunca anula lo determinista | En el finding (sin razonamiento) | — | — | — | `unit/evaluation/semantic-and-pipeline` |
+| Rúbrica | Pack / `@r4/evaluation` (genéricas) | Configuración (id@versión + hash + lock) | Código | Cambio ⇒ nueva versión | — | — | `unit/sales/evaluation/corpus`, `contract/quality-boundaries` |
+| RegressionCase | Pack (corpus); propuesto por `regression:promote`; activo sólo con revisión humana | Conocimiento revisado | Código (`agents/sales/src/evaluations/regressions.ts` + lock); propuestas en `artifacts/regression-proposals` | Cambio de expectativas ⇒ nueva versión | proposed → active → retired | — | `unit/evaluation/privacy-regression`, `unit/sales/evaluation/corpus` |
+| BenchmarkRun | `@r4/evaluation` (`runBenchmark`) + productor del pack | Evaluación | Artifacts (`artifacts/benchmarks`) con cada repetición | Inmutable | por corrida | Reproducible (fixture/scripted); live registra perfiles | `unit/evaluation/benchmark-experiment`, `unit/sales/evaluation/reference` |
+| Experiment | `@r4/evaluation` (`compareBenchmarks`) | Evaluación (deltas; sin ganador) | Artifacts (`artifacts/experiments`) | Inmutable | por comparación | Reproducible | `unit/evaluation/benchmark-experiment` |
+| Perfil de modelo (evaluado / juez) | Despliegue (config) → `@r4/evaluation` (fingerprint) | Configuración (sin secretos) | En manifests | — | — | — | `contract/quality-boundaries` (golden) |
+
 ## 2. Planificado (sin implementar; owner candidato)
 
 | Concepto | Fase | Owner candidato | Autoridad |
@@ -139,6 +159,7 @@ Ninguna de estas filas es una primitiva de Core: pertenecen al Agent Pack
 | Verificación de identidad (`identityAssurance = verified`) e IAM de operadores | con el primer servicio de identidad | servicio de identidad + plataforma | Plataforma |
 | Artifact | R4-C/E (a decidir) | `artifacts` | Evidencia versionada |
 | Outbox / eventos públicos | con primer consumidor | `persistence-postgres` + `observability` | Plataforma |
-| Evaluation / Finding / FailureCluster | R4-G | `evaluation` | Plataforma + rúbricas de packs |
+| FailureCluster / KnowledgeCandidate / ImprovementProposal | R4-H+ (G implementó Evaluation y Finding, §1g) | `evaluation` | Plataforma + rúbricas de packs |
+| Quality Auditor (agente) | cuando haya volumen de evaluación continua | `agents/quality-auditor` sobre la frontera semántica de G | Juicio (nunca autoridad) |
 | Adapters live de Customer / Catalog / Shipping / Quote | cuando exista contrato público documentado | `adapters/domains/*` | **Dominio** |
 | Adapter de canal (mensajería) y entrega de `respond` | R4-H+ | `adapters/channels/*` | Transporte |

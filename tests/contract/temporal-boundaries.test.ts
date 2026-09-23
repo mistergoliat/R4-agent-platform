@@ -30,7 +30,9 @@ function sources(dir: string): string[] {
   }
   return out;
 }
-const runtimeSources = ['packages', 'apps'].flatMap((root) => sources(join(ROOT, root)));
+// R4-G: post-hoc Quality (packages/evaluation, apps/evaluator) is not runtime: it holds no time authority
+// (its only timer is a judge-call deadline) and has its own boundaries in contract/quality-boundaries.
+const runtimeSources = ['packages', 'apps'].flatMap((root) => sources(join(ROOT, root))).filter((f) => !/[\\/](packages[\\/]evaluation|apps[\\/]evaluator)[\\/]/.test(f));
 const scheduler = sources(join(ROOT, 'apps/scheduler/src')).map(text).join('\n');
 const temporalRuntime = text(join(ROOT, 'packages/task-runtime/src/temporal-runtime.ts'));
 const api = text(join(ROOT, 'apps/api/src/app.ts'));

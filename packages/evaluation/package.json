@@ -1,0 +1,22 @@
+{
+  "name": "@r4/evaluation",
+  "version": "0.0.0",
+  "private": true,
+  "description": "R4-G Quality & Learning framework: post-hoc, read-only evaluation of finished trajectories (EvaluationSubject, findings, taxonomy, outcomes, deterministic and semantic evaluators, regression cases, benchmarks, experiments, artifacts). Domain-neutral and pure: no I/O, no runtime, no model client. Never imported by Core execution.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@r4/contracts": "*",
+    "zod": "^4.6.0"
+  }
+}

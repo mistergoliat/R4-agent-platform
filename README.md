@@ -26,6 +26,12 @@ ningún concepto de ventas ni de proveedor; no hay writes de dominio de
 producción (los servicios reales no están documentados aquí: sus adapters live
 están pendientes).
 
+**R4-G — Quality & Learning** (**completado**; baseline R4-F
+LIVE-VALIDATED `001b7a8`): evaluación post-hoc de trayectorias terminadas —
+findings, taxonomía de fallos, outcomes separados, métricas, grounding,
+regresiones, benchmarks con repeticiones y experimentos — fuera de la ejecución
+de Core y sin modificar agentes (ADR-025, ADR-026).
+
 Lectura obligatoria antes de cambios de arquitectura: [AGENTS.md](AGENTS.md),
 [Constitución](docs/architecture/R4_AGENTIC_PLATFORM_MOTIVATION_AND_CONSTRAINTS.md),
 [PRD](docs/architecture/R4_AGENTIC_PLATFORM_PRD_AND_ROADMAP.md),
@@ -171,6 +177,29 @@ Modelo (configuración de despliegue; la AgentDefinition no tiene proveedor ni s
 | `R4_MODEL_RESPONSE_FORMAT` | `json_object` | `json_object` \| `none` |
 | `R4_MODEL_TEMPERATURE` | — | Opcional |
 
+### Quality & Learning (R4-G, completado)
+
+Evaluación post-hoc de trayectorias terminadas (ADR-025/026): `packages/evaluation`
+(framework puro), `apps/evaluator` (lector durable, artifacts, juez sobre el
+ModelGateway) y el evaluator pack de Sales (`agents/sales/src/evaluations`).
+Nunca dentro del loop del agente; sin score global.
+
+```bash
+npm run build
+npm run eval:sales              # offline: corpus de fixtures + 12 regresiones (sin credenciales)
+npm run eval:sales -- --scripted  # + escenarios reales del harness con modelo scripted (PostgreSQL local)
+npm run benchmark:sales         # S02,S03,S04,S11,CENTRAL × N=3 (fixture); --source scripted|live, --repetitions N
+npm run experiment:sales        # baseline vs candidate (deltas, sin ganador)
+npm run eval:sales:live         # smoke live pequeño (S02 × 1) si hay R4_MODEL_*; si no, "not executed"
+npm run regression:promote -- --evaluation <dir> --finding <id> --id REG-00NN --title "…" --fixture <fixture>
+npm run test:evaluation         # tests de evaluación (unit + contract)
+npm run test:mutation:evaluation
+```
+
+El juez live usa `R4_EVAL_MODEL_*` (mismas variables que `R4_MODEL_*`) o, si no
+está definido, el mismo modelo configurado; ambos perfiles quedan registrados.
+Artifacts en `artifacts/{evaluations,benchmarks,experiments}` (ignorados por git).
+
 ## API smoke
 
 ```bash
@@ -217,7 +246,9 @@ npm run test:unit       # sin dependencias externas
 npm run test:contract   # pureza de Core, fronteras de dependencias, neutralidad de proveedor
 npm run test:integration  # requiere `npm run db:up`; crea y borra BDs efímeras
 npm run test:recovery   # detiene/arranca el contenedor PostgreSQL y mata workers y schedulers reales (SIGKILL, incl. tras un efecto externo y a mitad de una reconciliación); requiere `npm run build`; correr aislado
-npm run test:sales      # (F) escenarios S01–S17 + CENTRAL: modelo scripted, dominio fixture, PostgreSQL real
+npm run test:sales      # (F) escenarios S01–S17 + CENTRAL: modelo scripted, dominio fixture, PostgreSQL real; (G) evaluación de trayectorias durables
+npm run test:evaluation # (G) framework de evaluación + evaluator pack de Sales + fronteras de Quality
+npm run test:mutation:evaluation  # (G) 6 mutaciones de invariantes críticos: todas deben ser detectadas
 npm test                # unit + contract + integration + sales
 npm run check           # build + lint + typecheck + test
 ```
@@ -234,6 +265,7 @@ OpenAI-compatible se prueba con un `fetch` falso).
 apps/api                     HTTP /v1 + composition root + CLI de migraciones
 apps/worker                  worker: claim, lease/heartbeat, kernel (R4-C1); (E) reconciliación despachada
 apps/scheduler               scheduler: schedules durables, wake/dispatch; sin modelo ni capabilities (R4-E)
+apps/evaluator               (G) runtime de evaluación: lector de trayectorias (sólo lectura), artifacts, juez sobre el ModelGateway
 packages/contracts           esquemas/tipos de primitivas
 packages/observability       logs estructurados, correlación, eventos
 packages/model-gateway       ModelGateway + FakeModelProvider
@@ -244,9 +276,10 @@ packages/agent-kernel        loop model → decisión → READ | propose_action 
 packages/context-compiler    contexto estructurado por decisión: sources, autoridad, frescura, budget, compaction (R4-C2)
 packages/policy-engine       autorización determinista de acciones: reglas tipadas, versión + hash (R4-D)
 packages/persistence-postgres  migraciones + stores PostgreSQL
+packages/evaluation          (G) framework de Quality: subject, findings, outcomes, evaluadores, benchmark, experiment (puro, sin dominio)
 agents/platform-probe        agente sonda sin dominio
-agents/sales                 (F) Sales Agent Pack: definición, capabilities, workspace (esquema sales), harness y CLIs — fuera de Core
+agents/sales                 (F) Sales Agent Pack: definición, capabilities, workspace (esquema sales), harness y CLIs — fuera de Core; (G) src/evaluations
 adapters/domains             (F) ports Customer/Catalog/Shipping/Quote + fixtures deterministas; sin dependencia de R4
 adapters/models/openai-compatible  (F) primer ModelProvider real (chat-completions genérico)
-tests/                       unit · contract · integration · recovery · sales
+tests/                       unit · contract · integration · recovery · sales · mutation (G)
 ```

@@ -1,0 +1,25 @@
+{
+  "name": "@r4/evaluator",
+  "version": "0.0.0",
+  "private": true,
+  "description": "R4-G evaluation runtime (composition root, outside Core execution): reads finished trajectories from R4's durable stores (read-only), writes immutable evaluation artifacts and adapts the existing ModelGateway as a semantic judge. Never imported by Core execution.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@r4/contracts": "*",
+    "@r4/context-compiler": "*",
+    "@r4/evaluation": "*",
+    "@r4/model-gateway": "*",
+    "@r4/persistence-postgres": "*"
+  }
+}

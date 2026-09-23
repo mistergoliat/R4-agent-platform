@@ -2,7 +2,7 @@
   "name": "r4-agent-platform",
   "version": "0.0.0",
   "private": true,
-  "description": "R4 Agentic Platform — reusable, CRM-independent agent runtime (R4-B platform skeleton + R4-C1 execution kernel + R4-C2 context compiler + R4-D governed execution + R4-E temporal/human runtime) and, outside Core, the R4-F Sales reference application.",
+  "description": "R4 Agentic Platform — reusable, CRM-independent agent runtime (R4-B platform skeleton + R4-C1 execution kernel + R4-C2 context compiler + R4-D governed execution + R4-E temporal/human runtime) and, outside Core, the R4-F Sales reference application; R4-G Quality & Learning (post-hoc evaluation, outside Core execution).",
   "type": "module",
   "engines": {
     "node": ">=20.19.0"
@@ -24,6 +24,8 @@
     "test:contract": "vitest run --project contract",
     "test:integration": "vitest run --project integration",
     "test:recovery": "vitest run --project recovery",
+    "test:evaluation": "vitest run --project unit tests/unit/evaluation tests/unit/sales/evaluation && vitest run --project contract tests/contract/quality-boundaries.test.ts",
+    "test:mutation:evaluation": "node tests/mutation/evaluation-mutations.mjs",
     "db:up": "docker compose up -d --wait postgres",
     "db:down": "docker compose down",
     "db:migrate": "node apps/api/dist/migrate.js",
@@ -33,7 +35,12 @@
     "test:sales": "vitest run --project sales",
     "sales:migrate": "node agents/sales/dist/cli/migrate.js",
     "sales:e2e": "node agents/sales/dist/cli/e2e.js",
-    "sales:live": "node agents/sales/dist/cli/live.js"
+    "sales:live": "node agents/sales/dist/cli/live.js",
+    "eval:sales": "node agents/sales/dist/cli/eval.js",
+    "eval:sales:live": "node agents/sales/dist/cli/eval.js --live",
+    "benchmark:sales": "node agents/sales/dist/cli/benchmark.js",
+    "experiment:sales": "node agents/sales/dist/cli/experiment.js",
+    "regression:promote": "node agents/sales/dist/cli/promote.js"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

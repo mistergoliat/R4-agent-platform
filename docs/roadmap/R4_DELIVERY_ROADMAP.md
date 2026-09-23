@@ -22,7 +22,7 @@ requiere autorización explícita (AGENTS.md).
 | R4-D | Governed Execution (PRD §40: "Durable Execution") | Completado sobre `67a124a` (gate SIGKILL tras efecto externo verificado) |
 | R4-E | Temporal + Human Runtime (PRD §40: "Human Collaboration + Scheduler") | Completado y publicado (baseline `74ed8e7`) |
 | R4-F | Sales Reference Application | Completado y publicado (R4-F BASELINE `1927499`; fuera de Core, §3.7) |
-| R4-G | Quality & Learning | No iniciado |
+| R4-G | Quality & Learning | Completado (sobre R4-F LIVE-VALIDATED BASELINE `001b7a8`) |
 | R4-H | Shadow Production | No iniciado |
 | R4-I | Governed Production | No iniciado |
 | R4-J | Sales Autonomy | No iniciado |
@@ -379,6 +379,46 @@ hasta tener evidencia comparativa entre modelos. El gate se cerró con
 `deepseek-flash`, thinking habilitado explícitamente
 (`R4_MODEL_EXTRA_BODY`), `R4_MODEL_MAX_OUTPUT_TOKENS=8192`, protocolo v4.
 
+## 3.8 R4-G — Quality & Learning (COMPLETADO)
+
+Pregunta: ¿cómo sabemos sistemáticamente si un agente hizo un buen trabajo,
+por qué falló y si una versión nueva realmente mejora? Diseño:
+[arquitectura §16](../architecture/R4_ARCHITECTURE.md), ADR-025, ADR-026.
+**R4-F LIVE-VALIDATED BASELINE:** `001b7a8181281f3ecd4000d3063d288308953fb5`.
+Sin cambios en Core de ejecución y sin migración (0001–0006 congeladas).
+
+| # | Criterio de salida | Evidencia |
+|---|---|---|
+| 1–2 | EvaluationSubject; trayectoria canónica desde estado durable | `packages/evaluation/src/subject.ts`, `trajectory.ts`; `apps/evaluator/src/trajectory-reader.ts`; `integration/evaluation-trajectory`, `sales/evaluation-durable` |
+| 3 | EvaluationRun versionado | `pipeline.ts` (`r4.evaluation_run.v1`, fingerprint de definición, reproducibilidad) |
+| 4 | TaskOutcome separa technical/goal/business/quality (+ governance) | `outcome.ts`; `unit/evaluation/outcome-metrics-profile` |
+| 5–6 | Findings con categoría/código/severidad/evidencia; taxonomía extensible | `finding.ts`, `taxonomy.ts`; extensión Sales |
+| 7–9 | Evaluadores deterministas; frontera semántica; post-hoc y sólo lectura | `evaluators/*`, `semantic.ts`; `freezeSubject`; `contract/quality-boundaries` |
+| 10 | Grounding: hecho / recomendación / afirmación / relación / entidad inexistente | `GroundingEvaluator` + `SalesClaimVerifier`; REG-0005, REG-0006 |
+| 11 | Goal no depende de `manage_goal` | `GoalContinuityEvaluator`; REG-0010 |
+| 12–13 | Métricas de eficiencia y composición de contexto | `EfficiencyEvaluator`, `ContextCompositionEvaluator` |
+| 14–15 | RegressionCase; regresiones reales codificadas | REG-0001…REG-0012 + lock |
+| 16–18 | Benchmark con repeticiones, resultados individuales, agregados | `benchmark.ts`; `unit/evaluation/benchmark-experiment` |
+| 19–20 | Experiment baseline/candidate; sin score universal | `experiment.ts`; `experiment:sales` |
+| 21 | Learning no modifica agentes | ADR-026; `contract/quality-boundaries` |
+| 22 | Evaluadores Sales fuera del framework | `agents/sales/src/evaluations` (entrada propia) |
+| 23 | CI offline sin credenciales | fixtures + juez scripted + `eval:sales` |
+| 24 | Juez fallido ⇒ inconclusive | `unit/evaluation/semantic-and-pipeline` |
+| 25 | Sin secretos ni razonamiento en artifacts | `assertArtifactSafe`; tests unit y contract |
+| 26 | Metadata de versión/fingerprint | EvaluationRun.reproducibility; golden de fingerprint |
+| 27 | Evaluación de referencia offline | `npm run eval:sales`, `benchmark:sales`, `experiment:sales` |
+| 28–29 | Tests de arquitectura; mutation checks | `contract/quality-boundaries`; `npm run test:mutation:evaluation` (6/6) |
+| 30–33 | A–F verdes; build/lint/typecheck; `git diff --check`; docs | ver informe de auditoría |
+| 34 | Nada de R4-H | sin shadow, sin adapters reales, sin evaluación continua |
+
+**Cambios en tests de fases previas (justificados, ADR-025):** `temporal-boundaries` y
+`governed-execution-boundaries` acotan su escaneo de "runtime" excluyendo
+`packages/evaluation` y `apps/evaluator` (Quality inspecciona texto terminado y
+usa un deadline de juez por diseño; `quality-boundaries` re-verifica ambas reglas
+sobre el runtime); `sales-boundaries` excluye `src/evaluations` del runtime del
+pack y permite `@r4/evaluation`/`@r4/evaluator` como dependencias del pack;
+`dependency-boundaries` agrega las dos entradas del allow-list.
+
 ## 4. Decisiones diferidas intencionalmente
 
 | Tema | Por qué se difiere | Seam existente |
@@ -438,3 +478,10 @@ hasta tener evidencia comparativa entre modelos. El gate se cerró con
 | (F) Presupuesto/optimización de contexto para Sales | Medir primero (ADR-015); el reporte ya da tokens por kind y fuente | `report.context`, `context_snapshot_items` |
 | (F) Prompt de ventas óptimo, jerarquía óptima de goals, scoring de calidad, subagentes especialistas | Requieren evidencia de R4-G | escenarios + `sales:live` artifacts |
 | (F) Identidad de cliente productiva | Sin servicio de identidad; binding provisional del ingress | `sales.conversations`, `customer.get_context` |
+| (G) Tokens de razonamiento en `ModelUsage` | Tocaría C1/contratos; ningún proveedor los expone hoy por el adapter | `ModelCallRecord.reasoningTokens` (null = no expuesto) |
+| (G) FailureCluster, KnowledgeCandidate, ImprovementProposal | Requieren volumen real (R4-H); hoy dedupe simple + agregados por código | `findings.jsonl`, `aggregate.json` |
+| (G) Quality Auditor como Agent Pack | Sin necesidad antes de evaluación continua | `SemanticJudge` + rúbricas versionadas |
+| (G) Persistencia de evaluaciones en BD | Sin consumidor operacional (ADR-026) | artifacts con manifest |
+| (G) Calculadora de costos | Precios no pertenecen a Core; se registran tokens y llamadas | métricas de eficiencia |
+| (G) Benchmark live grande / comparación de proveedores | Costo; se preparó el seam y se limita N live ≤ 3 sin `--allow-large` | `benchmark:sales --source live` |
+| (G) Reparación de prompt de Sales por findings | Prohibido en G: el evaluador debe ver los defectos actuales | RegressionCase → cambio externo → Experiment |

@@ -58,6 +58,12 @@ const ALLOWED: Record<string, string[]> = {
   // time — no model gateway, no capability runtime, no policy engine, no kernel,
   // no context compiler, and never the worker app.
   '@r4/scheduler': ['@r4/contracts', '@r4/observability', '@r4/persistence-postgres', '@r4/task-runtime', 'pino', 'zod'],
+  // R4-G (ADR-025): the evaluation framework is pure — contracts and zod only.
+  '@r4/evaluation': ['@r4/contracts', 'zod'],
+  // R4-G: the evaluation runtime reads durable state (read APIs of the stores), writes artifacts
+  // and adapts the existing ModelGateway as a judge. Never the kernel, the task/capability
+  // runtimes, the registry, the policy engine, the worker or the API.
+  '@r4/evaluator': ['@r4/contracts', '@r4/context-compiler', '@r4/evaluation', '@r4/model-gateway', '@r4/persistence-postgres'],
 };
 
 describe('dependency boundaries', () => {
@@ -121,6 +127,17 @@ describe('dependency boundaries', () => {
     for (const name of ['@r4/task-runtime', '@r4/capability-runtime', '@r4/agent-registry', '@r4/model-gateway', '@r4/agent-kernel', '@r4/context-compiler']) {
       expect(deps(name)).not.toContain('pg');
       expect(deps(name)).not.toContain('@r4/persistence-postgres');
+    }
+  });
+
+  it('keeps Core execution independent of Quality (R4-G, ADR-025)', () => {
+    for (const name of [...all.keys()].filter((n) => n !== '@r4/evaluation' && n !== '@r4/evaluator')) {
+      expect(deps(name), name).not.toContain('@r4/evaluation');
+      expect(deps(name), name).not.toContain('@r4/evaluator');
+    }
+    for (const forbidden of ['@r4/agent-kernel', '@r4/task-runtime', '@r4/capability-runtime', '@r4/agent-registry', '@r4/policy-engine', '@r4/worker', '@r4/api', '@r4/scheduler']) {
+      expect(deps('@r4/evaluation')).not.toContain(forbidden);
+      expect(deps('@r4/evaluator')).not.toContain(forbidden);
     }
   });
 
