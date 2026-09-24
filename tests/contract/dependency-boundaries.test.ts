@@ -39,8 +39,10 @@ const ALLOWED: Record<string, string[]> = {
   '@r4/task-runtime': ['@r4/contracts', '@r4/observability', 'zod'],
   '@r4/agent-registry': ['@r4/contracts', '@r4/observability', 'zod'],
   // R4-C2: persistence also implements the context compiler's MemoryReader port.
-  '@r4/persistence-postgres': ['@r4/contracts', '@r4/observability', '@r4/task-runtime', '@r4/agent-registry', '@r4/capability-runtime', '@r4/context-compiler', 'pg'],
-  '@r4/api': ['@r4/contracts', '@r4/observability', '@r4/task-runtime', '@r4/agent-registry', '@r4/persistence-postgres', 'fastify', 'pino', 'zod'],
+  // R4-I: persistence also implements the production store port (0007).
+  '@r4/persistence-postgres': ['@r4/contracts', '@r4/observability', '@r4/task-runtime', '@r4/agent-registry', '@r4/capability-runtime', '@r4/context-compiler', '@r4/live-ops', 'pg'],
+  // R4-I: the API also hosts the production operator plane (API-only).
+  '@r4/api': ['@r4/contracts', '@r4/observability', '@r4/task-runtime', '@r4/agent-registry', '@r4/persistence-postgres', '@r4/live-ops', 'fastify', 'pino', 'zod'],
   // R4-C1 (ADR-009): the kernel sees models only through the gateway interface
   // and state/capabilities only through its KernelSession port.
   '@r4/agent-kernel': ['@r4/contracts', '@r4/observability', '@r4/model-gateway', 'zod'],
@@ -67,6 +69,13 @@ const ALLOWED: Record<string, string[]> = {
   // R4-H (ADR-027): the shadow framework is pure and composes over Quality (it evaluates with R4-G) and the
   // ModelProvider SPI (its call recorder wraps a provider). Never a runtime, persistence, the worker, the API or the scheduler.
   '@r4/shadow': ['@r4/contracts', '@r4/evaluation', '@r4/model-gateway', 'zod'],
+  // R4-I (ADR-029): governed production composes over the task runtime (canonical ingress, holds) and the context
+  // compiler's ContextSource port; persistence only through its own port. Never a model, capability runtime, kernel,
+  // policy engine, Quality, Shadow, an app or a driver.
+  '@r4/live-ops': ['@r4/contracts', '@r4/observability', '@r4/task-runtime', '@r4/context-compiler', 'zod'],
+  // R4-I: the channel gateway is a composition root that owns only the channel boundary (webhooks + delivery):
+  // no model gateway, capability runtime, kernel, context compiler, policy engine, worker or API.
+  '@r4/channel-gateway': ['@r4/contracts', '@r4/observability', '@r4/task-runtime', '@r4/agent-registry', '@r4/persistence-postgres', '@r4/live-ops', 'fastify', 'pino', 'zod'],
 };
 
 describe('dependency boundaries', () => {

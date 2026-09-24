@@ -1,0 +1,29 @@
+{
+  "name": "@r4/channel-gateway",
+  "version": "0.0.0",
+  "private": true,
+  "description": "R4-I channel gateway: the production process that owns the channel boundary — provider webhooks (verification, authentication, canonical ingress) and the delivery dispatcher (the single owner of external message delivery). Composition root; channel adapters, production profile and task factory are plugged in by the deploying pack. No model, capability runtime or kernel.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@r4/agent-registry": "*",
+    "@r4/contracts": "*",
+    "@r4/observability": "*",
+    "@r4/persistence-postgres": "*",
+    "@r4/live-ops": "*",
+    "@r4/task-runtime": "*",
+    "fastify": "^5.12.0",
+    "pino": "^10.3.0",
+    "zod": "^4.6.0"
+  }
+}

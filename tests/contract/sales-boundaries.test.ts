@@ -175,8 +175,10 @@ describe('domain adapters and the provider adapter stay behind their seams', () 
     const manifest = (path: string) => Object.keys((JSON.parse(readFileSync(join(ROOT, path, 'package.json'), 'utf8')) as { dependencies?: Record<string, string> }).dependencies ?? {}).sort();
     expect(manifest('adapters/domains')).toEqual([]);
     expect(manifest('adapters/models/openai-compatible')).toEqual(['@r4/contracts', '@r4/model-gateway', 'zod']);
+    // R4-I: the channel adapter depends only on the channel-neutral contracts.
+    expect(manifest('adapters/channels/whatsapp-cloud')).toEqual(['@r4/live-ops']);
     const salesDeps = manifest('agents/sales');
-    expect(salesDeps.filter((d) => !/^(@r4\/(contracts|observability|model-gateway|capability-runtime|context-compiler|policy-engine|persistence-postgres|agent-kernel|api|worker|evaluation|evaluator|scheduler|shadow)|@r4-adapters\/(domains|openai-compatible)|pg|pino|zod)$/.test(d))).toEqual([]);
+    expect(salesDeps.filter((d) => !/^(@r4\/(contracts|observability|model-gateway|capability-runtime|context-compiler|policy-engine|persistence-postgres|agent-kernel|api|worker|evaluation|evaluator|scheduler|shadow|live-ops|channel-gateway)|@r4-adapters\/(domains|openai-compatible|whatsapp-cloud)|pg|pino|zod)$/.test(d))).toEqual([]);
     expect(salesDeps).not.toContain('@r4/task-runtime');
   });
 });

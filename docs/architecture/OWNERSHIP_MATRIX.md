@@ -1,6 +1,6 @@
 ---
 title: R4 — Ownership Matrix
-status: implemented (R4-B … R4-E); R4-F (outside Core, published at 1927499); R4-G (completed, outside Core execution); R4-H Shadow / E2E (IN PROGRESS, outside Core execution) + planned rows
+status: implemented (R4-B … R4-E); R4-F (outside Core, published at 1927499); R4-G (completed, outside Core execution); R4-H Shadow / E2E (CLOSED, outside Core execution); ADR-028 (RESOLVED); R4-I Governed Production (IN PROGRESS, outside Core execution) + planned rows
 owner: architecture
 last_reviewed: 2026-09-24
 ---
@@ -186,6 +186,28 @@ nueva.
 | Handoff de plataforma (`initiatedBy: platform`, `reason`) | `task-runtime` (`TemporalRuntime.handOffAfterRunFailureWithin`) | Plataforma (solicitud); humano (decisión) | `human_requests` (payload jsonb existente) | Transiciones de handoff de R4-E | `requested → active → released`, `→ cancelled` | Durable | `integration/run-failure-recovery`, `shadow/shadow-suite` (H08C, H08D) |
 | Métricas de recuperación | `@r4/evaluation` (`r4.execution_outcomes` v2) | Evaluación (nunca inicia recuperación) | Artifacts | Inmutable | por evaluación | Reproducible | `unit/task-runtime/run-failure-recovery` |
 
+## 1j. R4-I — Governed Production (en progreso; fuera de la ejecución de Core)
+
+**El adapter de canal no es dueño de Task, Goal, AgentDecision ni del
+SalesWorkspace**: sólo traduce transporte. Existe exactamente UN dueño del
+ciclo de vida de la entrega externa (`OutboundDeliveryRuntime`); ni el kernel,
+ni el pack, ni el webhook, ni el worker envían (ADR-029).
+
+| Concepto | Owner (paquete) | Autoridad | Almacenamiento | Mutabilidad | Ciclo de vida | Ante reinicio | Evaluación |
+|---|---|---|---|---|---|---|---|
+| Evento inbound del proveedor | Adapter de canal (traduce) → `ChannelIngress` (`@r4/live-ops`) | Evidencia (dedupe por identidad del proveedor) | `inbound_events` (UNIQUE canal+id; texto y dirección borrados al asentarse) | received → ingested \| failed \| rejected; contador de re-entregas | por evento | `received` sin asentar ⇒ reanudado por el gateway | `integration/live-ops-hardening` |
+| Input canónico | `task-runtime` (`TemporalRuntime.submitInput` / `createTaskWithInput`) | Evidencia (CONVERSATIONAL) | `task_inputs` + `memory_entries` (sin cambio) | Write-once | — | Durable | `integration/live-ops-reference` |
+| Binding conversación → task | `@r4/live-ops` (`ChannelIngress`) | Autoridad de plataforma (integración, no Core) | `channel_conversation_bindings` (1 abierta por conversación; 1 por task) | open → closed (trabajo terminal) | la elegibilidad de rollout se fija al abrir | Durable | `integration/live-ops-hardening` |
+| Hold de plataforma | `task-runtime` (`TemporalRuntime.holdForHumansWithin`) | Plataforma (solicitud); humano (decisión) | `human_requests` (handoff, `initiatedBy: platform`, razón) | Transiciones de handoff de E | requested → active → released | Durable | `integration/live-ops-reference` |
+| Respuesta aceptada (`respond`) | Modelo (propone), kernel (valida), `task-runtime` (step) | Cognición validada — **no** entregada | `agent_run_steps` (sin cambio) | Inmutable | — | Durable | `contract/live-ops-boundaries` |
+| OutboundMessage | `OutboundDeliveryRuntime` (`@r4/live-ops`) | Autoridad de plataforma (único dueño de la entrega) | `outbound_messages` (UNIQUE response step; clave `r4-out:<step>`) | pending → dispatching → accepted → delivered → read; failed; unknown; cancelled (monótono) | por respuesta u operador | `dispatching` con lease vencida ⇒ `unknown` (nunca reenviado) | `integration/live-ops-*`, `recovery/live-ops-process-crash` |
+| Intento de entrega | `OutboundDeliveryRuntime` | Evidencia operacional | `outbound_delivery_attempts` (fila antes de la llamada) | outcome una vez | por submission | intento sin outcome = desconocido | `integration/live-ops-hardening` |
+| Estado de entrega del proveedor | Adapter (traduce) → `OutboundDeliveryRuntime` (aplica) | Evidencia del proveedor | `outbound_delivery_events` (UNIQUE clave de evento; append-only) | aplicado / ignorado / sin match (se aplica una vez al conocerse el id) | por callback | Durable | `unit/live-ops/delivery`, `integration/live-ops-hardening` |
+| Rollout de producción | Configuración de despliegue (`R4_PROD_ROLLOUT_*`) → `@r4/live-ops` | Configuración (hashes; fingerprint en cada binding) | Entorno | Por proceso | default 0 % | Se re-lee; bindings conservan su decisión | `unit/live-ops/mode-profile-rollout` |
+| Kill switch (`autonomy_controls`) | `AutonomyControls` (`@r4/live-ops`) | Autoridad de operador (scope `autonomy.control`) | `autonomy_controls` + `autonomy_control_events` (append-only) | versión +1 por cambio | nace DESHABILITADO | Sin caché; ilegible = deshabilitado | `integration/live-ops-reference`, `contract/live-ops-boundaries` |
+| Perfil de producción | Pack (`agents/sales/src/production/profile.ts`) | Configuración versionada (id@versión + fingerprint) | Código; fingerprint en bindings y outbound | Cambio ⇒ nueva versión | — | — | `contract/live-ops-boundaries` |
+| Canal WhatsApp (canary) | `@r4-adapters/whatsapp-cloud` | Adapter de proveedor (transporte) | Sin estado | — | por llamada | — | `unit/live-ops/whatsapp-adapter` |
+
 ## 2. Planificado (sin implementar; owner candidato)
 
 | Concepto | Fase | Owner candidato | Autoridad |
@@ -200,4 +222,5 @@ nueva.
 | FailureCluster / KnowledgeCandidate / ImprovementProposal | post-H (G implementó Evaluation y Finding, §1g; H sólo observaciones conservadoras, §1h) | `evaluation` | Plataforma + rúbricas de packs |
 | Quality Auditor (agente) | cuando haya volumen de evaluación continua | `agents/quality-auditor` sobre la frontera semántica de G | Juicio (nunca autoridad) |
 | Adapters live de Customer / Catalog / Shipping / Quote | cuando exista contrato documentado + endpoint + credencial configurados en R4 (H soporta `live-read` en el framework; ninguno disponible, §1h) | `adapters/domains/*` | **Dominio** |
-| Adapter de canal (mensajería) y entrega de `respond` | R4-I+ (H sólo registra en `ShadowOutboundSink`, sin entrega) | `adapters/channels/*` | Transporte |
+| Adapters de canal adicionales (Instagram, web chat, voz) | R4-L | `adapters/channels/*` | Transporte |
+| Paridad de la UI de operadores del CRM sobre las APIs de R4 (bloqueante antes de migrar el número productivo) | antes de migrar el número productivo | UI del CRM consumiendo `/v1/production/*` y `/v1/tasks/:id/thread` | Humano (operación) |

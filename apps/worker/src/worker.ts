@@ -15,7 +15,19 @@ export interface WorkerOptions {
   readonly pollIntervalMs: number;
   /** (R4-E) Settles due reconciliation of uncertain effects before any task is claimed. */
   readonly reconciler?: Reconciler;
+  /**
+   * (R4-I) Operational admission of new autonomous work, asked before every
+   * claim (never mid-run). Refused ⇒ this cycle claims nothing (reconciliation
+   * of uncertain effects still runs first). A failure to decide counts as
+   * refused: admission fails closed.
+   */
+  readonly admission?: WorkerAdmission;
   readonly logger: StructuredLogger;
+}
+
+/** (R4-I) Whether new autonomous work may be claimed now (e.g. an operator kill switch). */
+export interface WorkerAdmission {
+  admit(): Promise<{ readonly admitted: boolean; readonly reason: string }>;
 }
 
 export type WorkerCycle =
@@ -47,6 +59,7 @@ export class Worker {
   #stopping = false;
   #current: AbortController | null = null;
   #wake: (() => void) | null = null;
+  #refusedReason: string | null = null;
 
   constructor(options: WorkerOptions) {
     this.#options = options;
@@ -97,6 +110,7 @@ export class Worker {
       const reconciled = await reconciler.runOnce();
       if (reconciled.kind === 'reconciled') return reconciled;
     }
+    if (!(await this.#admitted())) return { kind: 'idle' };
     const claim = await execution.claimNext({ workerId, leaseDurationMs });
     if (!claim) return { kind: 'idle' };
     if (claim.kind === 'abandoned') return { kind: 'abandoned', taskId: claim.task.taskId, runId: claim.run.runId };
@@ -117,6 +131,21 @@ export class Worker {
       heartbeat.stop();
       this.#current = null;
     }
+  }
+
+  /** Telemetry only on a change of admission state (a refused worker polls quietly). */
+  async #admitted(): Promise<boolean> {
+    const { admission, logger, workerId } = this.#options;
+    if (!admission) return true;
+    const decision = await admission.admit().catch((error: unknown) => ({ admitted: false, reason: `admission_unavailable:${describe(error).message as string}`.slice(0, 120) }));
+    if (decision.admitted) {
+      if (this.#refusedReason !== null) emitTelemetry(logger, 'worker.admission.restored', { workerId, previousReason: this.#refusedReason });
+      this.#refusedReason = null;
+      return true;
+    }
+    if (this.#refusedReason !== decision.reason) emitTelemetry(logger, 'worker.admission.refused', { workerId, reason: decision.reason });
+    this.#refusedReason = decision.reason;
+    return false;
   }
 
   async #afterInterruption(lease: TaskLease, runId: string, cause: KernelInterrupt['interruption']): Promise<void> {

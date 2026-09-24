@@ -2,7 +2,7 @@
   "name": "@r4-sales/agent",
   "version": "0.0.0",
   "private": true,
-  "description": "R4-F Sales Reference Application: the Sales Agent Pack (definition, instructions, capabilities over domain ports, Sales workspace state, context source, action policy) plus its conversational E2E and live behavioral harnesses and (R4-G) its evaluator pack, fixtures, regression corpus and evaluation CLIs, and (R4-H) its shadow workload corpus, shadow domain bindings and shadow suite CLI. A workload on R4 — never a dependency of R4 Core.",
+  "description": "R4-F Sales Reference Application: the Sales Agent Pack (definition, instructions, capabilities over domain ports, Sales workspace state, context source, action policy) plus its conversational E2E and live behavioral harnesses and (R4-G) its evaluator pack, fixtures, regression corpus and evaluation CLIs, and (R4-H) its shadow workload corpus, shadow domain bindings and shadow suite CLI. A workload on R4 — never a dependency of R4 Core, and (R4-I) its production composition (profile, conservative action policy, canary WhatsApp gateway bindings) and production validation CLI.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -18,6 +18,10 @@
     "./shadow": {
       "types": "./dist/shadow/index.d.ts",
       "import": "./dist/shadow/index.js"
+    },
+    "./production": {
+      "types": "./dist/production/index.d.ts",
+      "import": "./dist/production/index.js"
     }
   },
   "files": [
@@ -28,9 +32,11 @@
   "dependencies": {
     "@r4-adapters/domains": "*",
     "@r4-adapters/openai-compatible": "*",
+    "@r4-adapters/whatsapp-cloud": "*",
     "@r4/agent-kernel": "*",
     "@r4/api": "*",
     "@r4/capability-runtime": "*",
+    "@r4/channel-gateway": "*",
     "@r4/context-compiler": "*",
     "@r4/contracts": "*",
     "@r4/evaluation": "*",
@@ -39,6 +45,7 @@
     "@r4/observability": "*",
     "@r4/persistence-postgres": "*",
     "@r4/policy-engine": "*",
+    "@r4/live-ops": "*",
     "@r4/scheduler": "*",
     "@r4/shadow": "*",
     "@r4/worker": "*",

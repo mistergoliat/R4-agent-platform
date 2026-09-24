@@ -1,0 +1,25 @@
+{
+  "name": "@r4-adapters/whatsapp-cloud",
+  "version": "0.0.0",
+  "private": true,
+  "description": "R4-I channel adapter for the WhatsApp Business Platform Cloud API (Meta): webhook verification, X-Hub-Signature-256 authentication, canonicalization of messages and delivery statuses, and honest text submission. Semantics ported from the CRM-Customer-360 native WhatsApp integration (audited, never imported). Outside R4 Core: Core only knows the channel-neutral contracts of @r4/live-ops.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@r4/live-ops": "*"
+  }
+}

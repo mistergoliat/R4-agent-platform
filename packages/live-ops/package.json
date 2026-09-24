@@ -1,0 +1,25 @@
+{
+  "name": "@r4/live-ops",
+  "version": "0.0.0",
+  "private": true,
+  "description": "R4-I Governed Production: explicit fail-closed production mode, versioned production profile (declared domain bindings, capability availability, write decisions), stable rollout cohorts, durable autonomy controls (kill switch), channel-neutral ingress/egress contracts, the canonical channel ingress, and the single owner of external message delivery (durable outbound identity, fenced dispatch, unknown outcomes, provider status reconciliation). Channel- and domain-neutral; no provider or network code.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@r4/context-compiler": "*",
+    "@r4/contracts": "*",
+    "@r4/observability": "*",
+    "@r4/task-runtime": "*",
+    "zod": "^4.6.0"
+  }
+}

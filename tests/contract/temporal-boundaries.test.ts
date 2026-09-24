@@ -67,7 +67,9 @@ describe('the scheduler owns time, nothing else', () => {
 
   it('never uses an in-memory timer as authority: the only timers pace polling', () => {
     const timers = runtimeSources.filter((f) => /setTimeout|setInterval/.test(text(f))).map(rel).sort();
-    expect(timers).toEqual(['apps/scheduler/src/scheduler.ts', 'apps/worker/src/worker.ts', 'packages/capability-runtime/src/action-executor.ts', 'packages/capability-runtime/src/invoker.ts', 'packages/model-gateway/src/gateway.ts'].filter((f) => timers.includes(f)));
+    // R4-I: the channel gateway (inbound resume pacing) and the delivery dispatcher (poll pacing) only pace polling;
+    // delivery leases and holds are judged on the database clock.
+    expect(timers).toEqual(['apps/channel-gateway/src/platform.ts', 'apps/scheduler/src/scheduler.ts', 'apps/worker/src/worker.ts', 'packages/capability-runtime/src/action-executor.ts', 'packages/capability-runtime/src/invoker.ts', 'packages/live-ops/src/outbound.ts', 'packages/model-gateway/src/gateway.ts'].filter((f) => timers.includes(f)));
     for (const file of ['packages/task-runtime/src/temporal-runtime.ts', 'packages/task-runtime/src/action-runtime.ts', 'apps/worker/src/session.ts']) expect(text(join(ROOT, file))).not.toMatch(/setTimeout|setInterval/);
   });
 });

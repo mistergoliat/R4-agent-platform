@@ -14,6 +14,7 @@ import {
 } from '@r4/contracts';
 import type { AgentRegistry } from '@r4/agent-registry';
 import type { TaskRuntime, TemporalRuntime } from '@r4/task-runtime';
+import type { ProductionOperator } from '@r4/live-ops';
 import { resolveCorrelationId, runWithCorrelation } from '@r4/observability';
 import { toErrorResponse } from './errors.js';
 import { unauthenticatedPrincipalResolver, type PrincipalResolver } from './principal.js';
@@ -32,6 +33,8 @@ export interface AppDependencies {
   readonly temporal?: TemporalRuntime;
   /** Auth adapter seam: absent by default; no header/body impersonation fallback. */
   readonly humanContext?: (request: FastifyRequest) => TrustedHumanContext | null;
+  /** (R4-I) Operator plane of production conversations (thread, delivery, manual reply, autonomy controls). */
+  readonly production?: ProductionOperator;
 }
 
 export const CORRELATION_HEADER = 'x-correlation-id';
@@ -208,6 +211,87 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         return { schedule: await temporal.rescheduleReconciliation(id, parse(responseKeyBody, request.body ?? undefined, 'body'), human(request)) };
       }),
     );
+
+    if (deps.production) {
+      // R4-I operator plane (API-only): the proven operator semantics of the channel operation, on R4's owners.
+      const production = deps.production;
+      const outboundParams = z.strictObject({ id: uuidSchema });
+      const threadQuery = z.strictObject({ after: z.string().min(1).max(200).optional() });
+      const listQuery = z.strictObject({ limit: z.coerce.number().int().min(1).max(500).optional() });
+      app.get('/v1/production/conversations', (request) =>
+        inContext(request, async () => {
+          human(request);
+          return { conversations: await production.conversations(parse(listQuery, request.query, 'query').limit) };
+        }),
+      );
+      app.get('/v1/production/attention', (request) =>
+        inContext(request, async () => {
+          human(request);
+          return production.attention();
+        }),
+      );
+      app.get('/v1/production/metrics', (request) =>
+        inContext(request, async () => {
+          human(request);
+          return { metrics: await production.metrics() };
+        }),
+      );
+      app.get('/v1/production/controls', (request) =>
+        inContext(request, async () => {
+          human(request);
+          return production.controls();
+        }),
+      );
+      app.post('/v1/production/controls', (request) =>
+        inContext(request, async () => {
+          const body = parse(z.strictObject({ scope: z.string().min(1).max(80), autonomyEnabled: z.boolean(), reason: z.string().trim().min(1).max(500) }), request.body ?? undefined, 'body');
+          return { control: await production.setControl(body, human(request)) };
+        }),
+      );
+      // Thread with an incremental cursor: operators poll for new entries (the channel operation's "live" thread).
+      app.get('/v1/tasks/:id/thread', (request) =>
+        inContext(request, async () => {
+          human(request);
+          const { id } = parse(taskParams, request.params, 'path');
+          return production.thread(id, parse(threadQuery, request.query, 'query').after);
+        }),
+      );
+      app.get('/v1/tasks/:id/outbound', (request) =>
+        inContext(request, async () => {
+          human(request);
+          return { outbound: await production.outboundForTask(parse(taskParams, request.params, 'path').id) };
+        }),
+      );
+      app.get('/v1/outbound/:id', (request) =>
+        inContext(request, async () => {
+          human(request);
+          return production.outbound(parse(outboundParams, request.params, 'path').id);
+        }),
+      );
+      // Manual reply: takes human ownership (if needed), supersedes pending agent sends, queues the operator's text.
+      app.post('/v1/tasks/:id/operator-messages', (request, reply) =>
+        inContext(request, async () => {
+          const { id } = parse(taskParams, request.params, 'path');
+          const body = parse(z.strictObject({ responseKey: z.string().min(1).max(128), text: z.string().trim().min(1).max(4096) }), request.body ?? undefined, 'body');
+          const result = await production.manualReply(id, body, human(request));
+          return reply.status(result.replayed ? 200 : 201).send(result);
+        }),
+      );
+      // Settles an UNKNOWN delivery outcome with out-of-band evidence (never a resend).
+      app.post('/v1/outbound/:id/resolve', (request) =>
+        inContext(request, async () => {
+          const { id } = parse(outboundParams, request.params, 'path');
+          const body = parse(z.strictObject({ outcome: z.enum(['delivered', 'failed']), note: z.string().trim().min(1).max(1000) }), request.body ?? undefined, 'body');
+          return { outbound: await production.resolveOutbound(id, body, human(request)) };
+        }),
+      );
+      app.post('/v1/outbound/:id/cancel', (request) =>
+        inContext(request, async () => {
+          parse(z.strictObject({}), request.body ?? {}, 'body');
+          return { outbound: await production.cancelOutbound(parse(outboundParams, request.params, 'path').id, human(request)) };
+        }),
+      );
+    }
   }
 
   return app;

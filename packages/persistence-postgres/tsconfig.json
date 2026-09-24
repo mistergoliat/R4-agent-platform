@@ -26,6 +26,9 @@
     },
     {
       "path": "../context-compiler"
+    },
+    {
+      "path": "../live-ops"
     }
   ]
 }

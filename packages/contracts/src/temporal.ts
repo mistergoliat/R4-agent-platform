@@ -66,7 +66,8 @@ export type GoalRejectionCode = (typeof GOAL_REJECTION_CODES)[number];
 // Trusted inputs (constructed by trusted layers, never by a model)
 // ---------------------------------------------------------------------------
 
-export const HUMAN_SCOPES = ['consultation.answer', 'approval.decide', 'handoff.manage', 'task.cancel', 'reconciliation.manage'] as const;
+// (R4-I) `autonomy.control`: change the operational autonomy controls (kill switch).
+export const HUMAN_SCOPES = ['consultation.answer', 'approval.decide', 'handoff.manage', 'task.cancel', 'reconciliation.manage', 'autonomy.control'] as const;
 export type HumanScope = (typeof HUMAN_SCOPES)[number];
 
 /**

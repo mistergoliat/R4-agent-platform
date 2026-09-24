@@ -1,6 +1,6 @@
 ---
 title: R4 — Arquitectura implementada (R4-B + R4-C1 + R4-C2 + R4-D + R4-E), R4-F (Sales Reference Application), R4-G y R4-H
-status: implemented (R4-B … R4-E, published at 74ed8e7); R4-F published at 1927499 (R4-F BASELINE); R4-G Quality & Learning COMPLETED (on 001b7a8); R4-H Shadow / E2E IN PROGRESS (on 4a54b2c)
+status: implemented (R4-B … R4-E, published at 74ed8e7); R4-F published at 1927499 (R4-F BASELINE); R4-G Quality & Learning COMPLETED (on 001b7a8); R4-H Shadow / E2E CLOSED; GAP-H-001 / ADR-028 RESOLVED (dd06a68); R4-I Governed Production IN PROGRESS (on dd06a68, pending audit)
 owner: architecture
 last_reviewed: 2026-09-24
 depends_on:
@@ -33,6 +33,8 @@ depends_on:
   - ../adr/ADR-025-post-hoc-evaluation-boundary.md
   - ../adr/ADR-026-learning-as-regression-knowledge.md
   - ../adr/ADR-027-shadow-execution-boundary.md
+  - ../adr/ADR-028-recoverable-run-failures.md
+  - ../adr/ADR-029-governed-production-channel-delivery-rollout.md
 ---
 
 # R4 — Arquitectura implementada (R4-B + R4-C1 + R4-C2 + R4-D + R4-E) y R4-F
@@ -50,7 +52,10 @@ anteriores sin moverlas. La sección 16 describe R4-G (Quality & Learning,
 completado): evaluación post-hoc de trayectorias terminadas, fuera de la
 ejecución de Core. La sección 17 describe R4-H (Shadow / E2E, en progreso):
 workloads realistas sobre el runtime real con modelo real y efectos sólo
-shadow, evaluados por R4-G.
+shadow, evaluados por R4-G. La sección 18 describe la corrección post-H
+(ADR-028) y la 19 R4-I (Governed Production, en progreso): frontera de canal,
+entrega durable e idempotente, rollout y kill switch, fuera de la ejecución
+de Core salvo operaciones genéricas mínimas del Task/Temporal Runtime.
 
 ## 1. Objetivo de R4-B
 
@@ -1399,3 +1404,91 @@ Quality (`r4.execution_outcomes` v2) mide `recoverableRunFailures`,
 
 **Pendiente para R4-I (no resuelto):** un `respond` entregado por un canal
 real antes de un fallo podría repetirse en la run de recuperación.
+
+
+**Resuelto en R4-I (ADR-029, §19):** la identidad de la respuesta es su step;
+una run de recuperación nunca re-despacha un outbound existente y una
+respuesta idéntica a una viva nace cancelada (`duplicate_content`).
+
+## 19. R4-I — Governed Production (en progreso — pendiente de auditoría)
+
+Pregunta: ¿puede R4 operar contra usuarios e integraciones reales bajo una
+frontera de producción explícita, reversible y auditable, sin perder
+idempotencia, ownership humano, privacidad ni control de efectos? Diseño:
+ADR-029. Prerrequisito: [auditoría del WhatsApp de CRM-Customer-360](R4-I_CRM_WHATSAPP_AUDIT.md).
+Baseline: R4 POST-H RECOVERY BASELINE `dd06a68`. Migración nueva: 0007
+(0001–0006 intactas). Protocolo `r4.agent_decision.v4`, kernel, parser y
+gateway de modelo sin cambio.
+
+```text
+Meta (número canary) ─► apps/channel-gateway: webhook ─► WhatsAppInboundAdapter (firma, canonicaliza)
+   ─► ChannelIngress: inbound_events (UNIQUE provider id) ─► ConversationBinding (1 abierta por conversación)
+   ─► decideInboundAutonomy (kill switch > deny > rollout > contenido) ─► TemporalRuntime.createTaskWithInput | submitInput
+        └─ hold? ─► handoff de plataforma (blocked, /v1/attention): el input queda durable, sin trabajo autónomo
+   ─► worker de producción (admisión = kill switch) ─► kernel ─► respond (step durable)          ← Core sin cambio
+   ─► OutboundDeliveryRuntime (único dueño): materialize (1 por step) ─► claim SKIP LOCKED + lease + generación
+        ─► decideDispatch (gate) ─► intento durable ─► WhatsAppOutboundAdapter.submit (una vez)
+        ─► accepted | not_sent (reintento acotado) | rejected | unknown (nunca reintento ciego)
+   ─► status callbacks ─► outbound_delivery_events (idempotentes) ─► statusAfterEvidence (monótono)
+   ─► DeliveryStateContextSource ─► la cognición siguiente sabe qué NO se confirmó
+   ─► R4-G post-hoc sobre la misma verdad durable
+```
+
+### 19.1 Componentes
+
+| Componente | Dónde | Rol |
+|---|---|---|
+| Modo de ejecución, `loadProductionConfig` | `packages/live-ops` | `test / shadow / production`; producción fail-closed (perfil, rollout explícito, llave de identidad, opt-in de red) |
+| `ProductionProfile`, `assertProductionComposition`, `capabilityAvailability` | `packages/live-ops` | Estado de cada dominio (REAL/SANDBOX/INTERNAL/UNAVAILABLE; FIXTURE/SHADOW rechazados), decisiones de escritura, capabilities disponibles |
+| `conversationKey`, `rolloutEligibility` | `packages/live-ops` | Identidad HMAC; allowlist/denylist como hashes; bucket estable |
+| `decideInboundAutonomy`, `decideDispatch`, `dispositionAfterSubmission`, `statusAfterEvidence` | `packages/live-ops` | Reglas puras: precedencia, gate de entrega, reintento sólo "no enviado", evidencia monótona |
+| Contratos de canal (`CanonicalInbound`, `Inbound/OutboundChannelAdapter`) | `packages/live-ops` | Frontera neutral |
+| `ChannelIngress`, `OutboundDeliveryRuntime`, `DeliveryDispatcher`, `AutonomyControls`, `ProductionOperator`, `DeliveryStateContextSource`, `guardProductionWrites` | `packages/live-ops` | Ingress canónico, dueño de la entrega, kill switch, plano del operador, contexto honesto, guard de escrituras reales |
+| `PostgresProductionStore` + 0007 | `packages/persistence-postgres` | Unicidad, locks, fencing, historia append-only |
+| `createTaskWithInput`, `holdForHumansWithin`, `submitInput(hold)`; `prepareCreate`/`createWithin` | `packages/task-runtime` | Cambios mínimos y genéricos de Core (sin canal ni dominio) |
+| `WorkerAdmission` | `apps/worker` | Hook genérico opcional antes de cada claim |
+| `apps/channel-gateway` | app | Único proceso que habla con el proveedor: webhooks + dispatcher; `/health`, `/ready` |
+| Rutas `/v1/production/*`, `/v1/tasks/:id/{thread,outbound,operator-messages}`, `/v1/outbound/:id/{resolve,cancel}` | `apps/api` | Plano del operador (sólo API) |
+| `@r4-adapters/whatsapp-cloud` | `adapters/channels/whatsapp-cloud` | Verificación, `X-Hub-Signature-256`, canonicalización por change, sólo el número canary, clasificación honesta; `./testing`: proveedor fake local |
+| `SALES_PRODUCTION_PROFILE`, `SALES_PRODUCTION_ACTION_POLICY`, `composeSalesProductionWorker`, `composeSalesGateway` | `agents/sales/src/production` | Composición de producción del pack |
+| CLI `production:sales:{plan,validate,smoke,gateway,worker}` | `agents/sales/src/cli/production.ts` | Plan sin efectos, validación offline con artifacts, smoke real con opt-ins, entrypoints |
+
+### 19.2 Qué hace "producción" a una ejecución
+
+1. El modo `production` está declarado y probado, y el perfil compuesto es el declarado.
+2. El canal tiene adapters del tipo declarado (REAL ⇒ `real`; un fake local nunca).
+3. Sólo se registran capabilities disponibles según el perfil; nada FIXTURE/SHADOW.
+4. Toda salida al cliente pasa por el único dueño de la entrega y su gate; toda escritura propuesta sigue R4-D.
+5. Kill switch y rollout se leen de la BD en cada decisión (sin caché).
+
+### 19.3 Integración de dominio en R4-I
+
+| Dominio | Estado | Por qué |
+|---|---|---|
+| Customer | UNAVAILABLE | Sin contrato/endpoint en R4; clientes anónimos/desconocidos |
+| Catalog | UNAVAILABLE | Contrato sólo de segunda mano fuera de R4 (H); sin endpoint ni credencial |
+| Shipping | UNAVAILABLE | Sin contrato en R4 |
+| Quote | UNAVAILABLE (+ `quote.create` REQUIRE_APPROVAL) | Sin sandbox/producción documentado en R4 |
+| Sales workspace | INTERNAL | Estado del pack en R4 |
+| Canal | WhatsApp Cloud API REAL (canary) | Contrato oficial verificado; validación live pendiente de credenciales |
+
+### 19.4 Estado de entrega y lo que ve el agente
+
+`accepted` = el proveedor aceptó; `delivered`/`read` = evidencia del
+proveedor; `unknown` = no se sabe (nunca reintentado); `failed` = no llegó;
+`cancelled` = nunca se envió (razón explícita). El contexto de la run
+siguiente incluye un episodio OBSERVED por cada respuesta no confirmada.
+
+### 19.5 Métricas y artifacts
+
+Derivadas del estado durable (`ProductionStore.metrics`,
+`GET /v1/production/metrics`): `inbound_received`, `inbound_duplicate`,
+`task_created`, `task_continued`, `outbound_created`,
+`outbound_dispatch_attempted`, `outbound_accepted/delivered/read/failed/unknown`,
+`outbound_cancelled` por razón, `kill_switch_blocks`, `rollout_blocks`,
+`human_handoffs`, `approvals`, `run_failure_recoveries`, `model_calls`,
+escrituras por capability y latencias separadas (despacho, confirmación de
+entrega, turno del cliente). Telemetría `inbound.*`, `outbound.*`,
+`worker.admission.*`, `autonomy.control.changed` (sólo metadata).
+`artifacts/production-validation/<id>/`: manifest, bindings, results,
+effects, metrics, evaluation-summary, report (sin secretos ni PII).

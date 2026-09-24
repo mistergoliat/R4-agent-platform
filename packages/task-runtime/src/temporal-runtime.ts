@@ -10,6 +10,7 @@ import {
   memoryEntrySchema,
   principalSchema,
   reconciliationPolicySchema,
+  statusReasonSchema,
   trustedHumanContextSchema,
   type AgentRun,
   type AgentTask,
@@ -38,6 +39,7 @@ import { lockOwnedExecution, workerPrincipal, type ExecutionRuntime, type Record
 import { isTerminalTaskStatus } from './lifecycle.js';
 import { finishRunWithin, parseOrThrow, transitionTaskWithin, updateTaskOrThrow, type PendingEvent } from './mutations.js';
 import type { ExecutionStore, ExecutionUnitOfWork } from './ports.js';
+import type { CreateTaskCommand, TaskRuntime } from './task-runtime.js';
 import type { TemporalPersistence } from './temporal-ports.js';
 
 export function temporalOf(uow: ExecutionUnitOfWork): TemporalPersistence {
@@ -61,6 +63,37 @@ export interface TemporalRuntimeOptions {
 export type TemporalDecisionOutcome = { kind: 'continued' } | { kind: 'suspended'; termination: RunTermination };
 
 const PLATFORM_ACTOR = 'temporal-runtime';
+
+/**
+ * (R4-I) Why the platform hands a task to humans on its own initiative:
+ * `reason` is a status reason code (also the handoff's reason), `summary`
+ * a platform-authored explanation for operators (never model output, never
+ * shown to the model).
+ */
+export interface PlatformHold {
+  readonly reason: string;
+  readonly summary: string;
+}
+
+export interface SubmitInputOptions {
+  /** (R4-I) Hold the task for humans before the input is recorded (no autonomous wake). */
+  readonly hold?: PlatformHold;
+}
+
+export interface InputSubmissionResult {
+  readonly inputId: string;
+  readonly replayed: boolean;
+  /** (R4-I) True when this submission placed a new platform hold on the task. */
+  readonly held: boolean;
+}
+
+function parsePlatformHold(hold: PlatformHold): PlatformHold {
+  parseOrThrow(statusReasonSchema, hold.reason);
+  if (typeof hold.summary !== 'string' || hold.summary.trim().length === 0 || hold.summary.length > 2000) {
+    throw new PlatformError('validation', 'validation_failed', 'a platform hold needs a non-empty summary (at most 2000 characters)');
+  }
+  return { reason: hold.reason, summary: hold.summary };
+}
 
 /**
  * Temporal Runtime (R4-E): durable authority over time, waits, wake-ups,
@@ -256,38 +289,117 @@ export class TemporalRuntime implements RunFailureHandoff {
    * task waiting for input — or waiting until a time (interruptible) — wakes
    * now; its timer is cancelled so it can never wake the task again.
    */
-  async submitInput(taskId: string, input: InputSubmission, actor: Principal, correlationId: string): Promise<{ inputId: string; replayed: boolean }> {
+  async submitInput(taskId: string, input: InputSubmission, actor: Principal, correlationId: string, options: SubmitInputOptions = {}): Promise<InputSubmissionResult> {
     const body = parseOrThrow(inputSubmissionSchema, input);
     const principal = parseOrThrow(principalSchema, actor);
+    const hold = options.hold === undefined ? undefined : parsePlatformHold(options.hold);
     return this.write(async (uow, events) => {
       const task = await this.lockTask(uow, taskId);
-      const p = temporalOf(uow);
-      const now = await p.now();
-      const hash = fingerprint({ body, principal });
-      const existing = await p.input(taskId, body.sourceRef, body.externalKey);
-      if (existing) {
-        if (existing.requestHash !== hash) throw new PlatformError('conflict', 'idempotency_key_reused', 'input identity already has different content or actor');
-        return { inputId: existing.inputId, replayed: true };
-      }
-      if (isTerminalTaskStatus(task.status) || (await p.terminalIntent(taskId))) {
-        throw new PlatformError('conflict', 'task_not_accepting_input', 'the task is terminal or awaiting its terminal status');
-      }
-      const inputId = this.#options.ids.next();
-      const memoryEntryId = this.#options.ids.next();
-      // The C2 ingestion seam: what was said is CONVERSATIONAL memory, recorded by the resolved principal.
-      await uow.insertMemoryEntry(parseOrThrow(memoryEntrySchema, {
-        entryId: memoryEntryId, taskId, memoryType: 'CONVERSATIONAL', occurredAt: body.occurredAt, recordedAt: now, recordedBy: principal, correlationId,
-        content: { actor: { role: 'participant', ref: principal.ref }, text: body.content, interactionRef: inputId },
-      }));
-      await p.insertInput({ inputId, taskId, sourceRef: body.sourceRef, externalKey: body.externalKey, requestHash: hash, memoryEntryId, actorKind: principal.kind, actorRef: principal.ref, receivedAt: now, correlationId });
-      await this.event(uow, task, inputId, 'task.input.received', now, events, { sourceRef: body.sourceRef });
-      const wait = await p.activeWait(taskId);
-      if (wait?.kind === 'WAIT_FOR_INPUT' || wait?.kind === 'WAIT_UNTIL') {
-        const woken = await this.wakeWithin(uow, task, wait, 'input', now, events);
-        if (woken.status === 'running') await this.cancelSchedulesWithin(uow, task, now, events, wait.waitId);
-      }
-      return { inputId, replayed: false };
+      return this.#submitInputWithin(uow, events, task, body, principal, correlationId, hold);
     });
+  }
+
+  /**
+   * (R4-I) Creates a task together with its first canonical input, in ONE
+   * transaction: no worker can ever claim the task before the input that
+   * motivated it exists (a task created first and fed later could run on an
+   * empty conversation). With `hold`, the task is also born held for humans
+   * (a platform-initiated handoff, visible in `attention()`), so it is never
+   * claimable at all until a human releases it.
+   *
+   * Idempotent end to end: the task by its creation idempotency key, the
+   * input by (task, source, external key). A replay (e.g. a re-delivered
+   * inbound event, or a concurrent sibling event of the same new
+   * conversation) submits the input to the already existing task.
+   */
+  async createTaskWithInput(tasks: TaskRuntime, command: CreateTaskCommand, input: InputSubmission, actor: Principal, options: SubmitInputOptions = {}): Promise<InputSubmissionResult & { taskId: string; taskReplayed: boolean }> {
+    if (command.idempotencyKey === undefined) throw new PlatformError('validation', 'idempotency_key_required', 'a task created with its first input must carry an idempotency key');
+    const body = parseOrThrow(inputSubmissionSchema, input);
+    const principal = parseOrThrow(principalSchema, actor);
+    const hold = options.hold === undefined ? undefined : parsePlatformHold(options.hold);
+    const prepared = await tasks.prepareCreate(command);
+    return this.write(async (uow, events) => {
+      const created = await tasks.createWithin(uow, prepared, events);
+      const task = await this.lockTask(uow, created.taskId);
+      const submitted = await this.#submitInputWithin(uow, events, task, body, principal, command.correlationId, hold);
+      return { ...submitted, taskId: created.taskId, taskReplayed: created.replayed };
+    });
+  }
+
+  async #submitInputWithin(uow: ExecutionUnitOfWork, events: PendingEvent[], locked: AgentTask, body: InputSubmission, principal: Principal, correlationId: string, hold: PlatformHold | undefined): Promise<InputSubmissionResult> {
+    let task = locked;
+    const taskId = task.taskId;
+    const p = temporalOf(uow);
+    const now = await p.now();
+    const hash = fingerprint({ body, principal });
+    const existing = await p.input(taskId, body.sourceRef, body.externalKey);
+    if (existing) {
+      if (existing.requestHash !== hash) throw new PlatformError('conflict', 'idempotency_key_reused', 'input identity already has different content or actor');
+      return { inputId: existing.inputId, replayed: true, held: false };
+    }
+    if (isTerminalTaskStatus(task.status) || (await p.terminalIntent(taskId))) {
+      throw new PlatformError('conflict', 'task_not_accepting_input', 'the task is terminal or awaiting its terminal status');
+    }
+    // (R4-I) A hold is applied BEFORE the input exists, in the same transaction:
+    // the input can then never wake the task into autonomous work.
+    const held = hold !== undefined && (await this.holdForHumansWithin(uow, task, hold, now, events));
+    if (held) task = await this.lockTask(uow, taskId);
+    const inputId = this.#options.ids.next();
+    const memoryEntryId = this.#options.ids.next();
+    // The C2 ingestion seam: what was said is CONVERSATIONAL memory, recorded by the resolved principal.
+    await uow.insertMemoryEntry(parseOrThrow(memoryEntrySchema, {
+      entryId: memoryEntryId, taskId, memoryType: 'CONVERSATIONAL', occurredAt: body.occurredAt, recordedAt: now, recordedBy: principal, correlationId,
+      content: { actor: { role: 'participant', ref: principal.ref }, text: body.content, interactionRef: inputId },
+    }));
+    await p.insertInput({ inputId, taskId, sourceRef: body.sourceRef, externalKey: body.externalKey, requestHash: hash, memoryEntryId, actorKind: principal.kind, actorRef: principal.ref, receivedAt: now, correlationId });
+    await this.event(uow, task, inputId, 'task.input.received', now, events, { sourceRef: body.sourceRef });
+    const wait = await p.activeWait(taskId);
+    if (wait?.kind === 'WAIT_FOR_INPUT' || wait?.kind === 'WAIT_UNTIL') {
+      const woken = await this.wakeWithin(uow, task, wait, 'input', now, events);
+      if (woken.status === 'running') await this.cancelSchedulesWithin(uow, task, now, events, wait.waitId);
+    }
+    return { inputId, replayed: false, held };
+  }
+
+  /**
+   * (R4-I) A platform-initiated hold: the task is handed to humans with a
+   * platform reason code (e.g. autonomy disabled by an operator control, the
+   * conversation outside an enabled cohort) — the same durable mechanism as
+   * an agent- or operator-requested handoff (E), visible in `attention()`.
+   * Any active run is suspended at once (its worker's next fenced write or
+   * heartbeat fails), the open wait is superseded and no autonomous claim is
+   * possible until a human releases it. A task that already has a requested
+   * or active handoff is left as it is (humans already own it): returns false.
+   * The summary is platform-authored and never shown to the model.
+   */
+  async holdForHumansWithin(uow: ExecutionUnitOfWork, locked: AgentTask, hold: PlatformHold, now: string, events: PendingEvent[]): Promise<boolean> {
+    const p = temporalOf(uow);
+    if (isTerminalTaskStatus(locked.status)) throw new PlatformError('conflict', 'task_terminal', 'a terminal task cannot be held');
+    if (await p.activeHandoff(locked.taskId)) return false;
+    const active = await uow.findActiveRun(locked.taskId);
+    if (active) {
+      await finishRunWithin(uow, active, { status: 'suspended', termination: { reason: 'human_handoff', code: 'platform_hold', message: 'the platform handed the task to humans' }, correlationId: locked.correlationId }, now, events);
+    }
+    const lease = await uow.lockTaskLease(locked.taskId);
+    if (lease?.lease) await uow.releaseLease(lease.lease);
+    let task = await this.lockTask(uow, locked.taskId);
+    const request = parseOrThrow(humanRequestSchema, {
+      requestId: this.#options.ids.next(), taskId: task.taskId, runId: active?.runId ?? null, kind: 'handoff', status: 'requested', humanRef: null,
+      createdAt: now, updatedAt: now, expiresAt: null, correlationId: task.correlationId,
+      payload: { summary: hold.summary, contextRefs: [], initiatedBy: 'platform', reason: hold.reason },
+    });
+    await this.event(uow, task, request.requestId, 'handoff.requested', now, events, { initiatedBy: 'platform', reason: hold.reason });
+    const wait = await p.activeWait(task.taskId);
+    if (wait) {
+      await p.finishWait(wait.waitId, 'cancelled', 'handoff', now);
+      await this.event(uow, task, wait.waitId, 'task.wait.completed', now, events, { resolution: 'handoff', durationMs: Date.parse(now) - Date.parse(wait.createdAt) });
+      await this.cancelSchedulesWithin(uow, task, now, events, wait.waitId);
+    }
+    if (task.status !== 'blocked') {
+      task = await transitionTaskWithin(uow, this.#options.ids, task, 'blocked', hold.reason, { kind: 'system', ref: PLATFORM_ACTOR }, task.correlationId, now, events);
+    }
+    await this.#openWait(uow, task, active?.runId ?? null, 'WAIT_FOR_HUMAN', request.requestId, null, now, events);
+    return true;
   }
 
   // -------------------------------------------------------------------------

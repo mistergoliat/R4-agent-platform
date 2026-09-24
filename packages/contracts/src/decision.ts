@@ -10,8 +10,11 @@ import { waitDecisionSchema, consultationDecisionSchema, handoffDecisionSchema, 
  * - read_capability: ask for one registered READ capability. Only the id and
  *   the arguments; identity, scopes, invocation id and execution belong to
  *   the platform.
- * - respond: intermediate textual output, recorded on the run. Not delivered
- *   to any channel in C1 and never terminal.
+ * - respond: textual output, recorded on the run and never terminal. It means
+ *   "R4 accepted this response" — never that anyone received it. (R4-I) Outside
+ *   Core, one delivery owner may turn an accepted response into a durable
+ *   outbound message with its own lifecycle; the decision itself carries no
+ *   channel, recipient or delivery state.
  * - complete: declare the task finished with a structured result. It cannot
  *   cause side effects: the result is stored as data and nothing else.
  *

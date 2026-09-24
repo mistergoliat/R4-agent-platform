@@ -5,12 +5,27 @@
     "rootDir": "src",
     "outDir": "dist"
   },
-  "include": ["src"],
+  "include": [
+    "src"
+  ],
   "references": [
-    { "path": "../../packages/contracts" },
-    { "path": "../../packages/observability" },
-    { "path": "../../packages/task-runtime" },
-    { "path": "../../packages/agent-registry" },
-    { "path": "../../packages/persistence-postgres" }
+    {
+      "path": "../../packages/contracts"
+    },
+    {
+      "path": "../../packages/observability"
+    },
+    {
+      "path": "../../packages/task-runtime"
+    },
+    {
+      "path": "../../packages/agent-registry"
+    },
+    {
+      "path": "../../packages/persistence-postgres"
+    },
+    {
+      "path": "../../packages/live-ops"
+    }
   ]
 }

@@ -75,7 +75,8 @@ const MUTATIONS = [
   },
   {
     name: 'ignore customer input that arrives between the failed run and the recovery',
-    edits: [{ file: TEMPORAL, from: "      if (isTerminalTaskStatus(task.status) || (await p.terminalIntent(taskId))) {\n        throw new PlatformError('conflict', 'task_not_accepting_input'", to: "      if (isTerminalTaskStatus(task.status) || task.status === 'running' || (await p.terminalIntent(taskId))) {\n        throw new PlatformError('conflict', 'task_not_accepting_input'" }],
+    // (R4-I: submitInput's body moved into #submitInputWithin — same check, new indentation.)
+    edits: [{ file: TEMPORAL, from: "    if (isTerminalTaskStatus(task.status) || (await p.terminalIntent(taskId))) {\n      throw new PlatformError('conflict', 'task_not_accepting_input'", to: "    if (isTerminalTaskStatus(task.status) || task.status === 'running' || (await p.terminalIntent(taskId))) {\n      throw new PlatformError('conflict', 'task_not_accepting_input'" }],
     tests: [INTEGRATION],
   },
   {

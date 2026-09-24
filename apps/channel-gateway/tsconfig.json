@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../packages/contracts" },
+    { "path": "../../packages/observability" },
+    { "path": "../../packages/task-runtime" },
+    { "path": "../../packages/agent-registry" },
+    { "path": "../../packages/persistence-postgres" },
+    { "path": "../../packages/live-ops" }
+  ]
+}

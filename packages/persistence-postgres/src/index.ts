@@ -7,3 +7,4 @@ export * from './observation-store.js';
 export * from './execution-store.js';
 export * from './memory-store.js';
 export * from './action-store.js';
+export * from './production-store.js';

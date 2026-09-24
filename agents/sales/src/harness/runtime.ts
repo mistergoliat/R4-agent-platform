@@ -41,10 +41,8 @@ export const HARNESS_OPERATOR: TrustedHumanContext = { humanRef: 'sales-harness-
 /** Who creates conversations: the Sales ingress (a channel adapter in production), provisionally identified. */
 export const HARNESS_INGRESS: Principal = { kind: 'service', ref: 'sales-harness-ingress' };
 
-export const SALES_ROOT_GOAL = {
-  description: 'Help this customer reach a purchase decision that fits their real objective and constraints, and a governed quote when they want one.',
-  successCriteria: ['the customer objective and constraints are understood and kept', 'any proposed solution is grounded in current catalog evidence', 'a quote is claimed only from a receipt-backed observation'],
-};
+export { SALES_ROOT_GOAL } from '../goal.js';
+import { SALES_ROOT_GOAL } from '../goal.js';
 
 export interface SalesHarnessOptions {
   readonly databaseUrl: string;

@@ -5,11 +5,19 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DEFAULT_MIGRATIONS_DIR, checkDatabaseReadiness, migrate, migrationStatus, type Pool } from '@r4/persistence-postgres';
 import { createTestDatabase, openPool, type TestDatabase } from '../support/database.js';
 
-const EXPECTED_MIGRATIONS = ['0001_initial_runtime_schema', '0002_execution_kernel', '0003_context_and_memory', '0004_governed_execution', '0005_temporal_human_runtime'];
+const EXPECTED_MIGRATIONS = ['0001_initial_runtime_schema', '0002_execution_kernel', '0003_context_and_memory', '0004_governed_execution', '0005_temporal_human_runtime', '0007_governed_production'];
 const EXPECTED_TABLES = [
   'action_execution_attempts', 'action_executions', 'action_proposals', 'action_receipts',
   'agent_definitions', 'agent_run_steps', 'agent_runs', 'agent_task_transitions', 'agent_tasks',
-  'context_snapshot_items', 'context_snapshots', 'goal_transitions', 'goals', 'human_requests', 'memory_entries', 'observations', 'policy_decisions', 'r4_schema_migrations',
+  // R4-I (0007)
+  'autonomy_control_events', 'autonomy_controls', 'channel_conversation_bindings',
+  'context_snapshot_items', 'context_snapshots', 'goal_transitions', 'goals', 'human_requests',
+  // R4-I (0007)
+  'inbound_events',
+  'memory_entries', 'observations',
+  // R4-I (0007)
+  'outbound_delivery_attempts', 'outbound_delivery_events', 'outbound_messages',
+  'policy_decisions', 'r4_schema_migrations',
   // R4-E
   'schedules', 'task_inputs', 'task_terminal_intents', 'task_waits', 'temporal_events',
 ];

@@ -20,16 +20,24 @@ const alias = {
   '@r4/evaluator': src('./apps/evaluator/src/index.ts'),
   // R4-H: Shadow / E2E framework (outside Core execution and outside every agent pack runtime).
   '@r4/shadow': src('./packages/shadow/src/index.ts'),
+  // R4-I: governed production (channel-neutral ingress, delivery owner, rollout, autonomy controls).
+  '@r4/live-ops': src('./packages/live-ops/src/index.ts'),
   '@r4/api': src('./apps/api/src/index.ts'),
   '@r4/worker': src('./apps/worker/src/index.ts'),
   '@r4/scheduler': src('./apps/scheduler/src/index.ts'),
+  '@r4/channel-gateway': src('./apps/channel-gateway/src/index.ts'),
   // R4-F: outside Core (adapters and the Sales agent pack).
   '@r4-adapters/domains': src('./adapters/domains/src/index.ts'),
   '@r4-adapters/openai-compatible': src('./adapters/models/openai-compatible/src/index.ts'),
+  // R4-I: channel adapter (outside Core). The testing entry (local fake provider) is listed first: aliases match by prefix.
+  '@r4-adapters/whatsapp-cloud/testing': src('./adapters/channels/whatsapp-cloud/src/testing.ts'),
+  '@r4-adapters/whatsapp-cloud': src('./adapters/channels/whatsapp-cloud/src/index.ts'),
   // R4-G: the Sales evaluator pack is a separate entry point (never loaded by the deployed agent). Listed first: aliases match by prefix.
   '@r4-sales/agent/evaluations': src('./agents/sales/src/evaluations/index.ts'),
   // R4-H: the Sales shadow corpus, bindings and executor (never loaded by the deployed agent).
   '@r4-sales/agent/shadow': src('./agents/sales/src/shadow/index.ts'),
+  // R4-I: the Sales production composition (profile, policy, canary gateway bindings).
+  '@r4-sales/agent/production': src('./agents/sales/src/production/index.ts'),
   '@r4-sales/agent': src('./agents/sales/src/index.ts'),
 };
 

@@ -1,5 +1,6 @@
 export * from './ids.js';
 export * from './definition.js';
+export * from './goal.js';
 export * from './policy.js';
 export * from './composition.js';
 export * from './migrate.js';

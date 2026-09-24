@@ -10,7 +10,10 @@ import {
   type AgentRun,
   type AgentTask,
   type Clock,
+  type Budget,
+  type CreateTaskRequest,
   type CreateTaskRequestInput,
+  type RegisteredAgentDefinition,
   type Goal,
   type GoalOrigin,
   type GoalSpec,
@@ -51,6 +54,18 @@ export interface CreateTaskCommand {
   readonly requestedBy: Principal;
   readonly correlationId: string;
   readonly idempotencyKey?: string | undefined;
+}
+
+/** (R4-I) A validated task creation, ready to be written inside some transaction. */
+export interface PreparedTaskCreation {
+  readonly request: CreateTaskRequest;
+  readonly idempotencyKey: string | undefined;
+  readonly requestHash: string;
+  readonly principal: Principal;
+  readonly agent: RegisteredAgentDefinition;
+  readonly budget: Budget;
+  readonly now: Date;
+  readonly correlationId: string;
 }
 
 export interface CreateTaskResult {
@@ -137,6 +152,20 @@ export class TaskRuntime {
   }
 
   async createTask(command: CreateTaskCommand): Promise<CreateTaskResult> {
+    const prepared = await this.prepareCreate(command);
+    const events: PendingEvent[] = [];
+    const result = await this.#store.transaction((uow) => this.createWithin(uow, prepared, events));
+    this.#emit(events);
+    return { view: await this.getTask(result.taskId), replayed: result.replayed };
+  }
+
+  /**
+   * Validation half of `createTask` (no writes): the request, the pinned agent
+   * version, the effective budget and the idempotency identity. (R4-I) Lets a
+   * composing runtime create the task inside its own transaction (e.g. together
+   * with the task's first canonical input) through `createWithin`.
+   */
+  async prepareCreate(command: CreateTaskCommand): Promise<PreparedTaskCreation> {
     const request = parseOrThrow(createTaskRequestSchema, command.request);
     const idempotencyKey = command.idempotencyKey === undefined ? undefined : parseOrThrow(idempotencyKeySchema, command.idempotencyKey);
     const requestHash = fingerprint(request);
@@ -154,78 +183,84 @@ export class TaskRuntime {
     if (request.deadlineAt !== undefined && new Date(request.deadlineAt).getTime() <= now.getTime()) {
       throw new PlatformError('validation', 'deadline_in_past', 'deadlineAt must be in the future');
     }
+    return { request, idempotencyKey, requestHash, principal, agent, budget, now, correlationId: command.correlationId };
+  }
 
-    const events: PendingEvent[] = [];
-    const result = await this.#store.transaction(async (uow) => {
-      if (idempotencyKey !== undefined) {
-        const replay = await this.#replay(uow, principal.ref, idempotencyKey, requestHash);
-        if (replay) return replay;
+  /**
+   * Write half of `createTask`: inserts the prepared task (or returns the
+   * idempotent replay) in the caller's transaction. Telemetry is appended to
+   * `events`; the caller emits it after commit.
+   */
+  async createWithin(uow: TaskUnitOfWork, prepared: PreparedTaskCreation, events: PendingEvent[]): Promise<{ taskId: string; replayed: boolean }> {
+    const { request, idempotencyKey, requestHash, principal, agent, budget, now } = prepared;
+    if (idempotencyKey !== undefined) {
+      const replay = await this.#replay(uow, principal.ref, idempotencyKey, requestHash);
+      if (replay) {
+        events.push(['task.idempotent_replay', { taskId: replay.taskId }]);
+        return replay;
       }
-
-      if (request.parentTaskId !== undefined) {
-        const parent = await uow.lockTask(request.parentTaskId);
-        if (!parent) throw new PlatformError('precondition', 'parent_task_not_found', 'parentTaskId does not reference an existing task');
-        if (isTerminalTaskStatus(parent.status)) {
-          throw new PlatformError('precondition', 'parent_task_terminal', `parent task is ${parent.status}`);
-        }
-      }
-
-      const timestamp = now.toISOString();
-      const taskId = this.#ids.next();
-      const rootGoalId = this.#ids.next();
-      const task: AgentTask = {
-        taskId,
-        taskType: request.taskType,
-        agentId: agent.agentId,
-        agentVersion: agent.version,
-        status: 'pending',
-        statusReason: null,
-        parentTaskId: request.parentTaskId ?? null,
-        rootGoalId,
-        currentGoalId: rootGoalId,
-        requestedBy: principal,
-        input: request.input,
-        constraints: request.constraints,
-        budget,
-        result: null,
-        deadlineAt: request.deadlineAt === undefined ? null : new Date(request.deadlineAt).toISOString(),
-        idempotencyKey: idempotencyKey ?? null,
-        correlationId: command.correlationId,
-        version: 1,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      };
-      const rootGoal = this.#newGoal(taskId, null, request.goal, 'requester', command.correlationId, timestamp, rootGoalId);
-
-      const inserted = await uow.insertTask(task, idempotencyKey === undefined ? null : { key: idempotencyKey, requestHash });
-      if (inserted === 'duplicate_idempotency_key') {
-        // A concurrent request with the same key committed first.
-        const replay = await this.#replay(uow, principal.ref, idempotencyKey!, requestHash);
-        if (replay) return replay;
-        throw new PlatformError('internal', 'idempotency_race_unresolved', 'duplicate idempotency key but no task found');
-      }
-      await uow.insertGoal(rootGoal);
-      await uow.insertTransition({
-        transitionId: this.#ids.next(),
-        taskId,
-        fromStatus: null,
-        toStatus: 'pending',
-        reason: 'created',
-        actor: principal,
-        taskVersion: 1,
-        correlationId: command.correlationId,
-        occurredAt: timestamp,
-      });
-      events.push(['task.created', { taskId, agentId: agent.agentId, agentVersion: agent.version, taskType: task.taskType, idempotent: idempotencyKey !== undefined }]);
-      events.push(['goal.created', { taskId, goalId: rootGoalId, parentGoalId: null, origin: 'requester' }]);
-      return { taskId, replayed: false };
-    });
-
-    if (result.replayed) {
-      events.push(['task.idempotent_replay', { taskId: result.taskId }]);
     }
-    this.#emit(events);
-    return { view: await this.getTask(result.taskId), replayed: result.replayed };
+
+    if (request.parentTaskId !== undefined) {
+      const parent = await uow.lockTask(request.parentTaskId);
+      if (!parent) throw new PlatformError('precondition', 'parent_task_not_found', 'parentTaskId does not reference an existing task');
+      if (isTerminalTaskStatus(parent.status)) {
+        throw new PlatformError('precondition', 'parent_task_terminal', `parent task is ${parent.status}`);
+      }
+    }
+
+    const timestamp = now.toISOString();
+    const taskId = this.#ids.next();
+    const rootGoalId = this.#ids.next();
+    const task: AgentTask = {
+      taskId,
+      taskType: request.taskType,
+      agentId: agent.agentId,
+      agentVersion: agent.version,
+      status: 'pending',
+      statusReason: null,
+      parentTaskId: request.parentTaskId ?? null,
+      rootGoalId,
+      currentGoalId: rootGoalId,
+      requestedBy: principal,
+      input: request.input,
+      constraints: request.constraints,
+      budget,
+      result: null,
+      deadlineAt: request.deadlineAt === undefined ? null : new Date(request.deadlineAt).toISOString(),
+      idempotencyKey: idempotencyKey ?? null,
+      correlationId: prepared.correlationId,
+      version: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    const rootGoal = this.#newGoal(taskId, null, request.goal, 'requester', prepared.correlationId, timestamp, rootGoalId);
+
+    const inserted = await uow.insertTask(task, idempotencyKey === undefined ? null : { key: idempotencyKey, requestHash });
+    if (inserted === 'duplicate_idempotency_key') {
+      // A concurrent request with the same key committed first.
+      const replay = await this.#replay(uow, principal.ref, idempotencyKey!, requestHash);
+      if (replay) {
+        events.push(['task.idempotent_replay', { taskId: replay.taskId }]);
+        return replay;
+      }
+      throw new PlatformError('internal', 'idempotency_race_unresolved', 'duplicate idempotency key but no task found');
+    }
+    await uow.insertGoal(rootGoal);
+    await uow.insertTransition({
+      transitionId: this.#ids.next(),
+      taskId,
+      fromStatus: null,
+      toStatus: 'pending',
+      reason: 'created',
+      actor: principal,
+      taskVersion: 1,
+      correlationId: prepared.correlationId,
+      occurredAt: timestamp,
+    });
+    events.push(['task.created', { taskId, agentId: agent.agentId, agentVersion: agent.version, taskType: task.taskType, idempotent: idempotencyKey !== undefined }]);
+    events.push(['goal.created', { taskId, goalId: rootGoalId, parentGoalId: null, origin: 'requester' }]);
+    return { taskId, replayed: false };
   }
 
   async getTask(taskId: string): Promise<TaskView> {

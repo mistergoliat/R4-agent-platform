@@ -7,12 +7,14 @@ import {
   PostgresAgentDefinitionStore,
   PostgresTaskRuntimeStore,
   PostgresExecutionStore,
+  PostgresProductionStore,
   checkDatabaseReadiness,
   createPool,
   migrationStatus,
   type Pool,
 } from '@r4/persistence-postgres';
 import { TaskRuntime, ExecutionRuntime, TemporalRuntime } from '@r4/task-runtime';
+import { AutonomyControls, ProductionOperator } from '@r4/live-ops';
 import { buildApp, type ReadinessReport, type AppDependencies } from './app.js';
 import type { ApiConfig } from './config.js';
 import type { PrincipalResolver } from './principal.js';
@@ -23,6 +25,8 @@ export interface Platform {
   readonly tasks: TaskRuntime;
   readonly temporal: TemporalRuntime;
   readonly agents: AgentRegistry;
+  /** (R4-I) Operator plane of production conversations. */
+  readonly production: ProductionOperator;
   readonly logger: Logger;
   close(): Promise<void>;
 }
@@ -61,6 +65,8 @@ export async function createPlatform(config: ApiConfig, overrides: PlatformOverr
     const executionStore = new PostgresExecutionStore(pool);
     const execution = new ExecutionRuntime({ store: executionStore, ids, clock, logger, maxRunRecoveries: 0 });
     const temporal = new TemporalRuntime({ store: executionStore, execution, ids, logger });
+    const productionStore = new PostgresProductionStore(pool);
+    const production = new ProductionOperator({ store: productionStore, temporal, controls: new AutonomyControls({ store: productionStore, logger }), ids, logger });
 
     const readiness = async (): Promise<ReadinessReport> => {
       const database = await checkDatabaseReadiness(pool);
@@ -73,7 +79,7 @@ export async function createPlatform(config: ApiConfig, overrides: PlatformOverr
       };
     };
 
-    const app = buildApp({ logger, tasks, agents, readiness, temporal,
+    const app = buildApp({ logger, tasks, agents, readiness, temporal, production,
       ...(overrides.humanContext ? { humanContext: overrides.humanContext } : {}),
       ...(overrides.principal ? { principal: overrides.principal } : {}) });
     await app.ready();
@@ -84,6 +90,7 @@ export async function createPlatform(config: ApiConfig, overrides: PlatformOverr
       tasks,
       temporal,
       agents,
+      production,
       logger,
       async close() {
         await app.close();

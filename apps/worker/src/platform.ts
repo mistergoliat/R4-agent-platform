@@ -20,7 +20,7 @@ import { ActionRuntime, ExecutionRuntime, TemporalRuntime } from '@r4/task-runti
 import { validateWorkerConfig, type WorkerConfig } from './config.js';
 import { DurableKernelSession } from './session.js';
 import { Reconciler } from './reconciliation.js';
-import { Worker } from './worker.js';
+import { Worker, type WorkerAdmission } from './worker.js';
 
 /**
  * What a deployment plugs in. C1 ships no real model provider and no Core
@@ -41,6 +41,11 @@ export interface WorkerBindings {
    * hashed). Defaults to the platform's conservative DEFAULT_ACTION_POLICY.
    */
   readonly actionPolicy?: ActionPolicyConfigurationInput;
+  /**
+   * (R4-I) Operational admission of new autonomous work (e.g. a production
+   * kill switch), asked before every claim. Absent ⇒ always admitted.
+   */
+  readonly admission?: WorkerAdmission;
 }
 
 export interface WorkerOverrides {
@@ -103,6 +108,7 @@ export async function createWorkerPlatform(config: WorkerConfig, bindings: Worke
       pollIntervalMs: config.pollIntervalMs,
       // R4-E: due reconciliation of uncertain effects runs here (capabilities live in the worker), before any claim.
       reconciler: new Reconciler({ actions, executor: new ActionExecutor({ registry: bindings.capabilities, logger }), workerId: config.workerId, leaseDurationMs: config.leaseDurationMs, logger }),
+      ...(bindings.admission ? { admission: bindings.admission } : {}),
       logger: logger.child({ workerId: config.workerId }),
     });
 

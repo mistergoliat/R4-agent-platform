@@ -23,6 +23,7 @@
     "@r4/agent-registry": "*",
     "@r4/capability-runtime": "*",
     "@r4/context-compiler": "*",
-    "pg": "^8.23.0"
+    "pg": "^8.23.0",
+    "@r4/live-ops": "*"
   }
 }

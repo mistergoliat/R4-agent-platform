@@ -172,6 +172,22 @@ export default tseslint.config(
       ],
     },
   },
+  // R4-I: a channel adapter translates one provider's transport to/from the channel-neutral contracts of @r4/live-ops.
+  // It never reaches tasks, runtimes, persistence, the kernel or a pack.
+  {
+    files: ['adapters/channels/**/src/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            ...forbiddenEverywhere,
+            { group: ['pg', 'pg/*', '@r4/persistence-postgres', '@r4/task-runtime', '@r4/capability-runtime', '@r4/agent-kernel', '@r4/context-compiler', '@r4/worker', '@r4/api', '@r4/channel-gateway', '@r4-sales/*', '**/packages/**', '**/apps/**', '**/agents/**'], message: 'A channel adapter implements the channel-neutral contracts only (ADR-029).' },
+          ],
+        },
+      ],
+    },
+  },
   {
     files: ['agents/sales/src/**/*.ts'],
     rules: {

@@ -56,6 +56,15 @@
     },
     {
       "path": "../../adapters/models/openai-compatible"
+    },
+    {
+      "path": "../../packages/live-ops"
+    },
+    {
+      "path": "../../apps/channel-gateway"
+    },
+    {
+      "path": "../../adapters/channels/whatsapp-cloud"
     }
   ]
 }

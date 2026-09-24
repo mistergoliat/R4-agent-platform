@@ -32,19 +32,27 @@ findings, taxonomía de fallos, outcomes separados, métricas, grounding,
 regresiones, benchmarks con repeticiones y experimentos — fuera de la ejecución
 de Core y sin modificar agentes (ADR-025, ADR-026).
 
-**R4-H — Shadow / E2E** (**en progreso**, pendiente de auditoría; baseline
+**R4-H — Shadow / E2E** (**cerrado**; R4-H BASELINE `80a1733`; baseline
 R4-G `4a54b2c`): workloads realistas sobre el runtime real con modelo real y
 efectos sólo shadow — modo shadow explícito, bindings declarados, side-effect
 manifest, outbound sink sin entrega, corpus de workloads y suites evaluadas
 por R4-G (ADR-027).
 
 **Post-H Architecture Gap Review** (gate humano, no una fase): GAP-H-001
-confirmado y **resolución implementada**, pendiente de auditoría (ADR-028):
+confirmado y **resuelto** (ADR-028, `dd06a68`):
 una run que falla por `invalid_decision` o por un `model_failure` reintentable
 ya no termina la task — una run nueva con contexto recién compilado la
 continúa (acotado, default 1); al agotarse, o ante un fallo no reintentable, la
-task queda `blocked` con un handoff de plataforma en `/v1/attention`. R4-I
-sigue bloqueado hasta la auditoría final.
+task queda `blocked` con un handoff de plataforma en `/v1/attention`.
+
+**R4-I — Governed Production** (**en progreso**, pendiente de auditoría;
+R4 POST-H RECOVERY BASELINE `dd06a68`): modo producción explícito y
+fail-closed, ingress canónico de un canal real (WhatsApp Cloud API, número
+canary propio), binding durable conversación → task, entrega durable e
+idempotente con un único dueño y resultados `unknown` honestos, rollout
+estable (default 0 %), kill switch durable (default deshabilitado), plano de
+operador por API y validación offline reproducible (ADR-029). Sin despliegue ni
+tráfico real de clientes.
 
 Lectura obligatoria antes de cambios de arquitectura: [AGENTS.md](AGENTS.md),
 [Constitución](docs/architecture/R4_AGENTIC_PLATFORM_MOTIVATION_AND_CONSTRAINTS.md),
@@ -215,7 +223,7 @@ El juez live usa `R4_EVAL_MODEL_*` (mismas variables que `R4_MODEL_*`) o, si no
 está definido, el mismo modelo configurado; ambos perfiles quedan registrados.
 Artifacts en `artifacts/{evaluations,benchmarks,experiments}` (ignorados por git).
 
-### Shadow / E2E (R4-H, en progreso)
+### Shadow / E2E (R4-H, cerrado)
 
 Workloads realistas sobre el runtime real, con modelo real opcional y efectos
 **sólo shadow** (ADR-027): `packages/shadow` (framework puro), bindings,
@@ -250,6 +258,56 @@ npm run test:mutation:shadow         # 9 mutaciones de seguridad shadow: todas d
 Artifacts en `artifacts/shadow/<suiteRunId>/` (manifest, plan, resultados por
 ejecución, side effects, outbound, llamadas al modelo, resumen de evaluación,
 agregados, candidatos de gap, `report.md`, `benchmark/`, `evaluations/`).
+
+### Governed Production (R4-I, en progreso)
+
+Producción gobernada de un **número canary propio de R4** (el número productivo
+sigue en CRM-Customer-360; ver la [auditoría](docs/architecture/R4-I_CRM_WHATSAPP_AUDIT.md)
+y ADR-029). `packages/live-ops` (modo producción, perfil, rollout, kill
+switch, ingress canónico, **único dueño de la entrega**), `apps/channel-gateway`
+(webhooks + dispatcher: el único proceso que habla con el proveedor),
+`adapters/channels/whatsapp-cloud` y la composición de producción del pack en
+`agents/sales/src/production`. `respond` ≠ entregado: cada respuesta aceptada
+es un `OutboundMessage` durable con su ciclo (`pending → dispatching →
+accepted → delivered → read`, `failed`, `unknown`, `cancelled`); un timeout o
+un crash durante el envío queda `unknown` y **nunca** se reintenta a ciegas.
+La autonomía nace **deshabilitada** (kill switch en la migración 0007) y el
+rollout en **0 %**.
+
+```bash
+npm run build && npm run db:migrate && npm run sales:migrate
+npm run test:production                    # unit + contract + integración de R4-I (PostgreSQL real, proveedor fake local, sin red)
+npm run test:mutation:production           # 14 mutaciones de seguridad de producción: todas deben ser detectadas
+npm run production:sales:validate          # validación offline completa → artifacts/production-validation/<id>/
+R4_EXECUTION_MODE=production … npm run production:sales:plan    # qué correría (modelo, canal, identidad redactada, rollout, kill switch, bindings) — no envía nada
+R4_EXECUTION_MODE=production … npm run production:sales:gateway # proceso de canal (webhook público + dispatcher)
+R4_EXECUTION_MODE=production … npm run production:sales:worker  # worker de producción (modelo real; R4_PROD_ALLOW_NETWORK=true)
+R4_EXECUTION_MODE=production … npm run production:sales:smoke   # smoke real con identidad allowlisted; nunca habilita autonomía
+```
+
+| Variable | Default | Descripción |
+|---|---|---|
+| `R4_EXECUTION_MODE` | — | `production` explícito (ausente = test; `shadow` = R4-H) |
+| `R4_PROD_POLICY_PROFILE` | — (obligatorio) | Perfil compuesto esperado (`sales-production@1`) |
+| `R4_PROD_ROLLOUT_PERCENT` | — (obligatorio, explícito) | Cohorte estable por hash de conversación; canary: `0` + allowlist |
+| `R4_PROD_ROLLOUT_ALLOWLIST` / `_DENYLIST` | vacío | Claves de conversación (HMAC; `--identity-key <wa_id>` las calcula) — nunca teléfonos |
+| `R4_PROD_IDENTITY_HASH_KEY` | — (obligatorio, ≥ 32) | Llave del hash de identidades |
+| `R4_PROD_ALLOW_NETWORK` | — (obligatorio `true`/`false`) | Opt-in de llamadas reales (modelo, proveedor); con `false` sólo URLs loopback |
+| `R4_PROD_OUTBOUND_MAX_ATTEMPTS` / `_MAX_AGE_MS` / `_LEASE_MS` | 3 / 600000 / 30000 | Presupuesto de reintento (sólo "no enviado"), antigüedad máxima, lease de despacho |
+| `R4_PROD_PROVIDER_TIMEOUT_MS` | 10000 | Timeout de envío (vencido ⇒ `unknown`) |
+| `R4_WHATSAPP_APP_SECRET` / `_VERIFY_TOKEN` / `_ACCESS_TOKEN` / `_PHONE_NUMBER_ID` | — | Secretos del número canary (nunca persistidos) |
+| `R4_WHATSAPP_GRAPH_VERSION` / `_GRAPH_BASE_URL` | `v25.0` / Graph | Contrato oficial de la Cloud API |
+| `R4_GATEWAY_HOST` / `R4_GATEWAY_PORT` / `R4_GATEWAY_DISPATCH` | `127.0.0.1` / 8090 / `true` | Proceso gateway |
+
+Operador (sólo API, identidad por `TrustedHumanContext`):
+`GET /v1/production/{conversations,attention,metrics,controls}`,
+`POST /v1/production/controls` (kill switch, scope `autonomy.control`),
+`GET /v1/tasks/:id/thread?after=<cursor>` (hilo incremental),
+`GET /v1/tasks/:id/outbound`, `GET /v1/outbound/:id`,
+`POST /v1/tasks/:id/operator-messages` (respuesta manual: toma la conversación
+y cancela envíos pendientes del agente), `POST /v1/outbound/:id/resolve`
+(resolver `unknown` con evidencia), `POST /v1/outbound/:id/cancel`, además de
+take over / release de R4-E.
 
 ## API smoke
 

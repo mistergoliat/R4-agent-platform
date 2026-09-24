@@ -13,12 +13,15 @@
     { "path": "packages/agent-kernel" },
     { "path": "packages/evaluation" },
     { "path": "packages/shadow" },
+    { "path": "packages/live-ops" },
     { "path": "apps/api" },
     { "path": "apps/worker" },
     { "path": "apps/scheduler" },
     { "path": "apps/evaluator" },
+    { "path": "apps/channel-gateway" },
     { "path": "adapters/domains" },
     { "path": "adapters/models/openai-compatible" },
+    { "path": "adapters/channels/whatsapp-cloud" },
     { "path": "agents/sales" }
   ]
 }

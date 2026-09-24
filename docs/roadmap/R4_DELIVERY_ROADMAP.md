@@ -23,15 +23,15 @@ requiere autorización explícita (AGENTS.md).
 | R4-E | Temporal + Human Runtime (PRD §40: "Human Collaboration + Scheduler") | Completado y publicado (baseline `74ed8e7`) |
 | R4-F | Sales Reference Application | Completado y publicado (R4-F BASELINE `1927499`; fuera de Core, §3.7) |
 | R4-G | Quality & Learning | Completado (sobre R4-F LIVE-VALIDATED BASELINE `001b7a8`) |
-| R4-H | Shadow / E2E (PRD §40: "Shadow Production") | **En progreso** — implementado sobre R4-G BASELINE `4a54b2c`; pendiente de auditoría (§3.9) |
-| R4-I | Governed Production | No iniciado — **bloqueado** hasta la auditoría final de la corrección GAP-H-001 |
+| R4-H | Shadow / E2E (PRD §40: "Shadow Production") | Cerrado (R4-H BASELINE `80a1733`) |
+| R4-I | Governed Production | **En progreso** — implementado sobre R4 POST-H RECOVERY BASELINE `dd06a68`; pendiente de auditoría (§3.11) |
 | R4-J | Sales Autonomy | No iniciado |
 | R4-K | Platform Generalization Test (Marketing Analyst) | No iniciado |
 | R4-L | Extended Platform | No iniciado |
 
 **Post-H Architecture Gap Review** (gate humano, **no** una fase): GAP-H-001
-confirmado; **resolución implementada** (ADR-028, §3.10) sobre el R4-H BASELINE
-`80a1733`, pendiente de auditoría. No se abre R4-H.5 ni ninguna fase nueva.
+confirmado y **resuelto** (ADR-028, §3.10; publicado en `dd06a68`). No se abrió
+R4-H.5 ni ninguna fase nueva.
 
 ## 2. R4-B — criterios de salida
 
@@ -539,6 +539,68 @@ por archivo) y afirman `blocked`. Shadow: H08A/H08B v2 (lock) y casos nuevos
 H08C–H08I; corpus v2; directivas de falla en cola (`pass`) y `process worker
 stop|cycle|start` en el ejecutor.
 
+## 3.11 R4-I — Governed Production (EN PROGRESO — pendiente de auditoría)
+
+Checkpoint estable (no cierre de fase):
+
+| Aspecto | Estado |
+|---|---|
+| Architecture | ACCEPTED |
+| Offline implementation | PASS |
+| Offline E2E | PASS |
+| Mutations | PASS |
+| Live canary validation | PENDING |
+| Operator identity | PENDING |
+| Final audit | PENDING |
+| **R4-I overall** | **IN PROGRESS** |
+
+Pregunta: ¿puede R4 operar contra usuarios e integraciones reales bajo una
+frontera de producción explícita, reversible y auditable, sin perder
+idempotencia, ownership humano, privacidad ni control de efectos? Diseño:
+[arquitectura §19](../architecture/R4_ARCHITECTURE.md), ADR-029.
+**R4 POST-H RECOVERY BASELINE:** `dd06a68ff078a18a81e3dd12f5fd0ca5ef177ec9`.
+Prerrequisito cumplido: [auditoría del WhatsApp de CRM-Customer-360](../architecture/R4-I_CRM_WHATSAPP_AUDIT.md)
+con decisiones humanas D-1 (número canary propio de R4 de punta a punta; el
+número productivo sigue en el CRM; sin puente CRM→R4→CRM), D-2 (respuesta
+manual del operador), D-3 (protección de respuesta obsoleta, causal) y D-4
+(timeouts/5xx ⇒ `unknown`).
+
+| # | Criterio de salida (§141) | Evidencia |
+|---|---|---|
+| 1–2 | Modo producción explícito, fail-closed; test/shadow/production distinguibles | `unit/live-ops/mode-profile-rollout`, `contract/live-ops-boundaries` |
+| 3–6 | Ingress canónico con tráfico con forma de proveedor; firma; reintentos y duplicados concurrentes ⇒ un input | `unit/live-ops/whatsapp-adapter`, `integration/live-ops-hardening` |
+| 7–9 | Binding de conversación; recuperación ADR-028 mantiene la task; humano persiste inbound y bloquea autonomía | `integration/live-ops-{reference,hardening}` |
+| 10–19 | respond ≠ entrega; identidad durable; un solo despacho; estados separados; callbacks idempotentes y monótonos; `unknown` explícito y nunca reintentado a ciegas; sin duplicado tras ADR-028 | `unit/live-ops/delivery`, `integration/live-ops-*`, `recovery/live-ops-process-crash` |
+| 20–23 | Perfil versionado; writes por D; sin verdad comercial fixture; disponibilidad = bindings reales | `contract/live-ops-boundaries` |
+| 24–27 | Kill switch (default seguro, no pierde inbound); rollout (default 0 %, estable) | `integration/live-ops-reference`, `unit/live-ops/*` |
+| 28–29 | Operador (hilo, take over/release, respuesta manual, resolver/cancelar outbound, atención); correlación inbound → task → run → step → outbound → id del proveedor | `integration/live-ops-*` (API y HTTP) |
+| 30–31 | Sin secretos persistidos; PII minimizada | `integration/live-ops-hardening` (volcado de todas las tablas) |
+| 32 | CI sin red | fake provider local; `R4_PROD_ALLOW_NETWORK` + URL loopback |
+| 33–34 | Crash/restart y carreras horizontales | `recovery/live-ops-process-crash` (SIGKILL), dos dispatchers, callbacks concurrentes |
+| 35–39 | Artifacts reproducibles; E2E offline; ADR-028; kill switch; handoff + inbound | `production:sales:validate`, `integration/live-ops-reference` |
+| 40 | Mutaciones | `npm run test:mutation:production` (14/14) |
+| 44–45 | Sin autonomía de R4-J; sin despliegue ni rollout real | perfil v1 conservador; autonomía nace deshabilitada |
+
+**Cambios mínimos de Core (genéricos, justificados en ADR-029):**
+`TaskRuntime.prepareCreate/createWithin` (refactor sin cambio de semántica),
+`TemporalRuntime.createTaskWithInput` (task + primer input en una transacción:
+cierra la carrera "worker reclama una conversación vacía"),
+`TemporalRuntime.holdForHumansWithin` + `submitInput(hold)` (hold de
+plataforma = handoff de E con razón), `WorkerAdmission` opcional, scope humano
+`autonomy.control`, nombres de telemetría. Protocolo, kernel, parser y gateway
+de modelo sin cambio.
+
+**Cambios en tests de fases previas (extensión, no relajación):** listas de
+migraciones y tablas (0007), allow-lists de dependencias (`@r4/live-ops`,
+`@r4/channel-gateway`, `@r4-adapters/whatsapp-cloud`), timers de pacing
+(gateway, dispatcher), el ancla de una mutación de ADR-028 (el cuerpo de
+`submitInput` se movió a `#submitInputWithin`). El paquete se llama
+`live-ops` porque el test de pureza de Core prohíbe nombres de paquete que
+contengan términos de dominio (p. ej. "product" en "production").
+
+**Pendiente externo (bloqueante antes de desplegar):** validación live del
+canal (sin credenciales del número canary en este entorno) — ver §4.
+
 ## 4. Decisiones diferidas intencionalmente
 
 | Tema | Por qué se difiere | Seam existente |
@@ -607,8 +669,23 @@ stop|cycle|start` en el ejecutor.
 | (G) Reparación de prompt de Sales por findings | Prohibido en G: el evaluador debe ver los defectos actuales | RegressionCase → cambio externo → Experiment |
 | (H) Retry/reparación de decisiones inválidas o "run fallida ≠ task fallida" | **Resuelto post-H (ADR-028, §3.10):** run fallida ≠ task fallida para `invalid_decision` y `model_failure` reintentable. Siguen diferidos: reparación dentro de la run, reintento por calidad, fallback de modelo | `runFailureDisposition`, `maxRunFailureRecoveries` |
 | (post-H) Aplicar el principio de ADR-028 a `capability_failure` / caídas de dominio | Sin evidencia live para distinguir falla transitoria, rechazo de dominio, error de contrato y falla permanente | `runFailureDisposition` (`terminal` hoy) |
-| (post-H → R4-I) `respond` entregado por canal y luego run fallida: la recuperación podría responder otra vez | Frontera de entrega de R4-I; en H/F `respond` no se entrega | `respond` en el step log; `ShadowOutboundSink` |
+| (post-H → R4-I) `respond` entregado por canal y luego run fallida: la recuperación podría responder otra vez | **Resuelto en R4-I (ADR-029):** identidad por step, sin re-despacho, `duplicate_content` | `outbound_messages.response_step_id` |
 | (H) Adapters live-read de Catalog/Customer/Shipping y sandbox de Quote | Sin contrato + endpoint + credencial configurados en R4 (GAP-H-007) | `live-read` en `ShadowExecutionPolicy` (opt-in + contrato) |
 | (H) Replay de conversaciones reales | Sin fuente legal/operacional | `workloadFromReplay` + sanitización |
 | (H) Tokens de razonamiento en métricas | `ModelUsage` no los expone (sin cambio de Core) | `ShadowModelCall.reasoningTokens` = null |
 | (H) Experimento de prompt post-baseline | Decisión humana (§82); ningún candidato elegido en H | `experiment:sales` / Experiment de G |
+
+### 4.1 Diferido desde R4-I (ADR-029)
+
+| Tema | Por qué se difiere | Seam existente |
+|---|---|---|
+| (I → J) Ampliar la superficie autónoma: owners reales de Catalog/Customer/Shipping/Quote, menos aprobaciones, cohortes mayores por evidencia, optimización comercial, tuning del Sales | R4-J decide cuánto poder comercial otorgar | perfil de producción versionado, rollout, `SALES_PRODUCTION_ACTION_POLICY` |
+| (I) Validación live del canal WhatsApp (número canary) | Sin credenciales/número canary configurados en este entorno — **bloqueante antes de desplegar** | `production:sales:smoke`, `production:sales:plan` |
+| (I) Paridad de UI de operadores del CRM (hilo, controles, respuesta manual, estados) sobre las APIs de R4 | Bloqueante antes de migrar el número productivo (D-1) | `/v1/production/*`, `/v1/tasks/:id/thread` |
+| (I) Plantillas fuera de la ventana de 24 h (respuesta manual y seguimiento) | Sólo texto dentro de la ventana en R4-I (D-2) | `OutboundChannelAdapter`, `window_closed` |
+| (I) Indicador "escribiendo"/marcar leído; agrupación de fragmentos (turn settling) | UX, no correctitud; los fragmentos que llegan antes del claim ya entran al mismo snapshot | canal; claim ordinario |
+| (I) Liberación masiva de tasks retenidas tras soltar el kill switch | Operación deliberada por conversación en R4-I | `respondHuman(release|cancel)` |
+| (I) Clave de idempotencia del proveedor / exactly-once | Meta no documenta una; no se afirma | `idempotencyKey` en `OutboundSubmission` |
+| (I) Reconciliación automática de `unknown` sin id del proveedor (p. ej. `biz_opaque_callback_data`) | No verificado en la documentación oficial; no se inventa | atención + resolución del operador |
+| (I) Recuperabilidad genérica de `capability_failure` | Sin evidencia real nueva (sin owners reales en I) | `runFailureDisposition` |
+| (I) Adjuntos multimodales | Sin seam multimodal; se clasifican `unsupported` y van a humano | `content.kind = unsupported` |
