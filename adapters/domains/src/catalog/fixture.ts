@@ -17,6 +17,8 @@ interface Record_ {
  * filters by text, category, price and availability.
  */
 export class FixtureCatalog implements CatalogService {
+  /** What this implementation is, for a shadow composition's binding check (R4-H): an in-memory, deterministic owner. */
+  readonly bindingKind = 'fixture' as const;
   readonly availability = new AvailabilitySwitch('catalog');
   readonly #records = new Map<string, Record_>();
   readonly #now: () => Date;

@@ -97,7 +97,9 @@ function index(evidence: readonly Observation[]): EvidenceIndex {
     } else if (capability === CAPABILITY_IDS.shippingQuote) {
       for (const option of (payload.options as { amount?: { amount?: unknown } }[] | undefined) ?? []) addAmount(option.amount?.amount, o.observationId);
     } else if (capability === CAPABILITY_IDS.quoteCreate) {
-      const q = payload as { total?: { amount?: unknown }; subtotal?: { amount?: unknown }; shipping?: { amount?: { amount?: unknown } }; lines?: { unitPrice?: { amount?: unknown }; lineTotal?: { amount?: unknown } }[] };
+      // A durable action observation carries the receipt envelope ({receiptId, status, …, result}); the owner's quote is `result`.
+      // (R4-H fix: the fixture builder wrote the bare result, so only fixtures were ever indexed.)
+      const q = (typeof payload.result === 'object' && payload.result !== null ? payload.result : payload) as { total?: { amount?: unknown }; subtotal?: { amount?: unknown }; shipping?: { amount?: { amount?: unknown } }; lines?: { unitPrice?: { amount?: unknown }; lineTotal?: { amount?: unknown } }[] };
       addAmount(q.total?.amount, o.observationId);
       addAmount(q.subtotal?.amount, o.observationId);
       addAmount(q.shipping?.amount?.amount, o.observationId);

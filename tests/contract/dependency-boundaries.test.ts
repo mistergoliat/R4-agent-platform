@@ -64,6 +64,9 @@ const ALLOWED: Record<string, string[]> = {
   // and adapts the existing ModelGateway as a judge. Never the kernel, the task/capability
   // runtimes, the registry, the policy engine, the worker or the API.
   '@r4/evaluator': ['@r4/contracts', '@r4/context-compiler', '@r4/evaluation', '@r4/model-gateway', '@r4/persistence-postgres'],
+  // R4-H (ADR-027): the shadow framework is pure and composes over Quality (it evaluates with R4-G) and the
+  // ModelProvider SPI (its call recorder wraps a provider). Never a runtime, persistence, the worker, the API or the scheduler.
+  '@r4/shadow': ['@r4/contracts', '@r4/evaluation', '@r4/model-gateway', 'zod'],
 };
 
 describe('dependency boundaries', () => {
@@ -131,13 +134,21 @@ describe('dependency boundaries', () => {
   });
 
   it('keeps Core execution independent of Quality (R4-G, ADR-025)', () => {
-    for (const name of [...all.keys()].filter((n) => n !== '@r4/evaluation' && n !== '@r4/evaluator')) {
+    // R4-H: the shadow framework is not Core execution; it composes over Quality by design (ADR-027).
+    for (const name of [...all.keys()].filter((n) => n !== '@r4/evaluation' && n !== '@r4/evaluator' && n !== '@r4/shadow')) {
       expect(deps(name), name).not.toContain('@r4/evaluation');
       expect(deps(name), name).not.toContain('@r4/evaluator');
     }
     for (const forbidden of ['@r4/agent-kernel', '@r4/task-runtime', '@r4/capability-runtime', '@r4/agent-registry', '@r4/policy-engine', '@r4/worker', '@r4/api', '@r4/scheduler']) {
       expect(deps('@r4/evaluation')).not.toContain(forbidden);
       expect(deps('@r4/evaluator')).not.toContain(forbidden);
+    }
+  });
+
+  it('keeps Core independent of Shadow, and Shadow away from runtimes and persistence (R4-H, ADR-027)', () => {
+    for (const name of [...all.keys()].filter((n) => n !== '@r4/shadow')) expect(deps(name), name).not.toContain('@r4/shadow');
+    for (const forbidden of ['pg', '@r4/persistence-postgres', '@r4/agent-kernel', '@r4/task-runtime', '@r4/capability-runtime', '@r4/agent-registry', '@r4/policy-engine', '@r4/context-compiler', '@r4/worker', '@r4/api', '@r4/scheduler', '@r4/evaluator']) {
+      expect(deps('@r4/shadow')).not.toContain(forbidden);
     }
   });
 

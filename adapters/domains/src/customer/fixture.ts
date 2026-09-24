@@ -21,6 +21,8 @@ export const FIXTURE_CUSTOMERS: readonly CustomerProfile[] = [
 ];
 
 export class FixtureCustomerDirectory implements CustomerDirectory {
+  /** What this implementation is, for a shadow composition's binding check (R4-H): an in-memory, deterministic owner. */
+  readonly bindingKind = 'fixture' as const;
   readonly availability = new AvailabilitySwitch('customer');
   readonly #customers: Map<string, CustomerProfile>;
 

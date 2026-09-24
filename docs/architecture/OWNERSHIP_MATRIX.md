@@ -1,8 +1,8 @@
 ---
 title: R4 — Ownership Matrix
-status: implemented (R4-B … R4-E); R4-F (outside Core, published at 1927499); R4-G (completed, outside Core execution) + planned rows
+status: implemented (R4-B … R4-E); R4-F (outside Core, published at 1927499); R4-G (completed, outside Core execution); R4-H Shadow / E2E (IN PROGRESS, outside Core execution) + planned rows
 owner: architecture
-last_reviewed: 2026-09-23
+last_reviewed: 2026-09-24
 ---
 
 # R4 — Ownership Matrix
@@ -148,6 +148,28 @@ produce evidencia derivada, versionada y reproducible.
 | Experiment | `@r4/evaluation` (`compareBenchmarks`) | Evaluación (deltas; sin ganador) | Artifacts (`artifacts/experiments`) | Inmutable | por comparación | Reproducible | `unit/evaluation/benchmark-experiment` |
 | Perfil de modelo (evaluado / juez) | Despliegue (config) → `@r4/evaluation` (fingerprint) | Configuración (sin secretos) | En manifests | — | — | — | `contract/quality-boundaries` (golden) |
 
+## 1h. R4-H — Shadow / E2E (en progreso; fuera de la ejecución de Core)
+
+**Shadow no es dueño de la verdad de ejecución ni de la de evaluación.** La
+trayectoria sigue en sus owners (tablas de R4 y del pack); la evaluación sigue
+siendo de R4-G. Shadow es dueño de las condiciones de la ejecución (modo,
+bindings, corpus) y de la evidencia de sus efectos hacia afuera (ADR-027).
+
+| Concepto | Owner (paquete) | Autoridad | Almacenamiento | Mutabilidad | Ciclo de vida | Ante reinicio | Evaluación |
+|---|---|---|---|---|---|---|---|
+| Verdad de ejecución (task, runs, steps, observations, ledger D, esperas, goals, workspace) | Sus owners de siempre (`task-runtime`, `persistence-postgres`, pack) | Autoridad de plataforma / Evidencia | Tablas existentes; una BD desechable por ejecución shadow | Sin cambios | — | Durable (el E2E mata procesos reales) | `shadow/shadow-suite`, `recovery/shadow-process` |
+| Verdad de evaluación (EvaluationRun, findings, BenchmarkRun) | `@r4/evaluation` (R4-G) | Evaluación | Artifacts bajo `artifacts/shadow/<suite>/{evaluations,benchmark}` | Inmutable | por suite | Reproducible | `unit/shadow/suite-and-model` |
+| Modo de ejecución shadow | Despliegue/comando (`R4_EXECUTION_MODE=shadow` / `--execution-mode shadow`) → `@r4/shadow` | Configuración explícita; fail-closed | En cada ShadowRun (fingerprint) | — | por proceso | Se re-declara | `unit/shadow/mode-and-bindings`, `recovery/shadow-process` |
+| Domain binding (kind, operaciones con clase de efecto, contrato) | El pack (`agents/sales/src/shadow/bindings.ts`); la implementación declara su `bindingKind` | Configuración declarada; clasificada por `ShadowExecutionPolicy` | Código + fingerprint en cada ShadowRun | Cambio ⇒ nueva versión | — | — | `contract/shadow-boundaries` |
+| ShadowExecutionPolicy (dónde se materializa un efecto) | `@r4/shadow` | Autoridad de plataforma (pura); **no autoriza** — eso es R4-D | Código | — | — | — | `unit/shadow/mode-and-bindings` |
+| WorkloadCase / corpus | Pack (`agents/sales/src/shadow/corpus.ts` + lock) sobre el esquema de `@r4/shadow` | Configuración versionada (id@versión + fingerprint) | Código | Cambio ⇒ nueva versión (lock) | — | — | `unit/shadow/workload-privacy-cost` |
+| ShadowRun (metadata de una ejecución) | `@r4/shadow` (`runShadowSuite`) + `WorkloadExecutor` del pack | Evidencia derivada; **no reemplaza AgentTask** (la referencia) | `workload-results.jsonl` | Inmutable | por ejecución | Reproducible desde corpus + perfiles + SHA | `unit/shadow/suite-and-model` |
+| ShadowSuiteRun | `@r4/shadow` | Evaluación/experimento (sin score) | `artifacts/shadow/<suiteRunId>/` | Inmutable (nuevo id por corrida) | por suite | — | `unit/shadow/suite-and-model`, `shadow/shadow-suite` |
+| Side-effect manifest + chequeos de seguridad | `@r4/shadow` (`buildSideEffectManifest`, `evaluateShadowSafety`) | Evidencia derivada (guard + ledger + sink); blocker ⇒ stop condition | `side-effects.jsonl` | Inmutable | por ejecución | — | `unit/shadow/manifest-and-safety` |
+| ShadowOutbound (lo que se habría enviado) | `ShadowOutboundSink` (`@r4/shadow`), única implementación de `OutboundDelivery` | Evidencia; `actualDelivery = false` por esquema | `outbound.jsonl` (redactado, destinatario seudónimo) | Inmutable | por respuesta | — | `unit/shadow/workload-privacy-cost`, `contract/shadow-boundaries` |
+| Quote en shadow | `ShadowQuoteService` (`adapters/domains`) detrás del `QuoteService` port | **Dominio simulado record-only** (nunca emite documento) | En el proceso que lo compone | — | por ejecución | Se pierde con el proceso (el E2E emite sus registros) | `shadow/shadow-suite`, `recovery/shadow-process` |
+| ArchitectureGapCandidate | Observadas: `@r4/shadow` (`observeGapCandidates`, conservador); revisadas: persona (`agents/sales/src/shadow/gaps.ts`) | Conocimiento revisado; sólo una entrada revisada y repetida puede ser gap arquitectónico | `architecture-gap-candidates.jsonl` + código | — | — | — | `unit/shadow/workload-privacy-cost` |
+
 ## 2. Planificado (sin implementar; owner candidato)
 
 | Concepto | Fase | Owner candidato | Autoridad |
@@ -159,7 +181,7 @@ produce evidencia derivada, versionada y reproducible.
 | Verificación de identidad (`identityAssurance = verified`) e IAM de operadores | con el primer servicio de identidad | servicio de identidad + plataforma | Plataforma |
 | Artifact | R4-C/E (a decidir) | `artifacts` | Evidencia versionada |
 | Outbox / eventos públicos | con primer consumidor | `persistence-postgres` + `observability` | Plataforma |
-| FailureCluster / KnowledgeCandidate / ImprovementProposal | R4-H+ (G implementó Evaluation y Finding, §1g) | `evaluation` | Plataforma + rúbricas de packs |
+| FailureCluster / KnowledgeCandidate / ImprovementProposal | post-H (G implementó Evaluation y Finding, §1g; H sólo observaciones conservadoras, §1h) | `evaluation` | Plataforma + rúbricas de packs |
 | Quality Auditor (agente) | cuando haya volumen de evaluación continua | `agents/quality-auditor` sobre la frontera semántica de G | Juicio (nunca autoridad) |
-| Adapters live de Customer / Catalog / Shipping / Quote | cuando exista contrato público documentado | `adapters/domains/*` | **Dominio** |
-| Adapter de canal (mensajería) y entrega de `respond` | R4-H+ | `adapters/channels/*` | Transporte |
+| Adapters live de Customer / Catalog / Shipping / Quote | cuando exista contrato documentado + endpoint + credencial configurados en R4 (H soporta `live-read` en el framework; ninguno disponible, §1h) | `adapters/domains/*` | **Dominio** |
+| Adapter de canal (mensajería) y entrega de `respond` | R4-I+ (H sólo registra en `ShadowOutboundSink`, sin entrega) | `adapters/channels/*` | Transporte |

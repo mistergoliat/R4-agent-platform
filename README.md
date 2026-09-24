@@ -32,6 +32,12 @@ findings, taxonomía de fallos, outcomes separados, métricas, grounding,
 regresiones, benchmarks con repeticiones y experimentos — fuera de la ejecución
 de Core y sin modificar agentes (ADR-025, ADR-026).
 
+**R4-H — Shadow / E2E** (**en progreso**, pendiente de auditoría; baseline
+R4-G `4a54b2c`): workloads realistas sobre el runtime real con modelo real y
+efectos sólo shadow — modo shadow explícito, bindings declarados, side-effect
+manifest, outbound sink sin entrega, corpus de workloads y suites evaluadas
+por R4-G (ADR-027).
+
 Lectura obligatoria antes de cambios de arquitectura: [AGENTS.md](AGENTS.md),
 [Constitución](docs/architecture/R4_AGENTIC_PLATFORM_MOTIVATION_AND_CONSTRAINTS.md),
 [PRD](docs/architecture/R4_AGENTIC_PLATFORM_PRD_AND_ROADMAP.md),
@@ -200,6 +206,42 @@ El juez live usa `R4_EVAL_MODEL_*` (mismas variables que `R4_MODEL_*`) o, si no
 está definido, el mismo modelo configurado; ambos perfiles quedan registrados.
 Artifacts en `artifacts/{evaluations,benchmarks,experiments}` (ignorados por git).
 
+### Shadow / E2E (R4-H, en progreso)
+
+Workloads realistas sobre el runtime real, con modelo real opcional y efectos
+**sólo shadow** (ADR-027): `packages/shadow` (framework puro), bindings,
+corpus y ejecutor de Sales en `agents/sales/src/shadow`. Un run es shadow sólo
+si se declara (`R4_EXECUTION_MODE=shadow` o `--execution-mode shadow`, que los
+scripts npm pasan); sin declaración nada se compone. Ningún binding
+`production` puede componerse; `respond` sólo llega al `ShadowOutboundSink`
+(`actualDelivery = false`); `quote.create` pasa por la Policy de R4-D y se
+materializa en un Quote owner record-only (`COT-9xxxxx`, sin documento).
+
+```bash
+npm run build
+npm run shadow:sales -- --plan       # plan: casos, repeticiones, perfil de modelo, bindings, writes, outbound disabled
+npm run shadow:sales                 # offline: corpus completo (28 casos) × 1, modelo scripted, PostgreSQL local, sin red
+R4_SHADOW_ALLOW_LIVE_MODEL=true npm run shadow:sales:smoke   # modelo real (R4_MODEL_*): H01, H04, H05 × 1
+R4_SHADOW_ALLOW_LIVE_MODEL=true npm run shadow:sales:live -- --set repeated --repetitions 3 --concurrency 3
+npm run test:shadow                  # suite offline completa como test (PostgreSQL real)
+npm run test:mutation:shadow         # 9 mutaciones de seguridad shadow: todas deben ser detectadas
+```
+
+| Variable / flag | Default | Descripción |
+|---|---|---|
+| `R4_EXECUTION_MODE` | — | `shadow` o nada (fail-closed); no existe `production` |
+| `R4_SHADOW_ALLOW_LIVE_MODEL` | `false` | Opt-in explícito para llamar al modelo real |
+| `R4_SHADOW_ALLOW_LIVE_READ` | `false` | Opt-in para bindings live read-only con contrato documentado (ninguno disponible hoy) |
+| `R4_SHADOW_ARTIFACTS_DIR` | `artifacts/shadow` | Destino de artifacts (inmutables, ignorados por git) |
+| `--cases ID,…` / `--set h-reference\|repeated\|smoke\|all` | `all` | Selección de casos |
+| `--repetitions N` / `--concurrency N` | `1` / `1` | Live con N > 3 o > 60 ejecuciones exige `--allow-large` |
+| `--max-model-calls` / `--max-input-tokens` / `--max-output-tokens` | 6000 offline / 1500 live | Cost guard de la suite: al alcanzarlo, lo restante queda `not_run_due_to_budget` |
+| `--no-judge` | juez activo en live | El juez usa `R4_EVAL_MODEL_*` o, si no existe, el modelo configurado |
+
+Artifacts en `artifacts/shadow/<suiteRunId>/` (manifest, plan, resultados por
+ejecución, side effects, outbound, llamadas al modelo, resumen de evaluación,
+agregados, candidatos de gap, `report.md`, `benchmark/`, `evaluations/`).
+
 ## API smoke
 
 ```bash
@@ -245,11 +287,13 @@ npm run typecheck       # repo completo, incluidos tests
 npm run test:unit       # sin dependencias externas
 npm run test:contract   # pureza de Core, fronteras de dependencias, neutralidad de proveedor
 npm run test:integration  # requiere `npm run db:up`; crea y borra BDs efímeras
-npm run test:recovery   # detiene/arranca el contenedor PostgreSQL y mata workers y schedulers reales (SIGKILL, incl. tras un efecto externo y a mitad de una reconciliación); requiere `npm run build`; correr aislado
+npm run test:recovery   # detiene/arranca el contenedor PostgreSQL y mata workers y schedulers reales (SIGKILL, incl. tras un efecto externo, a mitad de una reconciliación y (H) un worker Sales shadow a mitad de una conversación); requiere `npm run build`; correr aislado
 npm run test:sales      # (F) escenarios S01–S17 + CENTRAL: modelo scripted, dominio fixture, PostgreSQL real; (G) evaluación de trayectorias durables
 npm run test:evaluation # (G) framework de evaluación + evaluator pack de Sales + fronteras de Quality
 npm run test:mutation:evaluation  # (G) 6 mutaciones de invariantes críticos: todas deben ser detectadas
-npm test                # unit + contract + integration + sales
+npm run test:shadow     # (H) suite shadow offline completa: runtime real, modelo scripted, PostgreSQL real, sin red
+npm run test:mutation:shadow  # (H) 9 mutaciones de seguridad shadow: todas deben ser detectadas
+npm test                # unit + contract + integration + sales + shadow
 npm run check           # build + lint + typecheck + test
 ```
 

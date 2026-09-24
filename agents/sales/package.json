@@ -2,7 +2,7 @@
   "name": "@r4-sales/agent",
   "version": "0.0.0",
   "private": true,
-  "description": "R4-F Sales Reference Application: the Sales Agent Pack (definition, instructions, capabilities over domain ports, Sales workspace state, context source, action policy) plus its conversational E2E and live behavioral harnesses and (R4-G) its evaluator pack, fixtures, regression corpus and evaluation CLIs. A workload on R4 — never a dependency of R4 Core.",
+  "description": "R4-F Sales Reference Application: the Sales Agent Pack (definition, instructions, capabilities over domain ports, Sales workspace state, context source, action policy) plus its conversational E2E and live behavioral harnesses and (R4-G) its evaluator pack, fixtures, regression corpus and evaluation CLIs, and (R4-H) its shadow workload corpus, shadow domain bindings and shadow suite CLI. A workload on R4 — never a dependency of R4 Core.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -14,6 +14,10 @@
     "./evaluations": {
       "types": "./dist/evaluations/index.d.ts",
       "import": "./dist/evaluations/index.js"
+    },
+    "./shadow": {
+      "types": "./dist/shadow/index.d.ts",
+      "import": "./dist/shadow/index.js"
     }
   },
   "files": [
@@ -35,6 +39,8 @@
     "@r4/observability": "*",
     "@r4/persistence-postgres": "*",
     "@r4/policy-engine": "*",
+    "@r4/scheduler": "*",
+    "@r4/shadow": "*",
     "@r4/worker": "*",
     "pg": "^8.23.0",
     "pino": "^10.3.0",

@@ -9,4 +9,5 @@ export * from './shipping/port.js';
 export * from './shipping/fixture.js';
 export * from './quote/port.js';
 export * from './quote/fixture.js';
+export * from './quote/shadow.js';
 export * from './fixtures.js';

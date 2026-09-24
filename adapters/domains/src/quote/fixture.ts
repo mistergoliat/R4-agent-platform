@@ -25,6 +25,8 @@ const VALIDITY_MS = 7 * 24 * 60 * 60 * 1000;
  * issued-then-timeout, issued-then-hang, connection lost after send.
  */
 export class FixtureQuoteService implements QuoteService {
+  /** What this implementation is, for a shadow composition's binding check (R4-H): an in-memory, deterministic owner. */
+  readonly bindingKind = 'fixture' as const;
   readonly availability = new AvailabilitySwitch('quote');
   readonly faults: FixtureQuoteFaults = {};
   readonly #catalog: FixtureCatalog;

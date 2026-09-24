@@ -2,7 +2,7 @@
 title: R4 — Delivery Roadmap
 status: active
 owner: architecture
-last_reviewed: 2026-09-23
+last_reviewed: 2026-09-24
 source: ../architecture/R4_AGENTIC_PLATFORM_PRD_AND_ROADMAP.md §40
 ---
 
@@ -23,7 +23,7 @@ requiere autorización explícita (AGENTS.md).
 | R4-E | Temporal + Human Runtime (PRD §40: "Human Collaboration + Scheduler") | Completado y publicado (baseline `74ed8e7`) |
 | R4-F | Sales Reference Application | Completado y publicado (R4-F BASELINE `1927499`; fuera de Core, §3.7) |
 | R4-G | Quality & Learning | Completado (sobre R4-F LIVE-VALIDATED BASELINE `001b7a8`) |
-| R4-H | Shadow Production | No iniciado |
+| R4-H | Shadow / E2E (PRD §40: "Shadow Production") | **En progreso** — implementado sobre R4-G BASELINE `4a54b2c`; pendiente de auditoría (§3.9) |
 | R4-I | Governed Production | No iniciado |
 | R4-J | Sales Autonomy | No iniciado |
 | R4-K | Platform Generalization Test (Marketing Analyst) | No iniciado |
@@ -409,7 +409,7 @@ Sin cambios en Core de ejecución y sin migración (0001–0006 congeladas).
 | 27 | Evaluación de referencia offline | `npm run eval:sales`, `benchmark:sales`, `experiment:sales` |
 | 28–29 | Tests de arquitectura; mutation checks | `contract/quality-boundaries`; `npm run test:mutation:evaluation` (6/6) |
 | 30–33 | A–F verdes; build/lint/typecheck; `git diff --check`; docs | ver informe de auditoría |
-| 34 | Nada de R4-H | sin shadow, sin adapters reales, sin evaluación continua |
+| 34 | Nada de R4-H | sin shadow, sin adapters reales, sin evaluación continua (R4-H: §3.9) |
 
 **Cambios en tests de fases previas (justificados, ADR-025):** `temporal-boundaries` y
 `governed-execution-boundaries` acotan su escaneo de "runtime" excluyendo
@@ -418,6 +418,81 @@ usa un deadline de juez por diseño; `quality-boundaries` re-verifica ambas regl
 sobre el runtime); `sales-boundaries` excluye `src/evaluations` del runtime del
 pack y permite `@r4/evaluation`/`@r4/evaluator` como dependencias del pack;
 `dependency-boundaries` agrega las dos entradas del allow-list.
+
+## 3.9 R4-H — Shadow / E2E (EN PROGRESO — pendiente de auditoría)
+
+Pregunta: ¿qué ocurre cuando R4 ejecuta workloads completos, repetidos y
+suficientemente realistas con el runtime verdadero, un modelo real y los
+límites reales de integración, pero sin efectos de producción sobre clientes o
+negocio? Diseño: [arquitectura §17](../architecture/R4_ARCHITECTURE.md),
+ADR-027. **R4-G BASELINE SHA:** `4a54b2c8dbb95b6cec8631e88d60be483d3ed64d`.
+Sin cambios en Core de ejecución y sin migración (0001–0006 congeladas; no
+hay 0007). El PRD §40 describía H como "espejo del tráfico real"; no existe
+fuente legal/operacional de conversaciones reales, así que H se ejecutó como
+**curated shadow** (no replay de producción): el camino de replay existe y
+está probado con datos sintéticos (`workloadFromReplay`).
+
+| # | Criterio de salida | Evidencia |
+|---|---|---|
+| 1 | WorkloadCase versionado | `packages/shadow/src/workload.ts`; corpus + lock (`agents/sales/src/shadow/corpus*.ts`); `unit/shadow/workload-privacy-cost` |
+| 2 | Modo shadow explícito | `R4_EXECUTION_MODE=shadow` / `--execution-mode shadow`; `unit/shadow/mode-and-bindings`; worker de proceso rechaza arrancar sin él (`recovery/shadow-process`) |
+| 3 | Sin bindings de escritura de producción | `ShadowExecutionPolicy` + `assertShadowComposition` + `guardPort`; `contract/shadow-boundaries`; mutación 1 |
+| 4 | Entrega real imposible | `ShadowOutboundSink` única implementación; `actualDelivery` literal `false`; factory rechaza `production-delivery`; mutación 2 |
+| 5 | ShadowRun reproducible | `shadowRunSchema` (caso+fingerprint, perfil de modelo+fingerprint, bindings+fingerprint, política, config, SHA, dirty, agente, protocolo, evaluación) |
+| 6 | Corpus realista | 28 casos (H01–H14 + H08A/B + H12B, S02/S03/S04/S11/CENTRAL, R01–R07): lenguaje coloquial, errores ortográficos, correcciones, preguntas laterales, restricciones tardías, cambios de preferencia, pausas largas |
+| 7 | Ingress canónico | `TemporalRuntime.submitInput` (lo que llama `POST /v1/tasks/:id/inputs`); `shadow/shadow-suite` (turnos releídos del estado durable) |
+| 8 | Runtime real E2E | API + worker + kernel + compilador + ActionRuntime/Policy + scheduler reales sobre PostgreSQL |
+| 9 | Modelo real | `deepseek-flash`, thinking habilitado, 8192 max output, `json_object` (fingerprint `db310ddbc507…`) |
+| 10 | Sales Agent sin reemplazo de workflow | mismas instrucciones, capabilities y política; `contract/shadow-boundaries` (runtime del pack sin "shadow") |
+| 11–12 | Writes por D; Receipt/Observation | manifest une efecto ↔ comando ALLOW ↔ receipt por execution key; `shadow/shadow-suite` (ingress) |
+| 13 | Wait/resume E2E | H05, H13, H14 (live y offline); `sales.waited_and_resumed` |
+| 14 | Reinicio de proceso | `recovery/shadow-process` (worker SIGKILL + worker nuevo + scheduler de proceso); H05/H14 reemplazan el worker |
+| 15 | Reconciliación | H09 (scheduler), H12B (cancel con efecto incierto) — offline y live |
+| 16 | Aprobación / handoff | H10 (perfil `sales-shadow-approval`), H11 (takeover/release) |
+| 17 | Conversación larga | H13 (12 turnos, corrección, pregunta lateral, un día de pausa) |
+| 18 | Datos obsoletos | H06 (3 días, cambio de precio del owner), CENTRAL/H14 |
+| 19 | Caída de dominio | H07 (Catalog down → up) |
+| 20 | Falla de proveedor / protocolo | H08A (timeout inyectado), H08B (texto después del JSON inyectado) + fallas reales medidas |
+| 21 | G evalúa toda trayectoria | `runBenchmark` sobre cada subject ejecutado; `evaluationRunId` en cada ShadowRun |
+| 22–23 | Corridas individuales + agregados; métricas | `workload-results.jsonl`, `aggregates.json`, `report.md` |
+| 24–26 | Manifest; productionEffects = 0; deliveries = 0 | todas las suites (offline y live) |
+| 27–28 | Gap candidates; ningún gap arquitectónico corregido en silencio | `observeGapCandidates` + registro revisado (`agents/sales/src/shadow/gaps.ts`); GAP-H-001 sólo registrado |
+| 29–30 | CI offline sin red; comando live explícito | proyecto `shadow` (scripted); `shadow:sales:live`/`:smoke` con opt-in; `contract/shadow-boundaries` |
+| 31 | Sin secretos/razonamiento/PII en artifacts | gate de R4-G + gate de datos personales; outbound redactado y seudónimo |
+| 32 | Mutaciones | `npm run test:mutation:shadow` (9/9) |
+| 33 | Baseline live controlado | N=1 × 28 casos; N=3 × H01/H02/H03/H04/H05/H14; H10/H11 × 2 |
+| 34–35 | Live-read sólo documentado; estado de integración honesto | ningún binding live-read (tabla en arquitectura §17.3) |
+| 36 | Nada de R4-I | sin entrega, rollout, kill switch, SLO ni canal |
+| 37–40 | Suites A–G, H; build/lint/typecheck; `git diff --check` | ver informe de auditoría |
+| 41 | Documentación | arquitectura §17, ownership §1h, ADR-027, README |
+| 42 | Sin commit | árbol de trabajo pendiente de auditoría |
+
+**Corrección de bug probado de R4-G (política §76):** `SalesClaimVerifier`
+leía la evidencia de `quote.create` desde el nivel superior del payload, pero
+las observations de acción durables llevan el sobre del receipt
+(`{receiptId, status, …, result}`); los fixtures de G escribían el resultado
+sin sobre, por lo que sólo en trayectorias reales las cifras de una cotización
+respaldada nunca se fundamentaban. Fix mínimo (desenvolver `result`),
+`sales.grounding` v1 → v2 y test de regresión
+(`unit/sales/evaluation/claims-envelope`). Detectado por el smoke live (H04).
+
+**Bug del ejecutor H corregido durante la construcción:** un evento de proceso
+anterior al primer input hacía correr al agente sobre una conversación vacía;
+el ejecutor ya no mueve al worker antes del primer input.
+
+**Cambios en tests de fases previas (extensión, no relajación):**
+`dependency-boundaries` (allow-list `@r4/shadow`; excluido de "Core
+independiente de Quality" porque compone sobre Quality; nueva regla "Core no
+depende de Shadow"), `quality-boundaries` (`packages/shadow` fuera de "Core
+execution"; `src/shadow` fuera del runtime del pack), `sales-boundaries`
+(`src/shadow` fuera del runtime del pack; dependencias `@r4/scheduler`,
+`@r4/shadow`). **Adapters:** los fixtures de dominio declaran
+`bindingKind = 'fixture'` (aditivo). **Harness:** `SalesHarness` acepta
+`ports` y `actionPolicy` (aditivo; default sin cambios).
+
+**Candidatos para la revisión de gaps post-H** (gate humano, no fase): ver el
+registro revisado y el informe de cierre. El único `architecture_gap_candidate`
+es GAP-H-001 (una salida inválida del modelo termina la conversación entera).
 
 ## 4. Decisiones diferidas intencionalmente
 
@@ -479,9 +554,14 @@ pack y permite `@r4/evaluation`/`@r4/evaluator` como dependencias del pack;
 | (F) Prompt de ventas óptimo, jerarquía óptima de goals, scoring de calidad, subagentes especialistas | Requieren evidencia de R4-G | escenarios + `sales:live` artifacts |
 | (F) Identidad de cliente productiva | Sin servicio de identidad; binding provisional del ingress | `sales.conversations`, `customer.get_context` |
 | (G) Tokens de razonamiento en `ModelUsage` | Tocaría C1/contratos; ningún proveedor los expone hoy por el adapter | `ModelCallRecord.reasoningTokens` (null = no expuesto) |
-| (G) FailureCluster, KnowledgeCandidate, ImprovementProposal | Requieren volumen real (R4-H); hoy dedupe simple + agregados por código | `findings.jsonl`, `aggregate.json` |
+| (G) FailureCluster, KnowledgeCandidate, ImprovementProposal | Requieren volumen real; H sólo produce observaciones conservadoras + registro revisado | `findings.jsonl`, `aggregate.json`, `architecture-gap-candidates.jsonl` |
 | (G) Quality Auditor como Agent Pack | Sin necesidad antes de evaluación continua | `SemanticJudge` + rúbricas versionadas |
 | (G) Persistencia de evaluaciones en BD | Sin consumidor operacional (ADR-026) | artifacts con manifest |
 | (G) Calculadora de costos | Precios no pertenecen a Core; se registran tokens y llamadas | métricas de eficiencia |
 | (G) Benchmark live grande / comparación de proveedores | Costo; se preparó el seam y se limita N live ≤ 3 sin `--allow-large` | `benchmark:sales --source live` |
 | (G) Reparación de prompt de Sales por findings | Prohibido en G: el evaluador debe ver los defectos actuales | RegressionCase → cambio externo → Experiment |
+| (H) Retry/reparación de decisiones inválidas o "run fallida ≠ task fallida" | Candidato GAP-H-001 para la revisión post-H; no se decide dentro de H | `invalid_decision`, `model_failure`; ADR-008 |
+| (H) Adapters live-read de Catalog/Customer/Shipping y sandbox de Quote | Sin contrato + endpoint + credencial configurados en R4 (GAP-H-007) | `live-read` en `ShadowExecutionPolicy` (opt-in + contrato) |
+| (H) Replay de conversaciones reales | Sin fuente legal/operacional | `workloadFromReplay` + sanitización |
+| (H) Tokens de razonamiento en métricas | `ModelUsage` no los expone (sin cambio de Core) | `ShadowModelCall.reasoningTokens` = null |
+| (H) Experimento de prompt post-baseline | Decisión humana (§82); ningún candidato elegido en H | `experiment:sales` / Experiment de G |

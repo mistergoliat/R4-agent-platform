@@ -41,6 +41,8 @@ export type WeightLookup = (productId: string) => number | null;
  * Deterministic; logistics live here, never in an agent prompt.
  */
 export class FixtureShipping implements ShippingService {
+  /** What this implementation is, for a shadow composition's binding check (R4-H): an in-memory, deterministic owner. */
+  readonly bindingKind = 'fixture' as const;
   readonly availability = new AvailabilitySwitch('shipping');
   readonly #weightOf: WeightLookup;
   readonly #now: () => Date;

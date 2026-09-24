@@ -1,0 +1,24 @@
+{
+  "name": "@r4/shadow",
+  "version": "0.0.0",
+  "private": true,
+  "description": "R4-H Shadow / E2E framework: WorkloadCase, explicit shadow execution mode, domain binding classification (ShadowExecutionPolicy), side-effect recording and manifest, shadow outbound sink, ShadowRun / ShadowSuiteRun composed over the R4-G benchmark, cost guard, operational aggregates, sanitization, ArchitectureGapCandidate and artifacts. Domain-neutral and pure: no I/O, no runtime, no model client. Never imported by Core execution or by an agent pack runtime.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@r4/contracts": "*",
+    "@r4/evaluation": "*",
+    "@r4/model-gateway": "*",
+    "zod": "^4.6.0"
+  }
+}

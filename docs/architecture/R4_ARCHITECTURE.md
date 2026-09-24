@@ -1,8 +1,8 @@
 ---
-title: R4 — Arquitectura implementada (R4-B + R4-C1 + R4-C2 + R4-D + R4-E) y R4-F (Sales Reference Application)
-status: implemented (R4-B … R4-E, published at 74ed8e7); R4-F published at 1927499 (R4-F BASELINE); R4-G Quality & Learning COMPLETED (on 001b7a8)
+title: R4 — Arquitectura implementada (R4-B + R4-C1 + R4-C2 + R4-D + R4-E), R4-F (Sales Reference Application), R4-G y R4-H
+status: implemented (R4-B … R4-E, published at 74ed8e7); R4-F published at 1927499 (R4-F BASELINE); R4-G Quality & Learning COMPLETED (on 001b7a8); R4-H Shadow / E2E IN PROGRESS (on 4a54b2c)
 owner: architecture
-last_reviewed: 2026-09-23
+last_reviewed: 2026-09-24
 depends_on:
   - R4_AGENTIC_PLATFORM_MOTIVATION_AND_CONSTRAINTS.md
   - R4_AGENTIC_PLATFORM_PRD_AND_ROADMAP.md
@@ -32,6 +32,7 @@ depends_on:
   - ../adr/ADR-024-openai-compatible-model-provider.md
   - ../adr/ADR-025-post-hoc-evaluation-boundary.md
   - ../adr/ADR-026-learning-as-regression-knowledge.md
+  - ../adr/ADR-027-shadow-execution-boundary.md
 ---
 
 # R4 — Arquitectura implementada (R4-B + R4-C1 + R4-C2 + R4-D + R4-E) y R4-F
@@ -47,7 +48,9 @@ La sección 15 describe R4-F: el primer workload (Sales Reference Application),
 que vive **fuera** de Core (`agents/sales`, `adapters/*`) y usa las fronteras
 anteriores sin moverlas. La sección 16 describe R4-G (Quality & Learning,
 completado): evaluación post-hoc de trayectorias terminadas, fuera de la
-ejecución de Core.
+ejecución de Core. La sección 17 describe R4-H (Shadow / E2E, en progreso):
+workloads realistas sobre el runtime real con modelo real y efectos sólo
+shadow, evaluados por R4-G.
 
 ## 1. Objetivo de R4-B
 
@@ -86,11 +89,13 @@ R4-agent-platform/
 │   ├── context-compiler/       (C2) Contexto estructurado por decisión: sources, autoridad, frescura, budget, compaction.
 │   ├── policy-engine/          (D) Autorización determinista de acciones: reglas tipadas, versionadas y con hash. Pura.
 │   ├── evaluation/             (G) Framework de Quality: subject, findings, taxonomía, outcomes, evaluadores, benchmark, experiment. Puro y sin dominio.
+│   ├── shadow/                 (H) Framework Shadow / E2E: modo shadow, bindings declarados, guard, manifest, outbound sink, WorkloadCase, ShadowRun/Suite sobre R4-G. Puro y sin dominio.
 │   └── persistence-postgres/   Migraciones + implementación PostgreSQL de los ports.
 ├── agents/
 │   ├── platform-probe/         Sonda sin dominio (R4-B).
 │   └── sales/                  (F) Sales Agent Pack: definición, capabilities, estado Sales (esquema `sales`, 0006 propia), harness. Fuera de Core.
 │                               (G) `src/evaluations`: evaluadores, rúbricas, fixtures y regresiones de Sales (entrada `@r4-sales/agent/evaluations`).
+│                               (H) `src/shadow`: bindings shadow, corpus de workloads + lock, ejecutor, worker de proceso (entrada `@r4-sales/agent/shadow`).
 ├── adapters/                   (F) Fuera de Core.
 │   ├── domains/                Ports Customer/Catalog/Shipping/Quote + fixtures deterministas (sin dependencia de R4).
 │   └── models/openai-compatible/  Primer ModelProvider real (protocolo chat-completions genérico).
@@ -160,6 +165,7 @@ Reglas duras (fallan el build si se violan):
 | Grafo interno acíclico | `dependency-boundaries.test.ts` |
 | Core sin términos de dominio/canal/CRM/vendor | `tests/contract/core-purity.test.ts` |
 | Contratos públicos sin campos de proveedor ni de dominio | `tests/contract/provider-neutrality.test.ts` |
+| (H) Core no depende de Shadow; `shadow` sólo contracts + evaluation + la SPI de modelo + zod, sin I/O ni términos de dominio; el runtime del Sales pack no conoce el modo shadow; ningún binding `production` ni outbound que entregue puede componerse; cada binding declara todas las operaciones de su port | `dependency-boundaries.test.ts`, `tests/contract/shadow-boundaries.test.ts` |
 | (G) Core no depende de Quality; `evaluation` sólo contracts + zod; `evaluator` sólo APIs de lectura, gateway y FS de artifacts; Quality sin términos de dominio; evaluadores de Sales fuera del runtime del pack; Quality no importa definiciones/registry/política ni escribe fuera de artifacts | `dependency-boundaries.test.ts`, `tests/contract/quality-boundaries.test.ts` |
 
 ## 3. Flujo de una petición
@@ -1240,3 +1246,101 @@ trayectoria durable (tablas existentes, sin copia)
 repetición) y `artifacts/experiments/<id>_<ts>/`. Serialización estable;
 directorios inmutables; privacidad verificada al producir y al escribir.
 Todos ignorados por git.
+
+## 17. R4-H — Shadow / E2E (en progreso)
+
+Pregunta: ¿qué ocurre cuando R4 ejecuta workloads completos, repetidos y
+suficientemente realistas con el runtime verdadero, un modelo real y los
+límites reales de integración, pero sin efectos de producción sobre clientes
+o negocio? Diseño: ADR-027. Baseline R4-G: `4a54b2c`. Sin cambios en Core de
+ejecución y sin migración (0001–0006 congeladas; no hay 0007).
+
+```text
+WorkloadCase (evento) ─► ingress canónico (TemporalRuntime.submitInput) ─► AgentTask / Goal
+   ─► worker real: ContextCompiler ─► ModelProvider (scripted | real, con registro de llamadas)
+   ─► AgentKernel ─► AgentDecision ─► capabilities del pack ─► ports GUARDADOS
+        ├─ read  ─► fixture (o live-read documentado + opt-in) ──────────────► Observation
+        └─ write ─► propose_action ─► Policy (R4-D) ─► comando ─► handler
+                    ─► ShadowExecutionPolicy: SHADOW_WRITE ─► owner record-only ─► Receipt ─► Observation
+   ─► wait / resume (scheduler real: esperas, reconciliación) · operador simulado (approve, handoff, cancel)
+   ─► respond (step log) ─► ShadowOutboundSink (wouldDeliver, actualDelivery = false)
+   ─► trayectoria durable ─► R4-G (runBenchmark sobre los subjects producidos) ─► EvaluationRun
+   ─► side-effect manifest (guard + ledger + sink) ─► chequeos de seguridad ─► ShadowRun
+```
+
+### 17.1 Componentes
+
+| Componente | Dónde | Rol |
+|---|---|---|
+| Modo shadow (`loadShadowExecutionConfig`, `assertShadowMode`) | `packages/shadow` | Declaración explícita (`R4_EXECUTION_MODE=shadow` / `--execution-mode shadow`); fail-closed; opt-ins de red separados |
+| `DomainBindingDescriptor`, `ShadowExecutionPolicy`, `assertShadowComposition`, `guardPort` | `packages/shadow` | Bindings declarados (kind, operaciones con clase de efecto, contrato); clasificación `READ_ALLOWED / SHADOW_WRITE / SANDBOX_WRITE / BLOCKED`; gate de arranque y re-chequeo por llamada |
+| `SideEffectRecorder`, `buildSideEffectManifest`, `evaluateShadowSafety` | `packages/shadow` | Registro de toda llamada externa (metadata); manifest unido al ledger por execution key; chequeos deterministas |
+| `ShadowOutboundSink` | `packages/shadow` | Única implementación de `OutboundDelivery`; registra, redacta, seudonimiza; nunca entrega |
+| `ShadowRecordingModelProvider` | `packages/shadow` | Metadata por llamada (latencia, tokens, finish, clase de error), sin texto; fallas de proveedor controladas y rotuladas (`injected`) |
+| `WorkloadCase`, corpus + lock, `workloadFromReplay` | `packages/shadow` (esquema) + pack (corpus) | Trayectorias como datos: inputs, tiempo, procesos, fallas, operador, cambios del owner; propiedades, nunca secuencias de tools |
+| `runShadowSuite`, `ShadowRun`, `ShadowSuiteRun`, agregados, observaciones, artifacts, reporte | `packages/shadow` | Corpus × repeticiones × perfil de modelo; cost guard; stop conditions; evaluación con R4-G; sin score |
+| `SALES_SHADOW_BINDINGS`, `composeShadowSalesDomains`, fallas/cambios del owner | `agents/sales/src/shadow` | Bindings del pack: customer/catalog/shipping `fixture`, quote `shadow` |
+| `ShadowQuoteService` | `adapters/domains/src/quote/shadow.ts` | Owner record-only del Quote port (rango `COT-9xxxxx`, `shadow-record:`) |
+| `SalesShadowExecutor` | `agents/sales/src/shadow/executor.ts` | Ejecuta un caso: API + worker + scheduler reales sobre BD desechable; operador simulado; lectura canónica de la trayectoria |
+| `worker-process.ts` | `agents/sales/src/shadow` | Worker Sales shadow como proceso del SO (E2E multi-proceso) |
+| CLI | `agents/sales/src/cli/shadow.ts` | `shadow:sales` (offline), `shadow:sales:smoke` / `:live` (modelo real, opt-in), `--plan` |
+
+### 17.2 Qué hace "shadow" a una ejecución
+
+1. El modo está declarado y probado (`ShadowExecutionConfig` parseado); si no, nada se compone.
+2. Todo owner externo se alcanza por un binding declarado y guardado; ningún
+   binding `production` puede componerse ni llamarse; un `live-read` exige
+   opt-in, contrato documentado y cero operaciones de escritura.
+3. Toda escritura externa pasa primero por R4-D (Policy, comando, receipt) y
+   luego se materializa sólo como `SHADOW_WRITE`/`SANDBOX_WRITE`.
+4. `respond` sólo llega al sink (`actualDelivery = false`).
+5. Cada ejecución produce su manifest y sus chequeos; `productionEffects` y
+   `realOutboundDeliveries` se cuentan, no se suponen.
+
+### 17.3 Integración de dominio en R4-H
+
+| Dominio | Binding | Estado |
+|---|---|---|
+| Customer | `fixture:fixture-customer@1` | FIXTURE (sin contrato configurado en R4) |
+| Catalog | `fixture:fixture-catalog@1` | FIXTURE — live-read UNAVAILABLE: el contrato del servicio existe sólo de segunda mano fuera del repo; sin endpoint ni credencial en R4 |
+| Shipping | `fixture:fixture-shipping@1` | FIXTURE (sin contrato configurado en R4) |
+| Quote | `shadow:shadow-quote-owner@1` | SHADOW (record-only; no hay modo sandbox/preview documentado) |
+| Outbound | `shadow-sink:shadow-outbound-sink@1` | shadow-only |
+
+### 17.4 Ejecución y procesos
+
+`controlled-shadow` es el único modo ejecutado (`live-read-shadow` existe en
+el framework pero ningún binding live-read está disponible). Cada ejecución
+corre en su propia BD desechable (migraciones Core + Sales). El ejecutor
+compone la API (`createPlatform`), un worker real (`SalesHarness`, que puede
+reemplazarse entre turnos: frontera de proceso con pool y registries nuevos)
+y la composición real del scheduler (`createSchedulerPlatform`) sobre la misma
+BD; el tiempo simulado mueve el reloj de proceso y, si el caso lo pide,
+`r4_now()` de esa BD desechable. El worker no se ejecuta antes del primer
+input (un ingress real crea la conversación junto con su primer mensaje). El
+E2E multi-proceso (`tests/recovery/shadow-process.test.ts`) usa procesos
+reales del SO: worker Sales shadow (SIGKILL + reemplazo) y el `main` del
+scheduler.
+
+### 17.5 Métricas
+
+Además del vector de R4-G (misma definición y denominador de adherencia de
+protocolo): latencia percibida (input recibido → respuesta lista), latencia de
+turno, de llamada al modelo, de llamada a dominio y de evaluación; tokens y
+llamadas por turno de input; lecturas por turno, duplicadas (aún frescas) y de
+refresco (tras expirar); propuestas de escritura por task; crecimiento de
+contexto; fallas de proveedor por clase (reales vs. inyectadas) y de dominio
+por categoría (incl. `rate_limited`); gobierno (ALLOW/DENY/REQUIRE_APPROVAL,
+receipts, reconciliaciones); colaboración humana; cobertura semántica
+(solicitada / completada / inconclusive). Tokens de razonamiento: no expuestos
+por `ModelUsage` (se reporta así). Sin precios en el runtime.
+
+### 17.6 Artifacts
+
+`artifacts/shadow/<suiteRunId>/`: `manifest.json`, `plan.json`,
+`workload-results.jsonl`, `side-effects.jsonl`, `outbound.jsonl`,
+`model-calls.jsonl`, `evaluation-summary.json`, `aggregates.json`,
+`architecture-gap-candidates.jsonl`, `report.md`, `benchmark/` (BenchmarkRun de
+R4-G) y `evaluations/<id>/` (una EvaluationRun por ejecución). Inmutables
+(nuevo id por corrida), serialización estable, gate de privacidad de R4-G más
+gate de datos personales en outbound/efectos/llamadas. Ignorados por git.

@@ -41,10 +41,12 @@ const text = (list: readonly string[]) => list.map((f) => readFileSync(f, 'utf8'
 const FRAMEWORK = files(join(ROOT, 'packages/evaluation/src'));
 const RUNTIME = files(join(ROOT, 'apps/evaluator/src'));
 const QUALITY = [...FRAMEWORK, ...RUNTIME];
-const CORE_EXECUTION = [...files(join(ROOT, 'packages')), ...files(join(ROOT, 'apps'))].filter((f) => !QUALITY.includes(f));
+// R4-H: the shadow framework (packages/shadow) is not Core execution; it composes over Quality by design (ADR-027; re-checked by shadow-boundaries).
+const SHADOW_FRAMEWORK = files(join(ROOT, 'packages/shadow/src'));
+const CORE_EXECUTION = [...files(join(ROOT, 'packages')), ...files(join(ROOT, 'apps'))].filter((f) => !QUALITY.includes(f) && !SHADOW_FRAMEWORK.includes(f));
 const SALES_EVALUATIONS = files(join(ROOT, 'agents/sales/src/evaluations'));
 const SALES_EVAL_CLIS = ['eval.ts', 'benchmark.ts', 'experiment.ts', 'promote.ts'].map((f) => join(ROOT, 'agents/sales/src/cli', f));
-const SALES_RUNTIME = files(join(ROOT, 'agents/sales/src')).filter((f) => !/[\\/](harness|cli|evaluations)[\\/]/.test(f));
+const SALES_RUNTIME = files(join(ROOT, 'agents/sales/src')).filter((f) => !/[\\/](harness|cli|evaluations|shadow)[\\/]/.test(f));
 
 describe('Core execution never depends on Quality', () => {
   it('no Core package or app (AgentKernel, ExecutionRuntime, ActionRuntime, ContextCompiler, Scheduler, …) imports Quality', () => {

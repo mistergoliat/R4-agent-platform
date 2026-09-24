@@ -3,6 +3,7 @@ import type { Logger } from 'pino';
 import { createFixtureDomains, type FixtureDomains } from '@r4-adapters/domains';
 import { createPlatform, type Platform } from '@r4/api';
 import type { ExecutionPolicy } from '@r4/agent-kernel';
+import type { ActionPolicyConfigurationInput } from '@r4/policy-engine';
 import { snapshotComposition } from '@r4/context-compiler';
 import type { Clock, Principal, RunStep, TrustedHumanContext } from '@r4/contracts';
 import type { ModelProvider } from '@r4/model-gateway';
@@ -17,7 +18,7 @@ import {
   type Pool,
 } from '@r4/persistence-postgres';
 import { createWorkerPlatform, type WorkerCycle, type WorkerPlatform } from '@r4/worker';
-import { composeSales } from '../composition.js';
+import { composeSales, type SalesDomains } from '../composition.js';
 import { SALES_AGENT_DIR } from '../definition.js';
 import { SALES_AGENT_ID, SALES_TASK_TYPE } from '../ids.js';
 import type { PostgresSalesStore } from '../workspace/store.js';
@@ -58,6 +59,14 @@ export interface SalesHarnessOptions {
   readonly heartbeatIntervalMs?: number;
   /** Keep metadata-only telemetry events in memory (for live reports). */
   readonly captureTelemetry?: boolean;
+  /**
+   * The ports the worker's capabilities call (default: the fixture owners
+   * themselves). A shadow composition passes guarded ports here; the
+   * fixture owners stay reachable through `domains` for scenario control.
+   */
+  readonly ports?: SalesDomains;
+  /** Action policy the worker is composed with (default: the pack's SALES_ACTION_POLICY). */
+  readonly actionPolicy?: ActionPolicyConfigurationInput;
 }
 
 export interface TurnRecord {
@@ -310,7 +319,7 @@ export type ConversationState = {
 };
 
 async function bootWorker(options: SalesHarnessOptions, pool: Pool, domains: FixtureDomains, clock: ShiftableClock, logger: Logger): Promise<{ worker: WorkerPlatform; store: PostgresSalesStore }> {
-  const sales = composeSales({ pool, domains, modelProvider: options.modelProvider, clock });
+  const sales = composeSales({ pool, domains: options.ports ?? domains, modelProvider: options.modelProvider, clock });
   const worker = await createWorkerPlatform(
     {
       databaseUrl: options.databaseUrl,
@@ -324,7 +333,7 @@ async function bootWorker(options: SalesHarnessOptions, pool: Pool, domains: Fix
       execution: { ...DEFAULT_EXECUTION, ...options.execution },
       context: { budget: { mode: 'unbounded' } },
     },
-    sales.bindings,
+    options.actionPolicy ? { ...sales.bindings, actionPolicy: options.actionPolicy } : sales.bindings,
     { logger, clock },
   );
   return { worker, store: sales.store };

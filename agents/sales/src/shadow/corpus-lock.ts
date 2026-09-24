@@ -1,0 +1,36 @@
+/**
+ * Lock of the Sales shadow corpus (R4-H): id@version → content fingerprint.
+ * A case whose events, expectations or privacy change without a new version
+ * fails `assertWorkloadCorpus` (the suite refuses to plan). Regenerate an
+ * entry only together with a version bump of its case.
+ */
+export const SALES_SHADOW_CORPUS_LOCK: Readonly<Record<string, string>> = Object.freeze({
+  'H01@1': 'b924e51c8bce3e29d94c78a43283fd242e3bede2b6904053dff83f5ac1e93833',
+  'H02@1': 'ad0316d4fbaf7b420667d83e54b19a078e98690dc3f91e0c4e79598bb619080d',
+  'H03@1': 'bcf1f37fded18de38937b6d64fbc419bd960ae62ce0923feca30659db7f4f07e',
+  'H04@1': '70826ed3a89368125145a26b2277147ee80591234a3f077d89a7852c086b604e',
+  'H05@1': '84918967ad6b3551fa12b88fb27386f7f1bbeba8cd85acc8a8b21768b3595af1',
+  'H06@1': 'ea7dc48112eb4fd01c7d15c1010b04ce312e360d55c99cbf5edfabf0cf926159',
+  'H07@1': 'b9667abbd65dfcfe6a81624081b94d4629879a078c24f609b466b6fb7e1f2a6d',
+  'H08A@1': '78cedf8dc9ad9373ebf8c887024393b6d8e1149a81cce5ca5a0d01f8ec4c2bfc',
+  'H08B@1': '83849f08fdc5115892b5086de9a7ab4831a0b777ed55b2204c4d3362f146f6a1',
+  'H09@1': '23939fd9960e36665263b8a9416cbe4763f8750c728df26fe9de36e28d9da4ef',
+  'H10@1': '2db6dd44c1ccee3fa1c15f184c5eaa613d1c5d330ec0e96be11efe20b64fb4ec',
+  'H11@1': 'b5c88756d44577c5d0323315b5def1591335bd5a84c54ab16c78b90c10ca7991',
+  'H12@1': 'e33aa688883ef0191253fa0f05ca08fd256a52ab6f414360f851cb0226a9860d',
+  'H12B@1': '97eef378f66a9ee75e42ea342841dc3cbc645cd1e7fabe41072ac633125a0a02',
+  'H13@1': 'eb64665b24889f7bc55fdc3c32a7f32965108f18c91a78bbd7a45dd3552c56de',
+  'H14@1': 'e25b0dd6bfae6e9ffc486051e89ddee665befbf0cd5a65491bd271877c53f0e0',
+  'S02@1': 'a9ebde17794f52f1f63ffd3f329f730542e853f7afed30716e7645af1d81179b',
+  'S03@1': 'f6890e9beae6287f21c61de0a1366e18b67bbea6b4b071f141244fc660b2e9b2',
+  'S04@1': '96ff760c51de8de8ee64d459d7c605dd399e2414585ccfea95212f9c400af58e',
+  'S11@1': '2900487073f861e8649a50cf8ae47ab35073bea66502360e1644cf2363a25491',
+  'CENTRAL@1': '82249ecb9a25c2670a2e6481289f4fe7dc6a653b53b73775f046dc936add6f23',
+  'R01@1': '1269603c6cbb1361a94516a8dafad4a6a625451fd65a4cb44069a451c79c709d',
+  'R02@1': 'f68b6661b1b19f921de8cb487e0c63ff1caa3119ab6cc028bf92c8f588b6faad',
+  'R03@1': '3ec9a6f2bf1197387cb736be2aa56d98e530a9afd060cfb3d49a6cb57c686120',
+  'R04@1': '915c8ac8fba23c37a8e28b963756c33ade5e83aa5e56524019ab7fd90145039c',
+  'R05@1': '95814630000e0f892dbb313fc2fbed15b0dcc9e19d686ece9bf24723baf07be1',
+  'R06@1': 'e42d2cef6fd922eaf511cc61eab64e861ac8cd6250c46e1f09c274089edb8dbe',
+  'R07@1': '664de15d5ceb967346888016a8b6b0debaa71c180b6847525e8f79dafd9cb9bc',
+});

@@ -2,7 +2,7 @@
   "name": "r4-agent-platform",
   "version": "0.0.0",
   "private": true,
-  "description": "R4 Agentic Platform — reusable, CRM-independent agent runtime (R4-B platform skeleton + R4-C1 execution kernel + R4-C2 context compiler + R4-D governed execution + R4-E temporal/human runtime) and, outside Core, the R4-F Sales reference application; R4-G Quality & Learning (post-hoc evaluation, outside Core execution).",
+  "description": "R4 Agentic Platform — reusable, CRM-independent agent runtime (R4-B platform skeleton + R4-C1 execution kernel + R4-C2 context compiler + R4-D governed execution + R4-E temporal/human runtime) and, outside Core, the R4-F Sales reference application; R4-G Quality & Learning (post-hoc evaluation, outside Core execution); R4-H Shadow / E2E (shadow execution boundary, workload corpus, shadow suites; outside Core execution).",
   "type": "module",
   "engines": {
     "node": ">=20.19.0"
@@ -19,11 +19,12 @@
     "clean": "tsc -b tsconfig.build.json --clean",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint . --max-warnings=0",
-    "test": "npm run test:unit && npm run test:contract && npm run test:integration && npm run test:sales",
+    "test": "npm run test:unit && npm run test:contract && npm run test:integration && npm run test:sales && npm run test:shadow",
     "test:unit": "vitest run --project unit",
     "test:contract": "vitest run --project contract",
     "test:integration": "vitest run --project integration",
     "test:recovery": "vitest run --project recovery",
+    "test:shadow": "vitest run --project shadow",
     "test:evaluation": "vitest run --project unit tests/unit/evaluation tests/unit/sales/evaluation && vitest run --project contract tests/contract/quality-boundaries.test.ts",
     "test:mutation:evaluation": "node tests/mutation/evaluation-mutations.mjs",
     "db:up": "docker compose up -d --wait postgres",
@@ -40,7 +41,11 @@
     "eval:sales:live": "node agents/sales/dist/cli/eval.js --live",
     "benchmark:sales": "node agents/sales/dist/cli/benchmark.js",
     "experiment:sales": "node agents/sales/dist/cli/experiment.js",
-    "regression:promote": "node agents/sales/dist/cli/promote.js"
+    "regression:promote": "node agents/sales/dist/cli/promote.js",
+    "shadow:sales": "node agents/sales/dist/cli/shadow.js --execution-mode shadow",
+    "shadow:sales:smoke": "node agents/sales/dist/cli/shadow.js --execution-mode shadow --smoke",
+    "shadow:sales:live": "node agents/sales/dist/cli/shadow.js --execution-mode shadow --live",
+    "test:mutation:shadow": "node tests/mutation/shadow-mutations.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

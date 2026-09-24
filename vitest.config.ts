@@ -18,6 +18,8 @@ const alias = {
   // R4-G: Quality & Learning (post-hoc evaluation; never imported by Core execution).
   '@r4/evaluation': src('./packages/evaluation/src/index.ts'),
   '@r4/evaluator': src('./apps/evaluator/src/index.ts'),
+  // R4-H: Shadow / E2E framework (outside Core execution and outside every agent pack runtime).
+  '@r4/shadow': src('./packages/shadow/src/index.ts'),
   '@r4/api': src('./apps/api/src/index.ts'),
   '@r4/worker': src('./apps/worker/src/index.ts'),
   '@r4/scheduler': src('./apps/scheduler/src/index.ts'),
@@ -26,6 +28,8 @@ const alias = {
   '@r4-adapters/openai-compatible': src('./adapters/models/openai-compatible/src/index.ts'),
   // R4-G: the Sales evaluator pack is a separate entry point (never loaded by the deployed agent). Listed first: aliases match by prefix.
   '@r4-sales/agent/evaluations': src('./agents/sales/src/evaluations/index.ts'),
+  // R4-H: the Sales shadow corpus, bindings and executor (never loaded by the deployed agent).
+  '@r4-sales/agent/shadow': src('./agents/sales/src/shadow/index.ts'),
   '@r4-sales/agent': src('./agents/sales/src/index.ts'),
 };
 
@@ -62,6 +66,18 @@ export default defineConfig({
           globalSetup: ['tests/support/global-setup.ts'],
           testTimeout: 60_000,
           hookTimeout: 60_000,
+        },
+      },
+      {
+        // R4-H shadow suite (offline): real runtime, scripted stand-in model, fixture/shadow owners, real PostgreSQL. No network.
+        resolve: { alias },
+        test: {
+          name: 'shadow',
+          include: ['tests/shadow/**/*.test.ts'],
+          environment: 'node',
+          globalSetup: ['tests/support/global-setup.ts'],
+          testTimeout: 300_000,
+          hookTimeout: 120_000,
         },
       },
       {
