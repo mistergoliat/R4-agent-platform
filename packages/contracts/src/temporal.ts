@@ -179,8 +179,20 @@ export const humanRequestSchema = z.discriminatedUnion('kind', [
   z.strictObject({
     ...humanBase,
     kind: z.literal('handoff'),
-    /** `agent`: the agent asked; `operator`: a trusted human took ownership on their own initiative. */
-    payload: z.strictObject({ summary: z.string(), contextRefs: z.array(uuidSchema), initiatedBy: z.enum(['agent', 'operator']) }),
+    /**
+     * `agent`: the agent asked; `operator`: a trusted human took ownership on
+     * their own initiative; `platform` (ADR-028): the platform handed the
+     * task over because a run failure left no autonomous way on — `reason`
+     * (a status reason code) says why, and is present exactly for it.
+     */
+    payload: z
+      .strictObject({
+        summary: z.string(),
+        contextRefs: z.array(uuidSchema),
+        initiatedBy: z.enum(['agent', 'operator', 'platform']),
+        reason: z.string().max(128).regex(/^[a-z][a-z0-9_.]*$/).optional(),
+      })
+      .refine((p) => (p.initiatedBy === 'platform') === (p.reason !== undefined), { message: 'reason is present exactly for a platform-initiated handoff', path: ['reason'] }),
   }),
   z.strictObject({
     ...humanBase,

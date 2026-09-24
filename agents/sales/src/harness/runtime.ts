@@ -169,6 +169,19 @@ export class SalesHarness {
     return this.#record(taskId, { index, kind: 'customer', text, at, ...(await this.runUntilIdle()) });
   }
 
+  /** A customer turn delivered while no worker runs (it stays durable; whoever claims next sees it). */
+  async submit(taskId: string, text: string): Promise<TurnRecord> {
+    const { index, at } = await this.#submit(taskId, text);
+    return this.#record(taskId, { index, kind: 'customer', text, at, runIds: [], cycles: [] });
+  }
+
+  /** Exactly one worker cycle (one claim, one run to its next durable stop). */
+  async runCycle(): Promise<{ runIds: string[]; cycles: WorkerCycle['kind'][] }> {
+    const cycle = await this.#worker.worker.runOnce();
+    if (cycle.kind === 'idle') return { runIds: [], cycles: [] };
+    return { runIds: cycle.kind === 'executed' ? [cycle.runId] : [], cycles: [cycle.kind] };
+  }
+
   /**
    * A turn during which the worker process "dies": its cycle is started and
    * not awaited; once `died()` holds (e.g. the Quote owner has issued the

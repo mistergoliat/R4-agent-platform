@@ -162,3 +162,71 @@ export const agentRunSchema = z.strictObject({
   updatedAt: timestampSchema,
 });
 export type AgentRun = z.infer<typeof agentRunSchema>;
+
+// ---------------------------------------------------------------------------
+// Run failure vs. durable work (GAP-H-001, ADR-028)
+// ---------------------------------------------------------------------------
+
+/**
+ * What a failed run establishes about its task. A failed run does not
+ * terminate durable work unless the failure itself establishes that the work
+ * is terminal. Applied only to the classes R4-H evidence justifies:
+ *
+ *   recoverable  `invalid_decision`; `model_failure` the gateway classified
+ *                retryable → the task stays runnable and a NEW run, with a
+ *                freshly compiled context, continues it (bounded).
+ *   human        `model_failure` not retryable → no automatic run; the task
+ *                is handed to a human, not terminated.
+ *   terminal     every other failure, including an abandoned run (unchanged since C1).
+ *
+ * `retryable` is the gateway's ModelError classification, recorded by the
+ * kernel in `termination.details`; anything but `true` is not retryable.
+ * Null for a termination that is not a failure (completed, suspended,
+ * cancelled). A pure classification: platform policy decides what to do.
+ */
+export type RunFailureDisposition = 'recoverable' | 'human' | 'terminal';
+
+export function runFailureDisposition(termination: { readonly reason: TerminationReason; readonly details?: unknown }): RunFailureDisposition | null {
+  const status = runStatusForTermination(termination.reason);
+  if (status !== 'failed' && status !== 'abandoned') return null;
+  if (termination.reason === 'invalid_decision') return 'recoverable';
+  if (termination.reason === 'model_failure') {
+    const details = termination.details;
+    const retryable = details !== null && typeof details === 'object' && !Array.isArray(details) && (details as { retryable?: unknown }).retryable === true;
+    return retryable ? 'recoverable' : 'human';
+  }
+  return 'terminal';
+}
+
+/** Task status reason: recoverable run failures exceeded the recovery budget. */
+export const RUN_FAILURE_RECOVERY_EXHAUSTED = 'run_failure_recovery_exhausted';
+/** Task status reason: a model failure that no automatic run may repeat (nothing was exhausted). */
+export const NON_RETRYABLE_MODEL_FAILURE = 'non_retryable_model_failure';
+
+/** Key under `termination.details` where the platform records how it disposed of a failed run. */
+export const RUN_FAILURE_RECOVERY_KEY = 'runFailureRecovery';
+
+/**
+ * The platform's disposition of one failed run, stamped on its termination in
+ * the same transaction that ends it (durable, per run, metadata only):
+ *
+ *   continued  recoverable; the task stays runnable for a new run
+ *   exhausted  recoverable, but consecutive failures exceeded the budget → human
+ *   handed_off not retryable → human; no automatic run was attempted
+ *
+ * `consecutiveFailures` counts this run; null for `handed_off` (nothing was retried).
+ */
+export const runFailureRecoverySchema = z.strictObject({
+  outcome: z.enum(['continued', 'exhausted', 'handed_off']),
+  consecutiveFailures: positiveIntSchema.nullable(),
+  maxRunFailureRecoveries: nonNegativeIntSchema,
+});
+export type RunFailureRecovery = z.infer<typeof runFailureRecoverySchema>;
+
+/** The recorded disposition of a run, or null (not a failed run, a pre-ADR-028 run, or malformed). */
+export function runFailureRecoveryOf(termination: { readonly details?: unknown } | null): RunFailureRecovery | null {
+  const details = termination?.details;
+  if (details === null || typeof details !== 'object' || Array.isArray(details)) return null;
+  const parsed = runFailureRecoverySchema.safeParse((details as Record<string, unknown>)[RUN_FAILURE_RECOVERY_KEY]);
+  return parsed.success ? parsed.data : null;
+}

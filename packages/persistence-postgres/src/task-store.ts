@@ -160,6 +160,12 @@ export class PostgresTaskUnitOfWork implements TaskUnitOfWork {
   }
 
   /** Safe without extra locking: callers hold the task row lock. */
+  async listRuns(taskId: string): Promise<AgentRun[]> {
+    const result = await this.client.query<Row>('select * from agent_runs where task_id = $1 order by sequence', [taskId]);
+    return result.rows.map(runFromRow);
+  }
+
+  /** Safe without extra locking: callers hold the task row lock. */
   async nextRunSequence(taskId: string): Promise<number> {
     const result = await this.client.query<{ next: number }>(
       'select coalesce(max(sequence), 0)::int + 1 as next from agent_runs where task_id = $1',

@@ -52,19 +52,22 @@ const S02_LIKE: SalesScenario = {
 };
 
 describe('live harness diagnostics (unknown_evidence replay)', () => {
-  it('records the refused decision, classifies the cited ref and still reports a task that failed early', async () => {
+  it('records the refused decision, classifies the cited ref and reports the task handed over instead of failed (ADR-028)', async () => {
     const recorder = new RecordingModelProvider(new FakeModelProvider(scriptedAgent([citeTheCustomerTurn])));
     const run = await runScenario(S02_LIKE, { databaseUrl: db.url, mode: 'live', modelProvider: recorder });
 
     // The platform still refuses it: nothing was weakened.
-    expect(run.report.finalTaskStatus).toBe('failed');
+    // ADR-028: run 1 fails as before; the stand-in has nothing left for the recovery run (non-retryable) → a human decides.
+    expect(run.report.finalTaskStatus).toBe('blocked');
     expect(run.report.runs[0]).toMatchObject({ termination: { reason: 'invalid_decision', code: 'unknown_evidence' } });
     expect(run.report.workspace.version).toBe(0);
-    // The second turn is reported as undelivered instead of crashing the run.
-    expect(run.undeliveredTurns).toEqual([2]);
+    // The second turn is accepted durably (the task is not terminal); it waits for the human who owns the next step.
+    expect(run.undeliveredTurns).toEqual([]);
 
-    const [trace, ...rest] = traceDecisions(run.state, recorder.calls);
+    const [trace, recovery, ...rest] = traceDecisions(run.state, recorder.calls);
     expect(rest).toHaveLength(0);
+    // The recovery run (new run, fresh context) found no scripted step: a non-retryable provider failure.
+    expect(recovery).toMatchObject({ runSequence: 2, iteration: 1, outcome: 'model_failed' });
     const turnRef = (trace!.rejectedDecision as { evidenceRefs: string[] }).evidenceRefs[0]!;
     expect(trace).toMatchObject({ runSequence: 1, iteration: 1, outcome: 'invalid', errorCode: 'unknown_evidence', decisionType: 'propose_action', capabilityId: CAPABILITY_IDS.workspaceUpdate });
     expect(trace!.citedRefs).toEqual([{ ref: turnRef, kind: 'context_item_record_id', acceptable: false, inContext: true, section: 'conversation', matchedItemId: `memory:${turnRef}` }]);

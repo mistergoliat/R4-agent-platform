@@ -4,12 +4,14 @@ import {
   fingerprint,
   goalSchema,
   handoffTakeoverSchema,
+  humanRequestSchema,
   humanResponseSchema,
   inputSubmissionSchema,
   memoryEntrySchema,
   principalSchema,
   reconciliationPolicySchema,
   trustedHumanContextSchema,
+  type AgentRun,
   type AgentTask,
   type GoalRejectionCode,
   type HandoffTakeover,
@@ -32,7 +34,7 @@ import {
   type WaitResolution,
 } from '@r4/contracts';
 import { emitTelemetry, type StructuredLogger, type TelemetryEventName } from '@r4/observability';
-import { lockOwnedExecution, workerPrincipal, type ExecutionRuntime, type RecordStepCommand } from './execution-runtime.js';
+import { lockOwnedExecution, workerPrincipal, type ExecutionRuntime, type RecordStepCommand, type RunFailureHandoff, type RunFailureHandoffCause } from './execution-runtime.js';
 import { isTerminalTaskStatus } from './lifecycle.js';
 import { finishRunWithin, parseOrThrow, transitionTaskWithin, updateTaskOrThrow, type PendingEvent } from './mutations.js';
 import type { ExecutionStore, ExecutionUnitOfWork } from './ports.js';
@@ -72,12 +74,14 @@ const PLATFORM_ACTOR = 'temporal-runtime';
  * operations require a TrustedHumanContext produced by an authentication
  * adapter — never by a model, never from a request body.
  */
-export class TemporalRuntime {
+export class TemporalRuntime implements RunFailureHandoff {
   readonly #options: TemporalRuntimeOptions;
 
   constructor(options: TemporalRuntimeOptions) {
     if (options.reconciliationPolicy) parseOrThrow(reconciliationPolicySchema, options.reconciliationPolicy);
     this.#options = options;
+    // ADR-028: human ownership is this runtime's; the execution runtime hands failed-run tasks over through it.
+    options.execution.attachRunFailureHandoff(this);
   }
 
   // -------------------------------------------------------------------------
@@ -392,7 +396,7 @@ export class TemporalRuntime {
         await this.event(uow, task, request.requestId, 'handoff.requested', now, events, { initiatedBy: 'operator' }, human.humanRef);
       }
       await this.event(uow, task, taskId, 'handoff.activated', now, events, {
-        requestHash, requestId: request.requestId, kind: 'handoff', outcome: 'accept', status: 'active', content: body.note, initiatedBy: existing ? 'agent' : 'operator',
+        requestHash, requestId: request.requestId, kind: 'handoff', outcome: 'accept', status: 'active', content: body.note, initiatedBy: existing ? existing.payload.initiatedBy : 'operator',
       }, human.humanRef, body.responseKey, human.correlationId);
       task = (await this.lockTask(uow, taskId));
       await this.#blockForHuman(uow, task, now, events, human, request.requestId);
@@ -604,6 +608,37 @@ export class TemporalRuntime {
     await temporalOf(uow).insertWait(wait);
     await this.event(uow, task, wait.waitId, 'task.wait.started', now, events, { kind, referenceId, dueAt });
     return wait;
+  }
+
+  /**
+   * (ADR-028) The human fallback of a run failure: recovery was exhausted,
+   * or the model failure is not retryable. The task is not terminated: it
+   * becomes `blocked` on a platform-initiated handoff — visible in
+   * `attention()` — with a WAIT_FOR_HUMAN, exactly like a handoff the agent
+   * asked for. An operator accepts and releases it (autonomy resumes: the
+   * next claim starts a new run), cancels the request (same), or cancels the
+   * task. The summary is platform-authored codes only (never model output)
+   * and is never shown to the model.
+   */
+  async handOffAfterRunFailureWithin(uow: ExecutionUnitOfWork, task: AgentTask, run: AgentRun, cause: RunFailureHandoffCause, events: PendingEvent[]): Promise<AgentTask> {
+    const p = temporalOf(uow);
+    const now = await p.now();
+    const summary =
+      cause.consecutiveFailures === null
+        ? `Run ${run.sequence} failed (${cause.terminationReason}: ${cause.code}); the failure is not retryable, so no automatic run was started. An operator must decide how the task continues.`
+        : `Run ${run.sequence} failed (${cause.terminationReason}: ${cause.code}); ${cause.consecutiveFailures} consecutive recoverable run failure(s) exhausted automatic recovery. An operator must decide how the task continues.`;
+    const request = parseOrThrow(humanRequestSchema, {
+      requestId: this.#options.ids.next(), taskId: task.taskId, runId: run.runId, kind: 'handoff', status: 'requested', humanRef: null,
+      createdAt: now, updatedAt: now, expiresAt: null, correlationId: task.correlationId,
+      payload: { summary, contextRefs: [], initiatedBy: 'platform', reason: cause.reason },
+    });
+    await p.insertHuman(request);
+    await this.event(uow, task, request.requestId, 'handoff.requested', now, events, {
+      initiatedBy: 'platform', reason: cause.reason, runId: run.runId, terminationReason: cause.terminationReason, code: cause.code, consecutiveFailures: cause.consecutiveFailures,
+    });
+    const blocked = await transitionTaskWithin(uow, this.#options.ids, task, 'blocked', cause.reason, cause.actor, task.correlationId, now, events);
+    await this.#openWait(uow, blocked, run.runId, 'WAIT_FOR_HUMAN', request.requestId, null, now, events);
+    return blocked;
   }
 
   /** Records the wait of a task the action runtime just blocked on an uncertain effect. */

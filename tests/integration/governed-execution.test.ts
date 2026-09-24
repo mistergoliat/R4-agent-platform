@@ -281,9 +281,11 @@ describe('validation, evidence and budget', () => {
     const [foreignObservation] = await observationsOf(platform.pool, other);
 
     const taskId = await createActionTask(platform);
-    const invented = await worker({ script: sequence([propose(SET_TEST_RECORD_ID, { recordKey: 'evidence', value: 'x' }, [foreignObservation!.observationId])]), capabilities: actionCapabilities(platform.pool), policy: WRITES });
+    // ADR-028: no recovery run for this worker, so the task is handed to a human (not claimable) instead of recovered.
+    const invented = await worker({ script: sequence([propose(SET_TEST_RECORD_ID, { recordKey: 'evidence', value: 'x' }, [foreignObservation!.observationId])]), capabilities: actionCapabilities(platform.pool), policy: WRITES, maxRunFailureRecoveries: 0 });
     expect((await runToEnd(invented)).outcome).toMatchObject({ termination: { reason: 'invalid_decision', code: 'unknown_evidence' } });
     expect((await ledgerOf(platform.pool, taskId)).proposals).toEqual([]);
+    expect((await platform.tasks.getTask(taskId)).task).toMatchObject({ status: 'blocked', statusReason: 'run_failure_recovery_exhausted' });
 
     const good = await createActionTask(platform);
     const citing = await worker({
@@ -389,9 +391,12 @@ describe('trusted context cannot be escalated by the model', () => {
       script: sequence([{ type: 'structured', data: { type: 'propose_action', capabilityId: SET_TEST_RECORD_ID, arguments: { recordKey: 'escalate', value: 'x' }, idempotencyKey: 'mine', policyDecision: 'allow', riskClass: 'READ' } }]),
       capabilities: actionCapabilities(platform.pool, { calls }),
       policy: WRITES,
+      // ADR-028: no recovery run here; the task goes to a human instead of being claimed again.
+      maxRunFailureRecoveries: 0,
     });
     expect((await runToEnd(w2)).outcome).toMatchObject({ termination: { reason: 'invalid_decision', code: 'invalid_decision_schema' } });
     expect((await ledgerOf(platform.pool, second)).proposals).toEqual([]);
+    expect((await platform.tasks.getTask(second)).task.status).toBe('blocked');
 
     // A valid proposal: the handler received the platform's context, not anything the model said.
     const third = await createActionTask(platform, { requestedBy: { kind: 'user', ref: 'requester-1' } });

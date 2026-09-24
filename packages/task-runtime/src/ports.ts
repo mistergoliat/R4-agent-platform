@@ -58,6 +58,8 @@ export interface TaskUnitOfWork {
   insertRun(run: AgentRun): Promise<void>;
   lockRun(runId: string): Promise<AgentRun | null>;
   findActiveRun(taskId: string): Promise<AgentRun | null>;
+  /** (ADR-028) Every run of the task, oldest first (by sequence). Callers hold the task row lock. */
+  listRuns(taskId: string): Promise<AgentRun[]>;
   nextRunSequence(taskId: string): Promise<number>;
   updateRun(run: AgentRun, expectedVersion: number): Promise<boolean>;
   /**

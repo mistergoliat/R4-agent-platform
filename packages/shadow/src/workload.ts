@@ -33,9 +33,11 @@ export const workloadEventSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('advance_time'), ms: z.int().positive(), scope: z.enum(['process', 'process_and_temporal']), note: z.string().max(200).optional() }),
   /**
    * A platform process changes: the worker is replaced (only durable state
-   * survives), or the scheduler stops / starts (time-driven work waits meanwhile).
+   * survives), or the worker / scheduler stops / starts (its work waits
+   * meanwhile). `cycle` (worker only, while stopped): exactly one worker cycle
+   * — one claim, one run — so an event can be placed between two runs.
    */
-  z.strictObject({ kind: z.literal('process'), process: z.enum(['worker', 'scheduler']), action: z.enum(['restart', 'stop', 'start']) }),
+  z.strictObject({ kind: z.literal('process'), process: z.enum(['worker', 'scheduler']), action: z.enum(['restart', 'stop', 'start', 'cycle']) }),
   /** A controlled fault of an external owner (`target` is a domain binding) or of the model provider (`target` = `model`). Interpreted by the pack's bindings. */
   z.strictObject({ kind: z.literal('fault'), target: code, fault: code, note: z.string().max(200).optional() }),
   /** A trusted operator acts on the task (simulated, controlled actor; no operator UI). */

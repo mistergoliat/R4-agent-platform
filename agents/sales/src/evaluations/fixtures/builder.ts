@@ -1,5 +1,6 @@
 import { FIXTURE_CATALOG_UPDATED_AT, FIXTURE_PRODUCTS } from '@r4-adapters/domains';
 import {
+  RUN_FAILURE_RECOVERY_KEY,
   failureClassOf,
   type ActionAttempt,
   type ActionExecution,
@@ -13,6 +14,7 @@ import {
   type JsonObject,
   type Observation,
   type PolicyDecision,
+  type RunFailureRecovery,
   type RunStep,
   type TaskWait,
   type TerminationReason,
@@ -141,6 +143,18 @@ export class SalesFixture {
     this.#events.push({ eventId: this.#id(), type: 'task.input.received', entityId: inputId, occurredAt: at, responseKey: null, data: {} });
     const open = this.#waits.find((w) => w.status === 'waiting');
     if (open) Object.assign(open, { status: 'completed', resolution: 'input', completedAt: at });
+    this.#openRun(at);
+    return this;
+  }
+
+  /** (ADR-028) A new run of the same task after a recoverable run failure: no new input, a fresh context. */
+  recoveryRun(): this {
+    this.#closeRun();
+    this.#openRun(this.#now());
+    return this;
+  }
+
+  #openRun(at: string): void {
     const run: AgentRun = {
       runId: this.#id(), taskId: this.task.taskId, sequence: this.#runs.length + 1, agentId: SALES_AGENT_ID, agentVersion: 1, status: 'running', contextSnapshotRef: null,
       usage: { modelCalls: 0, inputTokens: 0, outputTokens: 0, capabilityCalls: 0 }, result: null, failure: null, termination: null, recoveries: 0, correlationId: this.task.correlationId, version: 1, startedAt: at, finishedAt: null, createdAt: at, updatedAt: at,
@@ -148,18 +162,17 @@ export class SalesFixture {
     this.#current = { run, steps: [], contexts: [] };
     this.#runs.push(this.#current);
     Object.assign(this.task, { status: 'running', updatedAt: at });
-    return this;
   }
 
   #closeRun(): void {
     if (this.#current && this.#current.run.status === 'running') throw new Error(`fixture ${this.id}: run ${this.#current.run.sequence} must end (wait, complete or fail) before the next turn`);
   }
 
-  #end(reason: TerminationReason, code: string, message: string, taskStatus: AgentTask['status']): void {
+  #end(reason: TerminationReason, code: string, message: string, taskStatus: AgentTask['status'], details: JsonObject | null = null): void {
     const r = this.#current!.run;
     const at = this.#now(10);
     const status = reason === 'completed' ? 'completed' : reason === 'waiting' ? 'suspended' : 'failed';
-    Object.assign(r, { status, termination: { reason, failureClass: failureClassOf(reason), code, message, details: null }, finishedAt: at, updatedAt: at, failure: status === 'failed' ? { code, message } : null });
+    Object.assign(r, { status, termination: { reason, failureClass: failureClassOf(reason), code, message, details }, finishedAt: at, updatedAt: at, failure: status === 'failed' ? { code, message } : null });
     Object.assign(this.task, { status: taskStatus, updatedAt: at });
   }
 
@@ -357,17 +370,22 @@ export class SalesFixture {
     return goalId;
   }
 
-  /** A model output the platform rejected: the run fails (ADR-008: no retry), the task fails. */
-  invalid(code: DecisionErrorCode, shape: { jsonDocuments: readonly (string | null)[]; otherTextChars: number } | null = null): this {
+  /**
+   * A model output the platform rejected: the run fails (ADR-008: no retry in the run). Without
+   * `recovery` the task fails (the pre-ADR-028 shape recorded trajectories keep); with it, the
+   * platform's disposition is stamped on the run and the task continues (`continued`) or waits for
+   * a human (`exhausted` / `handed_off`), as the ADR-028 runtime records it.
+   */
+  invalid(code: DecisionErrorCode, shape: { jsonDocuments: readonly (string | null)[]; otherTextChars: number } | null = null, recovery: RunFailureRecovery | null = null): this {
     this.#step(null, 'invalid', { error: { code, message: `decision rejected: ${code}` } }, shape ? { chars: 200 + shape.otherTextChars, jsonDocuments: [...shape.jsonDocuments], otherTextChars: shape.otherTextChars } : null);
-    this.#end('invalid_decision', code, `decision rejected: ${code}`, 'failed');
+    this.#end('invalid_decision', code, `decision rejected: ${code}`, taskStatusAfter(recovery), recovery ? { [RUN_FAILURE_RECOVERY_KEY]: recovery } : null);
     return this;
   }
 
-  /** The provider call itself failed (transport or malformed answer). */
-  modelFailure(kind: 'provider_error' | 'rate_limited' | 'timeout' | 'invalid_provider_response'): this {
+  /** The provider call itself failed (transport or malformed answer); `recovery` as for `invalid`. */
+  modelFailure(kind: 'provider_error' | 'rate_limited' | 'timeout' | 'invalid_provider_response', recovery: RunFailureRecovery | null = null, retryable = kind === 'timeout' || kind === 'rate_limited'): this {
     this.#step(null, 'model_failed', { error: { code: kind, message: `model call failed: ${kind}` } });
-    this.#end('model_failure', kind, `model call failed: ${kind}`, 'failed');
+    this.#end('model_failure', kind, `model call failed: ${kind}`, taskStatusAfter(recovery), recovery ? { retryable, [RUN_FAILURE_RECOVERY_KEY]: recovery } : null);
     return this;
   }
 
@@ -418,4 +436,10 @@ export function productContextPayload(productId: string): unknown {
   const p = FIXTURE_PRODUCTS.find((x) => x.productId === productId);
   if (!p) return { found: false, productId };
   return { found: true, product: { ...summary(productId), description: p.description, weightKg: p.weightKg, footprintCm: p.footprintCm ? { ...p.footprintCm } : null, specs: { ...p.specs }, compatibleWith: [...p.compatibleWith], alternatives: [...p.alternatives] } };
+}
+
+/** The task status an ADR-028 disposition leaves (legacy `failed` when none is recorded). */
+function taskStatusAfter(recovery: RunFailureRecovery | null): AgentTask['status'] {
+  if (recovery === null) return 'failed';
+  return recovery.outcome === 'continued' ? 'running' : 'blocked';
 }

@@ -22,6 +22,8 @@ export interface TestWorkerOptions {
   readonly heartbeatIntervalMs?: number;
   readonly pollIntervalMs?: number;
   readonly maxRunRecoveries?: number;
+  /** ADR-028: recovery runs after consecutive recoverable run failures (platform default when omitted). */
+  readonly maxRunFailureRecoveries?: number;
   readonly logger?: Logger;
   /** R4-C2: context policy overrides, compactor and extra sources. */
   readonly context?: Partial<ContextCompilationPolicyInput>;
@@ -68,6 +70,7 @@ export function testWorkerConfig(databaseUrl: string, options: Omit<TestWorkerOp
     heartbeatIntervalMs: options.heartbeatIntervalMs ?? 1_000,
     pollIntervalMs: options.pollIntervalMs ?? 25,
     maxRunRecoveries: options.maxRunRecoveries ?? 3,
+    ...(options.maxRunFailureRecoveries === undefined ? {} : { maxRunFailureRecoveries: options.maxRunFailureRecoveries }),
     execution: { ...TEST_POLICY, ...options.policy },
     context: { ...TEST_CONTEXT_POLICY, ...options.context },
   };

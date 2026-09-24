@@ -531,8 +531,8 @@ READ.
 | Razón | Clase | Run | Task |
 |---|---|---|---|
 | `completed` | — | completed | completed |
-| `model_failure` | model | failed | failed |
-| `invalid_decision` | protocol | failed | failed |
+| `model_failure` | model | failed | failed → **ADR-028:** `running` (retryable, recuperación acotada) o `blocked` + handoff de plataforma (no reintentable / agotada) |
+| `invalid_decision` | protocol | failed | failed → **ADR-028:** `running` (recuperación acotada) o `blocked` + handoff de plataforma (agotada) |
 | `capability_failure` | capability | failed | failed |
 | `budget_exhausted` | budget | failed | failed |
 | `internal_failure` | platform | failed | failed |
@@ -541,6 +541,10 @@ READ.
 
 `code` precisa la causa (`timeout`, `unknown_capability`, `max_model_calls`,
 `max_run_recoveries_exceeded`, …); `details` guarda datos estructurados.
+
+> **Post-H (ADR-028, GAP-H-001).** La tabla de C1 llevaba toda run fallida a
+> una task `failed`. Para `invalid_decision` y `model_failure` la task ya no
+> es terminal: ver §18. La run sigue terminando igual (ADR-008 intacto).
 
 ### 11.7 Recuperación
 
@@ -1344,3 +1348,54 @@ por `ModelUsage` (se reporta así). Sin precios en el runtime.
 R4-G) y `evaluations/<id>/` (una EvaluationRun por ejecución). Inmutables
 (nuevo id por corrida), serialización estable, gate de privacidad de R4-G más
 gate de datos personales en outbound/efectos/llamadas. Ignorados por git.
+
+## 18. Post-H — Recuperación a nivel de run (ADR-028, GAP-H-001)
+
+Corrección arquitectónica aprobada por el Architecture Gap Review posterior a
+R4-H (gate humano, **no** una fase del roadmap). Baseline R4-H: `80a1733`.
+Sin migración (0001–0006 congeladas); protocolo `r4.agent_decision.v4` sin
+cambio; kernel, parser y gateway sin cambio.
+
+**Regla:** una run fallida no termina el trabajo durable salvo que el fallo
+mismo establezca que el trabajo es terminal. Implementada sólo para las clases
+que la evidencia de H justifica.
+
+```text
+salida inválida ─► step invalid ─► run failed                       (ADR-008, igual)
+                                     │ runFailureDisposition
+      ┌──────────────────────────────┼──────────────────────────────────┐
+  recoverable, ≤ max           recoverable, > max                 human (no reintentable)
+  (invalid_decision,           (agotada)                          (model_failure no retryable)
+   model_failure retryable)
+      │                              │                                  │
+  task sigue running,          task blocked +                      task blocked +
+  sin run activa;              handoff requested                   handoff requested
+  claim normal ─► run n+1      initiatedBy=platform                initiatedBy=platform
+  ─► ContextSnapshot nuevo     reason=run_failure_recovery_exhausted reason=non_retryable_model_failure
+                               (visible en /v1/attention; release o cancel ⇒ autonomía; el conteo vuelve a 1)
+```
+
+| Aspecto | Decisión |
+|---|---|
+| Dueño | `ExecutionRuntime.finishExecution` (ciclo de vida de run y transición de task); el fallback humano lo realiza el `TemporalRuntime` (R4-E), que se adjunta al construirse |
+| Clasificación | `runFailureDisposition` en `@r4/contracts` (pura; la usan runtime y Quality) |
+| Presupuesto | `maxRunFailureRecoveries` (`R4_EXEC_MAX_RUN_FAILURE_RECOVERIES`, default 1, finito) |
+| Contador | Derivado de `agent_runs`: runs `continued` consecutivas; una run `exhausted`/`handed_off` corta la secuencia (tras ella sólo hay otra run si un humano resolvió el handoff) |
+| Registro durable | `termination.details.runFailureRecovery` en la run fallida, en la misma transacción |
+| Contexto | Run nueva ⇒ snapshot nuevo (C2); incluye inputs llegados entre runs; sin pistas de reparación |
+| Budgets | Los de una run normal; los de alcance task (`maxWriteActions`) no se reinician |
+| Fuera de alcance | `capability_failure`, fallas de dominio, reintentos por calidad, fallback de modelo |
+
+Invariantes preservados: ninguna reparación de salida inválida; decisiones
+aceptadas finales; sin re-ejecución de propuestas ni nuevos `executionKey`;
+reconciliación antes que cognición (claim); ownership humano bloquea el claim;
+un crash durante una run de recuperación es un takeover de la misma run
+(fencing C1). Telemetría: `task.run_failure.recoverable`,
+`.recovery_started`, `.recovered`, `.recovery_exhausted`,
+`.non_retryable` y `handoff.requested` (`initiatedBy: platform`).
+Quality (`r4.execution_outcomes` v2) mide `recoverableRunFailures`,
+`recoveredRunFailures`, `exhaustedRecoveries`, `nonRetryableHandoffs` y
+`attemptsToRecovery`; nunca inicia recuperación.
+
+**Pendiente para R4-I (no resuelto):** un `respond` entregado por un canal
+real antes de un fallo podría repetirse en la run de recuperación.

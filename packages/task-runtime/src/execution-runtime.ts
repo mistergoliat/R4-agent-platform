@@ -1,11 +1,18 @@
 import {
   EMPTY_RUN_USAGE,
+  NON_RETRYABLE_MODEL_FAILURE,
   PlatformError,
+  RUN_FAILURE_RECOVERY_EXHAUSTED,
+  RUN_FAILURE_RECOVERY_KEY,
   actionProposalSchema,
   contextSnapshotSchema,
   memoryEntrySchema,
+  runFailureDisposition,
+  runFailureRecoveryOf,
   runStatusForTermination,
   runStepSchema,
+  type JsonValue,
+  type RunFailureRecovery,
   type AgentDecision,
   type AgentRun,
   type AgentTask,
@@ -51,6 +58,37 @@ export interface ExecutionRuntimeOptions {
    * Guards against a run that kills every worker that executes it.
    */
   maxRunRecoveries: number;
+  /**
+   * (ADR-028) New runs the platform may start after consecutive recoverable
+   * run failures (`invalid_decision`, retryable `model_failure`) before it
+   * hands the task to a human. Finite; 0 hands over at the first failure.
+   * Defaults to DEFAULT_MAX_RUN_FAILURE_RECOVERIES.
+   */
+  maxRunFailureRecoveries?: number;
+}
+
+/** ADR-028 default: one recovery run after a recoverable run failure. */
+export const DEFAULT_MAX_RUN_FAILURE_RECOVERIES = 1;
+
+/** Why the platform hands a task to a human after a run failure (ADR-028). */
+export interface RunFailureHandoffCause {
+  /** Task status reason and handoff reason: RUN_FAILURE_RECOVERY_EXHAUSTED or NON_RETRYABLE_MODEL_FAILURE. */
+  readonly reason: string;
+  readonly terminationReason: TerminationReason;
+  readonly code: string;
+  /** Consecutive recoverable failed runs (this one included); null when nothing was retried. */
+  readonly consecutiveFailures: number | null;
+  readonly actor: Principal;
+}
+
+/**
+ * (ADR-028) The human fallback of a run failure. Human ownership is the
+ * Temporal Runtime's (R4-E): it attaches itself when constructed. Called
+ * inside the transaction that ended the run, with the task row locked;
+ * returns the task as it is afterwards (blocked on a platform handoff).
+ */
+export interface RunFailureHandoff {
+  handOffAfterRunFailureWithin(uow: ExecutionUnitOfWork, task: AgentTask, run: AgentRun, cause: RunFailureHandoffCause, events: PendingEvent[]): Promise<AgentTask>;
 }
 
 export interface ClaimCommand {
@@ -143,7 +181,9 @@ export interface FinishExecutionCommand {
  * The task status a run termination leads to. Only `completed` succeeds the
  * task. (R4-D) A suspended run leaves its task waiting, never terminal:
  * `requires_approval` for a human decision, `blocked` for an action whose
- * outcome is unknown.
+ * outcome is unknown. (ADR-028) `finishExecution` applies the run-failure
+ * disposition first: a recoverable or non-retryable failure never reaches
+ * this mapping's `failed`.
  */
 export function taskStatusForTermination(reason: TerminationReason): Extract<TaskStatus, 'completed' | 'failed' | 'cancelled' | 'requires_approval' | 'blocked' | 'waiting'> {
   switch (reason) {
@@ -161,6 +201,12 @@ export function taskStatusForTermination(reason: TerminationReason): Extract<Tas
     default:
       return 'failed';
   }
+}
+
+/** The run's termination details with the platform's ADR-028 disposition added (existing details are kept). */
+function withRunFailureRecovery(details: JsonValue | null | undefined, recovery: RunFailureRecovery): JsonObject {
+  const kept: JsonObject = details == null ? {} : typeof details === 'object' && !Array.isArray(details) ? details : { value: details };
+  return { ...kept, [RUN_FAILURE_RECOVERY_KEY]: recovery };
 }
 
 export function workerPrincipal(workerId: string): Principal {
@@ -206,16 +252,33 @@ export class ExecutionRuntime {
   readonly #clock: Clock;
   readonly #logger: StructuredLogger;
   readonly #maxRunRecoveries: number;
+  readonly #maxRunFailureRecoveries: number;
+  #runFailureHandoff: RunFailureHandoff | null = null;
 
   constructor(options: ExecutionRuntimeOptions) {
     if (!Number.isInteger(options.maxRunRecoveries) || options.maxRunRecoveries < 0) {
       throw new PlatformError('validation', 'invalid_execution_policy', 'maxRunRecoveries must be a non-negative integer');
+    }
+    const maxRunFailureRecoveries = options.maxRunFailureRecoveries ?? DEFAULT_MAX_RUN_FAILURE_RECOVERIES;
+    if (!Number.isInteger(maxRunFailureRecoveries) || maxRunFailureRecoveries < 0) {
+      throw new PlatformError('validation', 'invalid_execution_policy', 'maxRunFailureRecoveries must be a non-negative integer');
     }
     this.#store = options.store;
     this.#ids = options.ids;
     this.#clock = options.clock;
     this.#logger = options.logger;
     this.#maxRunRecoveries = options.maxRunRecoveries;
+    this.#maxRunFailureRecoveries = maxRunFailureRecoveries;
+  }
+
+  /**
+   * (ADR-028) Wires the human fallback (the Temporal Runtime does it on
+   * construction: it depends on this runtime, not the other way round).
+   * Without one, a run failure that needs a human cannot be recorded and the
+   * ending is refused (the kernel then records `internal_failure`).
+   */
+  attachRunFailureHandoff(handoff: RunFailureHandoff): void {
+    this.#runFailureHandoff = handoff;
   }
 
   /**
@@ -252,8 +315,14 @@ export class ExecutionRuntime {
 
       const active = await uow.findActiveRun(task.taskId);
       if (!active) {
+        // ADR-028: a run after a recoverable failure is the recovery — an ordinary run, fresh context.
+        const previous = (await uow.listRuns(task.taskId)).at(-1);
+        const recovering = previous ? runFailureRecoveryOf(previous.termination) : null;
         const run = await this.#newRun(uow, task, timestamp);
         events.push(['run.started', { ...base, runId: run.runId, sequence: run.sequence, generation: lease.generation }]);
+        if (previous && recovering?.outcome === 'continued') {
+          events.push(['task.run_failure.recovery_started', { ...base, runId: run.runId, failedRunId: previous.runId, attempt: recovering.consecutiveFailures, maxRunFailureRecoveries: recovering.maxRunFailureRecoveries }]);
+        }
         return { kind: 'started', lease, task, run };
       }
 
@@ -503,7 +572,19 @@ export class ExecutionRuntime {
 
   /**
    * Ends the run with a structured termination and moves the task to the
-   * matching terminal status, then releases the lease — all atomically.
+   * status the termination establishes, then releases the lease — all
+   * atomically.
+   *
+   * (ADR-028) A failed run does not terminate durable work unless the
+   * failure establishes that the work is terminal. For a recoverable failure
+   * (`runFailureDisposition`) the run still fails exactly as before, but the
+   * task stays `running` with no active run — the next ordinary claim starts
+   * a new run that compiles a fresh context — while consecutive recoverable
+   * failures stay within `maxRunFailureRecoveries`. Past it, or for a
+   * non-retryable model failure, the task is handed to a human (`blocked` +
+   * platform handoff), never failed. The disposition is stamped on the run's
+   * termination (`details.runFailureRecovery`). Every other failure is
+   * unchanged.
    */
   async finishExecution(token: LeaseToken, command: FinishExecutionCommand): Promise<{ task: AgentTask; run: AgentRun }> {
     const events: PendingEvent[] = [];
@@ -521,6 +602,8 @@ export class ExecutionRuntime {
         await this.appendStepWithin(uow, owned, token, command.finalStep, timestamp, events);
         current = (await uow.findActiveRun(owned.task.taskId)) ?? current;
       }
+      const recovery = await this.#runFailureRecovery(uow, current, command.termination);
+      const termination: TerminationInput = recovery === null ? command.termination : { ...command.termination, details: withRunFailureRecovery(command.termination.details, recovery) };
       const run = await finishRunWithin(
         uow,
         current,
@@ -528,24 +611,46 @@ export class ExecutionRuntime {
           status,
           result,
           failure: status === 'failed' ? { code: command.termination.code ?? reason, message: truncate(command.termination.message ?? '') } : null,
-          termination: command.termination,
+          termination,
           correlationId: owned.task.correlationId,
         },
         timestamp,
         events,
       );
-      const task = await transitionTaskWithin(
-        uow,
-        this.#ids,
-        owned.task,
-        taskStatusForTermination(reason),
-        reason === 'completed' ? 'run_completed' : reason,
-        workerPrincipal(token.owner),
-        owned.task.correlationId,
-        timestamp,
-        events,
-        reason === 'completed' ? { result } : {},
-      );
+      const actor = workerPrincipal(token.owner);
+      const base = { taskId: owned.task.taskId, runId: run.runId, agentId: owned.task.agentId, workerId: token.owner, terminationReason: reason, failureClass: run.termination?.failureClass ?? null, code: run.termination?.code ?? null };
+      let task: AgentTask;
+      if (recovery?.outcome === 'continued') {
+        // Same durable task, still running, no active run: the next claim is the recovery.
+        task = owned.task;
+        events.push(['task.run_failure.recoverable', { ...base, attempt: recovery.consecutiveFailures, maxRunFailureRecoveries: recovery.maxRunFailureRecoveries }]);
+      } else if (recovery !== null) {
+        if (!this.#runFailureHandoff) {
+          throw new PlatformError('internal', 'run_failure_handoff_unavailable', 'a run failure that needs a human cannot be handed over without the temporal runtime');
+        }
+        const exhausted = recovery.outcome === 'exhausted';
+        events.push([exhausted ? 'task.run_failure.recovery_exhausted' : 'task.run_failure.non_retryable', { ...base, consecutiveFailures: recovery.consecutiveFailures, maxRunFailureRecoveries: recovery.maxRunFailureRecoveries }]);
+        task = await this.#runFailureHandoff.handOffAfterRunFailureWithin(uow, owned.task, run, {
+          reason: exhausted ? RUN_FAILURE_RECOVERY_EXHAUSTED : NON_RETRYABLE_MODEL_FAILURE,
+          terminationReason: reason,
+          code: run.termination?.code ?? reason,
+          consecutiveFailures: recovery.consecutiveFailures,
+          actor,
+        }, events);
+      } else {
+        task = await transitionTaskWithin(
+          uow,
+          this.#ids,
+          owned.task,
+          taskStatusForTermination(reason),
+          reason === 'completed' ? 'run_completed' : reason,
+          actor,
+          owned.task.correlationId,
+          timestamp,
+          events,
+          reason === 'completed' ? { result } : {},
+        );
+      }
       await uow.releaseLease(token);
       const event = run.status === 'completed' ? 'run.completed' : run.status === 'abandoned' ? 'run.abandoned' : run.status === 'cancelled' ? 'run.cancelled' : run.status === 'suspended' ? 'run.suspended' : 'run.failed';
       events.push([event, { taskId: task.taskId, runId: run.runId, agentId: task.agentId, workerId: token.owner, terminationReason: reason, failureClass: run.termination?.failureClass ?? null, code: run.termination?.code ?? null, ...run.usage }]);
@@ -643,6 +748,30 @@ export class ExecutionRuntime {
 
   #owned(uow: ExecutionUnitOfWork, token: LeaseToken): Promise<OwnedExecution> {
     return lockOwnedExecution(uow, token);
+  }
+
+  /**
+   * (ADR-028) How the platform disposes of the run ending `termination`, or
+   * null when it is not a recoverable/human failure (unchanged path).
+   *
+   * The consecutive count is derived from `agent_runs`, never stored: this
+   * run plus the trailing runs of the task that failed recoverably and were
+   * `continued`. Any other run ends the sequence — including an `exhausted`
+   * or `handed_off` one, after which a new run exists only because a human
+   * released (or cancelled) the platform handoff: that is the reset. History
+   * is never rewritten; every failed run keeps its record.
+   */
+  async #runFailureRecovery(uow: ExecutionUnitOfWork, run: AgentRun, termination: TerminationInput): Promise<RunFailureRecovery | null> {
+    const disposition = runFailureDisposition({ reason: termination.reason, details: termination.details ?? null });
+    const maxRunFailureRecoveries = this.#maxRunFailureRecoveries;
+    if (disposition === 'human') return { outcome: 'handed_off', consecutiveFailures: null, maxRunFailureRecoveries };
+    if (disposition !== 'recoverable') return null;
+    let consecutiveFailures = 1;
+    for (const earlier of (await uow.listRuns(run.taskId)).filter((r) => r.sequence < run.sequence).reverse()) {
+      if (runFailureRecoveryOf(earlier.termination)?.outcome !== 'continued') break;
+      consecutiveFailures += 1;
+    }
+    return { outcome: consecutiveFailures > maxRunFailureRecoveries ? 'exhausted' : 'continued', consecutiveFailures, maxRunFailureRecoveries };
   }
 
   async #newRun(uow: ExecutionUnitOfWork, task: AgentTask, timestamp: string): Promise<AgentRun> {

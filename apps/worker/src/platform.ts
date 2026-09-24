@@ -80,7 +80,7 @@ export async function createWorkerPlatform(config: WorkerConfig, bindings: Worke
     const agents = new AgentRegistry({ store: new PostgresAgentDefinitionStore(pool), clock, logger });
     const observations = new PostgresObservationStore(pool);
     const store = new PostgresExecutionStore(pool);
-    const execution = new ExecutionRuntime({ store, ids, clock, logger, maxRunRecoveries: config.maxRunRecoveries });
+    const execution = new ExecutionRuntime({ store, ids, clock, logger, maxRunRecoveries: config.maxRunRecoveries, ...(config.maxRunFailureRecoveries === undefined ? {} : { maxRunFailureRecoveries: config.maxRunFailureRecoveries }) });
     const temporal = new TemporalRuntime({ store, execution, ids, logger });
     // The only authority over effects: policy is evaluated inside the runtime's fenced transactions.
     const actions = new ActionRuntime({ store, authorizer: new ActionPolicyEngine(bindings.actionPolicy ?? DEFAULT_ACTION_POLICY), temporal, ids, clock, logger });

@@ -1,3 +1,4 @@
+import { NON_RETRYABLE_MODEL_FAILURE, RUN_FAILURE_RECOVERY_EXHAUSTED, runFailureRecoveryOf } from '@r4/contracts';
 import type { InvariantOutcome, ShadowModelCall, WorkloadInvariant } from '@r4/shadow';
 import { CAPABILITY_IDS } from '../ids.js';
 import { evaluateInvariants, type Invariant } from '../harness/invariants.js';
@@ -35,6 +36,12 @@ export function evaluateWorkloadInvariants(invariants: readonly WorkloadInvarian
     const outcome = i.kind.startsWith('sales.') ? salesInvariant(i, state) : shadowInvariant(i, state, obs);
     return { kind: i.kind, class: i.class, ...outcome, detail: outcome.detail.slice(0, 500) };
   });
+}
+
+/** The platform-initiated handoff (ADR-028) opened for a failed run, if any. */
+function platformHandoff(state: ConversationState, runId: string, reason: string): { status: string } | null {
+  const found = state.temporal.humans.find((h) => h.kind === 'handoff' && h.runId === runId && h.payload.initiatedBy === 'platform' && h.payload.reason === reason);
+  return found ? { status: found.status } : null;
 }
 
 function salesInvariant(i: WorkloadInvariant, state: ConversationState): Outcome {
@@ -120,7 +127,129 @@ function shadowInvariant(i: WorkloadInvariant, state: ConversationState, obs: Ex
         const firstError = calls.findIndex((c) => c.outcome === 'error');
         return firstError >= 0 && firstError < calls.length - 1;
       });
-      return retried.length === 0 && callsAfter.length === 0 ? pass('the failed call was the run’s last; no retry (ADR-008)') : fail(`${retried.length} run(s) continued after the failed call; ${callsAfter.length} with provider calls after it`);
+      return retried.length === 0 && callsAfter.length === 0 ? pass('the failed call was the run’s last; no retry inside the run (ADR-008; recovery, if any, is a new run — ADR-028)') : fail(`${retried.length} run(s) continued after the failed call; ${callsAfter.length} with provider calls after it`);
+    }
+    // --- ADR-028: run-level recovery (GAP-H-001) ---------------------------------
+    case 'shadow.run_failure_recovered': {
+      const failed = runs.filter((r) => runFailureRecoveryOf(r.run.termination)?.outcome === 'continued');
+      if (failed.length === 0) return notExercised('no run failed recoverably');
+      const problems: string[] = [];
+      for (const f of failed) {
+        const next = runs.find((r) => r.run.sequence === f.run.sequence + 1);
+        if (!next) {
+          problems.push(`run ${f.run.sequence}: no recovery run`);
+          continue;
+        }
+        // A recovery run that failed again continues the chain, or ends it with a human (exhaustion / non-retryable: their own invariants).
+        if (runFailureRecoveryOf(next.run.termination) !== null) continue;
+        if (next.contexts.length === 0 || next.contexts.some((c) => f.contexts.some((fc) => fc.snapshotId === c.snapshotId))) problems.push(`run ${next.run.sequence}: no freshly compiled context`);
+        if (!next.steps.some((s) => s.decision !== null)) problems.push(`run ${next.run.sequence}: no valid decision`);
+      }
+      if (state.task.status === 'failed') problems.push('the task became failed');
+      // Recovery never touches goals: every agent goal comes from an accepted manage_goal, the root stays active.
+      const decidedGoals = runs.flatMap((r) => r.steps).filter((s) => s.outcome === 'recorded' && s.decision?.type === 'manage_goal' && s.decision.change.operation === 'create').length;
+      if (state.goals.filter((g) => g.origin === 'agent').length !== decidedGoals) problems.push('a goal appeared without an agent decision');
+      if (state.goals.find((g) => g.goalId === state.task.rootGoalId)?.status !== 'active') problems.push('the root goal is no longer active');
+      return problems.length === 0 ? pass(`${failed.length} failed run(s) → new run with fresh context and a valid decision; same task (${state.task.status})`) : fail(problems.join('; '));
+    }
+    case 'shadow.run_failure_recovery_exhausted': {
+      const exhausted = runs.filter((r) => runFailureRecoveryOf(r.run.termination)?.outcome === 'exhausted');
+      if (exhausted.length === 0) return notExercised('recovery was never exhausted');
+      const problems: string[] = [];
+      for (const e of exhausted) {
+        const record = runFailureRecoveryOf(e.run.termination)!;
+        const chain = runs.filter((r) => r.run.sequence <= e.run.sequence && r.run.sequence > e.run.sequence - record.consecutiveFailures! && r.run.status === 'failed');
+        if (record.consecutiveFailures !== record.maxRunFailureRecoveries + 1 || chain.length !== record.consecutiveFailures) problems.push(`run ${e.run.sequence}: ${chain.length} consecutive failed run(s) for max ${record.maxRunFailureRecoveries}`);
+        const handoff = platformHandoff(state, e.run.runId, RUN_FAILURE_RECOVERY_EXHAUSTED);
+        if (!handoff) problems.push(`run ${e.run.sequence}: no platform handoff (${RUN_FAILURE_RECOVERY_EXHAUSTED})`);
+        const later = runs.filter((r) => r.run.sequence > e.run.sequence);
+        if (later.length > 0 && handoff && (handoff.status === 'requested')) problems.push('a run started while the platform handoff was still open');
+        // Released by a human: the consecutive count starts again (history kept).
+        const nextFailure = later.map((r) => runFailureRecoveryOf(r.run.termination)).find((x) => x !== null);
+        if (nextFailure && nextFailure.outcome !== 'handed_off' && nextFailure.consecutiveFailures !== 1) problems.push(`after the release the count did not restart (${nextFailure.consecutiveFailures})`);
+      }
+      if (obs.inputs.some((x) => !x.applied)) problems.push('an input was refused');
+      if (state.task.status === 'failed') problems.push('the task became failed');
+      return problems.length === 0 ? pass(`${exhausted.length} exhaustion(s): ${runFailureRecoveryOf(exhausted[0]!.run.termination)!.consecutiveFailures} failed runs → blocked + platform handoff; inputs accepted`) : fail(problems.join('; '));
+    }
+    case 'shadow.non_retryable_handed_off': {
+      const handed = runs.filter((r) => runFailureRecoveryOf(r.run.termination)?.outcome === 'handed_off');
+      if (handed.length === 0) return notExercised('no non-retryable model failure');
+      const problems: string[] = [];
+      for (const h of handed) {
+        if (h.run.termination?.reason !== 'model_failure') problems.push(`run ${h.run.sequence}: ${h.run.termination?.reason}`);
+        const handoff = platformHandoff(state, h.run.runId, NON_RETRYABLE_MODEL_FAILURE);
+        if (!handoff) problems.push(`run ${h.run.sequence}: no platform handoff (${NON_RETRYABLE_MODEL_FAILURE})`);
+        const later = runs.filter((r) => r.run.sequence > h.run.sequence);
+        if (later.length > 0 && handoff?.status === 'requested') problems.push('an automatic run followed a non-retryable failure');
+      }
+      if (state.task.status === 'failed') problems.push('the task became failed');
+      return problems.length === 0 ? pass(`not retried; task ${state.task.status}, platform handoff (${NON_RETRYABLE_MODEL_FAILURE}) open for a human`) : fail(problems.join('; '));
+    }
+    case 'shadow.recovery_context_includes_new_input': {
+      const customer = state.conversation.filter((e) => e.memoryType === 'CONVERSATIONAL' && (e.content as { actor?: { role?: string } }).actor?.role === 'participant');
+      const recoveries = runs.filter((r) => runs.some((f) => f.run.sequence === r.run.sequence - 1 && runFailureRecoveryOf(f.run.termination)?.outcome === 'continued'));
+      if (recoveries.length === 0) return notExercised('no recovery run');
+      const problems: string[] = [];
+      for (const r of recoveries) {
+        const byInput = obs.inputs.findIndex((x) => x.runIds.includes(r.run.runId));
+        const before = customer.slice(0, byInput < 0 ? customer.length : obs.inputs[byInput]!.index);
+        const first = [...r.contexts].sort((a, b) => a.iteration - b.iteration || a.attempt - b.attempt)[0];
+        const missing = before.filter((e) => !first?.itemIds.includes(`memory:${e.entryId}`));
+        if (missing.length > 0) problems.push(`run ${r.run.sequence}: ${missing.length} earlier input(s) missing from its context`);
+      }
+      return problems.length === 0 ? pass(`every recovery run compiled every input received before it (${customer.length} input(s))`) : fail(problems.join('; '));
+    }
+    case 'shadow.read_before_failure_preserved': {
+      const failed = runs.filter((r) => runFailureRecoveryOf(r.run.termination)?.outcome === 'continued');
+      const reads = state.observations.filter((o) => o.source.kind === 'capability' && failed.some((f) => f.run.runId === o.runId));
+      if (reads.length === 0) return notExercised('no READ before a recoverable failure');
+      const problems: string[] = [];
+      for (const o of reads) {
+        const failedRun = failed.find((f) => f.run.runId === o.runId)!;
+        const recovery = runs.find((r) => r.run.sequence === failedRun.run.sequence + 1);
+        const first = recovery ? [...recovery.contexts].sort((a, b) => a.iteration - b.iteration || a.attempt - b.attempt)[0] : undefined;
+        if (!first?.itemIds.includes(`observation:${o.observationId}`)) problems.push(`observation ${o.observationId.slice(0, 8)} not in the recovery context`);
+      }
+      const invocations = runs.flatMap((r) => r.steps.map((s) => s.invocationId).filter((id): id is string => id !== null));
+      if (new Set(invocations).size !== invocations.length) problems.push('an invocation was executed twice');
+      return problems.length === 0 ? pass(`${reads.length} READ observation(s) from the failed run are in the recovery context; nothing re-executed by the platform`) : fail(problems.join('; '));
+    }
+    case 'shadow.write_before_failure_not_replayed': {
+      const failed = runs.filter((r) => runFailureRecoveryOf(r.run.termination)?.outcome === 'continued');
+      const proposals = state.ledger.proposals.filter((p) => failed.some((f) => f.run.runId === p.runId));
+      if (proposals.length === 0) return notExercised('no governed write before a recoverable failure');
+      const problems: string[] = [];
+      for (const p of proposals) {
+        const failedRun = failed.find((f) => f.run.runId === p.runId)!;
+        const executions = state.ledger.executions.filter((e) => e.proposalId === p.proposalId);
+        const execution = executions[0];
+        const receipts = execution ? state.ledger.receipts.filter((r) => r.executionId === execution.executionId) : [];
+        const late = execution ? state.ledger.attempts.filter((a) => a.executionId === execution.executionId && Date.parse(a.startedAt) > Date.parse(failedRun.run.finishedAt ?? a.startedAt)) : [];
+        if (executions.length !== 1) problems.push(`proposal ${p.proposalId.slice(0, 8)}: ${executions.length} execution(s)`);
+        if (receipts.length !== 1) problems.push(`proposal ${p.proposalId.slice(0, 8)}: ${receipts.length} receipt(s)`);
+        if (receipts.some((r) => r.executionKey !== execution!.executionKey)) problems.push(`proposal ${p.proposalId.slice(0, 8)}: receipt key differs from the execution key`);
+        if (late.length > 0) problems.push(`proposal ${p.proposalId.slice(0, 8)}: ${late.length} attempt(s) after the run failed`);
+        const recovery = runs.find((r) => r.run.sequence === failedRun.run.sequence + 1);
+        const first = recovery ? [...recovery.contexts].sort((a, b) => a.iteration - b.iteration || a.attempt - b.attempt)[0] : undefined;
+        const observed = state.observations.find((o) => o.source.kind === 'action' && o.source.receiptId === receipts[0]?.receiptId);
+        if (!observed || !first?.itemIds.includes(`observation:${observed.observationId}`)) problems.push(`proposal ${p.proposalId.slice(0, 8)}: its receipt observation is not in the recovery context`);
+      }
+      return problems.length === 0 ? pass(`${proposals.length} write(s) before the failure: one execution, one receipt, same key, not replayed; receipt visible to the recovery run`) : fail(problems.join('; '));
+    }
+    case 'shadow.no_cognition_while_uncertain': {
+      const reconciled = state.ledger.receipts.filter((r) => r.evidence.obtainedVia === 'reconcile');
+      if (reconciled.length === 0) return notExercised('no outcome was established by reconciliation');
+      const problems: string[] = [];
+      for (const receipt of reconciled) {
+        const origin = runs.find((r) => r.run.runId === receipt.runId);
+        const later = runs.filter((r) => origin && r.run.sequence > origin.run.sequence);
+        const early = later.filter((r) => Date.parse(r.run.startedAt) < Date.parse(receipt.recordedAt));
+        if (early.length > 0) problems.push(`${early.length} run(s) started before the uncertain outcome was reconciled`);
+      }
+      const recovered = runs.some((r) => runFailureRecoveryOf(r.run.termination)?.outcome === 'continued');
+      if (!recovered) problems.push('no recoverable failure after reconciliation');
+      return problems.length === 0 ? pass('reconciliation established the outcome before any later cognition, including the failed run and its recovery') : fail(problems.join('; '));
     }
     case 'shadow.protocol_failure_recorded': {
       const injected = obs.modelCalls.filter((c) => c.injected && c.outcome === 'unparsed');

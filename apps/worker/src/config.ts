@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { workerIdSchema } from '@r4/contracts';
 import { assertExecutionPolicy, type ExecutionPolicy } from '@r4/agent-kernel';
-import { assertLeaseTiming } from '@r4/task-runtime';
+import { DEFAULT_MAX_RUN_FAILURE_RECOVERIES, assertLeaseTiming } from '@r4/task-runtime';
 import { contextCompilationPolicySchema, type ContextCompilationPolicyInput } from '@r4/context-compiler';
 
 const int = (min: number) => z.coerce.number().int().min(min);
@@ -26,6 +26,8 @@ const configSchema = z.object({
   R4_EXEC_MAX_RUN_DURATION_MS: int(1).default(15 * 60_000),
   R4_EXEC_MODEL_CALL_TIMEOUT_MS: int(1).default(60_000),
   R4_EXEC_MAX_RUN_RECOVERIES: int(0).default(3),
+  // ADR-028: new runs after consecutive recoverable run failures before a human takes over (finite).
+  R4_EXEC_MAX_RUN_FAILURE_RECOVERIES: int(0).default(DEFAULT_MAX_RUN_FAILURE_RECOVERIES),
   // R4-D: write actions per task. 0 = this worker performs no writes unless the operator opts in.
   R4_EXEC_MAX_WRITE_ACTIONS: int(0).default(0),
   // R4-C2 context compilation policy (operator configuration).
@@ -46,6 +48,8 @@ export interface WorkerConfig {
   readonly heartbeatIntervalMs: number;
   readonly pollIntervalMs: number;
   readonly maxRunRecoveries: number;
+  /** ADR-028: recovery runs after consecutive recoverable run failures; defaults to DEFAULT_MAX_RUN_FAILURE_RECOVERIES. */
+  readonly maxRunFailureRecoveries?: number;
   readonly execution: ExecutionPolicy;
   /** R4-C2: how the Context Compiler selects and bounds each model input. */
   readonly context: ContextCompilationPolicyInput;
@@ -77,6 +81,7 @@ export function loadWorkerConfig(env: NodeJS.ProcessEnv): WorkerConfig {
     heartbeatIntervalMs: c.R4_WORKER_HEARTBEAT_MS,
     pollIntervalMs: c.R4_WORKER_POLL_MS,
     maxRunRecoveries: c.R4_EXEC_MAX_RUN_RECOVERIES,
+    maxRunFailureRecoveries: c.R4_EXEC_MAX_RUN_FAILURE_RECOVERIES,
     execution: {
       maxIterations: c.R4_EXEC_MAX_ITERATIONS,
       maxModelCalls: c.R4_EXEC_MAX_MODEL_CALLS,
@@ -107,6 +112,9 @@ export function validateWorkerConfig(config: WorkerConfig): void {
   }
   if (!Number.isInteger(config.maxRunRecoveries) || config.maxRunRecoveries < 0) {
     throw new Error('maxRunRecoveries must be a non-negative integer');
+  }
+  if (config.maxRunFailureRecoveries !== undefined && (!Number.isInteger(config.maxRunFailureRecoveries) || config.maxRunFailureRecoveries < 0)) {
+    throw new Error('maxRunFailureRecoveries must be a non-negative integer');
   }
 }
 

@@ -85,7 +85,8 @@ describe('canonical trajectory from durable state', () => {
     const subject = await new PostgresTrajectoryReader(platform.pool).subject(taskId);
     const run = await runEvaluation(subject, definition, { reproducibility: { gitSha: 'unknown', protocolVersion: 'test', modelUnderTest: null } });
     expect(subject.runs).toHaveLength(1);
-    expect(run.result.outcome.technical).toMatchObject({ status: 'failed', valid: false });
+    // ADR-028: the run failed; the task is still running (a recovery run is next), measured as such.
+    expect(run.result.outcome.technical).toMatchObject({ status: 'in_progress', failedRuns: 1 });
     expect(run.result.findings.map((f) => f.category)).toEqual(['MODEL_PROTOCOL']);
     expect(run.result.metrics['r4.protocol_adherence.protocolAdherence']).toMatchObject({ numerator: 0, denominator: 1 });
   });

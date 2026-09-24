@@ -339,7 +339,9 @@ describe('step log invariants', () => {
       finalStep: { runId, iteration: 1, decision: null, outcome: 'invalid', error: { code: 'unknown_capability', message: 'nope' }, usage: { inputTokens: 1, outputTokens: 1 } },
     });
     expect(run).toMatchObject({ status: 'failed', failure: { code: 'unknown_capability' }, termination: { reason: 'invalid_decision', failureClass: 'protocol' }, usage: { modelCalls: 1 } });
-    expect(task).toMatchObject({ status: 'failed', statusReason: 'invalid_decision' });
+    // ADR-028: the run fails exactly as before; the durable task stays runnable for a recovery run.
+    expect(run.termination!.details).toEqual({ runFailureRecovery: { outcome: 'continued', consecutiveFailures: 1, maxRunFailureRecoveries: 1 } });
+    expect(task).toMatchObject({ status: 'running' });
     expect((await stepsOf(platform.pool, runId)).map((s) => s.outcome)).toEqual(['invalid']);
     expect(await leaseRow(platform.pool, taskId)).toMatchObject({ lease_owner: null });
   });

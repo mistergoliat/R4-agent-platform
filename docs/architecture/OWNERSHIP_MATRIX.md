@@ -170,6 +170,22 @@ bindings, corpus) y de la evidencia de sus efectos hacia afuera (ADR-027).
 | Quote en shadow | `ShadowQuoteService` (`adapters/domains`) detrás del `QuoteService` port | **Dominio simulado record-only** (nunca emite documento) | En el proceso que lo compone | — | por ejecución | Se pierde con el proceso (el E2E emite sus registros) | `shadow/shadow-suite`, `recovery/shadow-process` |
 | ArchitectureGapCandidate | Observadas: `@r4/shadow` (`observeGapCandidates`, conservador); revisadas: persona (`agents/sales/src/shadow/gaps.ts`) | Conocimiento revisado; sólo una entrada revisada y repetida puede ser gap arquitectónico | `architecture-gap-candidates.jsonl` + código | — | — | — | `unit/shadow/workload-privacy-cost` |
 
+## 1i. Post-H — Recuperación a nivel de run (ADR-028, GAP-H-001; corrección, no fase)
+
+Nada nuevo es dueño de nada: la corrección fija la consecuencia de una run
+fallida sobre su task dentro de los dueños existentes. Sin tabla ni columna
+nueva.
+
+| Concepto | Owner (paquete) | Autoridad | Almacenamiento | Mutabilidad | Ciclo de vida | Ante reinicio | Evaluación |
+|---|---|---|---|---|---|---|---|
+| Disposición de una run fallida (`runFailureDisposition`: recoverable / human / terminal) | `@r4/contracts` (función pura); aplicada por `task-runtime` (`ExecutionRuntime.finishExecution`) | Autoridad de plataforma | Derivada de `termination.reason` + `details.retryable` (clasificación del gateway) | — | — | Sin estado | `unit/task-runtime/run-failure-recovery` |
+| Registro de recuperación de la run (`termination.details.runFailureRecovery`) | `task-runtime` (`ExecutionRuntime`) | Evidencia de plataforma | `agent_runs.termination` (jsonb existente) | Escrito una vez, con el cierre de la run (misma transacción) | `continued` / `exhausted` / `handed_off` | Durable | `integration/run-failure-recovery` |
+| Contador de fallos consecutivos | `task-runtime` (derivado) | Autoridad de plataforma | **No almacenado**: derivado de `agent_runs` | — | Se corta con una run no `continued` (incl. tras un handoff humano) | Reconstruible | `integration/run-failure-recovery` |
+| `maxRunFailureRecoveries` | Configuración del worker (`R4_EXEC_MAX_RUN_FAILURE_RECOVERIES`) → `ExecutionRuntime` | Configuración de operador | Proceso | — | default 1, finito | Se re-lee | `unit/task-runtime/run-failure-recovery` |
+| Run de recuperación | `task-runtime` (`claimNext` ordinario) | Autoridad de plataforma | `agent_runs` (run n+1) | Como toda run | Como toda run; crash ⇒ takeover de la misma run (C1) | Durable | `integration/run-failure-recovery`, `recovery/run-failure-recovery-crash` |
+| Handoff de plataforma (`initiatedBy: platform`, `reason`) | `task-runtime` (`TemporalRuntime.handOffAfterRunFailureWithin`) | Plataforma (solicitud); humano (decisión) | `human_requests` (payload jsonb existente) | Transiciones de handoff de R4-E | `requested → active → released`, `→ cancelled` | Durable | `integration/run-failure-recovery`, `shadow/shadow-suite` (H08C, H08D) |
+| Métricas de recuperación | `@r4/evaluation` (`r4.execution_outcomes` v2) | Evaluación (nunca inicia recuperación) | Artifacts | Inmutable | por evaluación | Reproducible | `unit/task-runtime/run-failure-recovery` |
+
 ## 2. Planificado (sin implementar; owner candidato)
 
 | Concepto | Fase | Owner candidato | Autoridad |

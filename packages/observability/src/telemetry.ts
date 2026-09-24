@@ -102,6 +102,12 @@ export const TELEMETRY_EVENTS = [
   'reconciliation.resolved',
   'reconciliation.unresolved',
   'reconciliation.rescheduled',
+  // ADR-028 run-level recovery (metadata only: ids, reasons, codes, counts — never model output)
+  'task.run_failure.recoverable',
+  'task.run_failure.recovery_started',
+  'task.run_failure.recovered',
+  'task.run_failure.recovery_exhausted',
+  'task.run_failure.non_retryable',
 ] as const;
 export type TelemetryEventName = (typeof TELEMETRY_EVENTS)[number];
 

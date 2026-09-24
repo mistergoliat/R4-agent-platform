@@ -24,10 +24,14 @@ requiere autorización explícita (AGENTS.md).
 | R4-F | Sales Reference Application | Completado y publicado (R4-F BASELINE `1927499`; fuera de Core, §3.7) |
 | R4-G | Quality & Learning | Completado (sobre R4-F LIVE-VALIDATED BASELINE `001b7a8`) |
 | R4-H | Shadow / E2E (PRD §40: "Shadow Production") | **En progreso** — implementado sobre R4-G BASELINE `4a54b2c`; pendiente de auditoría (§3.9) |
-| R4-I | Governed Production | No iniciado |
+| R4-I | Governed Production | No iniciado — **bloqueado** hasta la auditoría final de la corrección GAP-H-001 |
 | R4-J | Sales Autonomy | No iniciado |
 | R4-K | Platform Generalization Test (Marketing Analyst) | No iniciado |
 | R4-L | Extended Platform | No iniciado |
+
+**Post-H Architecture Gap Review** (gate humano, **no** una fase): GAP-H-001
+confirmado; **resolución implementada** (ADR-028, §3.10) sobre el R4-H BASELINE
+`80a1733`, pendiente de auditoría. No se abre R4-H.5 ni ninguna fase nueva.
 
 ## 2. R4-B — criterios de salida
 
@@ -494,6 +498,47 @@ execution"; `src/shadow` fuera del runtime del pack), `sales-boundaries`
 registro revisado y el informe de cierre. El único `architecture_gap_candidate`
 es GAP-H-001 (una salida inválida del modelo termina la conversación entera).
 
+## 3.10 Post-H Architecture Gap Review — GAP-H-001 (corrección, no fase)
+
+El review posterior a R4-H confirmó GAP-H-001: una salida inválida del modelo
+terminaba la task completa (11/44 ejecuciones live elegibles; 11/523 llamadas).
+ADR-008 quedó intacto (salida inválida → step `invalid` → run `failed`); lo
+incompleto era la consecuencia sobre la task. **Resolución implementada**
+(ADR-028, [arquitectura §18](../architecture/R4_ARCHITECTURE.md)): para
+`invalid_decision` y `model_failure` reintentable la task sigue `running` y
+una run nueva (claim normal, ContextSnapshot nuevo) continúa el trabajo,
+acotada por `maxRunFailureRecoveries` (default 1); al agotarse, o ante un
+`model_failure` no reintentable, la task pasa a `blocked` con un handoff de
+plataforma visible en `/v1/attention`. Sin migración (0001–0006 congeladas;
+no hay 0007), protocolo v4 sin cambio, kernel / parser / gateway sin cambio.
+
+| # | Criterio | Evidencia |
+|---|---|---|
+| 1–3 | ADR-008 intacto; step `invalid`; run `failed` | `integration/run-failure-recovery`; `integration/worker-kernel` |
+| 4–7 | Task no terminal; run nueva; claim normal; snapshot nuevo (C2) | `integration/run-failure-recovery` (primer caso) |
+| 8–10 | Finito; default 1; configurable | idem (agotamiento, `maxRunFailureRecoveries = 2`); `unit/task-runtime/run-failure-recovery` |
+| 11–13 | Misma task; sin goal preciso; goals intactos | idem; shadow `run_failure_recovered` |
+| 14–17 | Agotamiento / no reintentable ⇒ `blocked` + handoff de plataforma; recuperable por humanos | `integration/run-failure-recovery`; shadow H08C, H08D |
+| 18–19 | Input entre runs aceptado e incluido en el contexto de recuperación | idem; shadow H08E |
+| 20–21 | Ownership humano y reconciliación preceden | idem; shadow H08F, H08I |
+| 22–26 | READ y writes previos preservados; un receipt; `executionKey` intacto; budget de writes no se reinicia | idem; shadow H08G, H08H |
+| 27–28 | Decisión aceptada nunca reintentada; Quality nunca dispara recuperación | `integration/run-failure-recovery` |
+| 29–31 | Crash durante la recuperación; fencing; doble worker ⇒ una run | `integration/run-failure-recovery`; `recovery/run-failure-recovery-crash` (SIGKILL real) |
+| 32 | Quality mide la recuperación | `r4.execution_outcomes` v2 (`unit/task-runtime/run-failure-recovery`) |
+| 33–36 | Sin texto inválido ni razonamiento persistido; sin migración; protocolo v4; kernel/gateway sin cambio | tests anteriores; `git diff` |
+| 38 | Mutaciones | `npm run test:mutation:recovery` |
+
+**Cambios en tests de fases previas (semántica nueva, no relajación):**
+`integration/execution-leases`, `integration/worker-kernel`,
+`integration/evaluation-trajectory` y `sales/live-diagnostics` afirmaban la task
+`failed` tras `invalid_decision`/`model_failure`; ahora afirman la nueva
+disposición. Dos casos de `integration/governed-execution` cuyo tema es D
+(evidencia, campos confiables) configuran `maxRunFailureRecoveries: 0` para que
+la task fallida no sea reclamada por el worker del caso siguiente (BD compartida
+por archivo) y afirman `blocked`. Shadow: H08A/H08B v2 (lock) y casos nuevos
+H08C–H08I; corpus v2; directivas de falla en cola (`pass`) y `process worker
+stop|cycle|start` en el ejecutor.
+
 ## 4. Decisiones diferidas intencionalmente
 
 | Tema | Por qué se difiere | Seam existente |
@@ -505,7 +550,7 @@ es GAP-H-001 (una salida inválida del modelo termina la conversación entera).
 | `/health`, `/ready` del worker | Sin consumidor (sin deploy); liveness observable por telemetría y `last_heartbeat_at` | `createWorkerPlatform` |
 | Protocolo de acción híbrido (tool calls nativas) | Constitución §27.11 sigue abierta; C1 usa salida estructurada | `parseAgentDecision` |
 | Decisión Delegate | R4-F+ (ProposeAction: R4-D; Wait, Consult, Handoff, manage_goal: R4-E) | `AgentDecision` (unión discriminada) |
-| Reintentos de modelo y reparación de decisiones inválidas | Política sin evidencia; afecta evaluación | `model_failure` / `invalid_decision` clasificados |
+| Reintentos de modelo y reparación de decisiones inválidas | Reparación / reintento dentro de la run: sigue diferido (ADR-008). **Recuperación a nivel de run: resuelta post-H por ADR-028** | `model_failure` / `invalid_decision` clasificados; `runFailureDisposition` |
 | Presupuesto de costo / tokens como política | Ownership de pricing sin decidir; `maxTokens` sí se aplica si la task lo declara | `ExecutionPolicy`, `budgetSchema` |
 | Deadline de task (`deadlineAt`) aplicado por el worker | No requerido por C1 | `maxRunDurationMs` |
 | Prioridades / `LISTEN/NOTIFY` en el claim | Sin necesidad demostrada (ADR-006) | índice `agent_tasks_claimable_idx` |
@@ -560,7 +605,9 @@ es GAP-H-001 (una salida inválida del modelo termina la conversación entera).
 | (G) Calculadora de costos | Precios no pertenecen a Core; se registran tokens y llamadas | métricas de eficiencia |
 | (G) Benchmark live grande / comparación de proveedores | Costo; se preparó el seam y se limita N live ≤ 3 sin `--allow-large` | `benchmark:sales --source live` |
 | (G) Reparación de prompt de Sales por findings | Prohibido en G: el evaluador debe ver los defectos actuales | RegressionCase → cambio externo → Experiment |
-| (H) Retry/reparación de decisiones inválidas o "run fallida ≠ task fallida" | Candidato GAP-H-001 para la revisión post-H; no se decide dentro de H | `invalid_decision`, `model_failure`; ADR-008 |
+| (H) Retry/reparación de decisiones inválidas o "run fallida ≠ task fallida" | **Resuelto post-H (ADR-028, §3.10):** run fallida ≠ task fallida para `invalid_decision` y `model_failure` reintentable. Siguen diferidos: reparación dentro de la run, reintento por calidad, fallback de modelo | `runFailureDisposition`, `maxRunFailureRecoveries` |
+| (post-H) Aplicar el principio de ADR-028 a `capability_failure` / caídas de dominio | Sin evidencia live para distinguir falla transitoria, rechazo de dominio, error de contrato y falla permanente | `runFailureDisposition` (`terminal` hoy) |
+| (post-H → R4-I) `respond` entregado por canal y luego run fallida: la recuperación podría responder otra vez | Frontera de entrega de R4-I; en H/F `respond` no se entrega | `respond` en el step log; `ShadowOutboundSink` |
 | (H) Adapters live-read de Catalog/Customer/Shipping y sandbox de Quote | Sin contrato + endpoint + credencial configurados en R4 (GAP-H-007) | `live-read` en `ShadowExecutionPolicy` (opt-in + contrato) |
 | (H) Replay de conversaciones reales | Sin fuente legal/operacional | `workloadFromReplay` + sanitización |
 | (H) Tokens de razonamiento en métricas | `ModelUsage` no los expone (sin cambio de Core) | `ShadowModelCall.reasoningTokens` = null |

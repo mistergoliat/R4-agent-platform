@@ -30,7 +30,7 @@ describe('offline controlled-shadow suite (full corpus, scripted stand-in)', () 
       judge: null,
       gitSha: 'unknown',
       gitDirty: null,
-      costGuard: { maxModelCalls: 6_000, maxInputTokens: null, maxOutputTokens: null, maxCases: 30, maxRepetitions: 3 },
+      costGuard: { maxModelCalls: 6_000, maxInputTokens: null, maxOutputTokens: null, maxCases: 40, maxRepetitions: 3 },
       concurrency: 2,
     });
     suite = result.suite;
@@ -53,15 +53,24 @@ describe('offline controlled-shadow suite (full corpus, scripted stand-in)', () 
 
   it('exercises every H reference behavior at least once (not merely "not exercised")', () => {
     const exercised = (kind: string) => suite.runs.flatMap((r) => r.caseInvariants.filter((i) => i.kind === kind && i.exercised).map((i) => `${r.case.id}:${i.passed}`));
-    expect(exercised('shadow.reconciled_via_scheduler')).toEqual(['H09:true']);
+    expect(exercised('shadow.reconciled_via_scheduler')).toEqual(['H08I:true', 'H09:true']);
     expect(exercised('shadow.approval_reevaluated')).toEqual(['H10:true']);
-    expect(exercised('shadow.no_autonomous_run_during_handoff')).toEqual(['H11:true']);
-    expect(exercised('shadow.resumed_after_release')).toEqual(['H11:true']);
+    expect(exercised('shadow.no_autonomous_run_during_handoff')).toEqual(['H08C:true', 'H08F:true', 'H11:true']);
+    expect(exercised('shadow.resumed_after_release')).toEqual(['H08C:true', 'H08F:true', 'H11:true']);
     expect(exercised('shadow.cancel_deferred_until_reconciled')).toEqual(['H12B:true']);
-    expect(exercised('shadow.input_rejected_after_terminal')).toEqual(expect.arrayContaining(['H12:true', 'H08A:true']));
-    expect(exercised('shadow.model_failure_classified')).toEqual(['H08A:true']);
-    expect(exercised('shadow.no_retry_after_model_failure')).toEqual(['H08A:true']);
-    expect(exercised('shadow.protocol_failure_recorded')).toEqual(['H08B:true']);
+    // ADR-028: a failed run no longer makes the conversation terminal; only a cancelled task refuses input.
+    expect(exercised('shadow.input_rejected_after_terminal')).toEqual(['H12:true']);
+    expect(exercised('shadow.model_failure_classified')).toEqual(['H08A:true', 'H08D:true']);
+    expect(exercised('shadow.no_retry_after_model_failure')).toEqual(['H08A:true', 'H08D:true']);
+    expect(exercised('shadow.protocol_failure_recorded')).toEqual(['H08B:true', 'H08C:true', 'H08E:true', 'H08G:true', 'H08H:true', 'H08I:true']);
+    // ADR-028 run-level recovery (GAP-H-001).
+    expect(exercised('shadow.run_failure_recovered')).toEqual(['H08A:true', 'H08B:true', 'H08C:true', 'H08E:true', 'H08F:true', 'H08G:true', 'H08H:true', 'H08I:true']);
+    expect(exercised('shadow.run_failure_recovery_exhausted')).toEqual(['H08C:true']);
+    expect(exercised('shadow.non_retryable_handed_off')).toEqual(['H08D:true']);
+    expect(exercised('shadow.recovery_context_includes_new_input')).toEqual(['H08E:true']);
+    expect(exercised('shadow.read_before_failure_preserved')).toEqual(['H08G:true']);
+    expect(exercised('shadow.write_before_failure_not_replayed')).toEqual(['H08H:true']);
+    expect(exercised('shadow.no_cognition_while_uncertain')).toEqual(['H08I:true']);
     expect(exercised('shadow.expired_evidence_in_history')).toEqual(expect.arrayContaining(['H06:true']));
     expect(exercised('sales.waited_and_resumed')).toEqual(expect.arrayContaining(['H05:true', 'H13:true', 'H14:true']));
     const long = suite.runs.find((r) => r.case.id === 'H13')!;
@@ -77,7 +86,8 @@ describe('offline controlled-shadow suite (full corpus, scripted stand-in)', () 
     expect(suite.aggregates.reliability.injectedFaults).toMatchObject({ timeout: 1 });
     expect(suite.aggregates.reliability.providerErrorsByKind).toEqual({});
     expect(suite.aggregates.protocol.adherenceExcludingInjectedFaults.numerator).toBe(suite.aggregates.protocol.adherenceExcludingInjectedFaults.denominator);
-    expect(suite.aggregates.protocol.invalidDecisionAttempts).toBe(1);
+    // Every invalid decision is an injected fault (H08B 1, H08C 3, H08E/F/G/H/I 1 each), recovered or handed over — never retried in its run.
+    expect(suite.aggregates.protocol.invalidDecisionAttempts).toBe(9);
     expect(suite.aggregates.quality?.findingsByCode).toHaveProperty('trailing_non_protocol_output');
   });
 

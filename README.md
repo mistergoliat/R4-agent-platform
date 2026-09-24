@@ -38,6 +38,14 @@ efectos sólo shadow — modo shadow explícito, bindings declarados, side-effec
 manifest, outbound sink sin entrega, corpus de workloads y suites evaluadas
 por R4-G (ADR-027).
 
+**Post-H Architecture Gap Review** (gate humano, no una fase): GAP-H-001
+confirmado y **resolución implementada**, pendiente de auditoría (ADR-028):
+una run que falla por `invalid_decision` o por un `model_failure` reintentable
+ya no termina la task — una run nueva con contexto recién compilado la
+continúa (acotado, default 1); al agotarse, o ante un fallo no reintentable, la
+task queda `blocked` con un handoff de plataforma en `/v1/attention`. R4-I
+sigue bloqueado hasta la auditoría final.
+
 Lectura obligatoria antes de cambios de arquitectura: [AGENTS.md](AGENTS.md),
 [Constitución](docs/architecture/R4_AGENTIC_PLATFORM_MOTIVATION_AND_CONSTRAINTS.md),
 [PRD](docs/architecture/R4_AGENTIC_PLATFORM_PRD_AND_ROADMAP.md),
@@ -95,6 +103,7 @@ ejecutan con `FakeModelProvider` y la capability sintética
 | `R4_EXEC_MAX_RUN_DURATION_MS` | `900000` | 〃 (incluye tiempo huérfano tras un crash) |
 | `R4_EXEC_MODEL_CALL_TIMEOUT_MS` | `60000` | Por llamada; acotado por la duración restante |
 | `R4_EXEC_MAX_RUN_RECOVERIES` | `3` | Takeovers antes de abandonar un run (`lease_lost`) |
+| `R4_EXEC_MAX_RUN_FAILURE_RECOVERIES` | `1` | (ADR-028) Runs nuevas tras fallos recuperables consecutivos (`invalid_decision`, `model_failure` reintentable) antes de pasar la task a un humano; `0` = handoff al primer fallo |
 | `R4_EXEC_MAX_WRITE_ACTIONS` | `0` | (D) Acciones de escritura por task (el `maxWrites` de la task puede reducirlo). `0` = el worker no escribe; con `0` las capabilities de escritura ni se ofrecen al modelo |
 | `R4_CONTEXT_BUDGET_MODE` | `unbounded` | Presupuesto de contexto (ADR-015): `unbounded` = R4 no impone límite propio (nada se excluye ni compacta por presupuesto); `fixed` = acotado |
 | `R4_CONTEXT_MAX_TOKENS` | — | Obligatorio sólo con `fixed`: techo en tokens estimados. `contextPolicy.maxContextTokens` del agente puede ajustarlo en ambos modos |
@@ -220,7 +229,7 @@ materializa en un Quote owner record-only (`COT-9xxxxx`, sin documento).
 ```bash
 npm run build
 npm run shadow:sales -- --plan       # plan: casos, repeticiones, perfil de modelo, bindings, writes, outbound disabled
-npm run shadow:sales                 # offline: corpus completo (28 casos) × 1, modelo scripted, PostgreSQL local, sin red
+npm run shadow:sales                 # offline: corpus completo (35 casos, incl. H08A–H08I de ADR-028) × 1, modelo scripted, PostgreSQL local, sin red
 R4_SHADOW_ALLOW_LIVE_MODEL=true npm run shadow:sales:smoke   # modelo real (R4_MODEL_*): H01, H04, H05 × 1
 R4_SHADOW_ALLOW_LIVE_MODEL=true npm run shadow:sales:live -- --set repeated --repetitions 3 --concurrency 3
 npm run test:shadow                  # suite offline completa como test (PostgreSQL real)
@@ -287,12 +296,13 @@ npm run typecheck       # repo completo, incluidos tests
 npm run test:unit       # sin dependencias externas
 npm run test:contract   # pureza de Core, fronteras de dependencias, neutralidad de proveedor
 npm run test:integration  # requiere `npm run db:up`; crea y borra BDs efímeras
-npm run test:recovery   # detiene/arranca el contenedor PostgreSQL y mata workers y schedulers reales (SIGKILL, incl. tras un efecto externo, a mitad de una reconciliación y (H) un worker Sales shadow a mitad de una conversación); requiere `npm run build`; correr aislado
+npm run test:recovery   # detiene/arranca el contenedor PostgreSQL y mata workers y schedulers reales (SIGKILL, incl. tras un efecto externo, a mitad de una reconciliación y (H) un worker Sales shadow a mitad de una conversación; ADR-028: un worker a mitad de una run de recuperación); requiere `npm run build`; correr aislado
 npm run test:sales      # (F) escenarios S01–S17 + CENTRAL: modelo scripted, dominio fixture, PostgreSQL real; (G) evaluación de trayectorias durables
 npm run test:evaluation # (G) framework de evaluación + evaluator pack de Sales + fronteras de Quality
 npm run test:mutation:evaluation  # (G) 6 mutaciones de invariantes críticos: todas deben ser detectadas
 npm run test:shadow     # (H) suite shadow offline completa: runtime real, modelo scripted, PostgreSQL real, sin red
 npm run test:mutation:shadow  # (H) 9 mutaciones de seguridad shadow: todas deben ser detectadas
+npm run test:mutation:recovery  # (post-H, ADR-028) 14 mutaciones de la recuperación a nivel de run: todas deben ser detectadas
 npm test                # unit + contract + integration + sales + shadow
 npm run check           # build + lint + typecheck + test
 ```

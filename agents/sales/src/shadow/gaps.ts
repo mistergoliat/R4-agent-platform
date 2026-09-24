@@ -34,7 +34,7 @@ const ENTRIES: readonly ArchitectureGapCandidateInput[] = [
     evidenceRefs: [`${N1}/model-calls.jsonl (outcome=unparsed, injected=false)`, `${N1}/evaluations/*H02.r1/subject.json`, `${N1}/evaluations/*H03.r1/subject.json`, `${N1}/evaluations/*H10.r1/subject.json`, `${N1}/evaluations/*CENTRAL.r1/subject.json`, `${N1}/workload-results.jsonl (events: input refused after terminal)`, `${N3}/model-calls.jsonl`, `${N3}/workload-results.jsonl`],
     whyCurrentArchitectureIsInsufficient:
       'C1/ADR-008 map invalid_decision to a failed run and a failed task; the model of AgentTask has no representable state for "this run failed on the model, the conversation continues and awaits input", and no governed repair/retry policy exists (deferred since C1). Any conversational agent inherits this: a ~2% per-call protocol failure rate became a lost conversation in 25% of live executions (11/44).',
-    workaround: 'none in R4-H (ADR-008 kept: failures are measured, not retried)',
+    workaround: 'none in R4-H (ADR-008 kept: failures are measured, not retried). Post-H Architecture Gap Review: GAP-H-001 confirmed; resolution implemented by ADR-028 (run-level recovery; pending audit) — the evidence above is the pre-ADR-028 baseline.',
     productionImpact: 'customer conversations die mid-way; subsequent inbound messages are refused. Needs a decision before production traffic (retry/repair policy and/or run-failure-not-task-failure semantics).',
     modelSpecific: null,
     scope: 'generic',

@@ -10,13 +10,18 @@ import { ModelProviderError, type ModelProvider, type ModelRequest } from '@r4/m
  * (a decision the platform accepted is in the step log; unparseable output
  * is kept as its structure only) and never reasoning text.
  *
- * Controlled provider faults: a shadow workload may ask that the NEXT model
+ * Controlled provider faults: a shadow workload may ask that an upcoming model
  * call fail in a named way (`timeout`, `rate_limited`, `provider_error`,
  * `trailing_prose`). The fault is injected instead of calling the provider
  * and is labeled `injected: true`, so it is never mistaken for the model's
- * own behavior. There is no retry here (ADR-008).
+ * own behavior. There is no retry here (ADR-008): recovery, when there is
+ * one, is a new run of the platform (ADR-028).
+ *
+ * Directives queue up, one per upcoming call, in order: two `trailing_prose`
+ * make the next two calls invalid; `pass` lets one call through untouched,
+ * so a later call can be targeted (e.g. a READ first, then the fault).
  */
-export const MODEL_FAULTS = ['timeout', 'rate_limited', 'provider_error', 'trailing_prose'] as const;
+export const MODEL_FAULTS = ['timeout', 'rate_limited', 'provider_error', 'trailing_prose', 'pass'] as const;
 export type ModelFault = (typeof MODEL_FAULTS)[number];
 
 export const shadowModelCallSchema = z.strictObject({
@@ -39,7 +44,7 @@ export class ShadowRecordingModelProvider implements ModelProvider {
   readonly providerId: string;
   readonly #inner: ModelProvider;
   readonly #calls: ShadowModelCall[] = [];
-  #pendingFault: ModelFault | null = null;
+  readonly #pending: ModelFault[] = [];
   readonly #onCall: ((call: ShadowModelCall) => void) | undefined;
 
   constructor(inner: ModelProvider, options: { onCall?: (call: ShadowModelCall) => void } = {}) {
@@ -52,21 +57,22 @@ export class ShadowRecordingModelProvider implements ModelProvider {
     return [...this.#calls];
   }
 
-  /** The next model call fails with `fault` (one call only). */
+  /** Queues `fault` for the first model call no earlier directive claims (one call per directive). */
   injectNext(fault: ModelFault): void {
-    this.#pendingFault = fault;
+    this.#pending.push(fault);
   }
 
+  /** The directive the next call will consume, if any. */
   get pendingFault(): ModelFault | null {
-    return this.#pendingFault;
+    return this.#pending[0] ?? null;
   }
 
   async invoke(request: ModelRequest, signal: AbortSignal): Promise<unknown> {
     const started = Date.now();
     const index = this.#calls.length + 1;
     const runId = request.correlation.runId ?? null;
-    const fault = this.#pendingFault;
-    this.#pendingFault = null;
+    const directive = this.#pending.shift() ?? null;
+    const fault = directive === 'pass' ? null : directive;
     const push = (fields: Omit<ShadowModelCall, 'index' | 'runId' | 'latencyMs' | 'reasoningTokens'>) => {
       const call = shadowModelCallSchema.parse({ index, runId, latencyMs: Math.max(0, Date.now() - started), reasoningTokens: null, ...fields });
       this.#calls.push(call);

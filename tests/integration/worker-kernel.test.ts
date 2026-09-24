@@ -165,7 +165,9 @@ describe('classified failures', () => {
   it('provider error → model_failure (model class)', async () => {
     const r = await runFailing([{ type: 'provider_error', message: 'upstream 500' }]);
     expect(r.run).toMatchObject({ status: 'failed', termination: { reason: 'model_failure', failureClass: 'model', code: 'provider_error' }, failure: { code: 'provider_error' } });
-    expect(r.task).toMatchObject({ status: 'failed', statusReason: 'model_failure' });
+    // ADR-028: a non-retryable model failure is not retried, and does not terminate the task: a human decides.
+    expect(r.task).toMatchObject({ status: 'blocked', statusReason: 'non_retryable_model_failure' });
+    expect(r.run.termination!.details).toMatchObject({ retryable: false, runFailureRecovery: { outcome: 'handed_off', consecutiveFailures: null } });
     expect(r.steps.map((s) => [s.outcome, s.error?.code])).toEqual([['model_failed', 'provider_error']]);
   });
 

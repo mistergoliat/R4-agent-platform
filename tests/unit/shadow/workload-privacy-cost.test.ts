@@ -59,8 +59,12 @@ describe('WorkloadCase', () => {
   it('the Sales shadow corpus: 20–30 locked cases, the H reference suite complete, natural language, no replay', () => {
     const { problems } = assertWorkloadCorpus(SALES_SHADOW_CORPUS, SALES_SHADOW_CORPUS_LOCK);
     expect(problems).toEqual([]);
-    expect(SALES_SHADOW_CORPUS.cases.length).toBeGreaterThanOrEqual(20);
-    expect(SALES_SHADOW_CORPUS.cases.length).toBeLessThanOrEqual(30);
+    // The R4-H corpus keeps its 20–30 bound; ADR-028 (post-H) adds its run-failure regression cases on top.
+    const ADR_028 = ['H08C', 'H08D', 'H08E', 'H08F', 'H08G', 'H08H', 'H08I'];
+    const reference = SALES_SHADOW_CORPUS.cases.filter((c) => !ADR_028.includes(c.id));
+    expect(reference.length).toBeGreaterThanOrEqual(20);
+    expect(reference.length).toBeLessThanOrEqual(30);
+    for (const id of ADR_028) expect(SALES_SHADOW_CORPUS.cases.find((c) => c.id === id)?.tags, id).toContain('run-failure-recovery');
     for (const id of ['H01', 'H02', 'H03', 'H04', 'H05', 'H06', 'H07', 'H08A', 'H08B', 'H09', 'H10', 'H11', 'H12', 'H12B', 'H13', 'H14']) expect(H_REFERENCE_CASE_IDS, id).toContain(id);
     expect(SALES_SHADOW_CORPUS.cases.every((c) => c.sourceType !== 'replay' && c.privacy.classification === 'synthetic')).toBe(true);
     const long = SALES_SHADOW_CORPUS.cases.find((c) => c.id === 'H13')!;

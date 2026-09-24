@@ -29,7 +29,7 @@ import { add, clp, customerOnFile, destination, fact, observedQuote, proposeQuot
  * plausible, never prescribed; with a real model the script is ignored.
  */
 export const SALES_SHADOW_CORPUS_ID = 'sales.shadow-corpus';
-export const SALES_SHADOW_CORPUS_VERSION = 1;
+export const SALES_SHADOW_CORPUS_VERSION = 2;
 
 const KNOWN = 'cust-demo-001';
 const BUDGET = { matches: '^(budget|presupuesto)(_|$)' };
@@ -49,12 +49,20 @@ const advance = (ms: number, scope: 'process' | 'process_and_temporal', note?: s
 const fault = (target: string, name: string, note?: string): WorkloadEvent => ({ kind: 'fault', target, fault: name, ...(note ? { note } : {}) });
 const operator = (action: Extract<WorkloadEvent, { kind: 'operator' }>['action'], text: string): WorkloadEvent => ({ kind: 'operator', action, text });
 const restartWorker: WorkloadEvent = { kind: 'process', process: 'worker', action: 'restart' };
+// ADR-028 cases: place an event between the failed run and the recovery claim.
+const stopWorker: WorkloadEvent = { kind: 'process', process: 'worker', action: 'stop' };
+const workerCycle: WorkloadEvent = { kind: 'process', process: 'worker', action: 'cycle' };
+const startWorker: WorkloadEvent = { kind: 'process', process: 'worker', action: 'start' };
+const stopScheduler: WorkloadEvent = { kind: 'process', process: 'scheduler', action: 'stop' };
+const startScheduler: WorkloadEvent = { kind: 'process', process: 'scheduler', action: 'start' };
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
 interface CaseSpec {
   readonly id: string;
+  /** Bumped (with its lock entry) whenever events or expectations change. Default 1. */
+  readonly version?: number;
   readonly title: string;
   readonly sourceType: WorkloadCase['sourceType'];
   readonly source: string;
@@ -74,7 +82,7 @@ const build = (spec: CaseSpec): { workload: WorkloadCase; script: readonly Scrip
   workload: parseWorkloadCase({
     schemaVersion: WORKLOAD_CASE_SCHEMA_VERSION,
     id: spec.id,
-    version: 1,
+    version: spec.version ?? 1,
     title: spec.title,
     sourceType: spec.sourceType,
     source: { ref: spec.source, derivedFrom: [...(spec.derivedFrom ?? [])] },
@@ -242,28 +250,138 @@ const SPECS: readonly CaseSpec[] = [
       ...answer((v) => `Sí: el set de discos bumper de 100 kg está a ${clp(v.product('PLT-BUMP-100').unitPrice.amount)}.`),
     ],
   },
+  // --- run failures (v2 with ADR-028: a failed run no longer ends the conversation) ---
   {
     id: 'H08A',
-    title: 'provider timeout on the first model call',
+    version: 2,
+    title: 'provider timeout on the first model call → the task continues in a new run',
     sourceType: 'synthetic',
     source: 'h-reference-suite',
-    events: [fault('model', 'timeout', 'the next model call times out (injected)'), input('Hola, busco una barra para hacer peso muerto en la casa'), input('¿hola? ¿sigues ahí?')],
-    invariants: [...SAFE, technical('shadow.model_failure_classified', { errorKind: 'timeout' }), technical('shadow.no_retry_after_model_failure'), technical('shadow.input_rejected_after_terminal')],
-    acceptableStops: ['failed', 'awaiting_input'],
-    tags: ['h-reference', 'fault-injection:provider', 'provider-timeout'],
-    script: generic(1),
+    events: [fault('model', 'timeout', 'the next model call times out (injected, retryable)'), input('Hola, busco una barra para hacer peso muerto en la casa'), input('¿hola? ¿sigues ahí?')],
+    invariants: [...CONVERSING, technical('shadow.model_failure_classified', { errorKind: 'timeout' }), technical('shadow.no_retry_after_model_failure'), technical('shadow.run_failure_recovered')],
+    tags: ['h-reference', 'fault-injection:provider', 'provider-timeout', 'run-failure-recovery'],
+    script: generic(2),
   },
   {
     id: 'H08B',
-    title: 'trailing prose after the JSON decision (protocol failure)',
+    version: 2,
+    title: 'trailing prose after the JSON decision (protocol failure) → the task continues in a new run',
     sourceType: 'regression-derived',
     source: 'h-reference-suite',
     derivedFrom: ['REG-0004'],
     events: [fault('model', 'trailing_prose', 'the next model output has prose after the decision (injected)'), input('Quiero saber el precio de la barra olímpica de 20 kilos')],
-    invariants: [...SAFE, technical('shadow.protocol_failure_recorded')],
-    acceptableStops: ['failed'],
-    tags: ['h-reference', 'fault-injection:provider', 'protocol-failure'],
+    invariants: [...CONVERSING, technical('shadow.protocol_failure_recorded'), technical('shadow.run_failure_recovered')],
+    tags: ['h-reference', 'fault-injection:provider', 'protocol-failure', 'run-failure-recovery'],
+    script: answer('Déjame revisar el catálogo para darte el precio exacto de la barra olímpica.'),
+  },
+  {
+    id: 'H08C',
+    title: 'protocol failure, recovery run fails too → a human takes over; after release the count starts again',
+    sourceType: 'synthetic',
+    source: 'adr-028',
+    events: [
+      fault('model', 'trailing_prose', 'invalid output (injected)'),
+      fault('model', 'trailing_prose', 'the recovery run is invalid too (injected)'),
+      input('Hola, ¿venden bancos de pesas?'),
+      input('¿hola? ¿hay alguien?'),
+      operator('takeover', 'Reviso la conversación: el agente no pudo continuar solo.'),
+      fault('model', 'trailing_prose', 'after the release, one more invalid output (injected)'),
+      operator('release', 'El agente puede continuar: responder por los bancos de pesas.'),
+    ],
+    invariants: [...SAFE, technical('sales.root_goal_active'), technical('shadow.protocol_failure_recorded'), technical('shadow.run_failure_recovery_exhausted'), technical('shadow.no_autonomous_run_during_handoff'), technical('shadow.resumed_after_release'), technical('shadow.run_failure_recovered')],
+    tags: ['h-reference', 'fault-injection:provider', 'protocol-failure', 'run-failure-recovery', 'handoff'],
+    script: answer('Sí, tenemos bancos de pesas. ¿Buscas uno plano o regulable?'),
+  },
+  {
+    id: 'H08D',
+    title: 'non-retryable provider failure → no automatic run, a human decides',
+    sourceType: 'synthetic',
+    source: 'adr-028',
+    events: [fault('model', 'provider_error', 'a non-retryable provider error (injected)'), input('Hola, quiero cotizar un rack para la casa'), input('¿alguien me puede responder?')],
+    invariants: [...SAFE, technical('sales.root_goal_active'), technical('shadow.model_failure_classified', { errorKind: 'provider_error' }), technical('shadow.no_retry_after_model_failure'), technical('shadow.non_retryable_handed_off')],
+    acceptableStops: ['awaiting_human'],
+    tags: ['h-reference', 'fault-injection:provider', 'provider-error', 'run-failure-recovery'],
     script: [],
+  },
+  {
+    id: 'H08E',
+    title: 'the customer writes again between the failed run and the recovery run',
+    sourceType: 'synthetic',
+    source: 'adr-028',
+    events: [
+      stopWorker,
+      fault('model', 'trailing_prose', 'invalid output (injected)'),
+      input('Hola, busco mancuernas para entrenar en la casa'),
+      workerCycle,
+      input('y si puede ser algo que no ocupe mucho espacio, mejor'),
+      startWorker,
+    ],
+    invariants: [...SAFE, technical('sales.root_goal_active'), technical('shadow.protocol_failure_recorded'), technical('shadow.run_failure_recovered'), technical('shadow.recovery_context_includes_new_input')],
+    tags: ['h-reference', 'fault-injection:provider', 'protocol-failure', 'run-failure-recovery', 'concurrent-input'],
+    script: answer('Para poco espacio te recomiendo mancuernas ajustables: reemplazan varios pares.'),
+  },
+  {
+    id: 'H08F',
+    title: 'an operator takes the task over before the recovery run is claimed',
+    sourceType: 'synthetic',
+    source: 'adr-028',
+    events: [
+      stopWorker,
+      fault('model', 'trailing_prose', 'invalid output (injected)'),
+      input('Hola, necesito ayuda con un pedido que no me ha llegado'),
+      workerCycle,
+      operator('takeover', 'Tomo el caso: pedido atrasado, lo reviso con despacho.'),
+      startWorker,
+      input('¿hola? ¿me pueden ayudar?'),
+      operator('release', 'Revisado con despacho: el pedido sale mañana. El agente puede continuar.'),
+    ],
+    invariants: [...SAFE, technical('sales.root_goal_active'), technical('shadow.no_autonomous_run_during_handoff'), technical('shadow.resumed_after_release'), technical('shadow.run_failure_recovered')],
+    tags: ['h-reference', 'fault-injection:provider', 'protocol-failure', 'run-failure-recovery', 'handoff'],
+    script: answer('Tu pedido sale mañana desde bodega; te aviso apenas tenga el seguimiento.'),
+  },
+  {
+    id: 'H08G',
+    title: 'a READ, then an invalid output: the observation carries into the recovery run',
+    sourceType: 'synthetic',
+    source: 'adr-028',
+    events: [fault('model', 'pass', 'the first call runs normally'), fault('model', 'trailing_prose', 'the second call is invalid (injected)'), input('¿Qué barras olímpicas tienen?')],
+    invariants: [...CONVERSING, technical('shadow.protocol_failure_recorded'), technical('shadow.run_failure_recovered'), technical('shadow.read_before_failure_preserved')],
+    tags: ['h-reference', 'fault-injection:provider', 'protocol-failure', 'run-failure-recovery', 'read'],
+    script: [read(CAPABILITY_IDS.catalogSearch, { text: 'barra', limit: 10 }), ...answer('Según el catálogo tenemos barras olímpicas; ¿para qué tipo de entrenamiento la buscas?')],
+  },
+  {
+    id: 'H08H',
+    title: 'a governed write, then an invalid output: the write is not replayed',
+    sourceType: 'synthetic',
+    source: 'adr-028',
+    events: [fault('model', 'pass', 'the first call runs normally'), fault('model', 'trailing_prose', 'the second call is invalid (injected)'), input('Tengo como 800 mil de presupuesto para armar un gym en la casa')],
+    invariants: [...CONVERSING, technical('shadow.protocol_failure_recorded'), technical('shadow.run_failure_recovered'), technical('shadow.write_before_failure_not_replayed')],
+    tags: ['h-reference', 'fault-injection:provider', 'protocol-failure', 'run-failure-recovery', 'governed-write'],
+    script: [update([fact('presupuesto_clp', 800_000)]), ...answer('Anotado tu presupuesto de $800.000. ¿Cuánto espacio tienes?')],
+  },
+  {
+    id: 'H08I',
+    title: 'an uncertain quote is reconciled first; only then cognition — which fails once and recovers',
+    sourceType: 'synthetic',
+    source: 'adr-028',
+    subjectRef: KNOWN,
+    events: [
+      stopScheduler,
+      fault('quote', 'connection-lost-after-issue-once', 'the owner records the quote, then the connection drops'),
+      fault('quote', 'lookup-timeout-x3', 'the in-run reconciliation lookups time out'),
+      input('Cotízame el soporte de sentadilla SQ-100 con despacho a Maipú, por favor'),
+      fault('model', 'trailing_prose', 'the first call after reconciliation is invalid (injected)'),
+      startScheduler,
+    ],
+    invariants: [...SAFE, technical('sales.root_goal_active'), technical('shadow.reconciled_via_scheduler'), technical('shadow.protocol_failure_recorded'), technical('shadow.run_failure_recovered'), technical('shadow.no_cognition_while_uncertain'), behavioral('sales.quotes_issued', { equals: 1 })],
+    tags: ['h-reference', 'fault-injection:provider', 'protocol-failure', 'run-failure-recovery', 'reconciliation', 'quote'],
+    script: [
+      read(CAPABILITY_IDS.customerContext),
+      read(CAPABILITY_IDS.productContext, { productId: 'RACK-SQ100' }),
+      update([add('RACK-SQ100'), destination('Maipú')]),
+      proposeQuote(customerOnFile),
+      ...answer(quoteReply),
+    ],
   },
   {
     id: 'H09',

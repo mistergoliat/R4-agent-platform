@@ -125,6 +125,8 @@ export class SalesShadowExecutor implements WorkloadExecutor {
       const taskId = await h.openConversation({ customerRef: workload.initialContext.subjectRef, channelRef: workload.initialContext.channelRef, correlationId: `shadow-${workload.id.toLowerCase()}-r${context.repetition}` });
 
       let schedulerUp = true;
+      // ADR-028 cases: a stopped worker runs nothing until `cycle` (one run) or `start`.
+      let workerUp = true;
       let temporalOffsetMs = 0;
       let turnIndex = 0;
       const events: EventLogEntry[] = [];
@@ -144,7 +146,7 @@ export class SalesShadowExecutor implements WorkloadExecutor {
         const runIds: string[] = [];
         if (turnIndex === 0) return runIds;
         for (let round = 0; round < 40; round += 1) {
-          const worked = await h.runUntilIdle();
+          const worked = workerUp ? await h.runUntilIdle() : { runIds: [] as string[], cycles: [] as unknown[] };
           runIds.push(...worked.runIds);
           let fired = 0;
           if (schedulerUp) while ((await s.scheduler.runOnce()).kind === 'fired') fired += 1;
@@ -185,7 +187,7 @@ export class SalesShadowExecutor implements WorkloadExecutor {
             const wall = Date.now();
             const before = new Set((await responses()).map((r) => r.stepId));
             try {
-              const turn = await h.say(taskId, event.text);
+              const turn = workerUp ? await h.say(taskId, event.text) : await h.submit(taskId, event.text);
               record.applied = true;
               const more = await settle();
               const runIds = [...new Set([...turn.runIds, ...more])];
@@ -211,6 +213,14 @@ export class SalesShadowExecutor implements WorkloadExecutor {
           }
           case 'process': {
             if (event.process === 'worker' && event.action === 'restart') await h.restartWorker();
+            else if (event.process === 'worker' && event.action === 'stop') workerUp = false;
+            else if (event.process === 'worker' && event.action === 'start') workerUp = true;
+            else if (event.process === 'worker' && event.action === 'cycle' && !workerUp) {
+              const cycled = await h.runCycle();
+              afterEvent(cycled.runIds);
+              log(index, 'process', true, `worker cycle: ${cycled.runIds.length} run(s)`);
+              break;
+            }
             else if (event.process === 'scheduler' && event.action === 'stop') schedulerUp = false;
             else if (event.process === 'scheduler' && event.action === 'start') schedulerUp = true;
             else {

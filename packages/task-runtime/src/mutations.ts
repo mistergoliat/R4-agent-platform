@@ -5,6 +5,7 @@ import {
   jsonObjectSchema,
   jsonValueSchema,
   reasonCodeSchema,
+  runFailureRecoveryOf,
   runFailureSchema,
   runStatusForTermination,
   runUsageSchema,
@@ -130,6 +131,14 @@ export async function finishRunWithin(
     events.push(['action.outcome_uncertain', { taskId: run.taskId, runId: run.runId, agentId: run.agentId, executions: unresolved, cause: 'run_ended', terminationReason: termination.reason }]);
   }
   events.push(['run.finished', { taskId: run.taskId, runId: run.runId, status: updated.status, terminationReason: termination.reason, failureCode: failure?.code ?? null, ...updated.usage }]);
+  // ADR-028: a recovery run that ends as a legitimate stop (completed / suspended) left the failure sequence.
+  if ((updated.status === 'completed' || updated.status === 'suspended') && run.sequence > 1) {
+    const previous = (await uow.listRuns(run.taskId)).find((r) => r.sequence === run.sequence - 1);
+    const recovery = previous ? runFailureRecoveryOf(previous.termination) : null;
+    if (previous && recovery?.outcome === 'continued') {
+      events.push(['task.run_failure.recovered', { taskId: run.taskId, runId: run.runId, failedRunId: previous.runId, consecutiveFailures: recovery.consecutiveFailures, terminationReason: termination.reason }]);
+    }
+  }
   return updated;
 }
 
