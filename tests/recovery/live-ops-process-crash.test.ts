@@ -10,9 +10,9 @@ import { LiveOpsTestbed, say, waitInput } from '../support/live-ops.js';
  *
  * 1. The delivery process dies DURING the provider call: nothing is assumed —
  *    the lease expires into `unknown` and the message is never sent again.
- * 2. The worker dies AFTER an accepted `respond` and before delivery: the
- *    response is delivered exactly once, and the takeover of the same run
- *    never produces a second response step.
+ * 2. The worker dies AFTER an accepted `respond` has been materialized as an
+ *    OutboundMessage and before delivery: restart reuses that row and sends it
+ *    once; takeover of the same run creates no second response step.
  */
 const GATEWAY_CHILD = fileURLToPath(new URL('./fixtures/dispatching-gateway.mjs', import.meta.url));
 const WORKER_CHILD = fileURLToPath(new URL('./fixtures/crashing-production-worker.mjs', import.meta.url));
@@ -98,19 +98,20 @@ describe('worker SIGKILL after an accepted respond, before delivery', () => {
     });
     child = worker.process;
     await until(() => worker.lines.some((l) => l.event === 'child.model.second_call'));
+    expect(await bed.gateway.delivery.materialize()).toHaveLength(1);
+    const taskId = await bed.taskOf(CUSTOMER);
+    expect(await bed.store.outboundForTask(taskId)).toHaveLength(1);
     worker.process.kill('SIGKILL');
     await killed(worker.process);
-
-    const taskId = await bed.taskOf(CUSTOMER);
-    await bed.deliver();
-    await bed.deliver();
-    expect(bed.provider.sends.map((s) => s.text)).toEqual(['respuesta aceptada antes del crash']);
 
     // Another worker takes over THE SAME run after the lease expires; it continues from the durable step log.
     await new Promise((r) => setTimeout(r, 1700));
     bed.next(waitInput());
     await bed.runAgent();
+    await bed.gateway.delivery.materialize();
     await bed.deliver();
+    await bed.deliver();
+    expect(bed.provider.sends.map((s) => s.text)).toEqual(['respuesta aceptada antes del crash']);
     const runs = await bed.rows<{ status: string; recoveries: number }>('select status, recoveries from agent_runs where task_id = $1', [taskId]);
     expect(runs).toEqual([{ status: 'suspended', recoveries: 1 }]);
     expect(await bed.rows(`select count(*)::int as n from agent_run_steps where task_id = $1 and decision_type = 'respond'`, [taskId])).toEqual([{ n: 1 }]);

@@ -388,6 +388,7 @@ export class TemporalRuntime implements RunFailureHandoff {
       createdAt: now, updatedAt: now, expiresAt: null, correlationId: task.correlationId,
       payload: { summary: hold.summary, contextRefs: [], initiatedBy: 'platform', reason: hold.reason },
     });
+    await p.insertHuman(request);
     await this.event(uow, task, request.requestId, 'handoff.requested', now, events, { initiatedBy: 'platform', reason: hold.reason });
     const wait = await p.activeWait(task.taskId);
     if (wait) {

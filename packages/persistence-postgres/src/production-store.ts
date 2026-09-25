@@ -218,10 +218,10 @@ export class PostgresProductionStore implements ProductionStore {
   // Outbound — creation
   // ---------------------------------------------------------------------------
 
-  async materializeResponses(command: { limit: number; duplicateWindowMs: number }): Promise<OutboundRecord[]> {
+  async materializeResponses(command: { limit: number }): Promise<OutboundRecord[]> {
     const steps = (await query<Row>(
       this.#pool,
-      `select s.step_id, s.run_id, s.task_id, s.decision->>'content' as content, b.binding_id, b.channel, b.profile, t.correlation_id
+      `select s.step_id, s.run_id, s.task_id, s.context_snapshot_id, s.decision->>'content' as content, b.binding_id, b.channel, b.profile, t.correlation_id
          from channel_conversation_bindings b
          join agent_run_steps s on s.task_id = b.task_id and s.decision_type = 'respond' and s.outcome = 'recorded'
          join agent_tasks t on t.task_id = s.task_id
@@ -234,11 +234,47 @@ export class PostgresProductionStore implements ProductionStore {
       const content = typeof s.content === 'string' ? s.content : '';
       const sha = sha256Hex(content);
       const row = await withTransaction(this.#pool, async (c) => {
-        // An identical response to one of the same task that is live (not failed/cancelled) and recent is never sent twice.
+        // Serialize materialization with task input writes and sibling responses.
+        // This keeps both the causal frontier and the duplicate check stable.
+        await c.query('select task_id from agent_tasks where task_id = $1 for update', [s.task_id]);
+        // Text equality is only a secondary check: the existing live response
+        // must represent the same latest inbound input, and this snapshot must
+        // have evaluated every input currently durable for the task.
         const live = (await c.query<Row>(
-          `select outbound_id from outbound_messages where task_id = $1 and origin = 'agent' and content_sha256 = $2 and status not in ('cancelled', 'failed')
-             and created_at > clock_timestamp() - $3::int * interval '1 millisecond' order by created_at limit 1`,
-          [s.task_id, sha, command.duplicateWindowMs],
+          `with response_frontier as (
+             select i.input_id
+               from task_inputs i
+              where i.task_id = $1
+                and exists (
+                  select 1 from context_snapshot_items current_item
+                   where current_item.snapshot_id = $3
+                     and current_item.item_id = 'memory:' || i.memory_entry_id::text)
+              order by i.received_at desc, i.input_id desc
+              limit 1
+           )
+           select o.outbound_id
+             from outbound_messages o
+             join agent_run_steps previous_step
+               on previous_step.step_id = o.response_step_id and previous_step.task_id = o.task_id
+             cross join response_frontier frontier
+            where o.task_id = $1 and o.origin = 'agent' and o.content_sha256 = $2
+              and o.status <> 'cancelled'
+              and (o.status <> 'failed' or o.provider_message_id is not null)
+              and exists (
+                select 1 from task_inputs previous_input
+                 join context_snapshot_items previous_item
+                   on previous_item.snapshot_id = previous_step.context_snapshot_id
+                  and previous_item.item_id = 'memory:' || previous_input.memory_entry_id::text
+                where previous_input.task_id = $1 and previous_input.input_id = frontier.input_id)
+              and not exists (
+                select 1 from task_inputs unseen_input
+                 where unseen_input.task_id = $1
+                   and not exists (
+                     select 1 from context_snapshot_items current_item
+                      where current_item.snapshot_id = $3
+                        and current_item.item_id = 'memory:' || unseen_input.memory_entry_id::text))
+            order by o.created_at, o.outbound_id limit 1`,
+          [s.task_id, sha, s.context_snapshot_id],
         )).rows[0];
         const outboundId = randomUUID();
         const r = await c.query<Row>(
@@ -284,6 +320,10 @@ export class PostgresProductionStore implements ProductionStore {
       )).rows[0];
       if (!row) return null;
       const outbound = outboundFromRow(row);
+      // Inputs and handoffs lock the Task before they commit. Share that lock
+      // so the delivery decision and the pending → dispatching transition see
+      // one stable ownership and inbound frontier.
+      await c.query('select task_id from agent_tasks where task_id = $1 for update', [outbound.taskId]);
       const now = iso((await c.query<{ now: Date }>('select clock_timestamp() as now')).rows[0]!.now);
       const binding = bindingFromRow((await c.query<Row>('select * from channel_conversation_bindings where binding_id = $1', [outbound.bindingId])).rows[0]!);
       const task = (await taskStateOf(c, outbound.taskId))!;

@@ -314,11 +314,12 @@ export interface ProductionStore {
   // Outbound (the delivery owner's state).
   /**
    * Creates the outbound of every accepted `respond` of a bound task that has
-   * none yet (one per step, by unique constraint). An identical response of
-   * the same task within `duplicateWindowMs` of a live one is created
-   * cancelled (`duplicate_content`), never dispatched.
+   * none yet (one per step, by unique constraint). A matching agent response
+   * is created cancelled (`duplicate_content`) only when a live outbound of
+   * the same task represents the same latest evaluated inbound input and the
+   * candidate snapshot includes every currently durable task input.
    */
-  materializeResponses(command: { readonly limit: number; readonly duplicateWindowMs: number }): Promise<OutboundRecord[]>;
+  materializeResponses(command: { readonly limit: number }): Promise<OutboundRecord[]>;
   createOperatorOutbound(command: NewOperatorOutbound): Promise<{ readonly record: OutboundRecord; readonly replayed: boolean }>;
   claimNextOutbound(command: ClaimOutboundCommand): Promise<DispatchClaim | null>;
   /** Fenced by the token; a lost lease still records provider acceptance as evidence (unknown → accepted). */

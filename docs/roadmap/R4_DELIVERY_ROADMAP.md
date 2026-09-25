@@ -549,6 +549,7 @@ Checkpoint estable (no cierre de fase):
 | Offline implementation | PASS |
 | Offline E2E | PASS |
 | Mutations | PASS |
+| Transcript / outbound deduplication correction audit | PASS (no migration) |
 | Live canary validation | PENDING |
 | Operator identity | PENDING |
 | Final audit | PENDING |
@@ -570,7 +571,7 @@ manual del operador), D-3 (protección de respuesta obsoleta, causal) y D-4
 | 1–2 | Modo producción explícito, fail-closed; test/shadow/production distinguibles | `unit/live-ops/mode-profile-rollout`, `contract/live-ops-boundaries` |
 | 3–6 | Ingress canónico con tráfico con forma de proveedor; firma; reintentos y duplicados concurrentes ⇒ un input | `unit/live-ops/whatsapp-adapter`, `integration/live-ops-hardening` |
 | 7–9 | Binding de conversación; recuperación ADR-028 mantiene la task; humano persiste inbound y bloquea autonomía | `integration/live-ops-{reference,hardening}` |
-| 10–19 | respond ≠ entrega; identidad durable; un solo despacho; estados separados; callbacks idempotentes y monótonos; `unknown` explícito y nunca reintentado a ciegas; sin duplicado tras ADR-028 | `unit/live-ops/delivery`, `integration/live-ops-*`, `recovery/live-ops-process-crash` |
+| 10–19 | respond ≠ entrega; un OutboundMessage por `response_step_id`; callbacks monótonos; `unknown` nunca se reintenta a ciegas; ADR-028 deduplica sólo con texto igual, mismo Task y frontier inbound evaluado, conservando evidencia de aceptación incierta | `unit/live-ops/delivery`, `integration/live-ops-*`, `recovery/live-ops-process-crash` |
 | 20–23 | Perfil versionado; writes por D; sin verdad comercial fixture; disponibilidad = bindings reales | `contract/live-ops-boundaries` |
 | 24–27 | Kill switch (default seguro, no pierde inbound); rollout (default 0 %, estable) | `integration/live-ops-reference`, `unit/live-ops/*` |
 | 28–29 | Operador (hilo, take over/release, respuesta manual, resolver/cancelar outbound, atención); correlación inbound → task → run → step → outbound → id del proveedor | `integration/live-ops-*` (API y HTTP) |
@@ -578,7 +579,7 @@ manual del operador), D-3 (protección de respuesta obsoleta, causal) y D-4
 | 32 | CI sin red | fake provider local; `R4_PROD_ALLOW_NETWORK` + URL loopback |
 | 33–34 | Crash/restart y carreras horizontales | `recovery/live-ops-process-crash` (SIGKILL), dos dispatchers, callbacks concurrentes |
 | 35–39 | Artifacts reproducibles; E2E offline; ADR-028; kill switch; handoff + inbound | `production:sales:validate`, `integration/live-ops-reference` |
-| 40 | Mutaciones | `npm run test:mutation:production` (14/14) |
+| 40 | Mutaciones | `npm run test:mutation:production` (21/21) |
 | 44–45 | Sin autonomía de R4-J; sin despliegue ni rollout real | perfil v1 conservador; autonomía nace deshabilitada |
 
 **Cambios mínimos de Core (genéricos, justificados en ADR-029):**
@@ -669,7 +670,7 @@ canal (sin credenciales del número canary en este entorno) — ver §4.
 | (G) Reparación de prompt de Sales por findings | Prohibido en G: el evaluador debe ver los defectos actuales | RegressionCase → cambio externo → Experiment |
 | (H) Retry/reparación de decisiones inválidas o "run fallida ≠ task fallida" | **Resuelto post-H (ADR-028, §3.10):** run fallida ≠ task fallida para `invalid_decision` y `model_failure` reintentable. Siguen diferidos: reparación dentro de la run, reintento por calidad, fallback de modelo | `runFailureDisposition`, `maxRunFailureRecoveries` |
 | (post-H) Aplicar el principio de ADR-028 a `capability_failure` / caídas de dominio | Sin evidencia live para distinguir falla transitoria, rechazo de dominio, error de contrato y falla permanente | `runFailureDisposition` (`terminal` hoy) |
-| (post-H → R4-I) `respond` entregado por canal y luego run fallida: la recuperación podría responder otra vez | **Resuelto en R4-I (ADR-029):** identidad por step, sin re-despacho, `duplicate_content` | `outbound_messages.response_step_id` |
+| (post-H → R4-I) `respond` entregado por canal y luego run fallida: la recuperación podría responder otra vez | **Resuelto en R4-I (ADR-029):** identidad por step; mismo reply causal sólo si coinciden Task, frontier inbound evaluado y texto; otro turno/Task/origen operator permitido | `outbound_messages.response_step_id` + `context_snapshot_items` + `task_inputs` |
 | (H) Adapters live-read de Catalog/Customer/Shipping y sandbox de Quote | Sin contrato + endpoint + credencial configurados en R4 (GAP-H-007) | `live-read` en `ShadowExecutionPolicy` (opt-in + contrato) |
 | (H) Replay de conversaciones reales | Sin fuente legal/operacional | `workloadFromReplay` + sanitización |
 | (H) Tokens de razonamiento en métricas | `ModelUsage` no los expone (sin cambio de Core) | `ShadowModelCall.reasoningTokens` = null |

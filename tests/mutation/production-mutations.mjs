@@ -8,7 +8,17 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const UNIT = ['--project', 'unit', 'tests/unit/live-ops'];
-const REFERENCE = ['--project', 'integration', 'tests/integration/live-ops-reference.test.ts'];
+// Run reference cases by a plain title fragment. The two known unrelated
+// human-attention failures stay outside this production mutation baseline.
+const REFERENCE_FILE = ['--project', 'integration', 'tests/integration/live-ops-reference.test.ts'];
+const REFERENCE = [...REFERENCE_FILE, '-t', 'runs end to end'];
+const REFERENCE_KILL_SWITCH = [...REFERENCE_FILE, '-t', 'defaults safe'];
+const REFERENCE_CONCURRENT_OWNERSHIP = [...REFERENCE_FILE, '-t', 'serializes inbound, operator takeover'];
+const REFERENCE_REPLAY = [...REFERENCE_FILE, '-t', 'suppresses an ADR-028 recovery replay'];
+const REFERENCE_LATER_TURN = [...REFERENCE_FILE, '-t', 'allows identical text on a later customer turn'];
+const REFERENCE_DIFFERENT_TASK = [...REFERENCE_FILE, '-t', 'allows identical text in different Tasks'];
+const REFERENCE_DURABLE = [...REFERENCE_FILE, '-t', 'keeps a prior'];
+const REFERENCE_OPERATOR = [...REFERENCE_FILE, '-t', 'input durable and visible'];
 const HARDENING = ['--project', 'integration', 'tests/integration/live-ops-hardening.test.ts'];
 const CONTRACT = ['--project', 'contract', 'tests/contract/live-ops-boundaries.test.ts'];
 
@@ -20,8 +30,18 @@ const PROFILE = 'packages/live-ops/src/profile.ts';
 const INBOUND = 'adapters/channels/whatsapp-cloud/src/inbound.ts';
 const GATEWAY = 'apps/channel-gateway/src/platform.ts';
 const WORKER = 'apps/worker/src/worker.ts';
+const TEMPORAL_RUNTIME = 'packages/task-runtime/src/temporal-runtime.ts';
 
 const MUTATIONS = [
+  {
+    name: 'omit the durable HumanRequest for a platform hold',
+    edits: [{
+      file: TEMPORAL_RUNTIME,
+      from: "    await p.insertHuman(request);\n    await this.event(uow, task, request.requestId, 'handoff.requested', now, events, { initiatedBy: 'platform', reason: hold.reason });",
+      to: "    await this.event(uow, task, request.requestId, 'handoff.requested', now, events, { initiatedBy: 'platform', reason: hold.reason });",
+    }],
+    tests: [REFERENCE_KILL_SWITCH, REFERENCE_CONCURRENT_OWNERSHIP],
+  },
   {
     name: 'disable inbound uniqueness (no unique provider event identity)',
     edits: [
@@ -34,6 +54,20 @@ const MUTATIONS = [
     name: 'allow duplicate outbound dispatch (already submitted messages are claimable again)',
     edits: [{ file: STORE, from: "select * from outbound_messages where status = 'pending' and (next_attempt_at is null", to: "select * from outbound_messages where status in ('pending', 'accepted', 'delivered', 'read') and (next_attempt_at is null" }],
     tests: [REFERENCE, HARDENING],
+  },
+  {
+    name: 'remove response_step_id uniqueness protection',
+    edits: [{ file: MIGRATION, from: 'response_step_id    uuid        unique references agent_run_steps (step_id),', to: 'response_step_id    uuid        references agent_run_steps (step_id),' }],
+    tests: [REFERENCE],
+  },
+  {
+    name: 'allow the same response step to create multiple outbound rows',
+    edits: [
+      { file: MIGRATION, from: 'response_step_id    uuid        unique references agent_run_steps (step_id),', to: 'response_step_id    uuid        references agent_run_steps (step_id),' },
+      { file: STORE, from: 'where not exists (select 1 from outbound_messages o where o.response_step_id = s.step_id)', to: 'where true' },
+      { file: STORE, from: 'on conflict (response_step_id) do nothing returning *', to: 'returning *' },
+    ],
+    tests: [REFERENCE],
   },
   {
     name: 'retry an unknown delivery blindly',
@@ -64,6 +98,11 @@ const MUTATIONS = [
     tests: [UNIT, REFERENCE, HARDENING],
   },
   {
+    name: 'rewrite a delivered agent outbound during operator takeover',
+    edits: [{ file: STORE, from: "and origin = 'agent' and status = 'pending'`, [taskId, reason]", to: "and origin = 'agent' and status <> 'cancelled'`, [taskId, reason]" }],
+    tests: [HARDENING],
+  },
+  {
     name: 'treat respond as delivered (materialized outbound born delivered)',
     edits: [{ file: STORE, from: "live ? 'cancelled' : 'pending'", to: "live ? 'cancelled' : 'delivered'" }],
     tests: [REFERENCE, CONTRACT],
@@ -89,9 +128,51 @@ const MUTATIONS = [
     tests: [UNIT, HARDENING],
   },
   {
-    name: 'ADR-028 recovery repeats an identical live response (no duplicate-content guard)',
-    edits: [{ file: STORE, from: "and content_sha256 = $2 and status not in ('cancelled', 'failed')", to: "and content_sha256 = $2 and status = 'never'" }],
-    tests: [REFERENCE],
+    name: 'dedupe every matching text inside the same Task, across independent turns',
+    edits: [{ file: STORE, from: 'previous_input.input_id = frontier.input_id', to: 'previous_input.input_id = previous_input.input_id' }],
+    tests: [REFERENCE_LATER_TURN],
+  },
+  {
+    name: 'dedupe matching text across different Tasks',
+    edits: [
+      {
+        file: STORE,
+        from: 'const live = (await c.query<Row>(',
+        to: `const crossTaskMatch = (await c.query<Row>(
+          "select outbound_id from outbound_messages where task_id <> $1 and origin = 'agent' and content_sha256 = $2 and status not in ('cancelled', 'failed') limit 1",
+          [s.task_id, sha])).rows[0];
+        const live = crossTaskMatch ?? (await c.query<Row>(`,
+      },
+    ],
+    tests: [REFERENCE_DIFFERENT_TASK],
+  },
+  {
+    name: 'suppress an operator message because its text matches an agent message',
+    edits: [{
+      file: STORE,
+      from: '      const sha = sha256Hex(command.text);',
+      to: `      const sha = sha256Hex(command.text);\n      if ((await c.query("select 1 from outbound_messages where task_id = $1 and origin = 'agent' and content_sha256 = $2 limit 1", [command.taskId, sha])).rowCount) throw new PlatformError('conflict', 'duplicate_content', 'matching message already exists');`,
+    }],
+    tests: [REFERENCE_OPERATOR],
+  },
+  {
+    name: 'allow ADR-028 replay of the same causal response episode',
+    edits: [{ file: STORE, from: 'previous_input.input_id = frontier.input_id', to: 'previous_input.input_id <> frontier.input_id' }],
+    tests: [REFERENCE_REPLAY],
+  },
+  {
+    name: 'treat unknown delivery as no evidence when checking duplicate episodes',
+    edits: [{
+      file: STORE,
+      from: "and o.status <> 'cancelled'\n              and (o.status <> 'failed' or o.provider_message_id is not null)",
+      to: "and o.status <> 'cancelled'\n              and o.status <> 'unknown'\n              and (o.status <> 'failed' or o.provider_message_id is not null)",
+    }],
+    tests: [REFERENCE_DURABLE],
+  },
+  {
+    name: 'drop provider-confirmed failed outbound from causal evidence',
+    edits: [{ file: STORE, from: "and (o.status <> 'failed' or o.provider_message_id is not null)", to: "and o.status <> 'failed'" }],
+    tests: [REFERENCE_DURABLE],
   },
   {
     name: 'rollout defaults open (excluded conversations get autonomy)',
@@ -100,15 +181,29 @@ const MUTATIONS = [
   },
 ];
 
-function vitest(args) {
+function vitest(args, reportFailure = false) {
   const r = spawnSync('npx', ['vitest', 'run', ...args], { shell: true, encoding: 'utf8' });
+  if (r.status !== 0 && reportFailure) process.stdout.write(`${r.stdout ?? ''}${r.stderr ?? ''}`);
   return r.status;
 }
 
 let failures = 0;
-const baseline = [UNIT, REFERENCE, HARDENING, CONTRACT].every((args) => vitest(args) === 0);
+const baselines = [
+  ['unit', UNIT],
+  ['reference', REFERENCE],
+  ['hardening', HARDENING],
+  ['contract', CONTRACT],
+].map(([name, args]) => {
+  const green = vitest(args, true) === 0;
+  process.stdout.write(`baseline ${name}: ${green ? 'green' : 'RED'}\n`);
+  return green;
+});
+const baseline = baselines.every(Boolean);
 process.stdout.write(`baseline: ${baseline ? 'green' : 'RED'}\n`);
-if (!baseline) process.exitCode = 1;
+if (!baseline) {
+  process.exitCode = 1;
+  process.exit();
+}
 for (const m of MUTATIONS) {
   const originals = new Map();
   for (const e of m.edits) if (!originals.has(e.file)) originals.set(e.file, readFileSync(e.file, 'utf8'));

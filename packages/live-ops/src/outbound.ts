@@ -45,8 +45,9 @@ const TERMINAL_EVENT: Partial<Record<OutboundRecord['status'], 'outbound.accepte
  * Retries are bounded (maxAttempts) and only for definitely-not-sent
  * submissions; this budget is independent of ADR-028's run recovery budget.
  * An ADR-028 recovery run produces NEW steps: it can never re-dispatch an
- * earlier response (unique per step), and an identical response to one
- * already live is created cancelled (`duplicate_content`).
+ * earlier response (unique per step). A second response is created cancelled
+ * (`duplicate_content`) only when durable context snapshots prove it has the
+ * same evaluated inbound frontier as a live agent outbound in the same task.
  */
 export class OutboundDeliveryRuntime {
   readonly #o: OutboundDeliveryOptions;
@@ -62,7 +63,7 @@ export class OutboundDeliveryRuntime {
   }
 
   async materialize(limit = 50): Promise<OutboundRecord[]> {
-    const created = await this.#o.store.materializeResponses({ limit, duplicateWindowMs: this.#o.config.outbound.duplicateWindowMs });
+    const created = await this.#o.store.materializeResponses({ limit });
     for (const o of created) {
       emitTelemetry(this.#o.logger, 'outbound.created', { outboundId: o.outboundId, taskId: o.taskId, runId: o.runId, responseStepId: o.responseStepId, channel: o.channel, origin: o.origin, status: o.status, correlationId: o.correlationId });
       if (o.status === 'cancelled') emitTelemetry(this.#o.logger, 'outbound.cancelled', { outboundId: o.outboundId, taskId: o.taskId, reason: o.cancelReason, duplicateOf: o.duplicateOf });

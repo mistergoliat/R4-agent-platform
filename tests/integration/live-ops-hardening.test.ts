@@ -230,6 +230,8 @@ describe('stale reply protection and operator supersession (ported CRM semantics
     expect(context.sections.episodicMemory.filter((i) => i.sourceId === 'production.delivery').map((i) => (i.content as { reason: string }).reason)).toEqual(['superseded_by_newer_input']);
     await bed!.deliver();
     expect(bed!.provider.sends.map((s) => s.text)).toEqual(['respuesta a lo nuevo']);
+    await bed!.api.temporal.takeOver(taskId, { responseKey: 'take-after-stale-cancel', note: 'tomo después' }, OPERATOR);
+    expect((await bed!.store.outboundForTask(taskId))[0]).toMatchObject({ status: 'cancelled', cancelReason: 'superseded_by_newer_input' });
   });
 
   it('an operator takeover supersedes pending agent output; a submitted one is never cancelled', async () => {
@@ -239,6 +241,26 @@ describe('stale reply protection and operator supersession (ported CRM semantics
     expect((await bed!.store.outboundForTask(taskId))[0]).toMatchObject({ status: 'cancelled', cancelReason: 'superseded_by_operator' });
     expect(bed!.provider.sends).toHaveLength(0);
     await expect(bed!.api.production.cancelOutbound((await bed!.store.outboundForTask(taskId))[0]!.outboundId, OPERATOR)).rejects.toMatchObject({ code: 'outbound_not_pending' });
+    const calls = bed!.model.callCount;
+    await bed!.customer(CUSTOMER, 'wamid.in.2', 'sigo con el operador');
+    expect((await bed!.rows(`select disposition from inbound_events where provider_event_id = 'wamid.in.2'`))[0]).toEqual({ disposition: 'human_owned' });
+    expect(await bed!.runAgent()).toEqual([]);
+    expect(bed!.model.callCount).toBe(calls);
+    expect((await bed!.store.outboundForTask(taskId))[0]).toMatchObject({ status: 'cancelled', cancelReason: 'superseded_by_operator' });
+  });
+
+  it('manual takeover leaves an already delivered agent outbound unchanged', async () => {
+    const { taskId } = await withPendingResponse('ya entregado');
+    await bed!.deliver();
+    const [agentOutbound] = await bed!.store.outboundForTask(taskId);
+    await bed!.status([{ id: agentOutbound!.providerMessageId!, status: 'delivered', recipientId: CUSTOMER }]);
+
+    await bed!.api.production.manualReply(taskId, { responseKey: 'reply-after-delivery', text: 'Me hago cargo.' }, OPERATOR);
+
+    expect((await bed!.store.outbound(agentOutbound!.outboundId))!.status).toBe('delivered');
+    await bed!.deliver();
+    expect(bed!.provider.sends.map((s) => s.text)).toEqual(['ya entregado', 'Me hago cargo.']);
+    expect((await bed!.store.outbound(agentOutbound!.outboundId))!.status).toBe('delivered');
   });
 });
 

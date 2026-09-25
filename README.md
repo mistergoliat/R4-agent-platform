@@ -54,6 +54,12 @@ estable (default 0 %), kill switch durable (default deshabilitado), plano de
 operador por API y validación offline reproducible (ADR-029). Sin despliegue ni
 tráfico real de clientes.
 
+El número productivo existente y su historia operacional siguen en
+CRM-Customer-360. Para el número canary que recibe directamente R4, R4 conserva
+el estado operacional necesario para ejecutar su Task, incluido inbound,
+binding, inputs/hilo y lifecycle outbound. La identidad maestra y el historial
+CRM de largo plazo siguen externos; R4-I no sincroniza el hilo con CRM.
+
 Lectura obligatoria antes de cambios de arquitectura: [AGENTS.md](AGENTS.md),
 [Constitución](docs/architecture/R4_AGENTIC_PLATFORM_MOTIVATION_AND_CONSTRAINTS.md),
 [PRD](docs/architecture/R4_AGENTIC_PLATFORM_PRD_AND_ROADMAP.md),
@@ -271,13 +277,16 @@ switch, ingress canónico, **único dueño de la entrega**), `apps/channel-gatew
 es un `OutboundMessage` durable con su ciclo (`pending → dispatching →
 accepted → delivered → read`, `failed`, `unknown`, `cancelled`); un timeout o
 un crash durante el envío queda `unknown` y **nunca** se reintenta a ciegas.
+El hilo canary se proyecta desde estado durable de R4. Customer master e
+historia CRM de largo plazo no están integrados, y R4-I no sincroniza esos
+hilos con CRM.
 La autonomía nace **deshabilitada** (kill switch en la migración 0007) y el
 rollout en **0 %**.
 
 ```bash
 npm run build && npm run db:migrate && npm run sales:migrate
 npm run test:production                    # unit + contract + integración de R4-I (PostgreSQL real, proveedor fake local, sin red)
-npm run test:mutation:production           # 14 mutaciones de seguridad de producción: todas deben ser detectadas
+npm run test:mutation:production           # 21 mutaciones de seguridad de producción: todas deben ser detectadas
 npm run production:sales:validate          # validación offline completa → artifacts/production-validation/<id>/
 R4_EXECUTION_MODE=production … npm run production:sales:plan    # qué correría (modelo, canal, identidad redactada, rollout, kill switch, bindings) — no envía nada
 R4_EXECUTION_MODE=production … npm run production:sales:gateway # proceso de canal (webhook público + dispatcher)

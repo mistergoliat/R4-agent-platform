@@ -10,7 +10,23 @@ import { LiveOpsTestbed, OPERATOR, invalid, say, waitInput } from '../support/li
  * response, handoff with inbound, kill switch, rollout exclusion.
  */
 const CUSTOMER = '56911112222';
+const OTHER_CUSTOMER = '56911112223';
 let bed: LiveOpsTestbed | null = null;
+
+async function waitForTaskLockWaiters(expected: number): Promise<void> {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    const [row] = await bed!.rows<{ count: number }>(
+      `select count(*)::int as count from pg_stat_activity
+        where datname = current_database() and wait_event_type = 'Lock'
+          and query like '%agent_tasks%for update%'`,
+    );
+    if ((row?.count ?? 0) >= expected) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`timed out waiting for ${expected} Task row lock waiters`);
+}
+
 afterEach(async () => {
   await bed?.close();
   bed = null;
@@ -47,6 +63,10 @@ describe('reference path: provider inbound → Task → respond → durable outb
     expect(inbound).toMatchObject({ provider_event_id: 'wamid.in.1', task_id: taskId, content: null, conversation_ref: null });
     const [step] = await bed.rows<{ step_id: string; run_id: string }>(`select step_id, run_id from agent_run_steps where task_id = $1 and decision_type = 'respond'`, [taskId]);
     expect(outbound).toMatchObject({ responseStepId: step!.step_id, runId: step!.run_id, idempotencyKey: `r4-out:${step!.step_id}` });
+    expect(await bed.rows(`select conname from pg_constraint where conrelid = 'outbound_messages'::regclass and contype = 'u' and pg_get_constraintdef(oid) = 'UNIQUE (response_step_id)'`)).toHaveLength(1);
+    await bed.gateway.delivery.materialize();
+    await bed.gateway.delivery.materialize();
+    expect(await bed.store.outboundForTask(taskId)).toHaveLength(1);
 
     // Operator view (API): the thread shows the customer turn and the agent turn with its delivery state.
     const thread = await bed.api.production.thread(taskId);
@@ -66,54 +86,99 @@ describe('reference path: provider inbound → Task → respond → durable outb
   });
 });
 
-describe('ADR-028 production regression: a later protocol failure never re-sends a delivered response', () => {
-  it('same Task, prior response not re-dispatched, new input accepted, recovery answer delivered once', async () => {
+describe('causal outbound deduplication', () => {
+  it('suppresses an ADR-028 recovery replay for the same inbound frontier', async () => {
     bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER], autonomy: true });
-    bed.next(say('Tenemos bicicletas estáticas desde $199.990.'), waitInput());
-    await bed.customer(CUSTOMER, 'wamid.in.1', 'Hola');
+    bed.next(say('Perfecto.'), invalid(), say('Perfecto.'), waitInput());
+    await bed.customer(CUSTOMER, 'wamid.in.1', '¿Puedo pagar con transferencia?');
+    const taskId = await bed.taskOf(CUSTOMER);
+    await bed.runAgent();
+
+    const [failedRun] = await bed.rows<{ termination_reason: string | null }>(`select termination_reason from agent_runs where task_id = $1 and status = 'failed'`, [taskId]);
+    expect(failedRun?.termination_reason).toBe('invalid_decision');
+    const steps = await bed.rows<{ step_id: string; context_snapshot_id: string | null }>(`select step_id, context_snapshot_id from agent_run_steps where task_id = $1 and decision_type = 'respond' and outcome = 'recorded'`, [taskId]);
+    expect(steps).toHaveLength(2);
+    expect(steps.every((s) => s.context_snapshot_id !== null)).toBe(true);
+
+    expect(await bed.gateway.delivery.materialize(1)).toHaveLength(1);
+    const duplicate = await bed.gateway.delivery.materialize();
+    expect(duplicate).toHaveLength(1);
+    expect(duplicate[0]).toMatchObject({ status: 'cancelled', cancelReason: 'duplicate_content' });
+    await bed.deliver();
+    expect(bed.provider.sends.map((s) => s.text)).toEqual(['Perfecto.']);
+    expect(await bed.store.outboundForTask(taskId)).toHaveLength(2);
+  });
+
+  it('allows identical text on a later customer turn in the same Task', async () => {
+    bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER], autonomy: true });
+    bed.next(say('Sí, claro.'), waitInput());
+    await bed.customer(CUSTOMER, 'wamid.in.1', '¿Puedo pagar con transferencia?');
     const taskId = await bed.taskOf(CUSTOMER);
     await bed.runAgent();
     await bed.deliver();
     const first = (await bed.store.outboundForTask(taskId))[0]!;
     await bed.status([{ id: first.providerMessageId!, status: 'delivered', recipientId: CUSTOMER }]);
 
-    // Next turn: the model breaks the protocol (invalid decision) → run fails recoverably → recovery run.
-    bed.next(invalid(), say('Perfecto, te cuento las opciones de pago.'), waitInput());
-    await bed.customer(CUSTOMER, 'wamid.in.2', '¿Aceptan tarjeta?');
-    await bed.runAgent();
-    const runs = await bed.rows<{ status: string; termination_reason: string | null }>('select status, termination_reason from agent_runs where task_id = $1 order by sequence', [taskId]);
-    expect(runs.map((r) => r.status)).toEqual(['suspended', 'failed', 'suspended']);
-    expect(runs[1]!.termination_reason).toBe('invalid_decision');
-    expect(await bed.taskOf(CUSTOMER)).toBe(taskId);
-
-    await bed.deliver();
-    await bed.deliver();
-    const texts = bed.provider.sends.map((s) => s.text);
-    expect(texts).toEqual(['Tenemos bicicletas estáticas desde $199.990.', 'Perfecto, te cuento las opciones de pago.']);
-    expect((await bed.store.outbound(first.outboundId))!.status).toBe('delivered');
-
-    // A recovery run that repeats an identical live response is never sent twice.
-    bed.next(invalid(), say('Perfecto, te cuento las opciones de pago.'), waitInput());
-    await bed.customer(CUSTOMER, 'wamid.in.3', '¿Y en cuotas?');
+    bed.next(say('Sí, claro.'), waitInput());
+    await bed.customer(CUSTOMER, 'wamid.in.2', '¿También puedo transferir esta otra cotización?');
     await bed.runAgent();
     await bed.deliver();
+
     const outbound = await bed.store.outboundForTask(taskId);
-    expect(outbound.map((o) => [o.status, o.cancelReason])).toEqual([['delivered', null], ['accepted', null], ['cancelled', 'duplicate_content']]);
-    expect(bed.provider.sends).toHaveLength(2);
-    // The next cognition is told the truth about that response.
-    bed.next(waitInput());
-    await bed.customer(CUSTOMER, 'wamid.in.4', '¿Hola?');
+    expect(outbound.map((o) => [o.status, o.cancelReason])).toEqual([['delivered', null], ['accepted', null]]);
+    expect(bed.provider.sends.map((s) => s.text)).toEqual(['Sí, claro.', 'Sí, claro.']);
+  });
+
+  it('allows identical text in different Tasks', async () => {
+    bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER, OTHER_CUSTOMER], autonomy: true });
+    bed.next(say('Perfecto.'), waitInput(), say('Perfecto.'), waitInput());
+    await bed.customer(CUSTOMER, 'wamid.a.1', 'Hola');
+    await bed.customer(OTHER_CUSTOMER, 'wamid.b.1', 'Hola');
     await bed.runAgent();
-    const lastContext = bed.model.requests.at(-1)!.context!;
-    const episodes = lastContext.sections.episodicMemory.filter((i) => i.sourceId === 'production.delivery');
-    expect(episodes.map((e) => (e.content as { status: string; reason: string }).reason)).toContain('duplicate_content');
+    await bed.deliver();
+
+    const firstTask = await bed.taskOf(CUSTOMER);
+    const secondTask = await bed.taskOf(OTHER_CUSTOMER);
+    expect(firstTask).not.toBe(secondTask);
+    expect(await bed.store.outboundForTask(firstTask)).toHaveLength(1);
+    expect(await bed.store.outboundForTask(secondTask)).toHaveLength(1);
+    expect(bed.provider.sends.map((s) => s.text)).toEqual(['Perfecto.', 'Perfecto.']);
+  });
+
+  it.each(['accepted', 'delivered', 'read', 'unknown', 'failed'] as const)('keeps a prior %s outbound as causal evidence', async (status) => {
+    bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER], autonomy: true, providerTimeoutMs: 250 });
+    bed.next(say('Mismo episodio.'), invalid(), say('Mismo episodio.'), waitInput());
+    await bed.customer(CUSTOMER, `wamid.${status}.1`, 'Mismo input');
+    const taskId = await bed.taskOf(CUSTOMER);
+    await bed.runAgent();
+    await bed.gateway.delivery.materialize(1);
+    const first = (await bed.store.outboundForTask(taskId))[0]!;
+
+    if (status === 'unknown') {
+      bed.provider.script({ kind: 'hang', ms: 1000 });
+      await bed.gateway.delivery.dispatchOnce();
+    } else {
+      await bed.gateway.delivery.dispatchOnce();
+      const accepted = (await bed.store.outbound(first.outboundId))!;
+      if (status === 'delivered' || status === 'read' || status === 'failed') {
+        await bed.status([{ id: accepted.providerMessageId!, status, recipientId: CUSTOMER }]);
+      }
+    }
+
+    const durable = (await bed.store.outbound(first.outboundId))!;
+    expect(durable.status).toBe(status);
+    const second = await bed.gateway.delivery.materialize();
+    expect(second).toHaveLength(1);
+    expect(second[0]).toMatchObject({ status: 'cancelled', cancelReason: 'duplicate_content' });
+    expect((await bed.store.outbound(first.outboundId))!.status).toBe(status);
+    expect(bed.provider.sends).toHaveLength(1);
   });
 });
 
 describe('handoff + inbound: human ownership persists input and blocks autonomy until release', () => {
   it('input durable and visible, no cognition or delivery while human-owned, autonomy resumes after release', async () => {
     bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER], autonomy: true });
-    bed.next(say('Hola, ¿en qué te ayudo?'), waitInput());
+    bed.next(say('Perfecto.'), waitInput());
     await bed.customer(CUSTOMER, 'wamid.in.1', 'Hola');
     const taskId = await bed.taskOf(CUSTOMER);
     await bed.runAgent();
@@ -130,9 +195,9 @@ describe('handoff + inbound: human ownership persists input and blocks autonomy 
     expect(thread.entries.filter((e) => e.kind === 'contact').map((e) => e.text)).toEqual(['Hola', 'Quiero hablar con alguien']);
 
     // Operator manual reply (ported semantics): delivered by the same owner.
-    await bed.api.production.manualReply(taskId, { responseKey: 'reply-1', text: 'Hola, soy Ana del equipo de ventas.' }, OPERATOR);
+    await bed.api.production.manualReply(taskId, { responseKey: 'reply-1', text: 'Perfecto.' }, OPERATOR);
     await bed.deliver();
-    expect(bed.provider.sends.map((s) => s.text)).toEqual(['Hola, ¿en qué te ayudo?', 'Hola, soy Ana del equipo de ventas.']);
+    expect(bed.provider.sends.map((s) => s.text)).toEqual(['Perfecto.', 'Perfecto.']);
 
     await bed.api.temporal.respondHuman(handoff.requestId, { responseKey: 'release-1', outcome: 'release', content: 'Devuelvo la conversación al agente.' }, OPERATOR);
     bed.next(say('Retomo yo. ¿Seguimos con la bicicleta?'), waitInput());
@@ -158,6 +223,7 @@ describe('kill switch', () => {
     expect(task).toMatchObject({ status: 'blocked', statusReason: 'autonomy_disabled' });
     const attention = await bed.api.production.attention();
     expect(attention.tasks.requests.find((r) => r.taskId === taskId)).toMatchObject({ kind: 'handoff', status: 'requested', payload: { initiatedBy: 'platform', reason: 'autonomy_disabled' } });
+    expect((await bed.api.temporal.inspect(taskId)).humans).toHaveLength(1);
     expect((await bed.store.metrics()).kill_switch_blocks).toBe(1);
   });
 
@@ -176,6 +242,8 @@ describe('kill switch', () => {
     await bed.customer(CUSTOMER, 'wamid.in.2', '¿Hola?');
     expect(await bed.runAgent()).toEqual([]);
     expect(bed.model.callCount).toBe(calls);
+    expect((await bed.store.taskState(taskId))).toMatchObject({ status: 'blocked', humanOwned: true });
+    expect((await bed.api.temporal.inspect(taskId)).humans[0]).toMatchObject({ kind: 'handoff', status: 'requested', payload: { initiatedBy: 'platform', reason: 'autonomy_disabled' } });
     expect((await bed.api.production.attention()).production.heldOutbound).toHaveLength(1);
     // Released: the held response goes out (still fresh); the task stays with humans until an operator releases it.
     await bed.api.production.setControl({ scope: 'global', autonomyEnabled: true, reason: 'drill over' }, OPERATOR);
@@ -183,6 +251,48 @@ describe('kill switch', () => {
     await bed.deliver();
     expect(bed.provider.sends).toHaveLength(0);
     expect((await bed.store.outboundForTask(taskId))[0]).toMatchObject({ status: 'cancelled', cancelReason: 'superseded_by_operator' });
+  });
+
+  it('serializes inbound, operator takeover and an outbound claim on the Task row', async () => {
+    bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER], autonomy: true });
+    bed.next(say('Pendiente.'), waitInput());
+    await bed.customer(CUSTOMER, 'wamid.in.1', 'Hola');
+    await bed.runAgent();
+    await bed.gateway.delivery.materialize();
+    const taskId = await bed.taskOf(CUSTOMER);
+    const [outbound] = await bed.store.outboundForTask(taskId);
+    expect(outbound).toMatchObject({ status: 'pending', attempts: 0 });
+
+    const blocker = await bed.pool.connect();
+    await blocker.query('begin');
+    await blocker.query('select task_id from agent_tasks where task_id = $1 for update', [taskId]);
+    try {
+      const takeover = bed.api.temporal.takeOver(taskId, { responseKey: 'concurrent-take', note: 'Tomo la conversación.' }, OPERATOR);
+      await waitForTaskLockWaiters(1);
+      const inbound = bed.customer(CUSTOMER, 'wamid.in.2', 'Necesito ayuda humana');
+      await waitForTaskLockWaiters(2);
+      const claim = bed.gateway.delivery.dispatchOnce();
+      await waitForTaskLockWaiters(3);
+      await blocker.query('commit');
+
+      const [handoff, received, dispatch] = await Promise.all([takeover, inbound, claim]);
+      expect(handoff.status).toBe('active');
+      expect(received).toMatchObject({ status: 200, body: { ingested: 1 } });
+      expect(dispatch).toMatchObject({ kind: 'cancelled', reason: 'superseded_by_operator' });
+    } catch (error) {
+      await blocker.query('rollback').catch(() => undefined);
+      throw error;
+    } finally {
+      blocker.release();
+    }
+
+    const [inbound] = await bed.rows<{ disposition: string; task_id: string }>(`select disposition, task_id from inbound_events where provider_event_id = 'wamid.in.2'`);
+    expect(inbound).toEqual({ disposition: 'human_owned', task_id: taskId });
+    expect(await bed.store.taskState(taskId)).toMatchObject({ status: 'blocked', humanOwned: true });
+    expect((await bed.api.temporal.inspect(taskId)).ownership).toMatchObject({ owner: 'human', blockedBy: ['human_handoff'] });
+    expect((await bed.store.outbound(outbound!.outboundId))).toMatchObject({ status: 'cancelled', cancelReason: 'superseded_by_operator' });
+    expect(bed.provider.sends).toHaveLength(0);
+    expect(await bed.runAgent()).toEqual([]);
   });
 });
 

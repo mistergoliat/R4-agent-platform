@@ -1407,8 +1407,14 @@ real antes de un fallo podría repetirse en la run de recuperación.
 
 
 **Resuelto en R4-I (ADR-029, §19):** la identidad de la respuesta es su step;
-una run de recuperación nunca re-despacha un outbound existente y una
-respuesta idéntica a una viva nace cancelada (`duplicate_content`).
+reprocesar ese step reutiliza el mismo `OutboundMessage` por
+`UNIQUE(response_step_id)` y `r4-out:<stepId>`. Un step nuevo sólo nace
+cancelado como `duplicate_content` si representa el mismo Task, el mismo
+último input inbound evaluado y el mismo texto que un outbound agente no
+cancelado. Los estados `accepted`, `delivered`, `read`, `unknown` y `failed`
+con `provider_message_id` conservan evidencia de entrega; un fallo definitivo
+sin ID no. El snapshot candidato debe incluir todos los inputs durables en el
+momento de materializar. El texto por sí solo no identifica un duplicado.
 
 ## 19. R4-I — Governed Production (en progreso — pendiente de auditoría)
 
@@ -1433,6 +1439,14 @@ Meta (número canary) ─► apps/channel-gateway: webhook ─► WhatsAppInboun
    ─► DeliveryStateContextSource ─► la cognición siguiente sabe qué NO se confirmó
    ─► R4-G post-hoc sobre la misma verdad durable
 ```
+
+**Autoridad de conversación:** CRM-Customer-360 conserva el número productivo
+existente y su historia operacional. En el número canary recibido directamente
+por R4, `channel_conversation_bindings`, el inbound canónico, los Task inputs,
+el hilo operacional y el ciclo outbound viven en la persistencia de R4 que
+ejecuta esa conversación. La identidad maestra del cliente y el historial CRM
+de largo plazo siguen externos; R4-I no sincroniza hilos con CRM. Migrar el
+número productivo queda sujeto a un gate posterior de paridad de operador/UI.
 
 ### 19.1 Componentes
 

@@ -68,7 +68,9 @@ adjuntos se vacían; inbound no elegible se descarta; payload crudo guardado).
 7. **`respond` ≠ entregado. Un único dueño de la entrega.**
    `OutboundDeliveryRuntime` materializa un `OutboundMessage` por cada
    `respond` aceptado (`UNIQUE(response_step_id)`; clave de idempotencia
-   `r4-out:<stepId>`), y es dueño de todo su ciclo:
+   `r4-out:<stepId>`). Reprocesar el mismo step recupera esa fila durable;
+   la unicidad no depende del contenido. `OutboundDeliveryRuntime` es dueño
+   de todo su ciclo:
    `pending → dispatching → accepted → delivered → read`, `failed`,
    `unknown`, `cancelled`. Claim con `FOR UPDATE SKIP LOCKED` + lease +
    generación (fencing); gate evaluado en la transacción del claim; intento
@@ -91,8 +93,18 @@ adjuntos se vacían; inbound no elegible se descarta; payload crudo guardado).
    se registra.
 
 10. **ADR-028 sin duplicados.** Una run de recuperación produce steps nuevos:
-    nunca re-despacha un outbound existente. Una respuesta idéntica a una viva
-    del mismo task (ventana configurable) nace `cancelled/duplicate_content`.
+    nunca re-despacha un outbound existente. Una respuesta del agente sólo
+    nace `cancelled/duplicate_content` si coinciden exactamente el texto, el
+    Task y el último input inbound incluido en ambos ContextSnapshots, y el
+    snapshot nuevo incluye todos los inputs durables al materializar. La
+    comparación usa `context_snapshot_id` del step y los IDs inmutables de
+    `context_snapshot_items`, enlazados con `task_inputs`; no usa una ventana
+    temporal. Los outbounds de origen agente en estado pending, dispatching,
+    accepted, delivered, read, unknown o failed con `provider_message_id`
+    representan el episodio; cancelled y failed sin ese ID no. Un input
+    posterior, otro Task u origen operator permite el mismo texto. El bloqueo
+    de la fila Task serializa la comprobación con
+    escrituras de inputs y otros materializadores.
     La cognición siguiente recibe un episodio OBSERVED con el estado de
     entrega de respuestas no confirmadas (`production.delivery`).
 
@@ -136,7 +148,14 @@ adjuntos se vacían; inbound no elegible se descarta; payload crudo guardado).
     arranca sin perfil, adapters del tipo declarado, esquema al día y
     controles legibles.
 
-17. **Persistencia: 0007** (`autonomy_controls`, `autonomy_control_events`,
+17. **Autoridad del canal.** El número productivo existente permanece bajo
+    CRM-Customer-360. Para el número canary que recibe directamente R4, R4
+    conserva el estado operacional requerido para ejecutar su Task: inbound
+    canónico, binding, Task inputs/hilo, outbounds y estados de entrega. La
+    identidad maestra y el historial CRM permanecen externos; R4-I no
+    sincroniza el hilo con CRM.
+
+18. **Persistencia: 0007** (`autonomy_controls`, `autonomy_control_events`,
     `channel_conversation_bindings`, `inbound_events`, `outbound_messages`,
     `outbound_delivery_attempts`, `outbound_delivery_events`), owner
     `@r4/live-ops` vía su port; SQL en `persistence-postgres`. Sin payload
