@@ -5,6 +5,7 @@ owner: architecture
 last_reviewed: 2026-09-28
 r4_baseline: 34e83c687a8375a29fbabe55166a6652c6b1da2d (R4-I PRE-CUTOVER BASELINE; HEAD = origin/main)
 r4_production_control_baseline: 9c3e080e41d6496aa7aa9916a55ed428c3fec784 (D-5/D-6 implementados offline sobre este commit; §8)
+r4_worker_readiness_baseline: 8c366fbd52e40549654eb5e09cc46e3efc3da956 (auditoría de readiness del worker; §9)
 crm_ref: CRM-Customer-360 @ 8298723 (sólo lectura; working tree limpio)
 supersedes: decisión D-1 (c) de R4-I_CRM_WHATSAPP_AUDIT.md — reemplazada por la decisión de proyecto "R4 dueño del número productivo" (tarea de cutover R4-I, 2026-09-28)
 ---
@@ -39,7 +40,7 @@ Evidencia: búsqueda en CRM-Customer-360 @ 8298723 de todo caller de
 | 9 | `POST app/api/cases/[id]/reply` → `caseActions.manualReply` → **`lib/meta.ts#sendWhatsAppText`** | CRM web (operador, legacy) | — | Sí (texto o plantilla) | **Sí** | No | No (humano) | **Sí** | **sólo `META_ACCESS_TOKEN`** + `requireWriteAccess`; **sin** `BRAIN_META_SEND_ENABLED` y **sin** allowlist | DISABLE (quitar `META_ACCESS_TOKEN`; revocar token) |
 | 10 | `POST app/api/brain/messaging/send-test` → `metaSendAdapter` | CRM web | — | Sí | **Sí** | No | No | **Sí** | `BRAIN_META_SEND_ENABLED` + token | DISABLE |
 | 11 | `POST app/api/brain/process-inbound` (legacy n8n) → `processInbound` | CRM web | Sí (desde n8n) | Plan de outbox (`BRAIN_PROCESS_INBOUND_ALLOW_OUTBOX_PLAN`) | No directo | — | Sí (legacy, `BRAIN_LEGACY_SALES_CONSULTATIVE_ENABLED`) | Si n8n lo llama | auth AI-orchestration | DISABLE |
-| 12 | n8n `WA_00_Webhook_Master` (webhook `wa-webhook`), `active: true` en el export 2026-06-12 → `OPS_Response_Executor_SendWhatsApp` | n8n (fuera de ambos repos) | **Sí** | **Sí** | **Sí** (sub-workflow con credencial Meta propia en n8n) | desconocido | Sí (`AI_Orchestrator`, `AI_AGENT_Postventa` vía DeepSeek) | **Sí** — independiente del CRM | estado vivo en n8n + credencial n8n | **UNKNOWN** (estado actual, credencial y URL de callback no verificables desde aquí) |
+| 12 | n8n `WA_00_Webhook_Master` (webhook `wa-webhook`), `active: true` en el export 2026-06-12 → `OPS_Response_Executor_SendWhatsApp` | n8n (fuera de ambos repos) | Sí | Sí | Sí (sub-workflow con credencial Meta propia en n8n) | desconocido | Sí (`AI_Orchestrator`, `AI_AGENT_Postventa` vía DeepSeek) | — | — | **FUERA DE ALCANCE** — registro histórico del export; n8n pertenece a otro entorno productivo (ver corrección de alcance abajo) |
 | 13 | `scripts/e2e-autonomous-harness.ts`, `scripts/manual-test/whatsapp-r2-smoke.ts`, `npm run autonomy:live` | CRM scripts manuales | — | Sí (vía #3) | **Sí** con token + flag | — | Sí | Sí, si alguien con el token los ejecuta | token + flag | DISABLE (revocación del token) |
 | 14 | `lib/brain/messaging/whatsapp-transport/*` | CRM | — | — | No (sandbox, `FakeWhatsAppHttpClient`) | — | — | No | — | KEEP (inerte) |
 | 15 | Lecturas de estado (`lib/system.ts`, `lib/dashboard.ts`, `/whatsapp` page) | CRM web | — | — | No | — | — | Sí (sólo lectura de env) | — | KEEP |
@@ -54,20 +55,29 @@ Hallazgos que cambian el diagnóstico de "dueño actual":
   n8n (`wa-webhook`), el dueño efectivo del número productivo es **n8n**, no el
   CRM. Cuál de los dos es cierto sólo lo resuelve la configuración de webhooks
   de la app de Meta (y los overrides por WABA/número). **No verificado.**
+  *(Registro histórico; ver la corrección de alcance siguiente.)*
+- **Corrección de alcance (2026-09-28): n8n queda fuera de R4-I.** n8n
+  pertenece a un entorno productivo externo y separado; no es parte del runtime
+  productivo que se migra a R4. Por lo tanto n8n **no** es dependencia de R4-I,
+  **no** bloquea el cutover, **no** forma parte de la readiness del worker y
+  **no** entra en la prueba de escritor único — salvo que evidencia futura
+  demuestre que comparte exactamente el número productivo o la autoridad de
+  credencial de Meta. Las filas y hallazgos sobre n8n de este documento son
+  registro de la auditoría histórica, no gates de cierre.
 - El camino #9 (respuesta manual legacy) no pasa por ningún flag de
   `BRAIN_*`: apagar los flags del brain **no** lo apaga.
 
 ## 2. Invariante de escritor único — cómo se garantiza de forma determinista
 
-Apagar flags de entorno del CRM es necesario pero **no suficiente**: n8n (#12)
-tiene su propia credencial y los scripts (#13) pueden ejecutarse fuera del
+Apagar flags de entorno del CRM es necesario pero **no suficiente**: los
+scripts (#13) pueden ejecutarse fuera del
 proceso desplegado. El único control determinista sobre "quién puede crear un
 efecto en Meta para este número" es la credencial:
 
 1. **Rotar/revocar** todo access token con permiso `whatsapp_business_messaging`
    sobre el WABA del número (system user(s) y cualquier token de usuario usado
-   por CRM o n8n). Emitir un token nuevo **sólo** al almacén de secretos de R4
-   (`R4_WHATSAPP_ACCESS_TOKEN`). Todo portador antiguo (CRM web, workers, n8n,
+   por el CRM). Emitir un token nuevo **sólo** al almacén de secretos de R4
+   (`R4_WHATSAPP_ACCESS_TOKEN`). Todo portador antiguo (CRM web, workers,
    scripts, portátiles) queda sin capacidad de envío, corra o no.
 2. Además, por higiene y para evitar ruido de errores: en el entorno productivo
    del CRM `BRAIN_META_SEND_ENABLED=false`, `BRAIN_OUTBOX_WORKER_ENABLED=false`,
@@ -75,9 +85,9 @@ efecto en Meta para este número" es la credencial:
    eliminar `META_ACCESS_TOKEN`, `META_WHATSAPP_ACCESS_TOKEN`; detener
    `worker:outbox`, `worker:followup`, `worker:commercial-work`,
    `worker:turn-settle`; reiniciar el web.
-3. En n8n: desactivar `WA_00_Webhook_Master`, `OPS_Response_Executor_SendWhatsApp`
-   y cualquier workflow que use la credencial WhatsApp/Meta; borrar esa
-   credencial.
+3. *(Fuera de alcance — corrección de alcance en §1.)* n8n no se inspecciona
+   ni se modifica en R4-I. Si evidencia futura mostrara que comparte este
+   número o su autoridad de credencial Meta, la revocación del paso 1 lo cubre.
 4. Verificación: el token viejo debe ser rechazado por Graph con error de
    autenticación en una llamada de sólo lectura (p. ej. `GET /{phone-number-id}`),
    sin enviar nada a un cliente; y la herramienta de depuración de tokens de
@@ -113,27 +123,29 @@ la revocación del token es más fuerte que cualquier parche.
 | 5 | Fixtures no pueden entrar | Sí (código + tests) | `contract/live-ops-boundaries` |
 | 6 | Secretos/config de Meta disponibles | **NO** — ausentes en este entorno | `.env` sólo tiene `R4_MODEL_*`/DB local |
 | 7 | Health del gateway | **NO** — no desplegado | — |
-| 8 | Health del worker | **NO** — no desplegado; sin superficie de health | §3 |
+| 8 | Health del worker | **NO** — no desplegado; readiness del worker **bloqueada por decisión de persistencia** (B-5) | §9 |
 | 9 | Health de BD | **NO** — sin BD productiva | — |
 | 10 | Kill switch legible y ON | Legible por construcción; se cambia y se liberan retenciones `autonomy_disabled` con `production:sales:control` — **validado offline, no live** | §8 |
 | 11 | Secuencia de apagado del CRM | Definida (§2) — no ejecutable desde aquí (host CRM no identificado) | §2 |
-| 12 | Secuencia de apagado n8n/legacy | Definida (§2) — estado vivo de n8n **desconocido** | §1 #12 |
+| 12 | Secuencia de apagado n8n/legacy | **Fuera de alcance** — n8n es otro entorno productivo (corrección de alcance §1) | §1 |
 | 13 | Endpoint/config de rollback conocidos | **NO** | — |
 | 14 | Endpoint de webhook actual registrado | **NO** — sólo visible en la app de Meta | — |
 | 15 | Endpoint R4 verificado | **NO** — no hay URL pública desplegada | — |
-| 16 | Ningún escritor UNKNOWN | **NO** — §1 #12 | — |
+| 16 | Ningún escritor UNKNOWN | Dentro del alcance (CRM + scripts) cubierto por la revocación del token (§2), **pendiente de ejecución live**; n8n fuera de alcance (§1) | §2 |
 | 17 | Logs sin secretos | Sí (código) | §3 |
 | 18 | Gate de red entendido | Sí: `R4_PROD_ALLOW_NETWORK` + https | §3 |
 
 ## 5. Bloqueos (condiciones STOP alcanzadas)
 
 - **B-1 (STOP A, C, K, §60).** Identificadores productivos no verificados: app
-  de Meta, WABA, `phone_number_id`, URL de callback actual (CRM vs n8n), host
-  del CRM, instancia n8n, target AWS de R4, BD productiva de R4. Este entorno
+  de Meta, WABA, `phone_number_id`, URL de callback actual, host
+  del CRM, target AWS de R4, BD productiva de R4. Este entorno
   no tiene AWS CLI/credenciales, llaves SSH ni acceso a Meta Business.
-- **B-2 (STOP A).** Escritor UNKNOWN: n8n `OPS_Response_Executor_SendWhatsApp`
-  con credencial propia. Se resuelve con §2 (revocación del token + desactivar
-  n8n) ejecutado y verificado por quien tenga acceso.
+- **B-2 — RECLASIFICADO FUERA DE ALCANCE (2026-09-28).** Registro original:
+  escritor UNKNOWN n8n `OPS_Response_Executor_SendWhatsApp` con credencial
+  propia. n8n pertenece a otro entorno productivo (corrección de alcance §1) y
+  ya no bloquea R4-I. El escritor único dentro del alcance se garantiza con §2
+  (revocación del token) ejecutado y verificado por quien tenga acceso.
 - **B-3 (STOP G) — hallazgo de plataforma. RESUELTO OFFLINE (§8)** — sin
   validación live. Registro original: el kill switch se lee pero **no
   hay camino productivo gobernado para cambiarlo**: `POST /v1/production/controls`
@@ -148,8 +160,14 @@ la revocación del token es más fuerte que cualquier parche.
   agente, queda **sin respuesta indefinidamente** — el CRM ya no ve ese hilo.
   Requiere decisión (§6 D-5, D-6).
 - **B-4 (STOP L).** Sin artefacto/target de despliegue reproducible en el repo.
+- **B-5 — readiness del worker. BLOQUEADO — decisión de persistencia requerida
+  (§9).** El `/ready` del gateway puede responder listo con el worker muerto
+  (gateway vivo + BD + esquema + kill switch legible). Ningún primitivo
+  existente prueba entre procesos que haya un worker productivo compatible
+  vivo; la solución mínima requiere una tabla nueva (migración), que se revisa
+  por separado antes de crearla.
 
-Ninguno requiere migración ni cambio de protocolo. B-3 se resolvió con una
+B-1 a B-4 no requieren migración ni cambio de protocolo (B-5 sí: §9). B-3 se resolvió con una
 única operación genérica nueva en `TemporalRuntime` (`releasePlatformHold`, la
 inversa de `holdForHumansWithin`: misma transición existente, sin estado ni
 ciclo de vida nuevos; §8).
@@ -191,14 +209,14 @@ outbound `pending` retenido (no cancelado).
 switch ON en R4; (2) detener el dispatcher del gateway (SIGTERM, termina el
 envío en vuelo); (3) restaurar en Meta la URL de callback y el verify token
 **registrados** en el paso 1 (app/WABA/número según dónde estaba el override);
-(4) entregar un token al único escritor restaurado (CRM **o** n8n, el que era
+(4) entregar un token al único escritor restaurado (el que era
 dueño) y reactivar sólo ese camino; (5) verificar el challenge. Nunca dejar a
 R4 y al escritor restaurado con token válido a la vez. Outbound de R4 en
 `unknown` se listan para revisión manual antes de reactivar el escritor viejo.
 
 Valores a registrar (sin secretos): URL de callback actual y nivel del override,
 app de Meta (id), WABA (id), `phone_number_id`, qué sistema(s) tienen token,
-flags `BRAIN_*` productivos actuales, estado de los workflows n8n, procesos CRM
+flags `BRAIN_*` productivos actuales, procesos CRM
 activos, SHA/versión de R4 desplegada, versión de migración, estado del kill
 switch.
 
@@ -279,7 +297,91 @@ exista integración CRM/operador. Este comando no ofrece atajo para ella.
 comando), `npm run test:mutation:production-control`.
 
 **Siguen bloqueando el cutover live:** B-1 (target de despliegue y acceso,
-identificadores/credenciales productivos de Meta), B-2 (estado actual de n8n,
-verificación live de escritor único), B-4 (despliegue reproducible), verificación
-del target de rollback y el cutover live en sí. La salud/readiness del worker
-es la siguiente tarea de hardening.
+identificadores/credenciales productivos de Meta), verificación live de
+escritor único (CRM; n8n fuera de alcance, §1), B-4 (despliegue reproducible),
+B-5 (readiness del worker, §9), verificación del target de rollback y el
+cutover live en sí.
+
+## 9. Readiness del worker (B-5) — auditoría y gate de persistencia
+
+Auditoría sobre `8c366fb` (sólo código; sin red, sin BD productiva). **No se
+implementó nada**: la solución mínima correcta requiere una migración y la
+tarea exige detenerse antes de crearla.
+
+**Problema.** `/ready` del gateway = BD alcanzable + esquema al día +
+controles legibles. Con el worker muerto responde 200: el inbound se acepta y
+persiste pero nadie lo ejecuta, y operaciones ve "listo".
+
+**Lo que ya prueba el worker por sí mismo (SUFICIENTE, sólo en el arranque).**
+`production:sales:worker` falla cerrado y el proceso termina si: el modo no
+es `production` o la configuración productiva es inválida
+(`loadProductionConfig`), falta el modelo o la red (`R4_MODEL_*`,
+`R4_PROD_ALLOW_NETWORK`), la configuración del worker es inválida
+(`loadWorkerConfig`/`validateWorkerConfig`), la BD no responde o el esquema
+Core no está al día (`createWorkerPlatform` → `migrationStatus`). Un worker
+que llegó a `worker.started` estaba bien compuesto en ese momento. Después,
+el bucle tolera fallos de BD (reintenta) y el kill switch sólo niega la
+admisión de trabajo nuevo (`worker.admission.refused`), sin detener el
+proceso. Nada de esto es visible para otro proceso.
+
+**Evidencia existente para otro proceso (clasificación).**
+
+| Mecanismo | Qué prueba | Clasificación | Por qué no basta |
+|---|---|---|---|
+| Leases de task (`agent_tasks`: owner, generation, expires_at, heartbeat) | Un worker ejecuta *esa* task | REUTILIZABLE PERO INCOMPLETO | Sólo existe mientras hay una task reclamada: un worker ocioso sano no deja rastro. Su semántica de expiración en reloj de BD sí es reutilizable. |
+| `pg_stat_activity` (`application_name = r4-worker:<workerId>`) | Una sesión de BD abierta | REUTILIZABLE PERO INCOMPLETO | Sesión ≠ bucle de claim vivo; con partición de red o caída del host el backend semiabierto persiste hasta el keepalive TCP (frescura no acotada); el worker de **shadow** usa el mismo `runWorkerProcess` y el mismo nombre, así que un worker no productivo lo satisfaría; sin modo ni compatibilidad; depende de privilegios de rol y del `idleTimeoutMillis` del pool. |
+| Telemetría (`worker.started/stopped`, `worker.admission.*`) | Eventos en logs | SIN MECANISMO ADECUADO | No consultable ni durable entre procesos. |
+| `autonomy_controls`, `*_events`, `temporal_events` | Control/auditoría | SIN MECANISMO ADECUADO | Semántica distinta; eventos inmutables. |
+| Actividad (último Run/AgentDecision/outbound) | Trabajo pasado | Excluido por diseño | Un worker sano puede no tener trabajo. |
+| Build/SHA en runtime | — | SIN MECANISMO ADECUADO | El runtime no conoce su SHA (sólo los artefactos del evaluador). |
+
+**Conclusión:** SIN MECANISMO ADECUADO para readiness entre procesos. Hace
+falta presencia de worker durable, genérica y con frescura acotada.
+
+**Propuesta mínima (pendiente de revisión; no creada).**
+
+- *Hechos durables*: `worker_id` (mismo `workerIdSchema`), `execution_mode`
+  (`test|shadow|production`), `compatibility` (huella opaca: último id de
+  migración aplicado + huella de composición/perfil), `build_ref` opcional
+  (nulo hasta que el despliegue lo inyecte), `state` (`ready|not_ready|stopping`),
+  `reason` (código acotado, nunca texto libre de errores), `started_at`,
+  `heartbeat_at`, `expires_at` (reloj de BD).
+- *Esquema* (migración Core `0008_worker_presence`, aditiva):
+  `worker_presence(worker_id text pk, execution_mode text check, compatibility text,
+  build_ref text null, state text check, reason text null, started_at timestamptz,
+  heartbeat_at timestamptz, expires_at timestamptz)` + índice por `expires_at`.
+  Sin datos de cliente, sin entorno, sin más identidad de host que el
+  `worker_id` que ya se escribe en los leases.
+- *Cadencia*: `R4_WORKER_HEARTBEAT_MS` existente (10 s por defecto), en un
+  temporizador propio del worker, no sólo durante una task.
+- *Frescura*: cada latido escribe `expires_at = now() + R4_WORKER_LEASE_MS`
+  (30 s por defecto; `assertLeaseTiming` ya garantiza ≥ 2 latidos por
+  ventana). El lector compara con `now()` de la BD: sin umbral global ni
+  relojes de host.
+- *Estado*: `ready` sólo si el bucle de claim avanzó (ciclo completado o task
+  en ejecución con lease vivo) dentro de la ventana y el último ciclo no falló
+  por BD. La admisión rechazada por el kill switch **no** cambia el estado.
+- *Caída abrupta*: nada que limpiar; la fila vence sola en `expires_at`.
+  *Apagado ordenado*: `stop()` marca `stopping` en memoria antes de escribir
+  (ningún latido posterior vuelve a `ready`) y luego deja de reclamar; si la
+  escritura falla, la expiración lo cubre.
+- *Limpieza*: upsert por `worker_id` (id nuevo por proceso); cada latido borra
+  filas vencidas hace más de 24 h. Tabla acotada.
+- *Multi-worker*: ejecución lista ⇔ existe una fila `production`, `ready`, no
+  vencida y con `compatibility` igual a la del lector. Ningún host es
+  autoritativo.
+- *Integración con el gateway*: `/ready` sigue siendo la readiness del
+  **canal** (la que usaría un balanceador; su código de estado no cambia), para
+  que un worker caído nunca saque al gateway de rotación ni pierda webhooks.
+  Se agrega una vista agregada (p. ej. `/ready/r4`) = canal ∧ ejecución, con
+  diagnóstico `no_worker | stale | incompatible | not_ready(<reason>) |
+  stopping | ready` y conteos. Es la que exige el gate previo al cutover.
+- *Proveedor de modelo*: sólo validación estática de configuración (ya hecha
+  al arrancar); sin llamada de generación. Una caída del proveedor se maneja
+  como falla/recuperación de ejecución (ADR-028), no como readiness.
+- *Rollback*: tabla aditiva; el código anterior la ignora. Gateway nuevo con
+  worker viejo ⇒ `/ready` sin cambios y agregado "no listo" (correcto).
+
+**Estado:** B-5 **BLOQUEADO — decisión de persistencia requerida**. Tras su
+aprobación: migración, presencia en `@r4/worker`, vista agregada en el
+gateway, pruebas (unit/integration/recovery/mutaciones M1–M8) y documentación.

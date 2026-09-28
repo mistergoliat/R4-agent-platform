@@ -552,13 +552,14 @@ Checkpoint estable (no cierre de fase):
 | Transcript / outbound deduplication correction audit | PASS (no migration) |
 | Production WhatsApp cutover (R4 sole owner) | BLOCKED pre-cutover — [readiness](../architecture/R4-I_PRODUCTION_CUTOVER_READINESS.md) §5 |
 | Production control (kill switch D-5 + release of `autonomy_disabled` holds D-6) | RESOLVED OFFLINE — `production:sales:control`, [readiness](../architecture/R4-I_PRODUCTION_CUTOVER_READINESS.md) §8 (B-3); not live-validated |
+| Worker readiness (B-5) | BLOCKED — persistence decision required (worker presence migration proposed, not created), [readiness](../architecture/R4-I_PRODUCTION_CUTOVER_READINESS.md) §9 |
 | Live harness evidence | PENDING |
 | Final audit | PENDING |
 | **R4-I overall** | **IN PROGRESS** |
 
 **Gate de cierre revisado (decisión de proyecto, 2026-09-28):** R4-I cierra con
 (1) el número productivo de WhatsApp bajo R4 como único dueño y único escritor
-outbound (sin coexistencia con CRM/n8n) y (2) evidencia live del harness
+outbound (sin coexistencia con el CRM; n8n pertenece a otro entorno productivo y está fuera del alcance de R4-I — corrección 2026-09-28) y (2) evidencia live del harness
 (inbound durable → Task → modelo real → OutboundMessage → aceptación de Meta →
 callbacks → evaluación G; dedupe, respuesta obsoleta, `unknown`, kill switch).
 La identidad del operador **no** bloquea I (plano CRM/operador; R4 conserva
