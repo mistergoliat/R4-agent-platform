@@ -130,3 +130,35 @@ describe('R4-I boundaries: kill switch defaults safe', () => {
     expect(worker).toMatch(/admission\.admit\(\)\.catch\(\(error: unknown\) => \(\{ admitted: false/);
   });
 });
+
+describe('R4-I boundaries: production administration (D-5/D-6) is host tooling, not the operator plane', () => {
+  const ADMIN = ['packages/live-ops/src/administration.ts', 'apps/channel-gateway/src/administration.ts', 'agents/sales/src/production/control.ts', 'agents/sales/src/cli/production-control.ts'];
+  /** Source without comments (the docs name what the code must never do). */
+  const code = (f: string) => text(join(ROOT, f)).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  it('never fabricates a human, calls the HTTP operator API, a model, a channel adapter or the delivery owner', () => {
+    for (const f of ADMIN) {
+      const source = code(f);
+      expect(importsOf(join(ROOT, f)).filter((s) => /@r4\/(model-gateway|api|worker|agent-kernel|capability-runtime)|@r4-adapters\/|openai-compatible/.test(s)), f).toEqual([]);
+      // The channel gateway package is used only for its administration composition (no adapter, delivery or HTTP).
+      expect(source, f).not.toMatch(/composeSalesGateway|createGatewayPlatform|runGatewayProcess|loadWhatsAppCloudConfig|Fastify/);
+      expect(source, f).not.toMatch(/TrustedHumanContext|trustedHumanContextSchema|humanContext|humanRef|respondHuman|takeOver|\/v1\/production|fetch\(|OutboundDeliveryRuntime|dispatch(Once)?\(|\.submit\(/);
+    }
+  });
+
+  it('changes durable state only through existing primitives (no SQL of its own), never reads .env, and exposes exactly one command', () => {
+    for (const f of ADMIN) expect(code(f), f).not.toMatch(/\b(update|insert into|delete from)\s+[a-z_]+/i);
+    for (const f of ADMIN.slice(2)) expect(code(f), f).not.toMatch(/loadLocalEnv|loadEnvFile|dotenv/);
+    const scripts = (JSON.parse(text(join(ROOT, 'package.json'))) as { scripts: Record<string, string> }).scripts;
+    expect(Object.keys(scripts).filter((s) => s.startsWith('production:sales:control'))).toEqual(['production:sales:control']);
+    expect(scripts['production:sales:control']).toBe('node agents/sales/dist/cli/production-control.js');
+  });
+
+  it('offers no bulk, wildcard or automatic release', () => {
+    const control = text(join(ROOT, 'agents/sales/src/production/control.ts'));
+    expect(control).not.toMatch(/release-all|releaseAll|--all\b/);
+    const admin = text(join(ROOT, 'packages/live-ops/src/administration.ts'));
+    // Turning autonomy on only sets the control.
+    expect(admin).toMatch(/async setAutonomy\([^)]*\)[^{]*\{\n\s+return this\.#controls\.set\(/);
+  });
+});

@@ -87,6 +87,34 @@ export interface InputSubmissionResult {
   readonly held: boolean;
 }
 
+/**
+ * (R4-I) Release of a platform hold by a trusted platform administration
+ * caller — deployment tooling, never a model, never a request body, never a
+ * human identity. `reason` is the hold reason code the caller may release
+ * (any other open handoff is refused); `note` is the administrator's
+ * operational reason, kept as durable evidence.
+ */
+export interface PlatformHoldRelease {
+  readonly reason: string;
+  readonly note: string;
+  readonly actorRef: string;
+  readonly correlationId: string;
+}
+
+function parsePlatformHoldRelease(release: PlatformHoldRelease): PlatformHoldRelease {
+  parseOrThrow(statusReasonSchema, release.reason);
+  if (typeof release.note !== 'string' || release.note.trim().length === 0 || release.note.length > 2000) {
+    throw new PlatformError('validation', 'validation_failed', 'releasing a platform hold needs a non-empty note (at most 2000 characters)');
+  }
+  if (typeof release.actorRef !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$/.test(release.actorRef)) {
+    throw new PlatformError('validation', 'validation_failed', 'a platform hold release needs a valid actor reference');
+  }
+  if (typeof release.correlationId !== 'string' || release.correlationId.length === 0 || release.correlationId.length > 200) {
+    throw new PlatformError('validation', 'validation_failed', 'a platform hold release needs a correlation id');
+  }
+  return { reason: release.reason, note: release.note.trim(), actorRef: release.actorRef, correlationId: release.correlationId };
+}
+
 function parsePlatformHold(hold: PlatformHold): PlatformHold {
   parseOrThrow(statusReasonSchema, hold.reason);
   if (typeof hold.summary !== 'string' || hold.summary.trim().length === 0 || hold.summary.length > 2000) {
@@ -401,6 +429,42 @@ export class TemporalRuntime implements RunFailureHandoff {
     }
     await this.#openWait(uow, task, active?.runId ?? null, 'WAIT_FOR_HUMAN', request.requestId, null, now, events);
     return true;
+  }
+
+  /**
+   * (R4-I) The inverse of `holdForHumansWithin`, for a trusted platform
+   * caller: the task's open handoff must be platform-initiated with exactly
+   * `release.reason` and still `requested` (no human accepted it). It takes
+   * the same transition as a human cancelling a requested handoff —
+   * `requested → cancelled`, its timers cancelled, its WAIT_FOR_HUMAN woken
+   * through `wakeWithin` (so terminal intent, uncertain effects and a newer
+   * human owner still win). It never starts a run, never calls a model and
+   * never touches delivery: the task only becomes claimable again. Agent-,
+   * operator- or differently-caused handoffs are refused untouched.
+   */
+  async releasePlatformHold(taskId: string, release: PlatformHoldRelease): Promise<HumanRequest> {
+    const body = parsePlatformHoldRelease(release);
+    return this.write(async (uow, events) => {
+      const task = await this.lockTask(uow, taskId);
+      const p = temporalOf(uow);
+      const now = await p.now();
+      if (isTerminalTaskStatus(task.status)) throw new PlatformError('conflict', 'task_terminal', 'the task is already terminal');
+      const handoff = await p.activeHandoff(taskId);
+      if (!handoff) throw new PlatformError('conflict', 'platform_hold_not_open', 'the task has no open hold (already released or never held)');
+      if (handoff.payload.initiatedBy !== 'platform' || handoff.payload.reason !== body.reason) {
+        throw new PlatformError('precondition', 'platform_hold_mismatch', `the task's open handoff is not a platform hold for ${body.reason}; it needs a human`);
+      }
+      if (handoff.status !== 'requested') throw new PlatformError('precondition', 'handoff_owned_by_human', 'a human owns the task; only that human can release it');
+      const updated: HumanRequest = { ...handoff, status: 'cancelled', updatedAt: now };
+      await p.updateHuman(updated);
+      await this.event(uow, task, handoff.requestId, 'handoff.cancelled', now, events, {
+        kind: 'handoff', status: 'cancelled', outcome: 'platform_release', initiatedBy: 'platform', reason: body.reason, content: body.note, latencyMs: Date.parse(now) - Date.parse(handoff.createdAt),
+      }, body.actorRef, null, body.correlationId);
+      await this.cancelSchedulesWithin(uow, task, now, events, handoff.requestId);
+      const wait = await p.activeWait(taskId);
+      if (wait?.referenceId === handoff.requestId) await this.wakeWithin(uow, task, wait, 'human', now, events);
+      return updated;
+    });
   }
 
   // -------------------------------------------------------------------------

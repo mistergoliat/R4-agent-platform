@@ -49,11 +49,13 @@
     "test:mutation:shadow": "node tests/mutation/shadow-mutations.mjs",
     "test:mutation:recovery": "node tests/mutation/run-failure-recovery-mutations.mjs",
     "test:mutation:production": "node tests/mutation/production-mutations.mjs",
+    "test:mutation:production-control": "node tests/mutation/production-control-mutations.mjs",
     "production:sales:plan": "node agents/sales/dist/cli/production.js --plan",
     "production:sales:validate": "node agents/sales/dist/cli/production.js --validate",
     "production:sales:smoke": "node agents/sales/dist/cli/production.js --smoke",
     "production:sales:gateway": "node agents/sales/dist/cli/production.js --gateway",
     "production:sales:worker": "node agents/sales/dist/cli/production.js --worker",
+    "production:sales:control": "node agents/sales/dist/cli/production-control.js",
     "test:production": "vitest run --project unit tests/unit/live-ops && vitest run --project contract tests/contract/live-ops-boundaries.test.ts && vitest run --project integration tests/integration/live-ops-reference.test.ts tests/integration/live-ops-hardening.test.ts"
   },
   "devDependencies": {

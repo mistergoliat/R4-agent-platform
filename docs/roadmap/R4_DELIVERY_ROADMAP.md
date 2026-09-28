@@ -551,6 +551,7 @@ Checkpoint estable (no cierre de fase):
 | Mutations | PASS |
 | Transcript / outbound deduplication correction audit | PASS (no migration) |
 | Production WhatsApp cutover (R4 sole owner) | BLOCKED pre-cutover — [readiness](../architecture/R4-I_PRODUCTION_CUTOVER_READINESS.md) §5 |
+| Production control (kill switch D-5 + release of `autonomy_disabled` holds D-6) | RESOLVED OFFLINE — `production:sales:control`, [readiness](../architecture/R4-I_PRODUCTION_CUTOVER_READINESS.md) §8 (B-3); not live-validated |
 | Live harness evidence | PENDING |
 | Final audit | PENDING |
 | **R4-I overall** | **IN PROGRESS** |
@@ -590,7 +591,8 @@ manual del operador), D-3 (protección de respuesta obsoleta, causal) y D-4
 | 32 | CI sin red | fake provider local; `R4_PROD_ALLOW_NETWORK` + URL loopback |
 | 33–34 | Crash/restart y carreras horizontales | `recovery/live-ops-process-crash` (SIGKILL), dos dispatchers, callbacks concurrentes |
 | 35–39 | Artifacts reproducibles; E2E offline; ADR-028; kill switch; handoff + inbound | `production:sales:validate`, `integration/live-ops-reference` |
-| 40 | Mutaciones | `npm run test:mutation:production` (21/21) |
+| 40 | Mutaciones | `npm run test:mutation:production` (21/21); `npm run test:mutation:production-control` (D-5/D-6) |
+| B-3 | Administración productiva del kill switch y liberación explícita de retenciones `autonomy_disabled` (host, no operador) | `integration/production-control`, `recovery/production-control-process`, `unit/live-ops/administration` |
 | 44–45 | Sin autonomía de R4-J; sin despliegue ni rollout real | perfil v1 conservador; autonomía nace deshabilitada |
 
 **Cambios mínimos de Core (genéricos, justificados en ADR-029):**
@@ -598,7 +600,10 @@ manual del operador), D-3 (protección de respuesta obsoleta, causal) y D-4
 `TemporalRuntime.createTaskWithInput` (task + primer input en una transacción:
 cierra la carrera "worker reclama una conversación vacía"),
 `TemporalRuntime.holdForHumansWithin` + `submitInput(hold)` (hold de
-plataforma = handoff de E con razón), `WorkerAdmission` opcional, scope humano
+plataforma = handoff de E con razón), `TemporalRuntime.releasePlatformHold`
+(su inversa para un llamador de plataforma de confianza — D-6: misma transición
+que cancelar un handoff solicitado, sin estado ni ciclo de vida nuevos),
+`WorkerAdmission` opcional, scope humano
 `autonomy.control`, nombres de telemetría. Protocolo, kernel, parser y gateway
 de modelo sin cambio.
 
@@ -696,7 +701,8 @@ canal (sin credenciales del número canary en este entorno) — ver §4.
 | (I) Paridad de UI de operadores del CRM (hilo, controles, respuesta manual, estados) sobre las APIs de R4 | Bloqueante antes de migrar el número productivo (D-1) | `/v1/production/*`, `/v1/tasks/:id/thread` |
 | (I) Plantillas fuera de la ventana de 24 h (respuesta manual y seguimiento) | Sólo texto dentro de la ventana en R4-I (D-2) | `OutboundChannelAdapter`, `window_closed` |
 | (I) Indicador "escribiendo"/marcar leído; agrupación de fragmentos (turn settling) | UX, no correctitud; los fragmentos que llegan antes del claim ya entran al mismo snapshot | canal; claim ordinario |
-| (I) Liberación masiva de tasks retenidas tras soltar el kill switch | Operación deliberada por conversación en R4-I | `respondHuman(release|cancel)` |
+| (I) Liberación masiva de tasks retenidas tras soltar el kill switch | Operación deliberada por task en R4-I; `autonomy on` nunca libera | `production:sales:control holds release --task` (sólo `autonomy_disabled`), `respondHuman(release|cancel)` |
+| (I → plano CRM/operador) Handoffs pedidos por el agente (`request_handoff`) y demás retenciones sin superficie humana tras el cutover | La identidad del operador queda fuera de R4; la administración de host no los libera — evidencia R4-J visible | `TrustedHumanContext`, `/v1/production/*`, `/v1/attention` |
 | (I) Clave de idempotencia del proveedor / exactly-once | Meta no documenta una; no se afirma | `idempotencyKey` en `OutboundSubmission` |
 | (I) Reconciliación automática de `unknown` sin id del proveedor (p. ej. `biz_opaque_callback_data`) | No verificado en la documentación oficial; no se inventa | atención + resolución del operador |
 | (I) Recuperabilidad genérica de `capability_failure` | Sin evidencia real nueva (sin owners reales en I) | `runFailureDisposition` |

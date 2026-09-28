@@ -11,3 +11,4 @@ export * from './outbound.js';
 export * from './operator.js';
 export * from './context-source.js';
 export * from './guard.js';
+export * from './administration.js';

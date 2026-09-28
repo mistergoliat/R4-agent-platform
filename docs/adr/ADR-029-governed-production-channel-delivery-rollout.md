@@ -162,6 +162,18 @@ adjuntos se vacían; inbound no elegible se descarta; payload crudo guardado).
     crudo; texto y dirección del inbound se borran al quedar durables en la
     task/binding. 0001–0006 intactas.
 
+19. **Administración productiva ≠ plano del operador (D-5/D-6, cutover).**
+    `production:sales:control` es tooling del despliegue cuya frontera de
+    confianza es el acceso al host productivo; no autentica personas ni
+    construye un `TrustedHumanContext`. Cambia el kill switch global con
+    `AutonomyControls.set` (atribuido a `platform:production-control`, con
+    motivo obligatorio) y libera, task por task, sólo retenciones de
+    plataforma `autonomy_disabled` todavía `requested` y sólo con la
+    autonomía habilitada, vía `TemporalRuntime.releasePlatformHold` (inversa
+    genérica de `holdForHumansWithin`: la transición de cancelar un handoff
+    solicitado). `autonomy on` no libera nada. Handoffs del agente, del
+    operador y demás causas quedan para el plano del operador.
+
 ## Alternativas descartadas
 
 - *`propose_action(send_message)` para responder*: rompe ADR-008 y mezcla
@@ -178,8 +190,9 @@ adjuntos se vacían; inbound no elegible se descarta; payload crudo guardado).
 
 - Un timeout real puede dejar al cliente sin respuesta hasta un callback o un
   operador (preferible a un duplicado). Visible en atención.
-- Tras soltar el kill switch, las tasks retenidas siguen con humanos hasta que
-  un operador las libera (no hay liberación masiva en R4-I).
+- Tras soltar el kill switch, las tasks retenidas siguen retenidas hasta que
+  un operador o la administración productiva (sólo `autonomy_disabled`, una
+  task por vez; decisión 19) las libera. No hay liberación masiva en R4-I.
 - La paridad de UI con el CRM es bloqueante antes de migrar el número
   productivo (D-1); R4-I opera un número canary propio.
 

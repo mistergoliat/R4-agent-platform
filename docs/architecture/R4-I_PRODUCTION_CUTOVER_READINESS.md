@@ -4,6 +4,7 @@ status: BLOQUEADO antes del cutover live (ver §5)
 owner: architecture
 last_reviewed: 2026-09-28
 r4_baseline: 34e83c687a8375a29fbabe55166a6652c6b1da2d (R4-I PRE-CUTOVER BASELINE; HEAD = origin/main)
+r4_production_control_baseline: 9c3e080e41d6496aa7aa9916a55ed428c3fec784 (D-5/D-6 implementados offline sobre este commit; §8)
 crm_ref: CRM-Customer-360 @ 8298723 (sólo lectura; working tree limpio)
 supersedes: decisión D-1 (c) de R4-I_CRM_WHATSAPP_AUDIT.md — reemplazada por la decisión de proyecto "R4 dueño del número productivo" (tarea de cutover R4-I, 2026-09-28)
 ---
@@ -95,7 +96,7 @@ la revocación del token es más fuerte que cualquier parche.
 | Arranque del gateway | esquema al día (`migrationStatus`), controles legibles, perfil = declarado | Fail-closed |
 | `/ready` del gateway | DB + migraciones + controles legibles | Correcto (no false-green); `/health` es liveness |
 | Worker | `production:sales:worker`; exige modelo `R4_MODEL_*` y red | **Sin superficie de health/readiness** (proceso sin HTTP) |
-| Kill switch | `autonomy_controls`, creado deshabilitado por migración; lectura fallida = deshabilitado | Legible; **no liberable en producción** (ver §5 B-3) |
+| Kill switch | `autonomy_controls`, creado deshabilitado por migración; lectura fallida = deshabilitado | Legible y administrable desde el host productivo con `production:sales:control` (§8); B-3 resuelto offline |
 | Rollout | `R4_PROD_ROLLOUT_PERCENT` 0–100 + allow/deny por hash | 100 % admitido por código |
 | Secretos en logs | pino `redact` (authorization, cookie, `*.token`, `*.secret`, …); gateway sin request logging | Correcto |
 | "Canary" | sólo nombre/descripción del perfil y comentarios; ninguna restricción de código impide el número productivo | Cambiar la descripción del perfil implica nuevo fingerprint de perfil (decisión: ver §6) |
@@ -114,7 +115,7 @@ la revocación del token es más fuerte que cualquier parche.
 | 7 | Health del gateway | **NO** — no desplegado | — |
 | 8 | Health del worker | **NO** — no desplegado; sin superficie de health | §3 |
 | 9 | Health de BD | **NO** — sin BD productiva | — |
-| 10 | Kill switch legible y ON | Legible por construcción; **no se puede liberar después** | §5 B-3 |
+| 10 | Kill switch legible y ON | Legible por construcción; se cambia y se liberan retenciones `autonomy_disabled` con `production:sales:control` — **validado offline, no live** | §8 |
 | 11 | Secuencia de apagado del CRM | Definida (§2) — no ejecutable desde aquí (host CRM no identificado) | §2 |
 | 12 | Secuencia de apagado n8n/legacy | Definida (§2) — estado vivo de n8n **desconocido** | §1 #12 |
 | 13 | Endpoint/config de rollback conocidos | **NO** | — |
@@ -133,7 +134,8 @@ la revocación del token es más fuerte que cualquier parche.
 - **B-2 (STOP A).** Escritor UNKNOWN: n8n `OPS_Response_Executor_SendWhatsApp`
   con credencial propia. Se resuelve con §2 (revocación del token + desactivar
   n8n) ejecutado y verificado por quien tenga acceso.
-- **B-3 (STOP G) — hallazgo de plataforma.** El kill switch se lee pero **no
+- **B-3 (STOP G) — hallazgo de plataforma. RESUELTO OFFLINE (§8)** — sin
+  validación live. Registro original: el kill switch se lee pero **no
   hay camino productivo gobernado para cambiarlo**: `POST /v1/production/controls`
   exige un `TrustedHumanContext` y ningún entry point productivo compone un
   `humanContext` (responde 422 `trusted_human_required`, por diseño). Lo mismo
@@ -147,18 +149,26 @@ la revocación del token es más fuerte que cualquier parche.
   Requiere decisión (§6 D-5, D-6).
 - **B-4 (STOP L).** Sin artefacto/target de despliegue reproducible en el repo.
 
-No hace falta migración ni cambio de protocolo/Core para ninguno de ellos.
+Ninguno requiere migración ni cambio de protocolo. B-3 se resolvió con una
+única operación genérica nueva en `TemporalRuntime` (`releasePlatformHold`, la
+inversa de `holdForHumansWithin`: misma transición existente, sin estado ni
+ciclo de vida nuevos; §8).
 
 ## 6. Decisiones requeridas
 
-- **D-5 — Control del kill switch sin IAM.** Propuesta mínima: un comando de
-  host `production:sales:control --autonomy on|off --reason "…"` que construye
+- **D-5 — Control del kill switch sin IAM. DECIDIDO E IMPLEMENTADO (§8).**
+  La propuesta original de abajo (construir un `TrustedHumanContext` con un
+  `humanRef` de host) fue **rechazada**: la administración productiva no
+  finge ser un operador humano ni usa la API del operador. Propuesta original:
+  un comando de host `production:sales:control --autonomy on|off --reason "…"` que construye
   un `TrustedHumanContext` con `humanRef = "host-operator:<nombre declarado>"` y
   scope `autonomy.control` y llama `AutonomyControls.setControl` (auditado en
   `autonomy_control_events`). Frontera de confianza = acceso de shell al host
   productivo. No es IAM; no abre la API HTTP. Alternativa: aceptar SQL directo
   documentado (no recomendado).
-- **D-6 — Conversaciones entregadas a humanos tras el cutover.** Sin UI de
+- **D-6 — Conversaciones entregadas a humanos tras el cutover. DECIDIDO E
+  IMPLEMENTADO (§8) como (a), acotado a `autonomy_disabled`, task por task, sin
+  liberación masiva.** Registro original: sin UI de
   operador, las tasks retenidas no tienen salida. Opciones: (a) el mismo
   comando de host con `release <taskId>` / liberación masiva de retenciones
   `autonomy_disabled` tras soltar el kill switch (hoy diferida en ADR-029);
@@ -172,7 +182,8 @@ No hace falta migración ni cambio de protocolo/Core para ninguno de ellos.
 
 ## 7. Rollback (a completar con los valores registrados en el paso 1)
 
-**Nivel 1 — autonomía (preferido).** Kill switch ON (requiere D-5). R4 sigue
+**Nivel 1 — autonomía (preferido).** Kill switch ON:
+`npm run production:sales:control -- autonomy off --reason "<incidente>"` (§8). R4 sigue
 dueño; inbound durable; callbacks continúan; sin cognición ni efectos nuevos;
 outbound `pending` retenido (no cancelado).
 
@@ -190,3 +201,85 @@ app de Meta (id), WABA (id), `phone_number_id`, qué sistema(s) tienen token,
 flags `BRAIN_*` productivos actuales, estado de los workflows n8n, procesos CRM
 activos, SHA/versión de R4 desplegada, versión de migración, estado del kill
 switch.
+
+## 8. Administración productiva: `production:sales:control` (D-5, D-6)
+
+Implementado y validado **offline** (BD desechable, proveedor fake local,
+modelo con guion). No se ejecutó contra ninguna BD productiva ni contra Meta.
+
+```
+npm run production:sales:control -- autonomy status
+npm run production:sales:control -- autonomy off --reason "<motivo operacional>"
+npm run production:sales:control -- autonomy on  --reason "<motivo operacional>"
+npm run production:sales:control -- holds list
+npm run production:sales:control -- holds release --task <task-id> --reason "<motivo operacional>"
+```
+
+**Frontera de confianza.** Es tooling de administración del despliegue, no el
+plano del operador. Lo protege el acceso al host productivo (shell + entorno
+del proceso): quien puede ejecutarlo contra la BD productiva ya está dentro
+de la frontera administrativa del despliegue. **No** sustituye la
+autenticación de operadores, **no** construye un `TrustedHumanContext`,
+**no** llama `/v1/production/*` y **no** debe exponerse como servicio.
+La identidad del operador sigue fuera de R4 (integración futura CRM/operador).
+
+**Atribución.** Cada cambio queda como `changed_by = platform:production-control`
+(`autonomy_control_events`) o `actor_ref = platform:production-control`
+(`temporal_events`), con el motivo del administrador y un `correlation_id`
+`production-control:<host>:<pid>:<aleatorio>`. Significa "acción
+administrativa desde el host productivo", **no** una persona verificada.
+
+**Requisitos (fail-closed).** `R4_EXECUTION_MODE=production` y la
+configuración productiva completa (`loadProductionConfig`), perfil
+`sales-production@1`, `R4_DATABASE_URL` del despliegue y esquema al día
+(migraciones Core + Sales, sin pendientes ni modificadas). Lee sólo el entorno
+del proceso (nunca `.env`). No necesita credenciales de Meta ni del modelo y
+no compone canal, entrega ni modelo. Códigos de salida: 0 hecho, 2 comando
+inválido (incluye motivo ausente o vacío), 1 rechazo o fallo (configuración,
+esquema, BD, elegibilidad, mutación). Nunca imprime URL de BD ni secretos.
+
+**Semántica.**
+
+- `autonomy off|on` usa `AutonomyControls.set` (scope `global`), la misma
+  primitiva durable y auditada del kill switch. Repetir el mismo estado
+  registra la intención repetida (versión + evento), como la primitiva
+  existente. **`autonomy on` no libera ninguna task retenida**, no toca
+  canal, rollout, bindings, inbound ni outbound.
+- `holds list` muestra sólo handoffs `requested` con
+  `payload.initiatedBy = platform` y `payload.reason = autonomy_disabled`
+  (identificadores, fecha, estado de la task; sin contenido de la conversación).
+- `holds release` libera **una** task, y sólo si su handoff abierto es una
+  retención de plataforma `autonomy_disabled` aún `requested` **y** la
+  autonomía está habilitada para su canal (si no: rechazo; evita el ciclo
+  liberar/re-retener). Usa `TemporalRuntime.releasePlatformHold`: la misma
+  transición que un humano que cancela un handoff solicitado
+  (`requested → cancelled`, WAIT_FOR_HUMAN completado vía `wakeWithin`; una
+  intención terminal o un efecto incierto siguen ganando). No ejecuta el
+  worker, no llama al modelo, no despacha: la task queda reclamable y el
+  worker normal compila un ContextSnapshot nuevo con todos los inputs durables
+  (incluidos los llegados durante la retención). El gate de entrega sigue
+  siendo la autoridad: una respuesta pendiente anterior queda
+  `superseded_by_newer_input`/`superseded_by_operator`; un `unknown` sigue
+  `unknown` y nunca se reintenta. Reintentar la liberación ⇒ rechazo
+  `platform_hold_not_open` sin cambios.
+- Se rechazan (sin tocarlos): handoff pedido por el agente
+  (`platform_hold_mismatch`), toma del operador o retención aceptada por un
+  humano (`handoff_owned_by_human`), otras causas de plataforma
+  (`rollout_excluded`, `autonomy_denied`, contenido no soportado, recuperación
+  ADR-028 agotada), consultas, aprobaciones y reconciliación.
+
+**Limitación conocida (evidencia R4-J / plano del operador).** Una task que el
+agente de Sales entrega a humanos (`request_handoff`) queda esperando hasta que
+exista integración CRM/operador. Este comando no ofrece atajo para ella.
+
+**Evidencia.** `tests/integration/production-control.test.ts`,
+`tests/unit/live-ops/administration.test.ts`,
+`tests/contract/live-ops-boundaries.test.ts`,
+`tests/recovery/production-control-process.test.ts` (un proceso real por
+comando), `npm run test:mutation:production-control`.
+
+**Siguen bloqueando el cutover live:** B-1 (target de despliegue y acceso,
+identificadores/credenciales productivos de Meta), B-2 (estado actual de n8n,
+verificación live de escritor único), B-4 (despliegue reproducible), verificación
+del target de rollback y el cutover live en sí. La salud/readiness del worker
+es la siguiente tarea de hardening.

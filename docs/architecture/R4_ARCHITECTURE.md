@@ -1459,13 +1459,15 @@ número productivo queda sujeto a un gate posterior de paridad de operador/UI.
 | Contratos de canal (`CanonicalInbound`, `Inbound/OutboundChannelAdapter`) | `packages/live-ops` | Frontera neutral |
 | `ChannelIngress`, `OutboundDeliveryRuntime`, `DeliveryDispatcher`, `AutonomyControls`, `ProductionOperator`, `DeliveryStateContextSource`, `guardProductionWrites` | `packages/live-ops` | Ingress canónico, dueño de la entrega, kill switch, plano del operador, contexto honesto, guard de escrituras reales |
 | `PostgresProductionStore` + 0007 | `packages/persistence-postgres` | Unicidad, locks, fencing, historia append-only |
-| `createTaskWithInput`, `holdForHumansWithin`, `submitInput(hold)`; `prepareCreate`/`createWithin` | `packages/task-runtime` | Cambios mínimos y genéricos de Core (sin canal ni dominio) |
+| `createTaskWithInput`, `holdForHumansWithin`, `releasePlatformHold`, `submitInput(hold)`; `prepareCreate`/`createWithin` | `packages/task-runtime` | Cambios mínimos y genéricos de Core (sin canal ni dominio) |
+| `ProductionAdministration`, `PRODUCTION_CONTROL_ACTOR`; `openProductionAdministration` | `packages/live-ops`; `apps/channel-gateway` (composición, sin canal ni HTTP) | Administración productiva (D-5/D-6): kill switch global y liberación explícita de retenciones `autonomy_disabled`; atribuida a `platform:production-control`, nunca a un humano |
 | `WorkerAdmission` | `apps/worker` | Hook genérico opcional antes de cada claim |
 | `apps/channel-gateway` | app | Único proceso que habla con el proveedor: webhooks + dispatcher; `/health`, `/ready` |
 | Rutas `/v1/production/*`, `/v1/tasks/:id/{thread,outbound,operator-messages}`, `/v1/outbound/:id/{resolve,cancel}` | `apps/api` | Plano del operador (sólo API) |
 | `@r4-adapters/whatsapp-cloud` | `adapters/channels/whatsapp-cloud` | Verificación, `X-Hub-Signature-256`, canonicalización por change, sólo el número canary, clasificación honesta; `./testing`: proveedor fake local |
 | `SALES_PRODUCTION_PROFILE`, `SALES_PRODUCTION_ACTION_POLICY`, `composeSalesProductionWorker`, `composeSalesGateway` | `agents/sales/src/production` | Composición de producción del pack |
 | CLI `production:sales:{plan,validate,smoke,gateway,worker}` | `agents/sales/src/cli/production.ts` | Plan sin efectos, validación offline con artifacts, smoke real con opt-ins, entrypoints |
+| CLI `production:sales:control` | `agents/sales/src/cli/production-control.ts` → `production/control.ts` | Herramienta de host (no del operador): `autonomy status|on|off`, `holds list|release`; fail-closed sin producción declarada o esquema al día; sin canal ni modelo |
 
 ### 19.2 Qué hace "producción" a una ejecución
 
