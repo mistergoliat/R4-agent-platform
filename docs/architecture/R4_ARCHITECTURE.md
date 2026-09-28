@@ -1468,6 +1468,7 @@ número productivo queda sujeto a un gate posterior de paridad de operador/UI.
 | `@r4-adapters/whatsapp-cloud` | `adapters/channels/whatsapp-cloud` | Verificación, `X-Hub-Signature-256`, canonicalización por change, sólo el número canary, clasificación honesta; `./testing`: proveedor fake local |
 | `SALES_PRODUCTION_PROFILE`, `SALES_PRODUCTION_ACTION_POLICY`, `composeSalesProductionWorker`, `composeSalesGateway` | `agents/sales/src/production` | Composición de producción del pack |
 | CLI `production:sales:{plan,validate,smoke,gateway,worker}` | `agents/sales/src/cli/production.ts` | Plan sin efectos, validación offline con artifacts, smoke real con opt-ins, entrypoints |
+| CLI `production:sales:bootstrap`; `registerAgentDefinitions` | `agents/sales/src/cli/production-bootstrap.ts` → `production/bootstrap.ts`; `apps/api/src/registration.ts` | Registro explícito de `sales@N` en la BD productiva vía `loadAgentDefinitionsFromDirectory` + `AgentRegistry.sync` (gateway y worker nunca registran al arrancar); idempotente, versión inmutable, fail-closed sin producción declarada, esquema al día o definición válida; sin autonomía, rollout, modelo ni canal |
 | CLI `production:sales:control` | `agents/sales/src/cli/production-control.ts` → `production/control.ts` | Herramienta de host (no del operador): `autonomy status|on|off`, `holds list|release`; fail-closed sin producción declarada o esquema al día; sin canal ni modelo |
 
 ### 19.2 Qué hace "producción" a una ejecución

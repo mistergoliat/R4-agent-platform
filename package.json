@@ -57,6 +57,7 @@
     "production:sales:gateway": "node agents/sales/dist/cli/production.js --gateway",
     "production:sales:worker": "node agents/sales/dist/cli/production.js --worker",
     "production:sales:control": "node agents/sales/dist/cli/production-control.js",
+    "production:sales:bootstrap": "node agents/sales/dist/cli/production-bootstrap.js",
     "test:production": "vitest run --project unit tests/unit/live-ops && vitest run --project contract tests/contract/live-ops-boundaries.test.ts && vitest run --project integration tests/integration/live-ops-reference.test.ts tests/integration/live-ops-hardening.test.ts"
   },
   "devDependencies": {

@@ -7,6 +7,7 @@ r4_baseline: 34e83c687a8375a29fbabe55166a6652c6b1da2d (R4-I PRE-CUTOVER BASELINE
 r4_production_control_baseline: 9c3e080e41d6496aa7aa9916a55ed428c3fec784 (D-5/D-6 implementados offline sobre este commit; §8)
 r4_worker_readiness_baseline: 8c366fbd52e40549654eb5e09cc46e3efc3da956 (auditoría de readiness del worker; §9)
 r4_worker_readiness_implementation_baseline: b561178b2324a525b3ce538651cdf14aa1310dc3 (0008 + presencia + `/ready/r4` implementados offline sobre este commit; §9)
+r4_production_bootstrap_baseline: da941ef (registro explícito de la AgentDefinition de Sales; §10)
 crm_ref: CRM-Customer-360 @ 8298723 (sólo lectura; working tree limpio)
 supersedes: decisión D-1 (c) de R4-I_CRM_WHATSAPP_AUDIT.md — reemplazada por la decisión de proyecto "R4 dueño del número productivo" (tarea de cutover R4-I, 2026-09-28)
 ---
@@ -395,3 +396,43 @@ BD/esquema), `tests/unit/worker/presence.test.ts`,
 `npm run test:mutation:worker-readiness`.
 
 **Estado:** B-5 **RESUELTO OFFLINE** — no validado live (no hay despliegue).
+
+## 10. Bootstrap productivo: registro de la AgentDefinition de Sales
+
+**Hallazgo del primer inbound live.** Meta → HTTPS/Nginx → gateway, la
+autenticación del webhook, la persistencia del inbound, el dedupe de
+reentregas y el binding de conversación funcionaron; la apertura de la Task
+falló con `agent_not_found` (`agent "sales" is not registered`) y
+`agent_definitions` tenía 0 filas. Causa: el único que registra definiciones
+(`loadAgentDefinitionsFromDirectory` + `AgentRegistry.sync`) es `apps/api` al
+arrancar; el despliegue productivo corre gateway + worker, y ninguno registra
+(a propósito: el registro es un acto explícito, no un efecto de arrancar un
+proceso). El inbound queda durable y sin asentar; el gateway responde 5xx y
+Meta reentrega.
+
+**Solución.** `npm run production:sales:bootstrap`: registra sólo
+`agents/sales/sales.agent.json` por el mismo límite del Agent Registry
+(`registerAgentDefinitions` en `@r4/api`, sin HTTP). Primera vez
+`registered: sales@1`; repetido `unchanged: sales@1`; misma versión con
+contenido distinto ⇒ `agent_definition_version_immutable` (publicar versión
+nueva). Fail-closed sin `R4_EXECUTION_MODE=production` y configuración
+productiva completa, sin `R4_DATABASE_URL` válida, con esquema Core/Sales no
+al día, con definición ausente/ilegible/inválida o con la BD caída. No habilita
+autonomía, no toca rollout, no llama al modelo ni a Meta, no usa red salvo
+PostgreSQL y no arranca procesos. No es una migración.
+
+**Orden canónico de despliegue:** `db:migrate` → `sales:migrate` →
+`production:sales:bootstrap` → `production:sales:plan` → gateway → worker.
+
+Tras el bootstrap, el inbound que quedó sin asentar se ingiere solo: el gateway
+lo reanuda (`R4_GATEWAY_RESUME_AFTER_MS`, 30 s por defecto) o llega por la
+reentrega de Meta; sin segunda cola ni intervención manual.
+
+**Evidencia.** `tests/integration/production-bootstrap.test.ts` (registro,
+idempotencia, inmutabilidad, sólo Sales, definición ausente/ilegible/inválida,
+modo no productivo, BD caída, esquema pendiente, sin efectos; y el hueco real:
+gateway sin API ⇒ `agent_not_found` ⇒ bootstrap ⇒ el mismo inbound durable
+abre la Task `sales@1`), `tests/recovery/production-bootstrap-process.test.ts`
+(el comando construido, un proceso por ejecución),
+`tests/contract/live-ops-boundaries.test.ts` (sólo `AgentRegistry.sync`;
+gateway y worker nunca registran).

@@ -32,6 +32,11 @@ export interface TestbedOptions {
   readonly autonomy?: boolean;
   readonly leaseMs?: number;
   readonly providerTimeoutMs?: number;
+  /**
+   * Definitions the bed's API registers at boot (default: the Sales pack). An empty
+   * directory reproduces a production deployment (gateway + worker, no API): nothing registered.
+   */
+  readonly agentDefinitionsDir?: string;
 }
 
 /**
@@ -95,7 +100,7 @@ export class LiveOpsTestbed {
     };
     const production = loadProductionConfig(env);
     const logger = createSilentLogger();
-    const api = await createPlatform({ databaseUrl: db.url, host: '127.0.0.1', port: 0, logLevel: 'silent', agentDefinitionsDir: SALES_AGENT_DIR, dbPoolMax: 4 }, { logger, humanContext: () => OPERATOR });
+    const api = await createPlatform({ databaseUrl: db.url, host: '127.0.0.1', port: 0, logLevel: 'silent', agentDefinitionsDir: options.agentDefinitionsDir ?? SALES_AGENT_DIR, dbPoolMax: 4 }, { logger, humanContext: () => OPERATOR });
     const { bindings } = composeSalesGateway({ pool, production, env });
     const gateway = await createGatewayPlatform({ databaseUrl: db.url, host: '127.0.0.1', port: 0, logLevel: 'silent', dbPoolMax: 4, gatewayId: 'gateway-test', dispatch: false, resumeAfterMs: 1000 }, bindings, { logger });
     const queue: FakeModelStep[] = [];

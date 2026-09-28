@@ -3,3 +3,4 @@ export * from './config.js';
 export * from './errors.js';
 export * from './platform.js';
 export * from './principal.js';
+export * from './registration.js';

@@ -284,8 +284,26 @@ hilos con CRM.
 La autonomía nace **deshabilitada** (kill switch en la migración 0007) y el
 rollout en **0 %**.
 
+Orden canónico de un despliegue productivo (gateway + worker, sin `apps/api`):
+
 ```bash
-npm run build && npm run db:migrate && npm run sales:migrate
+npm run build
+npm run db:migrate                                                  # 1. esquema Core
+npm run sales:migrate                                               # 2. esquema del pack Sales
+R4_EXECUTION_MODE=production … npm run production:sales:bootstrap  # 3. registra sales@N vía Agent Registry (idempotente: "unchanged" si ya está)
+R4_EXECUTION_MODE=production … npm run production:sales:plan       # 4. qué correría — no envía nada
+R4_EXECUTION_MODE=production … npm run production:sales:gateway    # 5. proceso de canal
+R4_EXECUTION_MODE=production … npm run production:sales:worker     # 6. worker de producción
+```
+
+Ni el gateway ni el worker registran definiciones al arrancar (a propósito):
+sin el paso 3, el primer inbound falla con `agent_not_found` (queda durable y
+Meta lo reentrega). El bootstrap sólo registra `agents/sales/sales.agent.json`;
+una versión ya registrada con contenido distinto se rechaza
+(`agent_definition_version_immutable`: publicar una versión nueva). No toca
+autonomía, rollout, modelo ni canal.
+
+```bash
 npm run test:production                    # unit + contract + integración de R4-I (PostgreSQL real, proveedor fake local, sin red)
 npm run test:mutation:production           # 21 mutaciones de seguridad de producción: todas deben ser detectadas
 npm run production:sales:validate          # validación offline completa → artifacts/production-validation/<id>/

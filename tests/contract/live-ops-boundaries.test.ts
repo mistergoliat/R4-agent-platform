@@ -154,6 +154,25 @@ describe('R4-I boundaries: production administration (D-5/D-6) is host tooling, 
     expect(scripts['production:sales:control']).toBe('node agents/sales/dist/cli/production-control.js');
   });
 
+  it('production bootstrap registers definitions only through the Agent Registry, explicitly — never at gateway or worker start', () => {
+    const BOOTSTRAP = ['apps/api/src/registration.ts', 'agents/sales/src/production/bootstrap.ts', 'agents/sales/src/cli/production-bootstrap.ts'];
+    for (const f of BOOTSTRAP) {
+      const source = code(f);
+      expect(importsOf(join(ROOT, f)).filter((s) => /@r4\/(model-gateway|worker|agent-kernel|capability-runtime|channel-gateway|task-runtime)|@r4-adapters\/|openai-compatible/.test(s)), f).toEqual([]);
+      expect(source, f).not.toMatch(/\b(update|insert into|delete from)\s+[a-z_]+/i);
+      expect(source, f).not.toMatch(/loadLocalEnv|loadEnvFile|dotenv|fetch\(|setControl|AutonomyControls|setAutonomy|rolloutEligibility|createGatewayPlatform|createWorkerPlatform/);
+    }
+    const registration = code('apps/api/src/registration.ts');
+    expect(registration).toMatch(/loadAgentDefinitionsFromDirectory\(/);
+    expect(registration).toMatch(/registry\.sync\(/);
+    expect(registration).not.toMatch(/\.register\(/);
+    for (const f of ['apps/channel-gateway/src/platform.ts', 'apps/worker/src/platform.ts']) {
+      expect(code(f), f).not.toMatch(/\.sync\(|loadAgentDefinitionsFromDirectory|registerAgentDefinitions/);
+    }
+    const scripts = (JSON.parse(text(join(ROOT, 'package.json'))) as { scripts: Record<string, string> }).scripts;
+    expect(scripts['production:sales:bootstrap']).toBe('node agents/sales/dist/cli/production-bootstrap.js');
+  });
+
   it('offers no bulk, wildcard or automatic release', () => {
     const control = text(join(ROOT, 'agents/sales/src/production/control.ts'));
     expect(control).not.toMatch(/release-all|releaseAll|--all\b/);
