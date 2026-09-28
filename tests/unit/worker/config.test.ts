@@ -34,6 +34,35 @@ describe('worker configuration', () => {
     expect(() => loadWorkerConfig(bad)).toThrow();
   });
 
+  describe('R4_BUILD_REF (R4-I deployment build identity, diagnostic only)', () => {
+    it('is optional: unset or blank yields no build ref', () => {
+      expect(loadWorkerConfig(env).buildRef).toBeNull();
+      expect(loadWorkerConfig({ ...env, R4_BUILD_REF: '' }).buildRef).toBeNull();
+      expect(loadWorkerConfig({ ...env, R4_BUILD_REF: '   ' }).buildRef).toBeNull();
+    });
+
+    it('keeps an immutable reference exactly (trimmed)', () => {
+      expect(loadWorkerConfig({ ...env, R4_BUILD_REF: '0337a34b712b1bf9e758b8335ee532d6cf29ab05' }).buildRef).toBe('0337a34b712b1bf9e758b8335ee532d6cf29ab05');
+      expect(loadWorkerConfig({ ...env, R4_BUILD_REF: '  0337a34b712b1bf9e758b8335ee532d6cf29ab05\n' }).buildRef).toBe('0337a34b712b1bf9e758b8335ee532d6cf29ab05');
+      expect(loadWorkerConfig({ ...env, R4_BUILD_REF: 'r4-i.2026-09-28_1' }).buildRef).toBe('r4-i.2026-09-28_1');
+    });
+
+    it.each([
+      ['oversized', 'a'.repeat(65)],
+      ['whitespace inside', '0337a34 dirty'],
+      ['a URL with credentials', 'postgres://u:p@host/db'],
+      ['a leading separator', '-rf'],
+      ['a slash (branch-like)', 'refs/heads/main'],
+    ])('refuses %s without echoing the value', (_name, value) => {
+      expect(() => loadWorkerConfig({ ...env, R4_BUILD_REF: value })).toThrow(/R4_BUILD_REF must be/);
+      try {
+        loadWorkerConfig({ ...env, R4_BUILD_REF: value });
+      } catch (error) {
+        expect((error as Error).message).not.toContain(value);
+      }
+    });
+  });
+
   it('generates distinct, log-safe worker ids', () => {
     const a = defaultWorkerId();
     const b = defaultWorkerId();

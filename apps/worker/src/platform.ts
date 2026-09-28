@@ -122,7 +122,8 @@ export async function createWorkerPlatform(config: WorkerConfig, bindings: Worke
         workerId: config.workerId,
         executionMode: bindings.presence?.executionMode ?? 'test',
         compatibility: workerCompatibility(await coreSchemaHead(), bindings.presence?.runtimeProfile ?? UNPROFILED_RUNTIME),
-        buildRef: assertBuildRef(bindings.presence?.buildRef ?? null),
+        // The deployment's R4_BUILD_REF (config) wins over a composition-supplied ref; both are diagnostic only.
+        buildRef: assertBuildRef(config.buildRef ?? bindings.presence?.buildRef ?? null),
       },
       freshForMs: config.leaseDurationMs,
       heartbeatIntervalMs: config.heartbeatIntervalMs,

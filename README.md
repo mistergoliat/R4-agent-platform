@@ -111,6 +111,7 @@ ejecutan con `FakeModelProvider` y la capability sintética
 | `R4_WORKER_LEASE_MS` | `30000` | Duración del lease |
 | `R4_WORKER_HEARTBEAT_MS` | `10000` | Debe ser ≤ lease/2 |
 | `R4_WORKER_POLL_MS` | `1000` | Intervalo de polling cuando no hay trabajo |
+| `R4_BUILD_REF` | — (vacío ⇒ `NULL`) | Referencia inmutable del despliegue (SHA Git), entregada por el despliegue; se registra en `worker_presence.build_ref`. Sólo diagnóstico: no afecta compatibilidad ni readiness |
 | `R4_EXEC_MAX_ITERATIONS` | `50` | Techo por run (el budget de la task puede reducirlo) |
 | `R4_EXEC_MAX_MODEL_CALLS` | `50` | 〃 |
 | `R4_EXEC_MAX_READ_CALLS` | `50` | 〃 |
@@ -292,7 +293,7 @@ R4_EXECUTION_MODE=production … npm run production:sales:plan    # qué correr�
 R4_EXECUTION_MODE=production … npm run production:sales:gateway # proceso de canal (webhook público + dispatcher)
 R4_EXECUTION_MODE=production … npm run production:sales:worker  # worker de producción (modelo real; R4_PROD_ALLOW_NETWORK=true)
 R4_EXECUTION_MODE=production … npm run production:sales:smoke   # smoke real con identidad allowlisted; nunca habilita autonomía
-npm run test:mutation:worker-readiness     # 14 mutaciones de readiness del worker: todas deben ser detectadas
+npm run test:mutation:worker-readiness     # 15 mutaciones de readiness del worker: todas deben ser detectadas
 
 curl -s $GATEWAY/health     # liveness del proceso gateway
 curl -s $GATEWAY/ready      # readiness del CANAL (BD, esquema, controles, canal) — nunca depende de workers; la del balanceador

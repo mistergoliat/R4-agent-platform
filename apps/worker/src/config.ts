@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { workerIdSchema } from '@r4/contracts';
 import { assertExecutionPolicy, type ExecutionPolicy } from '@r4/agent-kernel';
-import { DEFAULT_MAX_RUN_FAILURE_RECOVERIES, assertLeaseTiming } from '@r4/task-runtime';
+import { DEFAULT_MAX_RUN_FAILURE_RECOVERIES, assertBuildRef, assertLeaseTiming } from '@r4/task-runtime';
 import { contextCompilationPolicySchema, type ContextCompilationPolicyInput } from '@r4/context-compiler';
 
 const int = (min: number) => z.coerce.number().int().min(min);
@@ -37,6 +37,8 @@ const configSchema = z.object({
   R4_CONTEXT_RECENT_TURNS: int(1).default(20),
   R4_CONTEXT_COMPACTION_CHUNK: int(1).default(10),
   R4_CONTEXT_EXPIRED_EVIDENCE: z.enum(['include', 'exclude']).default('include'),
+  // R4-I: immutable deployment reference (e.g. the deployed Git SHA), supplied by the deployment — never derived here.
+  R4_BUILD_REF: z.string().optional(),
 });
 
 export interface WorkerConfig {
@@ -53,6 +55,12 @@ export interface WorkerConfig {
   readonly execution: ExecutionPolicy;
   /** R4-C2: how the Context Compiler selects and bounds each model input. */
   readonly context: ContextCompilationPolicyInput;
+  /**
+   * (R4-I) Immutable deployment reference (`R4_BUILD_REF`), recorded as
+   * `worker_presence.build_ref`. Diagnostic only: never part of
+   * compatibility, readiness, leases or fencing. Absent ⇒ null.
+   */
+  readonly buildRef?: string | null;
 }
 
 /**
@@ -95,6 +103,8 @@ export function loadWorkerConfig(env: NodeJS.ProcessEnv): WorkerConfig {
       expiredEvidence: c.R4_CONTEXT_EXPIRED_EVIDENCE,
       conversation: { recentTurns: c.R4_CONTEXT_RECENT_TURNS, compaction: { enabled: true, chunkTurns: c.R4_CONTEXT_COMPACTION_CHUNK } },
     },
+    // Unset or blank ⇒ null (no build identity); anything else must be a bounded, log-safe reference.
+    buildRef: c.R4_BUILD_REF?.trim() || null,
   };
   validateWorkerConfig(config);
   return config;
@@ -103,6 +113,14 @@ export function loadWorkerConfig(env: NodeJS.ProcessEnv): WorkerConfig {
 /** Cross-field rules, also applied to programmatic configuration. */
 export function validateWorkerConfig(config: WorkerConfig): void {
   workerIdSchema.parse(config.workerId);
+  if (config.buildRef !== undefined && config.buildRef !== null) {
+    try {
+      assertBuildRef(config.buildRef);
+    } catch {
+      // The value itself is never echoed: a misconfigured variable could hold something sensitive.
+      throw new Error('invalid configuration:\nR4_BUILD_REF must be 1-64 characters [A-Za-z0-9._-], starting with a letter or digit');
+    }
+  }
   assertLeaseTiming({ leaseDurationMs: config.leaseDurationMs, heartbeatIntervalMs: config.heartbeatIntervalMs });
   assertExecutionPolicy(config.execution);
   const context = contextCompilationPolicySchema.safeParse(config.context);

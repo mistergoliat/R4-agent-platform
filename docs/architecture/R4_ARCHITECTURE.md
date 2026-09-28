@@ -1554,8 +1554,11 @@ acotada (`claim_loop_error`, `shutting_down`), `started_at`,
 - **Compatibilidad = contrato de ejecución.** `<cabeza de esquema Core>:<perfil
   de runtime>` (p. ej. `0008_worker_presence:sales-production@1`); nunca
   configuración, rollout, kill switch, host ni secretos. El gateway calcula la
-  esperada con el mismo código. `build_ref` es diagnóstico (nulo hasta que el
-  despliegue lo inyecte; nulo nunca impide readiness).
+  esperada con el mismo código. `build_ref` es diagnóstico: el despliegue lo
+  entrega explícitamente como `R4_BUILD_REF` (el SHA inmutable desplegado; el
+  worker nunca lo deriva de git ni de una rama) → `WorkerConfig.buildRef` →
+  presencia. Ausente ⇒ nulo, y nulo nunca impide readiness. Nunca participa en
+  compatibilidad, elegibilidad, modo, leases ni fencing.
 - **Quién cuenta.** Ejecución lista ⇔ ∃ fila con `execution_mode = production`,
   `state = ready`, no vencida y con la compatibilidad esperada. Workers
   shadow/test, vencidos, incompatibles, `not_ready` o `stopping` no cuentan.

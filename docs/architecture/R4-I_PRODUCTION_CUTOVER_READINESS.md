@@ -368,8 +368,11 @@ falta presencia de worker durable, genérica y con frescura acotada.
   ven en `checks.channel`. Sin secretos, URLs, entorno ni datos de cliente.
 - **Kill switch**: no participa (autonomía deshabilitada ⇒ worker sigue `ready`).
 - **Modelo**: sin llamada de readiness; validación estática al arrancar.
-- **`build_ref`**: columna nula y diagnóstica; el runtime aún no recibe SHA
-  (lo inyectará la tarea de despliegue reproducible). Nulo no afecta readiness.
+- **`build_ref`**: diagnóstico. El despliegue entrega el SHA Git inmutable como
+  `R4_BUILD_REF` (opcional; 1–64 caracteres `[A-Za-z0-9._-]`, recortado) y el
+  worker lo registra tal cual en `worker_presence.build_ref`; nunca lo deriva de
+  git ni de una rama. Ausente ⇒ `NULL`. No participa en compatibilidad ni
+  readiness; se ve en `checks.execution.workers.buildRefs` de `/ready/r4`.
 - **Ingress durante caída del worker**: `/ready` 200, inbound persistido
   (Task/input durables), `/ready/r4` 503; al volver un worker compatible el
   trabajo se procesa por la semántica normal de Tasks.

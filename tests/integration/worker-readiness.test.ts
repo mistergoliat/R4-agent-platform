@@ -189,6 +189,31 @@ describe('who counts toward production execution readiness', () => {
   });
 });
 
+describe('deployment build identity (R4_BUILD_REF → worker_presence.build_ref)', () => {
+  const SHA = '0337a34b712b1bf9e758b8335ee532d6cf29ab05';
+
+  it('persists the configured ref exactly; absent stays NULL; neither changes compatibility or readiness', async () => {
+    bed = await LiveOpsTestbed.start();
+    await started('NOREF', FAST);
+    const withoutRef = (await row('NOREF'))!;
+    expect(withoutRef.build_ref).toBeNull();
+    await started('SHA', { ...FAST, buildRef: SHA });
+    const withRef = (await row('SHA'))!;
+    expect(withRef.build_ref).toBe(SHA);
+    expect(withRef).toMatchObject({ execution_mode: withoutRef.execution_mode, compatibility: withoutRef.compatibility, state: 'ready', fresh: true });
+    expect(await get('/ready/r4')).toMatchObject({ code: 200, body: { checks: { execution: { status: 'ready', expected: { compatibility: withoutRef.compatibility }, workers: { ready: 2, incompatible: 0, buildRefs: [SHA] } } } } });
+  });
+
+  it('a different build ref alone never makes a worker compatible, nor an incompatible one eligible', async () => {
+    bed = await LiveOpsTestbed.start();
+    await started('OLD', { ...FAST, buildRef: SHA, presence: { executionMode: 'production', runtimeProfile: 'sales-production@0' } });
+    await started('SHADOW', { ...FAST, buildRef: SHA, presence: { executionMode: 'shadow', runtimeProfile: 'sales-production@1' } });
+    expect(await get('/ready/r4')).toMatchObject({ code: 503, body: { checks: { execution: { workers: { ready: 0, incompatible: 1, otherMode: 1, buildRefs: [] } } } } });
+    await started('OTHER', { ...FAST, buildRef: 'a'.repeat(40) });
+    expect(await get('/ready/r4')).toMatchObject({ code: 200, body: { checks: { execution: { workers: { ready: 1, buildRefs: ['a'.repeat(40)] } } } } });
+  });
+});
+
 describe('failures', () => {
   it('schema not current: channel and aggregate NOT ready (even with a ready worker); a worker refuses to boot on it', async () => {
     bed = await LiveOpsTestbed.start();
@@ -270,7 +295,7 @@ describe('readiness has no customer effect and exposes no secret', () => {
   it('readiness output and worker_presence rows carry no credential, URL, environment or customer data', async () => {
     bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER] });
     await bed.customer(CUSTOMER, 'wamid.sec.1', 'mi dirección es Calle Secreta 123');
-    await started('A', FAST);
+    await started('A', { ...FAST, buildRef: '0337a34b712b1bf9e758b8335ee532d6cf29ab05' });
     await started('S', { ...FAST, presence: { executionMode: 'shadow', runtimeProfile: 'sales-shadow@1' } });
     const texts = [(await get('/ready')).raw, (await get('/ready/r4')).raw, JSON.stringify(await bed.rows('select row_to_json(p)::text as r from worker_presence p'))];
     const forbidden = [bed.db.url, new URL(bed.db.url).password, 'postgres://', ACCESS_TOKEN, APP_SECRET, VERIFY_TOKEN, IDENTITY_KEY, CUSTOMER, 'Calle Secreta', 'R4_'];

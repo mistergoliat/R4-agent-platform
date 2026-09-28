@@ -28,9 +28,9 @@ afterEach(async () => {
   bed = null;
 });
 
-function startWorker(workerId: string): ChildProcess {
+function startWorker(workerId: string, extra: Record<string, string> = {}): ChildProcess {
   const proc = spawn(process.execPath, [WORKER_CHILD], {
-    env: { ...process.env, ...bed!.env, R4_WORKER_ID: workerId, R4_WORKER_LEASE_MS: String(LEASE_MS), R4_WORKER_HEARTBEAT_MS: '250', R4_WORKER_POLL_MS: '20', R4_LOG_LEVEL: 'silent' },
+    env: { ...process.env, ...bed!.env, ...extra, R4_WORKER_ID: workerId, R4_WORKER_LEASE_MS: String(LEASE_MS), R4_WORKER_HEARTBEAT_MS: '250', R4_WORKER_POLL_MS: '20', R4_LOG_LEVEL: 'silent' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   children.push(proc);
@@ -55,10 +55,15 @@ async function r4() {
 describe('worker process SIGKILL', () => {
   it('a killed worker expires without cleanup; readiness survives through another worker and fails when none is left', async () => {
     bed = await LiveOpsTestbed.start();
-    const a = startWorker('proc-a');
-    const b = startWorker('proc-b');
+    const a = startWorker('proc-a', { R4_BUILD_REF: '0337a34b712b1bf9e758b8335ee532d6cf29ab05' });
+    const b = startWorker('proc-b', { R4_BUILD_REF: '' });
     await until(async () => (await r4()).execution.workers.ready === 2);
     expect((await r4()).code).toBe(200);
+    // R4_BUILD_REF from the process environment lands verbatim; blank ⇒ NULL; the contract is the same for both.
+    expect(await bed.rows(`select worker_id, build_ref, compatibility from worker_presence order by worker_id`)).toEqual([
+      { worker_id: 'proc-a', build_ref: '0337a34b712b1bf9e758b8335ee532d6cf29ab05', compatibility: '0008_worker_presence:sales-production@1' },
+      { worker_id: 'proc-b', build_ref: null, compatibility: '0008_worker_presence:sales-production@1' },
+    ]);
 
     a.kill('SIGKILL');
     await killed(a);

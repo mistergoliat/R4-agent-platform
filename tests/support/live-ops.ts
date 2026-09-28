@@ -128,6 +128,7 @@ export class LiveOpsTestbed {
     };
     const worker = await createWorkerPlatform(
       {
+        ...(overrides.buildRef === undefined ? {} : { buildRef: overrides.buildRef }),
         databaseUrl: this.db.url, logLevel: 'silent', dbPoolMax: 3, workerId, leaseDurationMs: overrides.leaseDurationMs ?? 60_000, heartbeatIntervalMs: overrides.heartbeatIntervalMs ?? 10_000, pollIntervalMs: 20, maxRunRecoveries: 3, maxRunFailureRecoveries: 1,
         execution: { maxIterations: 20, maxModelCalls: 20, maxReadCapabilityCalls: 20, maxRunDurationMs: 60_000, modelCallTimeoutMs: 10_000, maxWriteActions: 50 },
         context: { budget: { mode: 'unbounded' } },
@@ -197,6 +198,8 @@ export interface WorkerOverridesForTest {
   readonly heartbeatIntervalMs?: number;
   readonly presence?: WorkerPresenceBinding;
   readonly admission?: WorkerAdmission;
+  /** WorkerConfig.buildRef (what R4_BUILD_REF becomes). */
+  readonly buildRef?: string | null;
 }
 
 /** Scripted decisions (the model-facing protocol). */

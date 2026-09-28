@@ -95,6 +95,11 @@ const MUTATIONS = [
     edits: [{ file: PLATFORM, from: '    const worker = new Worker({', to: '    await presence.progressed();\n    const worker = new Worker({' }],
     tests: [it('publishes nothing before the loop runs')],
   },
+  {
+    name: 'M13 the deployment build ref leaks into the execution-contract compatibility',
+    edits: [{ file: PLATFORM, from: "compatibility: workerCompatibility(await coreSchemaHead(), bindings.presence?.runtimeProfile ?? UNPROFILED_RUNTIME),", to: "compatibility: workerCompatibility(await coreSchemaHead(), `${bindings.presence?.runtimeProfile ?? UNPROFILED_RUNTIME}${config.buildRef ? `+${config.buildRef}` : ''}`)," }],
+    tests: [it('persists the configured ref exactly')],
+  },
 ];
 
 function vitest(args, reportFailure = false) {
