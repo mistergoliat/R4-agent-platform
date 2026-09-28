@@ -550,10 +550,21 @@ Checkpoint estable (no cierre de fase):
 | Offline E2E | PASS |
 | Mutations | PASS |
 | Transcript / outbound deduplication correction audit | PASS (no migration) |
-| Live canary validation | PENDING |
-| Operator identity | PENDING |
+| Production WhatsApp cutover (R4 sole owner) | BLOCKED pre-cutover — [readiness](../architecture/R4-I_PRODUCTION_CUTOVER_READINESS.md) §5 |
+| Live harness evidence | PENDING |
 | Final audit | PENDING |
 | **R4-I overall** | **IN PROGRESS** |
+
+**Gate de cierre revisado (decisión de proyecto, 2026-09-28):** R4-I cierra con
+(1) el número productivo de WhatsApp bajo R4 como único dueño y único escritor
+outbound (sin coexistencia con CRM/n8n) y (2) evidencia live del harness
+(inbound durable → Task → modelo real → OutboundMessage → aceptación de Meta →
+callbacks → evaluación G; dedupe, respuesta obsoleta, `unknown`, kill switch).
+La identidad del operador **no** bloquea I (plano CRM/operador; R4 conserva
+`TrustedHumanContext`). Las capacidades comerciales (Customer, Catalog,
+Shipping, Quote) **no** bloquean I: su ausencia es evidencia para R4-J. Esto
+reemplaza la decisión D-1 (c) (número canary separado). Orden de fases sin
+cambio: I → J (Sales Autonomy) → K → L.
 
 Pregunta: ¿puede R4 operar contra usuarios e integraciones reales bajo una
 frontera de producción explícita, reversible y auditable, sin perder
