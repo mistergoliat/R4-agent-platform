@@ -6,6 +6,7 @@ last_reviewed: 2026-09-28
 r4_baseline: 34e83c687a8375a29fbabe55166a6652c6b1da2d (R4-I PRE-CUTOVER BASELINE; HEAD = origin/main)
 r4_production_control_baseline: 9c3e080e41d6496aa7aa9916a55ed428c3fec784 (D-5/D-6 implementados offline sobre este commit; §8)
 r4_worker_readiness_baseline: 8c366fbd52e40549654eb5e09cc46e3efc3da956 (auditoría de readiness del worker; §9)
+r4_worker_readiness_implementation_baseline: b561178b2324a525b3ce538651cdf14aa1310dc3 (0008 + presencia + `/ready/r4` implementados offline sobre este commit; §9)
 crm_ref: CRM-Customer-360 @ 8298723 (sólo lectura; working tree limpio)
 supersedes: decisión D-1 (c) de R4-I_CRM_WHATSAPP_AUDIT.md — reemplazada por la decisión de proyecto "R4 dueño del número productivo" (tarea de cutover R4-I, 2026-09-28)
 ---
@@ -104,8 +105,9 @@ la revocación del token es más fuerte que cualquier parche.
 | Adapter de canal | `@r4-adapters/whatsapp-cloud`; exige `R4_WHATSAPP_APP_SECRET`, `R4_WHATSAPP_VERIFY_TOKEN`, `R4_WHATSAPP_ACCESS_TOKEN`, `R4_WHATSAPP_PHONE_NUMBER_ID` (numérico); `R4_WHATSAPP_GRAPH_VERSION`, `R4_WHATSAPP_GRAPH_BASE_URL` (https si no es loopback; red sólo con `R4_PROD_ALLOW_NETWORK=true`) | Fail-closed; firma siempre exigida; sólo acepta el `phone_number_id` configurado |
 | Fixtures/shadow | `assertProductionProfile` rechaza `FIXTURE/SHADOW`; el gateway rechaza un outbound de tipo distinto al declarado | Fail-closed |
 | Arranque del gateway | esquema al día (`migrationStatus`), controles legibles, perfil = declarado | Fail-closed |
-| `/ready` del gateway | DB + migraciones + controles legibles | Correcto (no false-green); `/health` es liveness |
-| Worker | `production:sales:worker`; exige modelo `R4_MODEL_*` y red | **Sin superficie de health/readiness** (proceso sin HTTP) |
+| `/ready` del gateway | DB + migraciones + controles legibles — readiness del **canal**; no depende de workers | Correcto (no false-green); `/health` es liveness |
+| `/ready/r4` del gateway | `/ready` **y** ≥ 1 worker de producción fresco, compatible y `ready` (`worker_presence`, reloj de BD) | Agregado de la plataforma (§9) |
+| Worker | `production:sales:worker`; exige modelo `R4_MODEL_*` y red; publica presencia durable renovada por el progreso de su bucle | Sin HTTP; su readiness se observa en `/ready/r4` (§9) |
 | Kill switch | `autonomy_controls`, creado deshabilitado por migración; lectura fallida = deshabilitado | Legible y administrable desde el host productivo con `production:sales:control` (§8); B-3 resuelto offline |
 | Rollout | `R4_PROD_ROLLOUT_PERCENT` 0–100 + allow/deny por hash | 100 % admitido por código |
 | Secretos en logs | pino `redact` (authorization, cookie, `*.token`, `*.secret`, …); gateway sin request logging | Correcto |
@@ -123,7 +125,7 @@ la revocación del token es más fuerte que cualquier parche.
 | 5 | Fixtures no pueden entrar | Sí (código + tests) | `contract/live-ops-boundaries` |
 | 6 | Secretos/config de Meta disponibles | **NO** — ausentes en este entorno | `.env` sólo tiene `R4_MODEL_*`/DB local |
 | 7 | Health del gateway | **NO** — no desplegado | — |
-| 8 | Health del worker | **NO** — no desplegado; readiness del worker **bloqueada por decisión de persistencia** (B-5) | §9 |
+| 8 | Health del worker | Mecanismo implementado y validado **offline** (`/ready/r4`); **NO** verificado live — no desplegado | §9 |
 | 9 | Health de BD | **NO** — sin BD productiva | — |
 | 10 | Kill switch legible y ON | Legible por construcción; se cambia y se liberan retenciones `autonomy_disabled` con `production:sales:control` — **validado offline, no live** | §8 |
 | 11 | Secuencia de apagado del CRM | Definida (§2) — no ejecutable desde aquí (host CRM no identificado) | §2 |
@@ -160,14 +162,14 @@ la revocación del token es más fuerte que cualquier parche.
   agente, queda **sin respuesta indefinidamente** — el CRM ya no ve ese hilo.
   Requiere decisión (§6 D-5, D-6).
 - **B-4 (STOP L).** Sin artefacto/target de despliegue reproducible en el repo.
-- **B-5 — readiness del worker. BLOQUEADO — decisión de persistencia requerida
-  (§9).** El `/ready` del gateway puede responder listo con el worker muerto
-  (gateway vivo + BD + esquema + kill switch legible). Ningún primitivo
-  existente prueba entre procesos que haya un worker productivo compatible
-  vivo; la solución mínima requiere una tabla nueva (migración), que se revisa
-  por separado antes de crearla.
+- **B-5 — readiness del worker. RESUELTO OFFLINE (§9)** — sin validación live.
+  Registro original: el `/ready` del gateway podía responder listo con el
+  worker muerto (gateway vivo + BD + esquema + kill switch legible) y ningún
+  primitivo existente probaba entre procesos que hubiera un worker productivo
+  compatible vivo. Resuelto con la migración aditiva 0008 (`worker_presence`),
+  aprobada por separado, y la vista agregada `/ready/r4`.
 
-B-1 a B-4 no requieren migración ni cambio de protocolo (B-5 sí: §9). B-3 se resolvió con una
+B-1 a B-4 no requieren migración ni cambio de protocolo; B-5 requirió la migración aditiva 0008 (§9), sin cambio de protocolo. B-3 se resolvió con una
 única operación genérica nueva en `TemporalRuntime` (`releasePlatformHold`, la
 inversa de `holdForHumansWithin`: misma transición existente, sin estado ni
 ciclo de vida nuevos; §8).
@@ -299,14 +301,15 @@ comando), `npm run test:mutation:production-control`.
 **Siguen bloqueando el cutover live:** B-1 (target de despliegue y acceso,
 identificadores/credenciales productivos de Meta), verificación live de
 escritor único (CRM; n8n fuera de alcance, §1), B-4 (despliegue reproducible),
-B-5 (readiness del worker, §9), verificación del target de rollback y el
-cutover live en sí.
+verificación del target de rollback y el cutover live en sí. B-5 (readiness
+del worker) quedó resuelto offline (§9).
 
-## 9. Readiness del worker (B-5) — auditoría y gate de persistencia
+## 9. Readiness del worker (B-5) — auditoría e implementación
 
-Auditoría sobre `8c366fb` (sólo código; sin red, sin BD productiva). **No se
-implementó nada**: la solución mínima correcta requiere una migración y la
-tarea exige detenerse antes de crearla.
+Auditoría sobre `8c366fb` (sólo código; sin red, sin BD productiva). La
+solución mínima correcta requería una migración: la tarea se detuvo antes de
+crearla y la decisión se revisó por separado (D1–D9 aprobadas). Lo
+implementado está al final de esta sección.
 
 **Problema.** `/ready` del gateway = BD alcanzable + esquema al día +
 controles legibles. Con el worker muerto responde 200: el inbound se acepta y
@@ -338,50 +341,54 @@ proceso. Nada de esto es visible para otro proceso.
 **Conclusión:** SIN MECANISMO ADECUADO para readiness entre procesos. Hace
 falta presencia de worker durable, genérica y con frescura acotada.
 
-**Propuesta mínima (pendiente de revisión; no creada).**
+**Implementado (offline, sobre `b561178`).** Diseño completo en
+[arquitectura §19.6](R4_ARCHITECTURE.md). Resumen operativo:
 
-- *Hechos durables*: `worker_id` (mismo `workerIdSchema`), `execution_mode`
-  (`test|shadow|production`), `compatibility` (huella opaca: último id de
-  migración aplicado + huella de composición/perfil), `build_ref` opcional
-  (nulo hasta que el despliegue lo inyecte), `state` (`ready|not_ready|stopping`),
-  `reason` (código acotado, nunca texto libre de errores), `started_at`,
-  `heartbeat_at`, `expires_at` (reloj de BD).
-- *Esquema* (migración Core `0008_worker_presence`, aditiva):
-  `worker_presence(worker_id text pk, execution_mode text check, compatibility text,
-  build_ref text null, state text check, reason text null, started_at timestamptz,
-  heartbeat_at timestamptz, expires_at timestamptz)` + índice por `expires_at`.
-  Sin datos de cliente, sin entorno, sin más identidad de host que el
-  `worker_id` que ya se escribe en los leases.
-- *Cadencia*: `R4_WORKER_HEARTBEAT_MS` existente (10 s por defecto), en un
-  temporizador propio del worker, no sólo durante una task.
-- *Frescura*: cada latido escribe `expires_at = now() + R4_WORKER_LEASE_MS`
-  (30 s por defecto; `assertLeaseTiming` ya garantiza ≥ 2 latidos por
-  ventana). El lector compara con `now()` de la BD: sin umbral global ni
-  relojes de host.
-- *Estado*: `ready` sólo si el bucle de claim avanzó (ciclo completado o task
-  en ejecución con lease vivo) dentro de la ventana y el último ciclo no falló
-  por BD. La admisión rechazada por el kill switch **no** cambia el estado.
-- *Caída abrupta*: nada que limpiar; la fila vence sola en `expires_at`.
-  *Apagado ordenado*: `stop()` marca `stopping` en memoria antes de escribir
-  (ningún latido posterior vuelve a `ready`) y luego deja de reclamar; si la
-  escritura falla, la expiración lo cubre.
-- *Limpieza*: upsert por `worker_id` (id nuevo por proceso); cada latido borra
-  filas vencidas hace más de 24 h. Tabla acotada.
-- *Multi-worker*: ejecución lista ⇔ existe una fila `production`, `ready`, no
-  vencida y con `compatibility` igual a la del lector. Ningún host es
-  autoritativo.
-- *Integración con el gateway*: `/ready` sigue siendo la readiness del
-  **canal** (la que usaría un balanceador; su código de estado no cambia), para
-  que un worker caído nunca saque al gateway de rotación ni pierda webhooks.
-  Se agrega una vista agregada (p. ej. `/ready/r4`) = canal ∧ ejecución, con
-  diagnóstico `no_worker | stale | incompatible | not_ready(<reason>) |
-  stopping | ready` y conteos. Es la que exige el gate previo al cutover.
-- *Proveedor de modelo*: sólo validación estática de configuración (ya hecha
-  al arrancar); sin llamada de generación. Una caída del proveedor se maneja
-  como falla/recuperación de ejecución (ADR-028), no como readiness.
-- *Rollback*: tabla aditiva; el código anterior la ignora. Gateway nuevo con
-  worker viejo ⇒ `/ready` sin cambios y agregado "no listo" (correcto).
+| Superficie | Significado | Uso |
+|---|---|---|
+| `/health` | El proceso gateway vive | Liveness |
+| `/ready` | El canal puede aceptar y persistir trabajo (BD, esquema, controles, canal). **No** depende de workers | Readiness del balanceador/ingress |
+| `/ready/r4` | `/ready` **y** ≥ 1 worker de producción fresco, compatible y `ready` | Gate previo al cutover y observación operativa |
 
-**Estado:** B-5 **BLOQUEADO — decisión de persistencia requerida**. Tras su
-aprobación: migración, presencia en `@r4/worker`, vista agregada en el
-gateway, pruebas (unit/integration/recovery/mutaciones M1–M8) y documentación.
+- **Presencia** (`worker_presence`, 0008 aditiva): una fila por proceso worker,
+  renovada **sólo por progreso real** (ciclo del bucle completado — ocioso,
+  admisión rechazada o ejecutado — o renovación de lease con una task en
+  curso); `expires_at = clock_timestamp() + R4_WORKER_LEASE_MS` (30 s) con
+  renovaciones cada `R4_WORKER_HEARTBEAT_MS` (10 s). Un bucle atascado o un
+  proceso muerto vencen solos; un apagado ordenado publica `stopping` y nunca
+  vuelve a `ready`. Filas vencidas > 24 h se purgan al registrar y como
+  máximo cada hora (nunca en cada heartbeat).
+- **Quién cuenta**: sólo `execution_mode = production`, `state = ready`, no
+  vencida y `compatibility = 0008_worker_presence:sales-production@1` (cabeza
+  de esquema Core + versión del perfil; nada de configuración). Shadow, test,
+  vencidos, incompatibles, `not_ready` y `stopping` no cuentan.
+- **Diagnóstico** (`checks.execution.status`): `ready`, `no_worker`, `stale`,
+  `incompatible`, `not_ready`, `stopping`, `unavailable` (presencia ilegible:
+  nunca listo) + conteos, razones y `buildRefs`. Fallas de BD/esquema/canal se
+  ven en `checks.channel`. Sin secretos, URLs, entorno ni datos de cliente.
+- **Kill switch**: no participa (autonomía deshabilitada ⇒ worker sigue `ready`).
+- **Modelo**: sin llamada de readiness; validación estática al arrancar.
+- **`build_ref`**: columna nula y diagnóstica; el runtime aún no recibe SHA
+  (lo inyectará la tarea de despliegue reproducible). Nulo no afecta readiness.
+- **Ingress durante caída del worker**: `/ready` 200, inbound persistido
+  (Task/input durables), `/ready/r4` 503; al volver un worker compatible el
+  trabajo se procesa por la semántica normal de Tasks.
+- **Rollback**: gateway nuevo + worker anterior ⇒ `/ready/r4` no listo
+  (intencional). Worker nuevo sobre BD en 0007 ⇒ no arranca (`schema_not_current`).
+
+**Consecuencia para el cutover.** Antes de mover el webhook de Meta a R4:
+`/ready` **y** `/ready/r4` en 200 en el entorno productivo. Después del
+cutover, una caída temporal del worker se ve en `/ready/r4` sin afectar la
+aceptación durable del inbound (`/ready` es la única que debe usar un
+balanceador).
+
+**Evidencia.** `tests/integration/worker-readiness.test.ts` (worker muerto,
+retorno, multi-worker, shadow/test, incompatible, kill switch, apagado, bucle
+atascado, ingress durante caída, sin efectos, sin secretos, `build_ref`,
+BD/esquema), `tests/unit/worker/presence.test.ts`,
+`tests/unit/task-runtime/worker-presence.test.ts`,
+`tests/contract/worker-presence-boundaries.test.ts`,
+`tests/recovery/worker-presence-process.test.ts` (procesos reales, SIGKILL),
+`npm run test:mutation:worker-readiness`.
+
+**Estado:** B-5 **RESUELTO OFFLINE** — no validado live (no hay despliegue).

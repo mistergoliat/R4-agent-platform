@@ -1462,7 +1462,8 @@ número productivo queda sujeto a un gate posterior de paridad de operador/UI.
 | `createTaskWithInput`, `holdForHumansWithin`, `releasePlatformHold`, `submitInput(hold)`; `prepareCreate`/`createWithin` | `packages/task-runtime` | Cambios mínimos y genéricos de Core (sin canal ni dominio) |
 | `ProductionAdministration`, `PRODUCTION_CONTROL_ACTOR`; `openProductionAdministration` | `packages/live-ops`; `apps/channel-gateway` (composición, sin canal ni HTTP) | Administración productiva (D-5/D-6): kill switch global y liberación explícita de retenciones `autonomy_disabled`; atribuida a `platform:production-control`, nunca a un humano |
 | `WorkerAdmission` | `apps/worker` | Hook genérico opcional antes de cada claim |
-| `apps/channel-gateway` | app | Único proceso que habla con el proveedor: webhooks + dispatcher; `/health`, `/ready` |
+| `WorkerPresence`, `WorkerPresenceBinding`; `WorkerPresenceStore`, `executionReadinessStatus`, `workerCompatibility`; `PostgresWorkerPresenceStore` + 0008 | `apps/worker`; `packages/task-runtime`; `packages/persistence-postgres` | Presencia durable de workers renovada sólo por progreso real del bucle (§19.6) |
+| `apps/channel-gateway` | app | Único proceso que habla con el proveedor: webhooks + dispatcher; `/health`, `/ready` (canal), `/ready/r4` (agregado, §19.6) |
 | Rutas `/v1/production/*`, `/v1/tasks/:id/{thread,outbound,operator-messages}`, `/v1/outbound/:id/{resolve,cancel}` | `apps/api` | Plano del operador (sólo API) |
 | `@r4-adapters/whatsapp-cloud` | `adapters/channels/whatsapp-cloud` | Verificación, `X-Hub-Signature-256`, canonicalización por change, sólo el número canary, clasificación honesta; `./testing`: proveedor fake local |
 | `SALES_PRODUCTION_PROFILE`, `SALES_PRODUCTION_ACTION_POLICY`, `composeSalesProductionWorker`, `composeSalesGateway` | `agents/sales/src/production` | Composición de producción del pack |
@@ -1505,6 +1506,75 @@ Derivadas del estado durable (`ProductionStore.metrics`,
 `human_handoffs`, `approvals`, `run_failure_recoveries`, `model_calls`,
 escrituras por capability y latencias separadas (despacho, confirmación de
 entrega, turno del cliente). Telemetría `inbound.*`, `outbound.*`,
-`worker.admission.*`, `autonomy.control.changed` (sólo metadata).
+`worker.admission.*`, `worker.presence.changed`, `autonomy.control.changed` (sólo metadata).
 `artifacts/production-validation/<id>/`: manifest, bindings, results,
 effects, metrics, evaluation-summary, report (sin secretos ni PII).
+
+### 19.6 Readiness: canal, ejecución y agregado
+
+Un gateway sano y una BD sana **no** prueban que R4 pueda ejecutar trabajo.
+Tres preguntas distintas, tres respuestas distintas:
+
+| Superficie | Pregunta | Depende de |
+|---|---|---|
+| `/health` | ¿El proceso vive? | Nada (liveness) |
+| `/ready` | ¿El canal puede aceptar y persistir trabajo? | BD alcanzable, esquema al día, controles legibles, bindings del canal. **Nunca de workers**: una caída de ejecución no debe sacar al gateway de rotación ni perder webhooks |
+| `/ready/r4` | ¿La plataforma completa está lista? | `/ready` **y** al menos un worker de producción fresco, compatible y `ready` |
+
+**Presencia de worker (`worker_presence`, migración 0008).** Una fila por
+proceso worker (`worker_id` único por proceso: `host:pid:aleatorio`; nunca un
+host autoritativo), actualizada en sitio — no es historia de auditoría.
+Hechos: `execution_mode` (`test|shadow|production`), `compatibility`,
+`build_ref` (opcional), `state` (`ready|not_ready|stopping`), `reason`
+acotada (`claim_loop_error`, `shutting_down`), `started_at`,
+`heartbeat_at`, `expires_at`. Nada de canal, dominio, host, entorno ni secretos.
+
+- **Reloj de BD.** Cada renovación escribe `heartbeat_at = clock_timestamp()`
+  y `expires_at = clock_timestamp() + R4_WORKER_LEASE_MS`; el lector compara
+  `expires_at > clock_timestamp()`. Sin relojes de host.
+- **Renovación = progreso real.** `WorkerPresence` no tiene temporizador
+  propio: lo renueva cada ciclo completado del bucle de claim (ocioso,
+  admisión rechazada o ejecutado) y cada renovación exitosa del lease mientras
+  corre una task. Espaciado por `R4_WORKER_HEARTBEAT_MS` (10 s); ventana
+  `R4_WORKER_LEASE_MS` (30 s), con ≥ 2 renovaciones por ventana
+  (`assertLeaseTiming` y `pollIntervalMs × 2 ≤ leaseDurationMs`). Un proceso
+  vivo con el bucle atascado deja de renovar y vence.
+- **Arranque.** Nada se publica hasta que las comprobaciones de arranque
+  pasaron y el primer ciclo terminó.
+- **Fallas del bucle.** Un ciclo fallido no renueva; si el bucle falla durante
+  un intervalo de heartbeat completo, se publica `not_ready`
+  (`claim_loop_error`) si la BD aún acepta la escritura; si no, vence. Una
+  task que falla (ADR-028) es un ciclo completado, no una falla del worker.
+- **Apagado ordenado.** `stop()` deja de anunciar en memoria antes de dejar de
+  reclamar y persiste `stopping`; ninguna renovación posterior vuelve a
+  `ready` (guardia en SQL). Si la escritura falla, vence.
+- **Muerte abrupta.** Nada que limpiar: la fila vence sola.
+- **Limpieza.** Filas vencidas hace > 24 h se borran al registrar y como máximo
+  una vez por hora por worker — nunca en cada heartbeat.
+- **Compatibilidad = contrato de ejecución.** `<cabeza de esquema Core>:<perfil
+  de runtime>` (p. ej. `0008_worker_presence:sales-production@1`); nunca
+  configuración, rollout, kill switch, host ni secretos. El gateway calcula la
+  esperada con el mismo código. `build_ref` es diagnóstico (nulo hasta que el
+  despliegue lo inyecte; nulo nunca impide readiness).
+- **Quién cuenta.** Ejecución lista ⇔ ∃ fila con `execution_mode = production`,
+  `state = ready`, no vencida y con la compatibilidad esperada. Workers
+  shadow/test, vencidos, incompatibles, `not_ready` o `stopping` no cuentan.
+  Un worker sin declaración de presencia es `test`.
+- **Diagnóstico** de `/ready/r4` (`checks.execution`): `status` ∈
+  `ready | not_ready | stopping | incompatible | stale | no_worker |
+  unavailable` y conteos `ready, notReady, stopping, incompatible, stale,
+  otherMode`, razones y `buildRefs`. Presencia ilegible ⇒ `unavailable`
+  (nunca listo). Sin URLs, credenciales, entorno ni datos de cliente.
+- **Kill switch.** No participa: con la autonomía deshabilitada el worker
+  sigue sondeando y sigue `ready` (capacidad, no autoridad).
+- **Proveedor de modelo.** Sólo validación estática al arrancar; ninguna
+  readiness llama al modelo ni a Meta. Una caída del proveedor es falla y
+  recuperación de ejecución (ADR-028), no readiness.
+- **Ingress durante una caída de ejecución.** `/ready` sigue listo, el inbound
+  se persiste (Task/input durables) y `/ready/r4` informa no listo; al volver
+  un worker compatible el trabajo durable se procesa por la semántica normal
+  de Tasks. Sin segunda cola.
+- **Rollback.** 0008 es aditiva; el código anterior la ignora. Gateway nuevo con
+  worker anterior ⇒ `/ready/r4` no listo (intencional; no hay fallback que
+  trate la ausencia de presencia como lista). Un worker nuevo sobre una BD en
+  0007 no arranca (`schema_not_current`).

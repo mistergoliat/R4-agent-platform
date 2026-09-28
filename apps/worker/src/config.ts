@@ -110,6 +110,10 @@ export function validateWorkerConfig(config: WorkerConfig): void {
   if (!Number.isInteger(config.pollIntervalMs) || config.pollIntervalMs <= 0) {
     throw new Error('pollIntervalMs must be a positive integer');
   }
+  // (R4-I) An idle worker renews its presence once per poll cycle: a cycle must fit twice into the freshness window (the lease duration).
+  if (config.pollIntervalMs * 2 > config.leaseDurationMs) {
+    throw new Error(`pollIntervalMs (${config.pollIntervalMs}) must be at most half of leaseDurationMs (${config.leaseDurationMs})`);
+  }
   if (!Number.isInteger(config.maxRunRecoveries) || config.maxRunRecoveries < 0) {
     throw new Error('maxRunRecoveries must be a non-negative integer');
   }

@@ -3,6 +3,7 @@ import { KernelInterrupt, type AgentKernel, type KernelOutcome, type KernelSessi
 import { emitTelemetry, runWithCorrelation, type StructuredLogger } from '@r4/observability';
 import type { ExecutionRuntime } from '@r4/task-runtime';
 import type { Reconciler } from './reconciliation.js';
+import type { WorkerPresence } from './presence.js';
 
 export interface WorkerOptions {
   readonly workerId: string;
@@ -22,6 +23,12 @@ export interface WorkerOptions {
    * refused: admission fails closed.
    */
   readonly admission?: WorkerAdmission;
+  /**
+   * (R4-I) Durable presence, renewed only by progress: each completed cycle
+   * (idle, refused admission and executed alike) and each successful lease
+   * renewal while a task runs. A failing or stuck loop stops renewing.
+   */
+  readonly presence?: WorkerPresence;
   readonly logger: StructuredLogger;
 }
 
@@ -79,9 +86,11 @@ export class Worker {
         let cycle: WorkerCycle = { kind: 'idle' };
         try {
           cycle = await this.runOnce();
+          await this.#options.presence?.progressed();
         } catch (error) {
           // E.g. database unavailable while claiming: back off and retry.
           this.#options.logger.warn({ workerId: this.#options.workerId, err: describe(error) }, 'worker cycle failed');
+          await this.#options.presence?.cycleFailed();
         }
         if (cycle.kind === 'idle' && !this.#stopping) await this.#sleep(this.#options.pollIntervalMs);
       }
@@ -95,9 +104,12 @@ export class Worker {
    */
   async stop(): Promise<void> {
     this.#stopping = true;
+    // Stop advertising readiness before (and while) the loop winds down.
+    const leaving = this.#options.presence?.stop();
     this.#current?.abort(new KernelInterrupt('stopped'));
     this.#wake?.();
     await this.#loop;
+    await leaving;
     this.#loop = null;
     emitTelemetry(this.#options.logger, 'worker.stopped', { workerId: this.#options.workerId });
   }
@@ -175,7 +187,11 @@ export class Worker {
     let inFlight = false;
     const beat = async (): Promise<void> => {
       try {
-        if (await execution.renewLease(lease, leaseDurationMs)) return;
+        if (await execution.renewLease(lease, leaseDurationMs)) {
+          // Active work progressing: renews presence while the loop is busy with this task.
+          await this.#options.presence?.progressed();
+          return;
+        }
         const state = await execution.ownershipOf(lease).catch(() => 'unknown' as const);
         if (stopped) return;
         if (state === 'task_not_running') {

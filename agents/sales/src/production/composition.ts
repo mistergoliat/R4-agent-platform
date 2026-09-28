@@ -71,6 +71,7 @@ export interface SalesProductionWorker {
  *   actionPolicy  SALES_PRODUCTION_ACTION_POLICY (R4-D governs every proposal)
  *   admission     the durable kill switch, asked before every claim
  *   context       + the delivery state of earlier responses (honest: sent ≠ received)
+ *   presence      production mode + the profile version (execution-contract compatibility)
  * and refuses to compose unless production is proven, the profile is the
  * declared one, and every registered capability is available.
  */
@@ -96,6 +97,7 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
       contextSources: [new SalesWorkspaceContextSource(sales), new DeliveryStateContextSource(options.store)],
       actionPolicy: SALES_PRODUCTION_ACTION_POLICY,
       admission: controls,
+      presence: { executionMode: 'production', runtimeProfile: profileLabel(profile) },
     },
   };
 }

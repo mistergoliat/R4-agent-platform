@@ -292,6 +292,11 @@ R4_EXECUTION_MODE=production … npm run production:sales:plan    # qué correr�
 R4_EXECUTION_MODE=production … npm run production:sales:gateway # proceso de canal (webhook público + dispatcher)
 R4_EXECUTION_MODE=production … npm run production:sales:worker  # worker de producción (modelo real; R4_PROD_ALLOW_NETWORK=true)
 R4_EXECUTION_MODE=production … npm run production:sales:smoke   # smoke real con identidad allowlisted; nunca habilita autonomía
+npm run test:mutation:worker-readiness     # 14 mutaciones de readiness del worker: todas deben ser detectadas
+
+curl -s $GATEWAY/health     # liveness del proceso gateway
+curl -s $GATEWAY/ready      # readiness del CANAL (BD, esquema, controles, canal) — nunca depende de workers; la del balanceador
+curl -s $GATEWAY/ready/r4   # readiness AGREGADA: canal + ≥ 1 worker de producción fresco y compatible (checks.execution.status)
 ```
 
 | Variable | Default | Descripción |

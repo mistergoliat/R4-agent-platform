@@ -11,16 +11,19 @@ import {
   PostgresExecutionStore,
   PostgresMemoryStore,
   PostgresObservationStore,
+  PostgresWorkerPresenceStore,
+  coreSchemaHead,
   createPool,
   migrationStatus,
   type Pool,
 } from '@r4/persistence-postgres';
 import { ActionPolicyEngine, DEFAULT_ACTION_POLICY, type ActionPolicyConfigurationInput } from '@r4/policy-engine';
-import { ActionRuntime, ExecutionRuntime, TemporalRuntime } from '@r4/task-runtime';
+import { ActionRuntime, ExecutionRuntime, TemporalRuntime, UNPROFILED_RUNTIME, assertBuildRef, workerCompatibility, type WorkerExecutionMode } from '@r4/task-runtime';
 import { validateWorkerConfig, type WorkerConfig } from './config.js';
 import { DurableKernelSession } from './session.js';
 import { Reconciler } from './reconciliation.js';
 import { Worker, type WorkerAdmission } from './worker.js';
+import { WorkerPresence } from './presence.js';
 
 /**
  * What a deployment plugs in. C1 ships no real model provider and no Core
@@ -46,6 +49,20 @@ export interface WorkerBindings {
    * kill switch), asked before every claim. Absent ⇒ always admitted.
    */
   readonly admission?: WorkerAdmission;
+  /**
+   * (R4-I) What this worker advertises in its durable presence. Absent ⇒
+   * `test` mode, unprofiled: such a worker can never satisfy production
+   * readiness. Only a composition that proved its mode declares it.
+   */
+  readonly presence?: WorkerPresenceBinding;
+}
+
+export interface WorkerPresenceBinding {
+  readonly executionMode: WorkerExecutionMode;
+  /** Runtime profile version the worker composes (`<profile>@<version>`): half of its execution-contract compatibility. */
+  readonly runtimeProfile: string;
+  /** Diagnostic build/artifact reference, when the deployment supplies one. */
+  readonly buildRef?: string | null;
 }
 
 export interface WorkerOverrides {
@@ -58,6 +75,7 @@ export interface WorkerPlatform {
   readonly worker: Worker;
   readonly execution: ExecutionRuntime;
   readonly temporal: TemporalRuntime;
+  readonly presence: WorkerPresence;
   readonly pool: Pool;
   readonly logger: Logger;
   /** Stops the worker (releasing its lease) and closes connections. */
@@ -97,6 +115,20 @@ export async function createWorkerPlatform(config: WorkerConfig, bindings: Worke
       logger,
     });
 
+    // Published only by the loop's own progress — never before boot checks passed and the first cycle completed.
+    const presence = new WorkerPresence({
+      store: new PostgresWorkerPresenceStore(pool),
+      identity: {
+        workerId: config.workerId,
+        executionMode: bindings.presence?.executionMode ?? 'test',
+        compatibility: workerCompatibility(await coreSchemaHead(), bindings.presence?.runtimeProfile ?? UNPROFILED_RUNTIME),
+        buildRef: assertBuildRef(bindings.presence?.buildRef ?? null),
+      },
+      freshForMs: config.leaseDurationMs,
+      heartbeatIntervalMs: config.heartbeatIntervalMs,
+      logger,
+    });
+
     const worker = new Worker({
       workerId: config.workerId,
       execution,
@@ -109,12 +141,14 @@ export async function createWorkerPlatform(config: WorkerConfig, bindings: Worke
       // R4-E: due reconciliation of uncertain effects runs here (capabilities live in the worker), before any claim.
       reconciler: new Reconciler({ actions, executor: new ActionExecutor({ registry: bindings.capabilities, logger }), workerId: config.workerId, leaseDurationMs: config.leaseDurationMs, logger }),
       ...(bindings.admission ? { admission: bindings.admission } : {}),
+      presence,
       logger: logger.child({ workerId: config.workerId }),
     });
 
     return {
       worker,
       execution,
+      presence,
       pool,
       temporal,
       logger,

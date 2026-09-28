@@ -4,7 +4,7 @@ import type { Logger } from 'pino';
 import { PlatformError, systemClock, uuidV7Generator, type Clock, type IdGenerator } from '@r4/contracts';
 import { AgentRegistry } from '@r4/agent-registry';
 import { createLogger } from '@r4/observability';
-import { PostgresAgentDefinitionStore, PostgresExecutionStore, PostgresProductionStore, PostgresTaskRuntimeStore, checkDatabaseReadiness, createPool, migrationStatus, type Pool } from '@r4/persistence-postgres';
+import { PostgresAgentDefinitionStore, PostgresExecutionStore, PostgresProductionStore, PostgresTaskRuntimeStore, PostgresWorkerPresenceStore, checkDatabaseReadiness, coreSchemaHead, createPool, migrationStatus, type Pool } from '@r4/persistence-postgres';
 import {
   AutonomyControls,
   ChannelIngress,
@@ -20,7 +20,7 @@ import {
   type ProductionProfile,
   type ProductionSecrets,
 } from '@r4/live-ops';
-import { ExecutionRuntime, TaskRuntime, TemporalRuntime } from '@r4/task-runtime';
+import { ExecutionRuntime, TaskRuntime, TemporalRuntime, executionReadinessStatus, workerCompatibility, type ExecutionExpectation } from '@r4/task-runtime';
 import type { GatewayConfig } from './config.js';
 
 /** What the deploying composition plugs in (a pack's production composition). */
@@ -61,6 +61,14 @@ const MAX_WEBHOOK_BYTES = 1024 * 1024;
  * channel of the profile has an inbound and an outbound adapter of the
  * declared kind (a local fake is never a production binding); the schema is
  * current; and the autonomy controls are readable (kill switch state known).
+ *
+ * Readiness is split on purpose (R4-I):
+ *   /health    process liveness only.
+ *   /ready     CHANNEL readiness — this gateway can durably accept channel work
+ *              (database, schema, controls, channel bindings). Never depends on
+ *              workers: an execution outage must not take ingress out of rotation.
+ *   /ready/r4  AGGREGATE readiness — channel ready AND at least one fresh,
+ *              compatible production worker ready (worker_presence, DB clock).
  */
 export async function createGatewayPlatform(config: GatewayConfig, bindings: GatewayBindings, overrides: GatewayOverrides = {}): Promise<GatewayPlatform> {
   const production = assertProductionMode(bindings.production.config);
@@ -96,6 +104,9 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
     const ingress = new ChannelIngress({
       store, tasks, temporal, controls, adapters: bindings.inbound, delivery, config: production, secrets: bindings.production.secrets, profile, taskFactory: bindings.taskFactory, ids, logger,
     });
+    const presence = new PostgresWorkerPresenceStore(pool);
+    // A worker counts only if it runs in production and composes this exact execution contract.
+    const expectedWorker: ExecutionExpectation = { executionMode: 'production', compatibility: workerCompatibility(await coreSchemaHead(), profileLabel(profile)) };
     const dispatcher = new DeliveryDispatcher({ runtime: delivery, pollIntervalMs: production.outbound.pollIntervalMs, logger });
 
     // The instance is typed by the pino logger it was built with; expose it as a plain FastifyInstance.
@@ -110,12 +121,11 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
       void reply.status(typeof status === 'number' && status >= 400 && status < 500 ? status : 500).send({ error: 'webhook_failed' });
     });
     app.get('/health', (_request, reply) => reply.send({ status: 'ok' }));
-    app.get('/ready', async (_request, reply) => {
+    const channelReadiness = async () => {
       const database = await checkDatabaseReadiness(pool);
       const controlsReadable = await store.readControls().then(() => true, () => false);
-      const ready = database.ok && controlsReadable;
-      return reply.status(ready ? 200 : 503).send({
-        status: ready ? 'ready' : 'not_ready',
+      return {
+        ready: database.ok && controlsReadable,
         checks: {
           database: { ok: database.ok, pendingMigrations: database.pendingMigrations, modifiedMigrations: database.modifiedMigrations },
           autonomyControls: { ok: controlsReadable },
@@ -123,6 +133,28 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
           profile: profileLabel(profile),
           dispatcher: config.dispatch,
         },
+      };
+    };
+    // Kill switch state is deliberately NOT part of either: readiness is capability, not current authority.
+    const executionReadiness = async () => {
+      try {
+        const workers = await presence.summarizeWorkers(expectedWorker);
+        const status = executionReadinessStatus(workers);
+        return { ok: status === 'ready', status, expected: expectedWorker, workers };
+      } catch {
+        return { ok: false, status: 'unavailable' as const, expected: expectedWorker, workers: null };
+      }
+    };
+    app.get('/ready', async (_request, reply) => {
+      const channel = await channelReadiness();
+      return reply.status(channel.ready ? 200 : 503).send({ status: channel.ready ? 'ready' : 'not_ready', checks: channel.checks });
+    });
+    app.get('/ready/r4', async (_request, reply) => {
+      const [channel, execution] = await Promise.all([channelReadiness(), executionReadiness()]);
+      const ready = channel.ready && execution.ok;
+      return reply.status(ready ? 200 : 503).send({
+        status: ready ? 'ready' : 'not_ready',
+        checks: { channel: { ok: channel.ready, ...channel.checks }, execution },
       });
     });
     app.get<{ Params: { channel: string } }>('/v1/channels/:channel/webhook', (request, reply) => {

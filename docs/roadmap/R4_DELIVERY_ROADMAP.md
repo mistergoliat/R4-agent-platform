@@ -552,7 +552,7 @@ Checkpoint estable (no cierre de fase):
 | Transcript / outbound deduplication correction audit | PASS (no migration) |
 | Production WhatsApp cutover (R4 sole owner) | BLOCKED pre-cutover — [readiness](../architecture/R4-I_PRODUCTION_CUTOVER_READINESS.md) §5 |
 | Production control (kill switch D-5 + release of `autonomy_disabled` holds D-6) | RESOLVED OFFLINE — `production:sales:control`, [readiness](../architecture/R4-I_PRODUCTION_CUTOVER_READINESS.md) §8 (B-3); not live-validated |
-| Worker readiness (B-5) | BLOCKED — persistence decision required (worker presence migration proposed, not created), [readiness](../architecture/R4-I_PRODUCTION_CUTOVER_READINESS.md) §9 |
+| Worker readiness (B-5) | RESOLVED OFFLINE — migration 0008 `worker_presence`, `/ready` (channel) vs `/ready/r4` (aggregate), [readiness](../architecture/R4-I_PRODUCTION_CUTOVER_READINESS.md) §9, [architecture](../architecture/R4_ARCHITECTURE.md) §19.6; not live-validated |
 | Live harness evidence | PENDING |
 | Final audit | PENDING |
 | **R4-I overall** | **IN PROGRESS** |
@@ -627,7 +627,7 @@ canal (sin credenciales del número canary en este entorno) — ver §4.
 | Endpoints turns, artifacts, resume explícito | "No inventar endpoints de features no implementadas" (cancel, inputs, attention, respuestas humanas y handoff: R4-E) | `TaskRuntime.transitionTask` (interno) |
 | Llamadas LLM reales y routing de modelos | C1 prueba el harness, no calidad | `ModelProvider` SPI; `WorkerBindings.modelProvider` |
 | Entry point de producción del worker (`main`) | No existe proveedor real ni capabilities de Core: un `main` sería un placeholder | `runWorkerProcess(loadWorkerConfig(env), bindings)` |
-| `/health`, `/ready` del worker | Sin consumidor (sin deploy); liveness observable por telemetría y `last_heartbeat_at` | `createWorkerPlatform` |
+| HTTP `/health`, `/ready` del worker | Innecesario: desde R4-I la readiness del worker es presencia durable (`worker_presence`, 0008) observada en `/ready/r4` del gateway | `WorkerPresence` |
 | Protocolo de acción híbrido (tool calls nativas) | Constitución §27.11 sigue abierta; C1 usa salida estructurada | `parseAgentDecision` |
 | Decisión Delegate | R4-F+ (ProposeAction: R4-D; Wait, Consult, Handoff, manage_goal: R4-E) | `AgentDecision` (unión discriminada) |
 | Reintentos de modelo y reparación de decisiones inválidas | Reparación / reintento dentro de la run: sigue diferido (ADR-008). **Recuperación a nivel de run: resuelta post-H por ADR-028** | `model_failure` / `invalid_decision` clasificados; `runFailureDisposition` |

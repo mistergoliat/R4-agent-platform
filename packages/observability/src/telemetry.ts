@@ -111,6 +111,7 @@ export const TELEMETRY_EVENTS = [
   // R4-I governed production (metadata only: ids, statuses, codes, counts, latencies — never message text, addresses or secrets)
   'worker.admission.refused',
   'worker.admission.restored',
+  'worker.presence.changed',
   'autonomy.control.changed',
   'inbound.received',
   'inbound.duplicate',

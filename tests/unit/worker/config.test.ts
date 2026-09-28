@@ -27,6 +27,8 @@ describe('worker configuration', () => {
     ['missing database url', {}],
     ['heartbeat not fitting twice in the lease', { ...env, R4_WORKER_LEASE_MS: '1000', R4_WORKER_HEARTBEAT_MS: '600' }],
     ['unsafe worker id', { ...env, R4_WORKER_ID: 'bad id' }],
+    // R4-I: an idle loop renews presence once per cycle; a cycle must fit twice into the freshness window.
+    ['poll interval not fitting twice in the lease', { ...env, R4_WORKER_LEASE_MS: '1000', R4_WORKER_HEARTBEAT_MS: '200', R4_WORKER_POLL_MS: '600' }],
     ['zero iterations', { ...env, R4_EXEC_MAX_ITERATIONS: '0' }],
   ])('fails the boot on %s', (_name, bad) => {
     expect(() => loadWorkerConfig(bad)).toThrow();

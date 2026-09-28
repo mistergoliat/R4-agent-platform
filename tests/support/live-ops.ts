@@ -5,7 +5,7 @@ import { FakeModelProvider, type FakeModelStep } from '@r4/model-gateway';
 import { createSilentLogger } from '@r4/observability';
 import { PostgresProductionStore, type Pool } from '@r4/persistence-postgres';
 import { conversationKey, loadProductionConfig, type ProductionConfig, type ProductionSecrets } from '@r4/live-ops';
-import { createWorkerPlatform, type WorkerCycle, type WorkerPlatform } from '@r4/worker';
+import { createWorkerPlatform, type WorkerAdmission, type WorkerCycle, type WorkerPlatform, type WorkerPresenceBinding } from '@r4/worker';
 import { SALES_AGENT_DIR, migrateSales } from '@r4-sales/agent';
 import { composeSalesGateway, composeSalesProductionWorker } from '@r4-sales/agent/production';
 import { FakeWhatsAppProvider, notification, signNotification, type NotificationMessage, type NotificationStatus } from '@r4-adapters/whatsapp-cloud/testing';
@@ -118,15 +118,21 @@ export class LiveOpsTestbed {
     await this.store.setControl({ scope, autonomyEnabled: enabled, reason: enabled ? 'test: enable canary autonomy' : 'test: kill switch', changedBy: 'test', correlationId: 'test' });
   }
 
-  async worker(workerId = 'worker-1'): Promise<WorkerPlatform> {
+  /** The real production worker composition; `overrides` only for worker-readiness scenarios (timing, declared presence, admission). */
+  async worker(workerId = 'worker-1', overrides: WorkerOverridesForTest = {}): Promise<WorkerPlatform> {
     const composition = composeSalesProductionWorker({ pool: this.pool, store: this.store, production: this.production, modelProvider: this.model, logger: createSilentLogger() });
+    const bindings = {
+      ...composition.bindings,
+      ...(overrides.presence ? { presence: overrides.presence } : {}),
+      ...(overrides.admission ? { admission: overrides.admission } : {}),
+    };
     const worker = await createWorkerPlatform(
       {
-        databaseUrl: this.db.url, logLevel: 'silent', dbPoolMax: 3, workerId, leaseDurationMs: 60_000, heartbeatIntervalMs: 10_000, pollIntervalMs: 20, maxRunRecoveries: 3, maxRunFailureRecoveries: 1,
+        databaseUrl: this.db.url, logLevel: 'silent', dbPoolMax: 3, workerId, leaseDurationMs: overrides.leaseDurationMs ?? 60_000, heartbeatIntervalMs: overrides.heartbeatIntervalMs ?? 10_000, pollIntervalMs: 20, maxRunRecoveries: 3, maxRunFailureRecoveries: 1,
         execution: { maxIterations: 20, maxModelCalls: 20, maxReadCapabilityCalls: 20, maxRunDurationMs: 60_000, modelCallTimeoutMs: 10_000, maxWriteActions: 50 },
         context: { budget: { mode: 'unbounded' } },
       },
-      composition.bindings,
+      bindings,
       { logger: createSilentLogger() },
     );
     this.#workers.push(worker);
@@ -184,6 +190,13 @@ export class LiveOpsTestbed {
     await this.pool.end().catch(() => undefined);
     await this.db.drop().catch(() => undefined);
   }
+}
+
+export interface WorkerOverridesForTest {
+  readonly leaseDurationMs?: number;
+  readonly heartbeatIntervalMs?: number;
+  readonly presence?: WorkerPresenceBinding;
+  readonly admission?: WorkerAdmission;
 }
 
 /** Scripted decisions (the model-facing protocol). */

@@ -8,3 +8,4 @@ export * from './execution-store.js';
 export * from './memory-store.js';
 export * from './action-store.js';
 export * from './production-store.js';
+export * from './worker-presence-store.js';

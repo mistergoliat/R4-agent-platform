@@ -33,5 +33,5 @@ const provider = new ShadowRecordingModelProvider(new FakeModelProvider(scripted
 const workerConfig = loadWorkerConfig(process.env);
 const pool = createPool({ connectionString: workerConfig.databaseUrl, logger: createLogger({ service: 'shadow-sales-worker', level: 'silent' }), applicationName: `shadow-sales:${workerConfig.workerId}`.slice(0, 63), max: 2 });
 const sales = composeSales({ pool, domains: domains.ports, modelProvider: provider });
-await runWorkerProcess(workerConfig, { ...sales.bindings, actionPolicy: policyProfile(process.env.R4_SHADOW_POLICY_PROFILE).policy });
+await runWorkerProcess(workerConfig, { ...sales.bindings, actionPolicy: policyProfile(process.env.R4_SHADOW_POLICY_PROFILE).policy, presence: { executionMode: 'shadow', runtimeProfile: 'sales-shadow@1' } });
 emit('shadow.worker.started', { caseId, from, bindings: domains.composition.bindings.map((b) => `${b.domain}=${b.kind}`) });

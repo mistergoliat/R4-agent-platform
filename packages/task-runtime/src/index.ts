@@ -9,3 +9,4 @@ export * from './action-lifecycle.js';
 export * from './action-runtime.js';
 export * from './temporal-ports.js';
 export * from './temporal-runtime.js';
+export * from './worker-presence.js';
