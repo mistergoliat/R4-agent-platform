@@ -154,7 +154,7 @@ const SPECS: readonly CaseSpec[] = [
     tags: ['h-reference', 'correction'],
     script: [
       update([fact('budget', clpv(150_000))]),
-      read(CAPABILITY_IDS.catalogSearch, { text: 'mancuernas', limit: 10 }),
+      read(CAPABILITY_IDS.catalogSearch, { query: 'mancuernas', limit: 10 }),
       ...answer('Con $150.000 hay opciones; ¿buscas un par ajustable o fijas?'),
       update([fact('budget', clpv(250_000))]),
       ...answer('Anotado: $250.000. Las ajustables de 24 kg calzan con ese presupuesto.'),
@@ -173,7 +173,7 @@ const SPECS: readonly CaseSpec[] = [
     ],
     invariants: [...CONVERSING, behavioral('sales.capability_used', { capabilityId: CAPABILITY_IDS.catalogSearch }), behavioral('sales.no_goal_abandoned')],
     tags: ['h-reference', 'incidental-question'],
-    script: [read(CAPABILITY_IDS.catalogSearch, { text: 'barra olimpica', limit: 10 }), ...answer('Tenemos la barra olímpica de 20 kg y la técnica de 15 kg.'), ...generic(2)],
+    script: [read(CAPABILITY_IDS.catalogSearch, { query: 'barra olimpica', limit: 10 }), ...answer('Tenemos la barra olímpica de 20 kg y la técnica de 15 kg.'), ...generic(2)],
   },
   {
     id: 'H04',
@@ -186,7 +186,7 @@ const SPECS: readonly CaseSpec[] = [
     tags: ['h-reference', 'quote', 'governed-write'],
     script: [
       read(CAPABILITY_IDS.customerContext),
-      read(CAPABILITY_IDS.catalogSearch, { text: 'barra discos fierro', limit: 10 }),
+      read(CAPABILITY_IDS.catalogSearch, { query: 'barra discos fierro', limit: 10 }),
       update([add('BAR-OLY20'), add('PLT-IRON-50'), destination('Ñuñoa')]),
       read(CAPABILITY_IDS.shippingQuote, { destination: { commune: 'Ñuñoa' }, items: [{ productId: 'BAR-OLY20', quantity: 1 }, { productId: 'PLT-IRON-50', quantity: 1 }] }),
       proposeQuote(customerOnFile),
@@ -226,10 +226,10 @@ const SPECS: readonly CaseSpec[] = [
     constraints: ['the price observed on day 0 is stale on day 3'],
     tags: ['h-reference', 'stale-evidence', 'long-wait', 'quote'],
     script: [
-      read(CAPABILITY_IDS.productContext, { productId: 'BENCH-FID' }),
-      ...answer((v) => `El banco ajustable FID está a ${clp(v.product('BENCH-FID').unitPrice.amount)} y hay stock.`),
+      read(CAPABILITY_IDS.productContext, { productKey: 'BENCH-FID' }),
+      ...answer((v) => `El banco ajustable FID está a ${clp(v.product('BENCH-FID').price!.finalGross.amount)} y hay stock.`),
       read(CAPABILITY_IDS.customerContext),
-      read(CAPABILITY_IDS.productContext, { productId: 'BENCH-FID' }),
+      read(CAPABILITY_IDS.productContext, { productKey: 'BENCH-FID' }),
       update([add('BENCH-FID'), destination('Providencia')]),
       proposeQuote(customerOnFile),
       ...answer(quoteReply),
@@ -244,10 +244,10 @@ const SPECS: readonly CaseSpec[] = [
     invariants: [...CONVERSING, behavioral('sales.failure_observed', { capabilityId: CAPABILITY_IDS.catalogSearch, category: 'temporarily_unavailable' }), behavioral('sales.quotes_issued', { equals: 0 })],
     tags: ['h-reference', 'domain-outage'],
     script: [
-      read(CAPABILITY_IDS.catalogSearch, { text: 'bumper', limit: 10 }),
+      read(CAPABILITY_IDS.catalogSearch, { query: 'bumper', limit: 10 }),
       ...answer('Ahora no puedo consultar el catálogo; apenas vuelva te confirmo precio y stock.'),
-      read(CAPABILITY_IDS.catalogSearch, { text: 'bumper', limit: 10 }),
-      ...answer((v) => `Sí: el set de discos bumper de 100 kg está a ${clp(v.product('PLT-BUMP-100').unitPrice.amount)}.`),
+      read(CAPABILITY_IDS.catalogSearch, { query: 'bumper', limit: 10 }),
+      ...answer((v) => `Sí: el set de discos bumper de 100 kg está a ${clp(v.product('PLT-BUMP-100').price!.finalGross.amount)}.`),
     ],
   },
   // --- run failures (v2 with ADR-028: a failed run no longer ends the conversation) ---
@@ -347,7 +347,7 @@ const SPECS: readonly CaseSpec[] = [
     events: [fault('model', 'pass', 'the first call runs normally'), fault('model', 'trailing_prose', 'the second call is invalid (injected)'), input('¿Qué barras olímpicas tienen?')],
     invariants: [...CONVERSING, technical('shadow.protocol_failure_recorded'), technical('shadow.run_failure_recovered'), technical('shadow.read_before_failure_preserved')],
     tags: ['h-reference', 'fault-injection:provider', 'protocol-failure', 'run-failure-recovery', 'read'],
-    script: [read(CAPABILITY_IDS.catalogSearch, { text: 'barra', limit: 10 }), ...answer('Según el catálogo tenemos barras olímpicas; ¿para qué tipo de entrenamiento la buscas?')],
+    script: [read(CAPABILITY_IDS.catalogSearch, { query: 'barra', limit: 10 }), ...answer('Según el catálogo tenemos barras olímpicas; ¿para qué tipo de entrenamiento la buscas?')],
   },
   {
     id: 'H08H',
@@ -377,7 +377,7 @@ const SPECS: readonly CaseSpec[] = [
     tags: ['h-reference', 'fault-injection:provider', 'protocol-failure', 'run-failure-recovery', 'reconciliation', 'quote'],
     script: [
       read(CAPABILITY_IDS.customerContext),
-      read(CAPABILITY_IDS.productContext, { productId: 'RACK-SQ100' }),
+      read(CAPABILITY_IDS.productContext, { productKey: 'RACK-SQ100' }),
       update([add('RACK-SQ100'), destination('Maipú')]),
       proposeQuote(customerOnFile),
       ...answer(quoteReply),
@@ -399,7 +399,7 @@ const SPECS: readonly CaseSpec[] = [
     tags: ['h-reference', 'unknown-outcome', 'reconciliation', 'scheduler', 'quote'],
     script: [
       read(CAPABILITY_IDS.customerContext),
-      read(CAPABILITY_IDS.productContext, { productId: 'RACK-SQ100' }),
+      read(CAPABILITY_IDS.productContext, { productKey: 'RACK-SQ100' }),
       update([add('RACK-SQ100'), destination('Maipú')]),
       proposeQuote(customerOnFile),
       ...answer(quoteReply),
@@ -422,7 +422,7 @@ const SPECS: readonly CaseSpec[] = [
     tags: ['h-reference', 'approval', 'quote', 'human'],
     script: [
       read(CAPABILITY_IDS.customerContext),
-      read(CAPABILITY_IDS.productContext, { productId: 'DB-ADJ-24' }),
+      read(CAPABILITY_IDS.productContext, { productKey: 'DB-ADJ-24' }),
       update([add('DB-ADJ-24'), destination('Las Condes')]),
       proposeQuote(customerOnFile),
       ...answer(quoteReply),
@@ -454,7 +454,7 @@ const SPECS: readonly CaseSpec[] = [
     invariants: [...SAFE, technical('sales.task_status', { in: ['cancelled'] }), technical('shadow.input_rejected_after_terminal')],
     acceptableStops: ['cancelled'],
     tags: ['h-reference', 'cancellation', 'human'],
-    script: [read(CAPABILITY_IDS.catalogSearch, { text: 'trotadora', limit: 5 }), ...answer('No tenemos trotadoras en el catálogo actual.')],
+    script: [read(CAPABILITY_IDS.catalogSearch, { query: 'trotadora', limit: 5 }), ...answer('No tenemos trotadoras en el catálogo actual.')],
   },
   {
     id: 'H12B',
@@ -473,7 +473,7 @@ const SPECS: readonly CaseSpec[] = [
     invariants: [...SAFE, technical('sales.task_status', { in: ['cancelled'] }), technical('shadow.cancel_deferred_until_reconciled')],
     acceptableStops: ['cancelled'],
     tags: ['h-reference', 'cancellation', 'unknown-outcome', 'reconciliation', 'scheduler'],
-    script: [read(CAPABILITY_IDS.customerContext), read(CAPABILITY_IDS.productContext, { productId: 'BENCH-FID' }), update([add('BENCH-FID'), destination('La Florida')]), proposeQuote(customerOnFile)],
+    script: [read(CAPABILITY_IDS.customerContext), read(CAPABILITY_IDS.productContext, { productKey: 'BENCH-FID' }), update([add('BENCH-FID'), destination('La Florida')]), proposeQuote(customerOnFile)],
   },
   {
     id: 'H13',
@@ -542,7 +542,7 @@ const SPECS: readonly CaseSpec[] = [
     events: [input('wena, ando buscando unas pesas pa la casa, algo barato pa empezar, tipo mancuernas o kettlebell no se'), input('kettlebel de 16 tienen??'), input('ya y cuanto sale el envio a puente alto')],
     invariants: [...CONVERSING, behavioral('sales.capability_used', { capabilityId: CAPABILITY_IDS.catalogSearch })],
     tags: ['curated', 'colloquial', 'misspellings'],
-    script: [read(CAPABILITY_IDS.catalogSearch, { text: 'mancuernas kettlebell', limit: 10 }), ...answer('Tenemos kettlebell de 16 kg y mancuernas ajustables.'), ...generic(2)],
+    script: [read(CAPABILITY_IDS.catalogSearch, { query: 'mancuernas kettlebell', limit: 10 }), ...answer('Tenemos kettlebell de 16 kg y mancuernas ajustables.'), ...generic(2)],
   },
   {
     id: 'R02',
@@ -576,7 +576,7 @@ const SPECS: readonly CaseSpec[] = [
     events: [input('Me gustaría el power rack PR-200'), input('mmm pensándolo bien prefiero algo que ocupe menos espacio'), input('ok ese entonces, agrégalo por favor')],
     invariants: [...CONVERSING, behavioral('sales.capability_used', { capabilityId: CAPABILITY_IDS.productContext })],
     tags: ['curated', 'preference-change'],
-    script: [read(CAPABILITY_IDS.productContext, { productId: 'RACK-PR200' }), ...answer('El PR-200 está disponible.'), read(CAPABILITY_IDS.productContext, { productId: 'RACK-SQ100' }), ...answer('Una opción más compacta es el soporte de sentadilla SQ-100.'), update([add('RACK-SQ100')]), ...answer('Listo, agregué el SQ-100.')],
+    script: [read(CAPABILITY_IDS.productContext, { productKey: 'RACK-PR200' }), ...answer('El PR-200 está disponible.'), read(CAPABILITY_IDS.productContext, { productKey: 'RACK-SQ100' }), ...answer('Una opción más compacta es el soporte de sentadilla SQ-100.'), update([add('RACK-SQ100')]), ...answer('Listo, agregué el SQ-100.')],
   },
   {
     id: 'R05',
@@ -597,7 +597,7 @@ const SPECS: readonly CaseSpec[] = [
     events: [input('¿los discos de fierro de 50 kg le sirven a la barra olímpica de 20 kilos que venden?'), input('¿y los seguros también son compatibles?')],
     invariants: [...CONVERSING],
     tags: ['curated', 'grounding', 'compatibility'],
-    script: [read(CAPABILITY_IDS.productContext, { productId: 'PLT-IRON-50' }), ...answer('Según el catálogo, los discos de fierro de 50 kg son compatibles con la barra olímpica.'), ...generic(1)],
+    script: [read(CAPABILITY_IDS.productContext, { productKey: 'PLT-IRON-50' }), ...answer('Según el catálogo, los discos de fierro de 50 kg son compatibles con la barra olímpica.'), ...generic(1)],
   },
   {
     id: 'R07',
@@ -608,7 +608,7 @@ const SPECS: readonly CaseSpec[] = [
     events: [input('¿qué máquinas de cardio tienen? busco trotadora o bicicleta'), input('¿y el remo?')],
     invariants: [...CONVERSING],
     tags: ['curated', 'grounding', 'nonexistent-category'],
-    script: [read(CAPABILITY_IDS.catalogSearch, { category: 'cardio', limit: 10 }), ...answer('En cardio solo aparece el remo magnético R-10, y está descontinuado.'), ...generic(1)],
+    script: [read(CAPABILITY_IDS.catalogSearch, { query: 'cardio', limit: 10 }), ...answer('En cardio solo aparece el remo magnético R-10, y está descontinuado.'), ...generic(1)],
   },
 ];
 

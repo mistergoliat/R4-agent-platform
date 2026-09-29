@@ -1,0 +1,22 @@
+{
+  "name": "@r4-adapters/catalog-http",
+  "version": "0.0.0",
+  "private": true,
+  "description": "R4-J1B HTTP adapter of the Catalog port against catalog-service's v2 read contract (search, product context, item context): transport, authentication, deadline, schema validation and failure classification only — no Catalog business logic. Outside R4 Core. Not bound in production until catalog-service J1A passes the integration gate.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@r4-adapters/domains": "*",
+    "zod": "^4.6.0"
+  }
+}

@@ -20,7 +20,7 @@ function evidence(build: (f: SalesFixture) => void) {
 }
 
 describe('Sales grounding verification (catalog fixture, evidence available to the response)', () => {
-  const searched = evidence((f) => f.searchCatalog({ category: 'racks' }, ['RACK-PR200', 'RACK-PR300', 'BAR-OLY20']));
+  const searched = evidence((f) => f.searchCatalog({ query: 'rack barra' }, ['RACK-PR200', 'RACK-PR300', 'BAR-OLY20']));
 
   it('grounded product and grounded price', () => {
     const v = verifier.verify(claim({ type: 'price', entities: [{ name: 'Power Rack PR-200', kind: 'product', ref: null }], attributes: { amount: 289_990 } }), searched);
@@ -36,22 +36,30 @@ describe('Sales grounding verification (catalog fixture, evidence available to t
   it('grounded stock, and a stock claim contradicting the observation', () => {
     expect(classifyClaim({ type: 'stock' }, verifier.verify(claim({ type: 'stock', entities: [{ name: 'Power Rack PR-300 Pro', kind: 'product', ref: 'RACK-PR300' }], attributes: { status: 'out_of_stock' } }), searched))).toBe('GROUNDED_FACT');
     expect(classifyClaim({ type: 'stock' }, verifier.verify(claim({ type: 'stock', entities: [{ name: 'Power Rack PR-300 Pro', kind: 'product', ref: 'RACK-PR300' }], attributes: { status: 'in_stock' } }), searched))).toBe('UNSUPPORTED_CLAIM');
+    // Units are never grounded: the model sees no quantity in J1.
+    expect(classifyClaim({ type: 'stock' }, verifier.verify(claim({ type: 'stock', entities: [{ name: 'Power Rack PR-200', kind: 'product', ref: 'RACK-PR200' }], attributes: { units: 6 } }), searched))).toBe('UNSUPPORTED_CLAIM');
   });
 
-  it('compatibility between two grounded products needs a product context that states it', () => {
+  it('compatibility is never grounded by catalog evidence; frequently-bought-together grounds only a co-purchase relationship (J1B)', () => {
     const compat = claim({ type: 'compatibility', entities: [{ name: 'Power Rack PR-200', kind: 'product', ref: 'RACK-PR200' }, { name: 'Barra olímpica 20 kg', kind: 'product', ref: 'BAR-OLY20' }] });
     expect(classifyClaim(compat, verifier.verify(compat, searched))).toBe('UNSUPPORTED_RELATIONSHIP');
+    // RACK-PR200's context lists BAR-OLY20 as frequently bought together: still not compatibility.
     const withContext = evidence((f) => {
-      f.searchCatalog({ category: 'racks' }, ['RACK-PR200', 'BAR-OLY20']);
+      f.searchCatalog({ query: 'rack barra' }, ['RACK-PR200', 'BAR-OLY20']);
       f.productContext('RACK-PR200');
     });
-    expect(classifyClaim(compat, verifier.verify(compat, withContext))).toBe('GROUNDED_FACT');
+    expect(classifyClaim(compat, verifier.verify(compat, withContext))).toBe('UNSUPPORTED_RELATIONSHIP');
+    const together = claim({ type: 'relationship', text: 'suelen comprarse juntos', entities: compat.entities });
+    expect(classifyClaim(together, verifier.verify(together, withContext))).toBe('GROUNDED_FACT');
   });
 
   it('a category the observed catalog does not have is a nonexistent entity, even if a model "knows" it', () => {
     const v = verifier.verify(claim({ type: 'availability', entities: [{ name: 'cinta', kind: 'category', ref: null }, { name: 'elíptica', kind: 'category', ref: null }] }), searched);
     expect(classifyClaim({ type: 'availability' }, v)).toBe('NONEXISTENT_ENTITY');
-    expect(classifyClaim({ type: 'availability' }, verifier.verify(claim({ type: 'availability', entities: [{ name: 'discos', kind: 'category', ref: null }] }), searched))).toBe('GROUNDED_FACT');
+    // Only categories of observed results are evidence (the owner publishes no category list).
+    expect(classifyClaim({ type: 'availability' }, verifier.verify(claim({ type: 'availability', entities: [{ name: 'discos', kind: 'category', ref: null }] }), searched))).toBe('NONEXISTENT_ENTITY');
+    const discs = evidence((f) => f.searchCatalog({ query: 'discos' }, ['PLT-IRON-50']));
+    expect(classifyClaim({ type: 'availability' }, verifier.verify(claim({ type: 'availability', entities: [{ name: 'discos', kind: 'category', ref: null }] }), discs))).toBe('GROUNDED_FACT');
   });
 
   it('a product that exists in the catalog but was not observed is not grounded for that response', () => {

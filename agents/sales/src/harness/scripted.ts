@@ -31,6 +31,14 @@ export interface WorkspaceView {
   readonly quotes: { quoteNumber: string }[];
 }
 
+export interface CatalogProductView {
+  readonly name: string;
+  readonly price: { readonly kind: 'exact' | 'from'; readonly finalGross: { readonly amount: number } } | null;
+  readonly sellability: string;
+  /** A verbatim owner specification, or null when the evidence has none (never guessed). */
+  specification(name: string): string | null;
+}
+
 export class ContextView {
   readonly request: ModelRequest;
   readonly context: CompiledContext;
@@ -62,16 +70,25 @@ export class ContextView {
     return found;
   }
 
-  /** The newest current (not expired) catalog payload for a product: what a grounded answer may quote. */
-  product(productId: string): { name: string; unitPrice: { amount: number }; weightKg?: number; stock: { status: string }; alternatives?: string[]; footprintCm?: unknown } {
+  /**
+   * The newest current (not expired) catalog evidence for a product key: what
+   * a grounded answer may quote — the owner's price summary, availability and
+   * (from a product context) its verbatim specifications. Nothing is computed.
+   */
+  product(productKey: string): CatalogProductView {
     for (const o of this.observations().reverse()) {
       if (o.freshness === 'expired' || o.outcome !== 'succeeded') continue;
-      const payload = o.payload as { found?: boolean; product?: { productId: string }; results?: { productId: string }[] } | null;
-      if (o.capabilityId === CAPABILITY_IDS.productContext && payload?.found && payload.product?.productId === productId) return payload.product as never;
-      const hit = o.capabilityId === CAPABILITY_IDS.catalogSearch ? payload?.results?.find((r) => r.productId === productId) : undefined;
-      if (hit) return hit as never;
+      type Found = { status?: string; productKey?: string; facts?: { name: string; specifications: { name: string; value: string }[] }; derived?: { price: CatalogProductView['price']; availability: { sellability: string } } };
+      type Hit = { productKey: string; name: string; price: CatalogProductView['price']; availability: { sellability: string } };
+      const payload = o.payload as (Found & { results?: Hit[] }) | null;
+      if (o.capabilityId === CAPABILITY_IDS.productContext && payload?.status === 'found' && payload.productKey === productKey && payload.facts && payload.derived) {
+        const specifications = payload.facts.specifications;
+        return { name: payload.facts.name, price: payload.derived.price, sellability: payload.derived.availability.sellability, specification: (name) => specifications.find((s) => s.name === name)?.value ?? null };
+      }
+      const hit = o.capabilityId === CAPABILITY_IDS.catalogSearch ? payload?.results?.find((r) => r.productKey === productKey) : undefined;
+      if (hit) return { name: hit.name, price: hit.price, sellability: hit.availability.sellability, specification: () => null };
     }
-    throw new Error(`no current catalog evidence for ${productId}`);
+    throw new Error(`no current catalog evidence for ${productKey}`);
   }
 
   goals(): CompiledContextItem[] {

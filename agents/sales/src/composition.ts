@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import type { CatalogService, CustomerDirectory, QuoteService, ShippingService } from '@r4-adapters/domains';
+import type { CatalogPort, CustomerDirectory, QuoteService, ShippingService } from '@r4-adapters/domains';
 import { CapabilityRegistry } from '@r4/capability-runtime';
 import { systemClock, type Clock } from '@r4/contracts';
 import type { ModelProvider } from '@r4/model-gateway';
@@ -16,7 +16,7 @@ import { PostgresSalesStore } from './workspace/store.js';
 /** The domain owners the pack talks to — each behind its port (fixtures today; live adapters pending). */
 export interface SalesDomains {
   readonly customers: CustomerDirectory;
-  readonly catalog: CatalogService;
+  readonly catalog: CatalogPort;
   readonly shipping: ShippingService;
   readonly quotes: QuoteService;
 }

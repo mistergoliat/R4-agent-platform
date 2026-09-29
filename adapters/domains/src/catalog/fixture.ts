@@ -1,34 +1,61 @@
 import { AvailabilitySwitch } from '../shared/availability.js';
-import { DomainError, normalizeText, type CallOptions } from '../shared/errors.js';
-import { FIXTURE_CATALOG_UPDATED_AT, FIXTURE_PRODUCTS, type FixtureProduct } from './fixture-data.js';
-import type { CatalogSearchQuery, CatalogSearchResult, CatalogService, ProductDetail, ProductSummary, StockStatus } from './port.js';
+import { DomainError, normalizeText, type CallOptions, type Money } from '../shared/errors.js';
+import { FIXTURE_CATALOG_UPDATED_AT, FIXTURE_CATALOG_VALIDITY_MS, FIXTURE_PRODUCTS, type FixtureProductRecord, type FixtureVariantRecord } from './fixture-data.js';
+import type {
+  CatalogAvailabilitySummary,
+  CatalogFreshness,
+  CatalogItemContext,
+  CatalogItemContextRequest,
+  CatalogPort,
+  CatalogPriceSummary,
+  CatalogProductContext,
+  CatalogProvenance,
+  CatalogSearchAnswer,
+  CatalogSearchRequest,
+  CatalogSearchResult,
+  CatalogSellability,
+  CatalogSellabilityReason,
+} from './port.js';
 
-interface Record_ {
-  readonly product: FixtureProduct;
-  readonly recordVersion: number;
+/** What sibling fixture owners (Quote, Shipping) read about one sellable item. Fixture-only: not the port. */
+export interface FixtureOwnerItem {
+  readonly itemKey: string;
+  readonly name: string;
+  readonly unitPrice: Money;
+  readonly availableQuantity: number | null;
+  readonly sellability: CatalogSellability;
+  readonly weightKg: number;
+}
+
+interface Stored {
+  readonly product: FixtureProductRecord;
   readonly updatedAt: string;
 }
 
+const PROVENANCE: CatalogProvenance = { source: 'fixture', service: 'fixture-catalog', serviceBuildRef: null };
+const SELLABILITY_RANK: Record<CatalogSellability, number> = { sellable: 0, backorder: 1, check_with_staff: 2, not_sellable: 3 };
+const clp = (amount: number): Money => ({ amount, currency: 'CLP' });
+
 /**
- * In-memory Catalog owner for tests and local harness runs. It is the
- * authority for its data exactly like a real service would be: price and
- * stock can change between two reads (`setPrice`, `setStock`), every change
- * bumps the record version, and search applies no commercial rule — it only
- * filters by text, category, price and availability.
+ * In-memory Catalog OWNER for tests and local harness runs (R4-J1B shape).
+ * It stands in for catalog-service, so it — unlike any R4 consumer — derives
+ * sellability, price summaries and freshness from its own records, exactly
+ * as the owner is required to: price and stock can change between two reads
+ * (`setPrice`, `setStock`), `asOf` is the instant it read its records, and
+ * `validUntil` is its own declared window. Search ranks by the owner's own
+ * match signals and never hides unsellable products unless asked.
  */
-export class FixtureCatalog implements CatalogService {
+export class FixtureCatalog implements CatalogPort {
   /** What this implementation is, for a shadow composition's binding check (R4-H): an in-memory, deterministic owner. */
   readonly bindingKind = 'fixture' as const;
   readonly availability = new AvailabilitySwitch('catalog');
-  readonly #records = new Map<string, Record_>();
+  readonly #records = new Map<string, Stored>();
   readonly #now: () => Date;
   #reads = 0;
 
-  constructor(options: { products?: readonly FixtureProduct[]; now?: () => Date } = {}) {
+  constructor(options: { products?: readonly FixtureProductRecord[]; now?: () => Date } = {}) {
     this.#now = options.now ?? (() => new Date());
-    for (const product of options.products ?? FIXTURE_PRODUCTS) {
-      this.#records.set(product.productId, { product, recordVersion: 1, updatedAt: FIXTURE_CATALOG_UPDATED_AT });
-    }
+    for (const product of options.products ?? FIXTURE_PRODUCTS) this.#records.set(product.productKey, { product, updatedAt: FIXTURE_CATALOG_UPDATED_AT });
   }
 
   /** Number of calls answered (for "did the agent re-read?" assertions). */
@@ -36,74 +63,228 @@ export class FixtureCatalog implements CatalogService {
     return this.#reads;
   }
 
-  async search(query: CatalogSearchQuery, options?: CallOptions): Promise<CatalogSearchResult> {
+  async search(request: CatalogSearchRequest, options?: CallOptions): Promise<CatalogSearchAnswer> {
     await this.availability.enter(options);
     this.#reads += 1;
-    if (!Number.isInteger(query.limit) || query.limit < 1 || query.limit > 50) throw new DomainError('validation', 'invalid_limit', 'limit must be between 1 and 50');
-    const terms = query.text ? normalizeText(query.text).split(/\s+/).filter((t) => t.length > 1) : [];
-    const category = query.category ? normalizeText(query.category) : null;
-    const matches = [...this.#records.values()].filter(({ product }) => {
-      if (category !== null && normalizeText(product.category) !== category) return false;
-      if (query.maxUnitPrice !== undefined && product.unitPrice.amount > query.maxUnitPrice) return false;
-      if (query.inStockOnly && !isAvailable(product.stock.status)) return false;
-      if (terms.length === 0) return true;
-      const haystack = normalizeText([product.name, product.category, product.brand, product.description, ...product.tags].join(' '));
-      return terms.some((term) => haystack.includes(term));
-    });
+    const query = request.query.trim();
+    if (query.length < 2 || query.length > 120) throw new DomainError('validation', 'invalid_request', 'query must have 2 to 120 characters');
+    const limit = request.limit ?? 5;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 10) throw new DomainError('validation', 'invalid_request', 'limit must be between 1 and 10');
+    const freshness = this.#freshness(null, this.#now());
+    const normalized = normalizeText(query);
+    const tokens = normalized.split(/\s+/).filter((t) => t.length > 1);
+    const matches: { result: CatalogSearchResult; rank: number; order: number }[] = [];
+    let order = 0;
+    for (const { product } of this.#records.values()) {
+      order += 1;
+      // Owner policy: products hidden from the storefront are never offered by search.
+      if (!product.lifecycle.listed) continue;
+      const exactSku = [product.sku, ...product.variants.map((v) => v.sku)].some((sku) => normalizeText(sku) === normalized);
+      const exactName = normalizeText(product.name) === normalized;
+      const haystack = normalizeText([product.name, product.sku, product.category.name, ...product.searchTerms].join(' '));
+      const matched = tokens.filter((t) => haystack.includes(t)).length;
+      if (!exactSku && !exactName && matched === 0) continue;
+      const priceSummary = priceSummaryOf(product);
+      const filters = request.filters ?? {};
+      if (filters.categoryId !== undefined && product.category.id !== filters.categoryId) continue;
+      if (filters.maxUnitPrice !== undefined && (priceSummary === null || priceSummary.finalGross.amount > filters.maxUnitPrice)) continue;
+      if (filters.sellableOnly && availabilityOf(product).sellability !== 'sellable') continue;
+      const match = { type: exactSku ? 'exact_sku' : exactName ? 'exact_name' : 'partial', matchedTokens: exactSku || exactName ? Math.max(tokens.length, 1) : matched, totalTokens: Math.max(tokens.length, 1) };
+      matches.push({ rank: exactSku ? 1_000 : exactName ? 500 : matched, order, result: resultOf(product, match) });
+    }
+    matches.sort((a, b) => b.rank - a.rank || a.order - b.order);
     return {
-      results: matches.slice(0, query.limit).map((record) => summaryOf(record)),
-      totalMatches: matches.length,
-      categories: [...new Set([...this.#records.values()].map((r) => r.product.category))].sort(),
+      results: matches.slice(0, limit).map((m) => m.result),
+      completeness: { totalMatches: matches.length, truncated: matches.length > limit },
+      searchMode: 'lexical',
+      freshness,
     };
   }
 
-  async getProduct(productId: string, options?: CallOptions): Promise<ProductDetail | null> {
+  async getProductContext(productKey: string, options?: CallOptions): Promise<CatalogProductContext> {
     await this.availability.enter(options);
     this.#reads += 1;
-    const record = this.#records.get(productId);
-    return record ? detailOf(record) : null;
+    return this.productContextAt(productKey, this.#now());
+  }
+
+  /** Owner-side, synchronous: the product context this owner answers when read at `asOf` (evaluation fixtures). */
+  productContextAt(productKey: string, asOf: Date): CatalogProductContext {
+    const stored = this.#records.get(productKey);
+    if (!stored) return { status: 'not_found', productKey };
+    const { product } = stored;
+    const fbt = product.frequentlyBoughtTogether.flatMap((f) => {
+      const other = this.#records.get(f.productKey)?.product;
+      return other ? [{ product: { productId: other.productId, productKey: other.productKey }, name: other.name, confidence: f.confidence, jointCount: f.jointCount }] : [];
+    });
+    return {
+      status: 'found',
+      product: { productId: product.productId, productKey: product.productKey },
+      facts: {
+        name: product.name,
+        sku: product.sku,
+        category: { ...product.category },
+        brand: product.brand,
+        shortDescription: product.shortDescription,
+        specifications: product.specifications.map((s) => ({ ...s })),
+        lifecycle: { ...product.lifecycle },
+        sellableItem: product.variants.length === 0 ? { productId: product.productId, variantId: null, itemKey: product.productKey } : null,
+        variantOptions: product.variants.map((v) => ({ item: { productId: product.productId, variantId: v.variantId, itemKey: v.itemKey }, sku: v.sku, attributes: v.attributes.map((a) => ({ ...a })) })),
+      },
+      derived: { priceSummary: priceSummaryOf(product), availability: availabilityOf(product), publicUrl: `https://fixture.invalid/p/${product.productId}` },
+      inferred: {
+        frequentlyBoughtTogether: fbt.length > 0 ? { status: 'available', snapshotId: 'fixture-same-order-1', builtAt: FIXTURE_CATALOG_UPDATED_AT, items: fbt } : { status: 'unavailable', reason: 'no_relationships' },
+      },
+      provenance: { ...PROVENANCE },
+      freshness: this.#freshness(stored.updatedAt, asOf),
+    };
+  }
+
+  /**
+   * Owner-side, synchronous: a complete, untruncated search answer listing
+   * exactly `productKeys` in that order, read at `asOf`. Evaluation fixtures
+   * use it to reproduce a recorded result set without re-running a query.
+   */
+  searchAnswerOf(productKeys: readonly string[], asOf: Date): CatalogSearchAnswer {
+    const results = productKeys.map((key) => {
+      const product = this.#records.get(key)?.product;
+      if (!product) throw new Error(`fixture catalog has no product ${key}`);
+      return resultOf(product, { type: 'partial', matchedTokens: 1, totalTokens: 1 });
+    });
+    return { results, completeness: { totalMatches: results.length, truncated: false }, searchMode: 'lexical', freshness: this.#freshness(null, asOf) };
+  }
+
+  async getItemContext(request: CatalogItemContextRequest, options?: CallOptions): Promise<CatalogItemContext> {
+    await this.availability.enter(options);
+    this.#reads += 1;
+    if (!Number.isInteger(request.quantity) || request.quantity < 1 || request.quantity > 99) throw new DomainError('validation', 'invalid_request', 'quantity must be between 1 and 99');
+    const found = this.#item(request.itemKey);
+    if (found === null) return { status: 'not_found', itemKey: request.itemKey };
+    const { stored, variant } = found;
+    const { product } = stored;
+    const ref = { productId: product.productId, productKey: product.productKey };
+    if (variant === undefined) return { status: 'variant_required', itemKey: request.itemKey, product: ref };
+    const unit = unitOf(product, variant);
+    const availability = sellabilityOf(product, unit.availableQuantity);
+    return {
+      status: 'found',
+      item: { productId: product.productId, variantId: variant?.variantId ?? null, itemKey: request.itemKey },
+      product: { ref, name: product.name, sku: product.sku, lifecycle: { ...product.lifecycle } },
+      variant: variant ? { sku: variant.sku, attributes: variant.attributes.map((a) => ({ ...a })) } : null,
+      pricing: {
+        status: 'available',
+        quantity: request.quantity,
+        regularGross: clp(unit.regularGross),
+        finalGross: clp(unit.finalGross),
+        lineFinalGross: clp(unit.finalGross * request.quantity),
+        promotion: variant ? null : product.promotion,
+        taxBasis: { taxIncluded: true, rate: 0.19, basis: 'fixture_gross_prices' },
+        engineVersion: 'fixture-1',
+      },
+      availability: { ...availability, availableQuantity: unit.availableQuantity, leadTime: null },
+      provenance: { ...PROVENANCE },
+      freshness: this.#freshness(stored.updatedAt, this.#now()),
+    };
   }
 
   // --- owner-side changes (scenario control; not reachable from any capability) ---
 
-  setPrice(productId: string, amount: number): void {
-    this.#update(productId, (p) => ({ ...p, unitPrice: { amount, currency: 'CLP' } }));
+  /** Sets the gross price of a sellable item (a product without variants, or one variant). */
+  setPrice(itemKey: string, amount: number): void {
+    this.#updateItem(itemKey, (unit) => ({ ...unit, regularGross: amount, finalGross: amount }));
   }
 
-  setStock(productId: string, units: number, status?: StockStatus): void {
-    this.#update(productId, (p) => ({ ...p, stock: { units, status: status ?? (units === 0 ? 'out_of_stock' : units <= 3 ? 'low_stock' : 'in_stock') } }));
+  setStock(itemKey: string, units: number | null): void {
+    this.#updateItem(itemKey, (unit) => ({ ...unit, availableQuantity: units }));
   }
 
-  /** Synchronous owner-side lookup used by other fixture owners (shipping weights, quote pricing). */
-  current(productId: string): ProductDetail | null {
-    const record = this.#records.get(productId);
-    return record ? detailOf(record) : null;
+  /** Synchronous owner-side lookup of a sellable item, used by the other fixture owners (shipping weights, quote pricing). */
+  current(itemKey: string): FixtureOwnerItem | null {
+    const found = this.#item(itemKey);
+    if (found === null || found.variant === undefined) return null;
+    const { product } = found.stored;
+    const unit = unitOf(product, found.variant);
+    const label = found.variant ? `${product.name} (${found.variant.attributes.map((a) => a.value).join(', ')})` : product.name;
+    return { itemKey, name: label, unitPrice: clp(unit.finalGross), availableQuantity: unit.availableQuantity, sellability: sellabilityOf(product, unit.availableQuantity).sellability, weightKg: unit.weightKg };
   }
 
-  #update(productId: string, change: (product: FixtureProduct) => FixtureProduct): void {
-    const record = this.#records.get(productId);
-    if (!record) throw new Error(`fixture catalog has no product ${productId}`);
-    this.#records.set(productId, { product: change(record.product), recordVersion: record.recordVersion + 1, updatedAt: this.#now().toISOString() });
+  /** `variant`: null = product without variants; undefined = the key names a product that has variants. */
+  #item(itemKey: string): { stored: Stored; variant: FixtureVariantRecord | null | undefined } | null {
+    const direct = this.#records.get(itemKey);
+    if (direct) return { stored: direct, variant: direct.product.variants.length === 0 ? null : undefined };
+    for (const stored of this.#records.values()) {
+      const variant = stored.product.variants.find((v) => v.itemKey === itemKey);
+      if (variant) return { stored, variant };
+    }
+    return null;
+  }
+
+  #updateItem(itemKey: string, change: (unit: Unit) => Unit): void {
+    const found = this.#item(itemKey);
+    if (found === null || found.variant === undefined) throw new Error(`fixture catalog has no sellable item ${itemKey}`);
+    const { product } = found.stored;
+    const variant = found.variant;
+    const next = change(unitOf(product, variant));
+    const updated: FixtureProductRecord = variant
+      ? { ...product, variants: product.variants.map((v) => (v.variantId === variant.variantId ? { ...v, ...next } : v)) }
+      : { ...product, regularGross: next.regularGross, finalGross: next.finalGross, availableQuantity: next.availableQuantity };
+    this.#records.set(product.productKey, { product: updated, updatedAt: this.#now().toISOString() });
+  }
+
+  #freshness(sourceUpdatedAt: string | null, asOf: Date): CatalogFreshness {
+    return { asOf: asOf.toISOString(), cache: { hit: false, ageMs: 0 }, validUntil: new Date(asOf.getTime() + FIXTURE_CATALOG_VALIDITY_MS).toISOString(), sourceUpdatedAt };
   }
 }
 
-export function isAvailable(status: StockStatus): boolean {
-  return status === 'in_stock' || status === 'low_stock';
-}
-
-function summaryOf({ product, recordVersion, updatedAt }: Record_): ProductSummary {
-  return { productId: product.productId, name: product.name, category: product.category, brand: product.brand, unitPrice: product.unitPrice, stock: product.stock, recordVersion, updatedAt };
-}
-
-function detailOf(record: Record_): ProductDetail {
-  const { product } = record;
+function resultOf(product: FixtureProductRecord, match: CatalogSearchResult['match']): CatalogSearchResult {
   return {
-    ...summaryOf(record),
-    description: product.description,
-    weightKg: product.weightKg,
-    footprintCm: product.footprintCm,
-    specs: product.specs,
-    compatibleWith: product.compatibleWith,
-    alternatives: product.alternatives,
+    product: { productId: product.productId, productKey: product.productKey },
+    name: product.name,
+    sku: product.sku,
+    category: { ...product.category },
+    variants: { count: product.variants.length, requiresSelection: product.variants.length > 0 },
+    priceSummary: priceSummaryOf(product),
+    availabilitySummary: availabilityOf(product),
+    match,
   };
+}
+
+interface Unit {
+  readonly regularGross: number;
+  readonly finalGross: number;
+  readonly availableQuantity: number | null;
+  readonly weightKg: number;
+}
+
+function unitOf(product: FixtureProductRecord, variant: FixtureVariantRecord | null): Unit {
+  if (variant) return { regularGross: variant.regularGross, finalGross: variant.finalGross, availableQuantity: variant.availableQuantity, weightKg: variant.weightKg };
+  return { regularGross: product.regularGross ?? 0, finalGross: product.finalGross ?? product.regularGross ?? 0, availableQuantity: product.availableQuantity, weightKg: product.weightKg ?? 0 };
+}
+
+/** The owner's sellability rule (the fixture stands in for catalog-service; R4 never evaluates this). */
+function sellabilityOf(product: FixtureProductRecord, availableQuantity: number | null): { sellability: CatalogSellability; reason: CatalogSellabilityReason } {
+  if (product.lifecycle.status === 'inactive') return { sellability: 'not_sellable', reason: 'inactive' };
+  if (!product.lifecycle.listed) return { sellability: 'not_sellable', reason: 'not_listed' };
+  if (!product.lifecycle.orderable) return { sellability: 'not_sellable', reason: 'not_orderable' };
+  if (availableQuantity === null) return { sellability: 'check_with_staff', reason: 'stock_unknown' };
+  if (availableQuantity > 0) return { sellability: 'sellable', reason: 'in_stock' };
+  if (product.backorderAllowed === null) return { sellability: 'check_with_staff', reason: 'backorder_policy_unknown' };
+  return product.backorderAllowed ? { sellability: 'backorder', reason: 'backorder_allowed' } : { sellability: 'not_sellable', reason: 'out_of_stock' };
+}
+
+function availabilityOf(product: FixtureProductRecord): CatalogAvailabilitySummary {
+  if (product.variants.length === 0) return { ...sellabilityOf(product, product.availableQuantity), sellableVariants: null };
+  const each = product.variants.map((v) => sellabilityOf(product, v.availableQuantity));
+  const best = [...each].sort((a, b) => SELLABILITY_RANK[a.sellability] - SELLABILITY_RANK[b.sellability])[0]!;
+  return { ...best, sellableVariants: each.filter((s) => s.sellability === 'sellable').length };
+}
+
+function priceSummaryOf(product: FixtureProductRecord): CatalogPriceSummary | null {
+  if (product.variants.length === 0) {
+    if (product.regularGross === null) return null;
+    const final = product.finalGross ?? product.regularGross;
+    return { kind: 'exact', finalGross: clp(final), regularGross: clp(product.regularGross), discounted: final < product.regularGross };
+  }
+  const sellable = product.variants.filter((v) => sellabilityOf(product, v.availableQuantity).sellability === 'sellable');
+  const cheapest = [...sellable].sort((a, b) => a.finalGross - b.finalGross)[0];
+  return cheapest ? { kind: 'from', finalGross: clp(cheapest.finalGross), regularGross: clp(cheapest.regularGross), discounted: cheapest.finalGross < cheapest.regularGross } : null;
 }

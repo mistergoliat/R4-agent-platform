@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "status": "found",
+  "product": {
+    "productId": "1188",
+    "productKey": "P1188"
+  },
+  "facts": {
+    "name": "Remo Magnético R-10",
+    "sku": "AF-R10",
+    "category": {
+      "id": "19",
+      "name": "Cardio"
+    },
+    "brand": "IronHome",
+    "shortDescription": "Remo de resistencia magnética.",
+    "specifications": [
+      {
+        "name": "Niveles",
+        "value": "8"
+      }
+    ],
+    "lifecycle": {
+      "status": "inactive",
+      "listed": true,
+      "orderable": false
+    },
+    "sellableItem": {
+      "productId": "1188",
+      "variantId": null,
+      "itemKey": "P1188"
+    },
+    "variantOptions": []
+  },
+  "derived": {
+    "priceSummary": {
+      "kind": "exact",
+      "finalGross": {
+        "amount": 399990,
+        "currency": "CLP"
+      },
+      "regularGross": {
+        "amount": 399990,
+        "currency": "CLP"
+      },
+      "discounted": false
+    },
+    "availability": {
+      "sellability": "not_sellable",
+      "reason": "inactive",
+      "sellableVariants": null
+    },
+    "publicUrl": "https://www.example.test/p/1188"
+  },
+  "inferred": {
+    "frequentlyBoughtTogether": {
+      "status": "unavailable",
+      "reason": "snapshot_unavailable"
+    }
+  },
+  "provenance": {
+    "source": "prestashop",
+    "service": "catalog-service",
+    "serviceBuildRef": "contract-fixture"
+  },
+  "freshness": {
+    "asOf": "2026-09-29T15:00:00.000Z",
+    "cache": {
+      "hit": false,
+      "ageMs": 0
+    },
+    "validUntil": "2026-09-29T15:01:00.000Z",
+    "sourceUpdatedAt": "2026-09-20T10:00:00.000Z"
+  }
+}

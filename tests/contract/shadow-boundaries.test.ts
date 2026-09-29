@@ -126,12 +126,12 @@ describe('domain binding identity', () => {
   it('every Sales binding declares exactly the operations of its port, each with an effect class (never inferred)', () => {
     const expected: Record<string, string[]> = {
       customer: portMethods('customer/port.ts', 'CustomerDirectory'),
-      catalog: portMethods('catalog/port.ts', 'CatalogService'),
+      catalog: portMethods('catalog/port.ts', 'CatalogPort'),
       shipping: portMethods('shipping/port.ts', 'ShippingService'),
       quote: portMethods('quote/port.ts', 'QuoteService'),
     };
     for (const b of SALES_SHADOW_BINDINGS) expect(Object.keys(b.operations).sort(), b.domain).toEqual(expected[b.domain]);
-    expect(SALES_SHADOW_BINDINGS.find((b) => b.domain === 'catalog')!.operations).toEqual({ search: { effect: 'read' }, getProduct: { effect: 'read' } });
+    expect(SALES_SHADOW_BINDINGS.find((b) => b.domain === 'catalog')!.operations).toEqual({ search: { effect: 'read' }, getProductContext: { effect: 'read' }, getItemContext: { effect: 'read' } });
     expect(SALES_SHADOW_BINDINGS.find((b) => b.domain === 'quote')!.operations.create).toEqual({ effect: 'write', idempotencyKeyArg: 1 });
   });
 

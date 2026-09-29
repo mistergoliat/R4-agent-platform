@@ -30,6 +30,7 @@
     "sales.agent.json"
   ],
   "dependencies": {
+    "@r4-adapters/catalog-http": "*",
     "@r4-adapters/domains": "*",
     "@r4-adapters/openai-compatible": "*",
     "@r4-adapters/whatsapp-cloud": "*",
@@ -41,11 +42,11 @@
     "@r4/contracts": "*",
     "@r4/evaluation": "*",
     "@r4/evaluator": "*",
+    "@r4/live-ops": "*",
     "@r4/model-gateway": "*",
     "@r4/observability": "*",
     "@r4/persistence-postgres": "*",
     "@r4/policy-engine": "*",
-    "@r4/live-ops": "*",
     "@r4/scheduler": "*",
     "@r4/shadow": "*",
     "@r4/worker": "*",

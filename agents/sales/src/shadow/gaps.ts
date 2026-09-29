@@ -129,7 +129,7 @@ const ENTRIES: readonly ArchitectureGapCandidateInput[] = [
     origin: 'reviewed',
     classification: 'missing_integration',
     observation:
-      'No live domain owner was exercised: Customer, Catalog and Shipping ran on fixtures and Quote on the record-only shadow owner. A Catalog service contract exists only secondhand (a ported client and docs in the CRM repository, which R4 must not import); no endpoint or credential is configured in R4, its product model differs from the port (weight, footprint, compatibility), and no sandbox/preview Quote mode is documented.',
+      'No live domain owner was exercised: Customer, Catalog and Shipping ran on fixtures and Quote on the record-only shadow owner. A Catalog service contract exists only secondhand (a ported client and docs in the CRM repository, which R4 must not import); no endpoint or credential is configured in R4, its product model differed from the port (weight, footprint, compatibility — the port was replaced by the J1B read contract, which catalog-service must still implement: R4-J1A), and no sandbox/preview Quote mode is documented.',
     frequency: { affected: 28, total: 28, unit: 'workloads' },
     affectedWorkloads: ['*'],
     suspectedLayer: 'Domain',

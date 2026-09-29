@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { AvailabilitySwitch } from '../shared/availability.js';
 import { DomainError, type CallOptions } from '../shared/errors.js';
-import { isAvailable, type FixtureCatalog } from '../catalog/fixture.js';
+import type { FixtureCatalog } from '../catalog/fixture.js';
 import type { FixtureShipping } from '../shipping/fixture.js';
 import type { Quote, QuoteCreateOutcome, QuoteCreateRequest, QuoteService } from './port.js';
 
@@ -90,12 +90,12 @@ export class FixtureQuoteService implements QuoteService {
     let weight = 0;
     const lines = [];
     for (const line of request.lines) {
-      const product = this.#catalog.current(line.productId);
-      if (!product) return reject('unknown_product', `the catalog has no product ${line.productId}`, { productId: line.productId });
-      if (!isAvailable(product.stock.status)) return reject('product_unavailable', `${product.name} is ${product.stock.status}`, { productId: line.productId, stockStatus: product.stock.status });
-      if (product.stock.units < line.quantity) return reject('insufficient_stock', `only ${product.stock.units} units of ${product.name} are available`, { productId: line.productId, available: product.stock.units });
-      weight += product.weightKg * line.quantity;
-      lines.push({ productId: product.productId, name: product.name, quantity: line.quantity, unitPrice: product.unitPrice, lineTotal: { amount: product.unitPrice.amount * line.quantity, currency: 'CLP' as const } });
+      const item = this.#catalog.current(line.productId);
+      if (!item) return reject('unknown_product', `the catalog has no sellable item ${line.productId}`, { productId: line.productId });
+      if (item.sellability !== 'sellable') return reject('product_unavailable', `${item.name} is ${item.sellability}`, { productId: line.productId, stockStatus: item.sellability });
+      if (item.availableQuantity !== null && item.availableQuantity < line.quantity) return reject('insufficient_stock', `only ${item.availableQuantity} units of ${item.name} are available`, { productId: line.productId, available: item.availableQuantity });
+      weight += item.weightKg * line.quantity;
+      lines.push({ productId: item.itemKey, name: item.name, quantity: line.quantity, unitPrice: item.unitPrice, lineTotal: { amount: item.unitPrice.amount * line.quantity, currency: 'CLP' as const } });
     }
     const shippingAmount = this.#shipping.standardCost(request.delivery.commune, Math.round(weight * 10) / 10);
     if (shippingAmount === null) return reject('destination_not_serviceable', `no delivery to ${request.delivery.commune}`, { commune: request.delivery.commune });

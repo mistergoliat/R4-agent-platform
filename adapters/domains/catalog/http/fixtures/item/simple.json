@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "status": "found",
+  "item": {
+    "productId": "898",
+    "variantId": null,
+    "itemKey": "P898"
+  },
+  "product": {
+    "ref": {
+      "productId": "898",
+      "productKey": "P898"
+    },
+    "name": "Banco Ajustable Pro 300",
+    "sku": "BAP300",
+    "lifecycle": {
+      "status": "active",
+      "listed": true,
+      "orderable": true
+    }
+  },
+  "variant": null,
+  "pricing": {
+    "status": "available",
+    "quantity": 1,
+    "regularGross": {
+      "amount": 189990,
+      "currency": "CLP"
+    },
+    "finalGross": {
+      "amount": 189990,
+      "currency": "CLP"
+    },
+    "lineFinalGross": {
+      "amount": 189990,
+      "currency": "CLP"
+    },
+    "promotion": null,
+    "taxBasis": {
+      "taxIncluded": true,
+      "rate": 0.19,
+      "basis": "configured_flat_rate"
+    },
+    "engineVersion": "commercial-truth@2.0.0"
+  },
+  "availability": {
+    "sellability": "sellable",
+    "reason": "in_stock",
+    "availableQuantity": 7,
+    "leadTime": null
+  },
+  "provenance": {
+    "source": "prestashop",
+    "service": "catalog-service",
+    "serviceBuildRef": "contract-fixture"
+  },
+  "freshness": {
+    "asOf": "2026-09-29T15:00:00.000Z",
+    "cache": {
+      "hit": false,
+      "ageMs": 0
+    },
+    "validUntil": "2026-09-29T15:01:00.000Z",
+    "sourceUpdatedAt": "2026-09-20T10:00:00.000Z"
+  }
+}

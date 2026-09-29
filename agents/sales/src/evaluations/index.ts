@@ -9,3 +9,4 @@ export * from './corpus.js';
 export * from './fixtures/builder.js';
 export * from './fixtures/trajectories.js';
 export * from './run.js';
+export * from './catalog.js';

@@ -100,7 +100,9 @@ describe('Sales Agent Pack boundary', () => {
     }
     const port = readFileSync(join(ROOT, 'adapters/domains/src/catalog/port.ts'), 'utf8');
     const methods = [...port.matchAll(/^\s+(\w+)\(/gm)].map((m) => m[1]);
-    expect(methods).toEqual(['search', 'getProduct']);
+    expect(methods).toEqual(['search', 'getProductContext', 'getItemContext']);
+    // R4-J1B: the port promises nothing the Catalog owner does not have (CAT-R4-01).
+    expect(port).not.toMatch(/compatibleWith|alternatives|footprintCm|recordVersion|low_stock|discontinued|unitPrice/);
   });
 
   it('writes are governed: quote.create and workspace updates cannot run through the READ path', async () => {
@@ -178,7 +180,9 @@ describe('domain adapters and the provider adapter stay behind their seams', () 
     // R4-I: the channel adapter depends only on the channel-neutral contracts.
     expect(manifest('adapters/channels/whatsapp-cloud')).toEqual(['@r4/live-ops']);
     const salesDeps = manifest('agents/sales');
-    expect(salesDeps.filter((d) => !/^(@r4\/(contracts|observability|model-gateway|capability-runtime|context-compiler|policy-engine|persistence-postgres|agent-kernel|api|worker|evaluation|evaluator|scheduler|shadow|live-ops|channel-gateway)|@r4-adapters\/(domains|openai-compatible|whatsapp-cloud)|pg|pino|zod)$/.test(d))).toEqual([]);
+    expect(salesDeps.filter((d) => !/^(@r4\/(contracts|observability|model-gateway|capability-runtime|context-compiler|policy-engine|persistence-postgres|agent-kernel|api|worker|evaluation|evaluator|scheduler|shadow|live-ops|channel-gateway)|@r4-adapters\/(domains|catalog-http|openai-compatible|whatsapp-cloud)|pg|pino|zod)$/.test(d))).toEqual([]);
+    // R4-J1B: the Catalog HTTP adapter depends only on the domain ports and zod — nothing from R4 Core.
+    expect(manifest('adapters/domains/catalog/http')).toEqual(['@r4-adapters/domains', 'zod']);
     expect(salesDeps).not.toContain('@r4/task-runtime');
   });
 });

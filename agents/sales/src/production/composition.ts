@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import type { Logger } from 'pino';
-import { DomainError, type CatalogService } from '@r4-adapters/domains';
+import { DomainError, type CatalogPort } from '@r4-adapters/domains';
 import { WhatsAppInboundAdapter, WhatsAppOutboundAdapter, describeWhatsAppConfig, loadWhatsAppCloudConfig, type FetchLike, type WhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
 import { CapabilityRegistry } from '@r4/capability-runtime';
 import { systemClock, type Clock, type Principal } from '@r4/contracts';
@@ -37,15 +37,16 @@ export const SALES_CHANNEL_INGRESS: Principal = { kind: 'service', ref: 'sales-c
  * Catalog; with it, selections are refused honestly instead of accepted
  * against fixture data.
  */
-export const UNAVAILABLE_CATALOG: CatalogService & { readonly bindingKind: 'unavailable' } = Object.freeze({
+export const UNAVAILABLE_CATALOG: CatalogPort & { readonly bindingKind: 'unavailable' } = Object.freeze({
   bindingKind: 'unavailable' as const,
-  search(): Promise<never> {
-    return Promise.reject(new DomainError('temporarily_unavailable', 'catalog_unavailable', 'the catalog is not available in this deployment'));
-  },
-  getProduct(): Promise<never> {
-    return Promise.reject(new DomainError('temporarily_unavailable', 'catalog_unavailable', 'the catalog is not available in this deployment'));
-  },
+  search: unavailableCatalog,
+  getProductContext: unavailableCatalog,
+  getItemContext: unavailableCatalog,
 });
+
+function unavailableCatalog(): Promise<never> {
+  return Promise.reject(new DomainError('temporarily_unavailable', 'catalog_unavailable', 'the catalog is not available in this deployment'));
+}
 
 export interface SalesProductionWorkerOptions {
   readonly pool: pg.Pool;

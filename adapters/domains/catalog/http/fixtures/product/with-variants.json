@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "status": "found",
+  "product": {
+    "productId": "1301",
+    "productKey": "P1301"
+  },
+  "facts": {
+    "name": "Kettlebell Competición",
+    "sku": "KBC",
+    "category": {
+      "id": "16",
+      "name": "Kettlebells"
+    },
+    "brand": null,
+    "shortDescription": null,
+    "specifications": [
+      {
+        "name": "Material",
+        "value": "acero"
+      }
+    ],
+    "lifecycle": {
+      "status": "active",
+      "listed": true,
+      "orderable": true
+    },
+    "sellableItem": null,
+    "variantOptions": [
+      {
+        "item": {
+          "productId": "1301",
+          "variantId": "12",
+          "itemKey": "P1301-V12"
+        },
+        "sku": "KBC-12",
+        "attributes": [
+          {
+            "group": "Peso",
+            "value": "12 kg"
+          }
+        ]
+      },
+      {
+        "item": {
+          "productId": "1301",
+          "variantId": "16",
+          "itemKey": "P1301-V16"
+        },
+        "sku": "KBC-16",
+        "attributes": [
+          {
+            "group": "Peso",
+            "value": "16 kg"
+          }
+        ]
+      },
+      {
+        "item": {
+          "productId": "1301",
+          "variantId": "24",
+          "itemKey": "P1301-V24"
+        },
+        "sku": "KBC-24",
+        "attributes": [
+          {
+            "group": "Peso",
+            "value": "24 kg"
+          }
+        ]
+      }
+    ]
+  },
+  "derived": {
+    "priceSummary": {
+      "kind": "from",
+      "finalGross": {
+        "amount": 44990,
+        "currency": "CLP"
+      },
+      "regularGross": {
+        "amount": 44990,
+        "currency": "CLP"
+      },
+      "discounted": false
+    },
+    "availability": {
+      "sellability": "sellable",
+      "reason": "in_stock",
+      "sellableVariants": 2
+    },
+    "publicUrl": "https://www.example.test/p/1301"
+  },
+  "inferred": {
+    "frequentlyBoughtTogether": {
+      "status": "unavailable",
+      "reason": "snapshot_unavailable"
+    }
+  },
+  "provenance": {
+    "source": "prestashop",
+    "service": "catalog-service",
+    "serviceBuildRef": "contract-fixture"
+  },
+  "freshness": {
+    "asOf": "2026-09-29T15:00:00.000Z",
+    "cache": {
+      "hit": false,
+      "ageMs": 0
+    },
+    "validUntil": "2026-09-29T15:01:00.000Z",
+    "sourceUpdatedAt": "2026-09-20T10:00:00.000Z"
+  }
+}

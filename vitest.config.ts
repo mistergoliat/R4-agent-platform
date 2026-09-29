@@ -28,6 +28,8 @@ const alias = {
   '@r4/channel-gateway': src('./apps/channel-gateway/src/index.ts'),
   // R4-F: outside Core (adapters and the Sales agent pack).
   '@r4-adapters/domains': src('./adapters/domains/src/index.ts'),
+  // R4-J1B: Catalog HTTP adapter (outside Core; not bound in production until the J1A integration gate).
+  '@r4-adapters/catalog-http': src('./adapters/domains/catalog/http/src/index.ts'),
   '@r4-adapters/openai-compatible': src('./adapters/models/openai-compatible/src/index.ts'),
   // R4-I: channel adapter (outside Core). The testing entry (local fake provider) is listed first: aliases match by prefix.
   '@r4-adapters/whatsapp-cloud/testing': src('./adapters/channels/whatsapp-cloud/src/testing.ts'),

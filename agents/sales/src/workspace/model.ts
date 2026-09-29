@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CATALOG_KEY_PATTERN } from '@r4-adapters/domains';
 
 /**
  * SalesWorkspace: the structured, durable working state of one Sales
@@ -25,7 +26,8 @@ export const factKeySchema = z
   .regex(/^[a-z][a-z0-9_]{0,47}$/, 'a lowercase snake_case key')
   .refine((key) => !DOMAIN_OWNED_FACT.test(key), 'prices, stock, costs, totals and quotes belong to their owners, not to the workspace');
 
-export const productIdSchema = z.string().regex(/^[A-Z0-9][A-Z0-9-]{1,47}$/, 'a catalog product id');
+/** A selection entry is the Catalog owner's opaque sellable-item key (field name kept for stored-state compatibility). */
+export const productIdSchema = z.string().regex(CATALOG_KEY_PATTERN, 'a catalog item key');
 const quantitySchema = z.int().min(1).max(99);
 const scalar = z.union([z.string().trim().min(1).max(300), z.number().finite(), z.boolean()]);
 export const factValueSchema = z.union([scalar, z.record(z.string().regex(/^[a-z][a-zA-Z0-9_]{0,31}$/), scalar).refine((r) => Object.keys(r).length >= 1 && Object.keys(r).length <= 8, 'an object fact has 1 to 8 fields')]);

@@ -55,6 +55,9 @@
       "path": "../../adapters/domains"
     },
     {
+      "path": "../../adapters/domains/catalog/http"
+    },
+    {
       "path": "../../adapters/models/openai-compatible"
     },
     {

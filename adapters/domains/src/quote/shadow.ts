@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
-import { isAvailable } from '../catalog/fixture.js';
-import type { CatalogService } from '../catalog/port.js';
+import type { FixtureOwnerItem } from '../catalog/fixture.js';
 import { AvailabilitySwitch } from '../shared/availability.js';
 import { DomainError, type CallOptions } from '../shared/errors.js';
 import type { ShippingService } from '../shipping/port.js';
@@ -8,6 +7,11 @@ import type { AfterIssue, FixtureQuoteFaults } from './fixture.js';
 import type { Quote, QuoteCreateOutcome, QuoteCreateRequest, QuoteService } from './port.js';
 
 const VALIDITY_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** The catalog owner's item lookup the shadow Quote owner prices from (the fixture catalog provides it). */
+export interface ShadowCatalogLookup {
+  current(itemKey: string): FixtureOwnerItem | null;
+}
 
 /** One quote the shadow owner recorded (what WOULD have been issued). */
 export interface ShadowQuoteRecord {
@@ -22,8 +26,10 @@ export interface ShadowQuoteRecord {
  * real Quote Service is documented, so shadow runs use this record-only
  * owner behind the same `QuoteService` port:
  *
- * - it prices every line from the Catalog port and shipping from the
- *   Shipping port it is given (the same owners the agent reads),
+ * - it prices every line from the catalog owner's own item lookup and
+ *   shipping from the Shipping port it is given (the same owners the agent
+ *   reads; the catalog lookup is owner-side, not the R4 Catalog port — how
+ *   Quote reads Catalog is J3's decision, not made here),
  * - it keeps the Quote port's semantics exactly — one quote per idempotency
  *   key, replay returns the same quote, a different request under a used key
  *   is rejected, lookup by key for reconciliation, classified failures —
@@ -39,13 +45,13 @@ export class ShadowQuoteService implements QuoteService {
   readonly bindingKind = 'shadow' as const;
   readonly availability = new AvailabilitySwitch('quote');
   readonly faults: FixtureQuoteFaults = {};
-  readonly #catalog: CatalogService;
+  readonly #catalog: ShadowCatalogLookup;
   readonly #shipping: ShippingService;
   readonly #now: () => Date;
   readonly #byKey = new Map<string, ShadowQuoteRecord>();
   #sequence = 0;
 
-  constructor(options: { catalog: CatalogService; shipping: ShippingService; now?: () => Date }) {
+  constructor(options: { catalog: ShadowCatalogLookup; shipping: ShippingService; now?: () => Date }) {
     this.#catalog = options.catalog;
     this.#shipping = options.shipping;
     this.#now = options.now ?? (() => new Date());
@@ -91,11 +97,11 @@ export class ShadowQuoteService implements QuoteService {
     if (request.lines.length === 0) return reject('no_lines', 'a quote needs at least one line');
     const lines = [];
     for (const line of request.lines) {
-      const product = await this.#catalog.getProduct(line.productId, options);
-      if (!product) return reject('unknown_product', `the catalog has no product ${line.productId}`, { productId: line.productId });
-      if (!isAvailable(product.stock.status)) return reject('product_unavailable', `${product.name} is ${product.stock.status}`, { productId: line.productId, stockStatus: product.stock.status });
-      if (product.stock.units < line.quantity) return reject('insufficient_stock', `only ${product.stock.units} units of ${product.name} are available`, { productId: line.productId, available: product.stock.units });
-      lines.push({ productId: product.productId, name: product.name, quantity: line.quantity, unitPrice: product.unitPrice, lineTotal: { amount: product.unitPrice.amount * line.quantity, currency: 'CLP' as const } });
+      const item = this.#catalog.current(line.productId);
+      if (!item) return reject('unknown_product', `the catalog has no sellable item ${line.productId}`, { productId: line.productId });
+      if (item.sellability !== 'sellable') return reject('product_unavailable', `${item.name} is ${item.sellability}`, { productId: line.productId, stockStatus: item.sellability });
+      if (item.availableQuantity !== null && item.availableQuantity < line.quantity) return reject('insufficient_stock', `only ${item.availableQuantity} units of ${item.name} are available`, { productId: line.productId, available: item.availableQuantity });
+      lines.push({ productId: item.itemKey, name: item.name, quantity: line.quantity, unitPrice: item.unitPrice, lineTotal: { amount: item.unitPrice.amount * line.quantity, currency: 'CLP' as const } });
     }
     const shipping = await this.#shipping.quote({ destination: { commune: request.delivery.commune, region: request.delivery.region ?? null }, items: request.lines.map((l) => ({ productId: l.productId, quantity: l.quantity })) }, options);
     const standard = shipping.serviceable ? shipping.options.find((o) => o.serviceLevel === 'standard') : undefined;

@@ -100,7 +100,7 @@ describe('Sales conversation on R4 (governed quote, owners, recovery)', () => {
   it('creates the quote through propose_action → policy → command → receipt, keyed by the platform execution key', async () => {
     const { h } = await harness([
       read(CAPABILITY_IDS.customerContext),
-      read(CAPABILITY_IDS.productContext, { productId: 'KB-16' }),
+      read(CAPABILITY_IDS.productContext, { productKey: 'KB-16' }),
       update([add('KB-16', 2), destination('Maipú')]),
       proposeQuote(customerOnFile),
       respond((v) => `Cotización ${observedQuote(v).quoteNumber}.`),
@@ -139,7 +139,7 @@ describe('Sales conversation on R4 (governed quote, owners, recovery)', () => {
 
   it('a Quote owner outage before any effect is a receipt-backed failure, not a quote', async () => {
     const { h } = await harness([
-      read(CAPABILITY_IDS.productContext, { productId: 'KB-16' }),
+      read(CAPABILITY_IDS.productContext, { productKey: 'KB-16' }),
       update([add('KB-16'), destination('Maipú')]),
       proposeQuote({ name: 'Ana Test', email: 'ana@example.test' }),
       respond('No pude emitir la cotización: el servicio no está disponible.'),
@@ -157,7 +157,7 @@ describe('Sales conversation on R4 (governed quote, owners, recovery)', () => {
 
   it('an unknown quote outcome is never guessed: the task blocks until reconciliation by key establishes it', async () => {
     const { h } = await harness([
-      read(CAPABILITY_IDS.productContext, { productId: 'KB-16' }),
+      read(CAPABILITY_IDS.productContext, { productKey: 'KB-16' }),
       update([add('KB-16'), destination('Maipú')]),
       proposeQuote({ name: 'Ana Test', email: 'ana@example.test' }),
       // Only reached after reconciliation, in a new run.
@@ -193,7 +193,7 @@ describe('Sales conversation on R4 (governed quote, owners, recovery)', () => {
 
   it('a worker that dies after the quote was issued leaves one logical quote and one effective receipt', async () => {
     const { h } = await harness(
-      [read(CAPABILITY_IDS.productContext, { productId: 'KB-16' }), update([add('KB-16'), destination('Maipú')]), proposeQuote({ name: 'Ana Test', email: 'ana@example.test' }), respond((v) => `Cotización ${observedQuote(v).quoteNumber}.`), waitForCustomer()],
+      [read(CAPABILITY_IDS.productContext, { productKey: 'KB-16' }), update([add('KB-16'), destination('Maipú')]), proposeQuote({ name: 'Ana Test', email: 'ana@example.test' }), respond((v) => `Cotización ${observedQuote(v).quoteNumber}.`), waitForCustomer()],
       { leaseDurationMs: 1_500, heartbeatIntervalMs: 300 },
     );
     let hang = true;
@@ -225,7 +225,7 @@ describe('Sales conversation on R4 (governed quote, owners, recovery)', () => {
   });
 
   it('an unauthenticated requester cannot get a quote issued (identity below the capability requirement)', async () => {
-    const { h } = await harness([read(CAPABILITY_IDS.productContext, { productId: 'KB-16' }), update([add('KB-16'), destination('Maipú')]), proposeQuote({ name: 'Ana Test', email: 'ana@example.test' }), respond('No puedo emitirla desde este canal.'), waitForCustomer()]);
+    const { h } = await harness([read(CAPABILITY_IDS.productContext, { productKey: 'KB-16' }), update([add('KB-16'), destination('Maipú')]), proposeQuote({ name: 'Ana Test', email: 'ana@example.test' }), respond('No puedo emitirla desde este canal.'), waitForCustomer()]);
     const { view } = await h.api.tasks.createTask({ request: { taskType: 'sales.conversation', agentId: 'sales', goal: { description: 'anonymous channel' } }, requestedBy: { kind: 'unauthenticated', ref: 'anonymous' }, correlationId: 'anon' });
     await h.store.bindConversation({ taskId: view.task.taskId, customerRef: null, channelRef: 'anon' });
     await h.say(view.task.taskId, 'Cotiza una kettlebell.');

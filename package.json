@@ -11,6 +11,7 @@
     "packages/*",
     "apps/*",
     "adapters/domains",
+    "adapters/domains/catalog/http",
     "adapters/models/*",
     "adapters/channels/*",
     "agents/sales"

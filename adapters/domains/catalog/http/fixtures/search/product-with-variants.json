@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "results": [
+    {
+      "product": {
+        "productId": "1301",
+        "productKey": "P1301"
+      },
+      "name": "Kettlebell Competición",
+      "sku": "KBC",
+      "category": {
+        "id": "16",
+        "name": "Kettlebells"
+      },
+      "variants": {
+        "count": 3,
+        "requiresSelection": true
+      },
+      "priceSummary": {
+        "kind": "from",
+        "finalGross": {
+          "amount": 44990,
+          "currency": "CLP"
+        },
+        "regularGross": {
+          "amount": 44990,
+          "currency": "CLP"
+        },
+        "discounted": false
+      },
+      "availabilitySummary": {
+        "sellability": "sellable",
+        "reason": "in_stock",
+        "sellableVariants": 2
+      },
+      "match": {
+        "type": "name",
+        "matchedTokens": 1,
+        "totalTokens": 1
+      }
+    }
+  ],
+  "completeness": {
+    "totalMatches": 1,
+    "truncated": false
+  },
+  "searchMode": "lexical",
+  "freshness": {
+    "asOf": "2026-09-29T15:00:00.000Z",
+    "cache": {
+      "hit": false,
+      "ageMs": 0
+    },
+    "validUntil": "2026-09-29T15:01:00.000Z",
+    "sourceUpdatedAt": "2026-09-20T10:00:00.000Z"
+  }
+}

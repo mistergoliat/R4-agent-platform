@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "status": "found",
+  "product": {
+    "productId": "556",
+    "productKey": "P556"
+  },
+  "facts": {
+    "name": "Servicio de armado A-20",
+    "sku": "A-20",
+    "category": null,
+    "brand": null,
+    "shortDescription": null,
+    "specifications": [],
+    "lifecycle": {
+      "status": "active",
+      "listed": false,
+      "orderable": true
+    },
+    "sellableItem": {
+      "productId": "556",
+      "variantId": null,
+      "itemKey": "P556"
+    },
+    "variantOptions": []
+  },
+  "derived": {
+    "priceSummary": {
+      "kind": "exact",
+      "finalGross": {
+        "amount": 20000,
+        "currency": "CLP"
+      },
+      "regularGross": {
+        "amount": 20000,
+        "currency": "CLP"
+      },
+      "discounted": false
+    },
+    "availability": {
+      "sellability": "not_sellable",
+      "reason": "not_listed",
+      "sellableVariants": null
+    },
+    "publicUrl": "https://www.example.test/p/556"
+  },
+  "inferred": {
+    "frequentlyBoughtTogether": {
+      "status": "unavailable",
+      "reason": "snapshot_unavailable"
+    }
+  },
+  "provenance": {
+    "source": "prestashop",
+    "service": "catalog-service",
+    "serviceBuildRef": "contract-fixture"
+  },
+  "freshness": {
+    "asOf": "2026-09-29T15:00:00.000Z",
+    "cache": {
+      "hit": false,
+      "ageMs": 0
+    },
+    "validUntil": "2026-09-29T15:01:00.000Z",
+    "sourceUpdatedAt": "2026-09-20T10:00:00.000Z"
+  }
+}

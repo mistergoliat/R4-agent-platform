@@ -1,5 +1,6 @@
 import type { ContextContributionInput, JsonValue, Observation } from '@r4/contracts';
 import type { ContextSource, ContextSourceRequest } from '@r4/context-compiler';
+import { catalogEvidenceValidUntil } from '../capabilities/catalog.js';
 import { CAPABILITY_IDS, SALES_TASK_TYPE, WORKSPACE_SOURCE_ID } from '../ids.js';
 import { selectionOf, type Workspace } from './model.js';
 import type { ConversationBinding, PostgresSalesStore, QuoteReference, WorkspaceTransition } from './store.js';
@@ -19,7 +20,9 @@ export type WorkspaceReader = Pick<PostgresSalesStore, 'workspace' | 'conversati
  * evidence still applies to the current state: a shipping quote obtained for
  * another destination or another selection is marked as not applicable, and
  * each selected item points at its newest catalog observation and whether it
- * is still within its freshness window. This is interpretation of the pack's
+ * is still within its freshness window — the earlier of R4's window and the
+ * Catalog owner's declared `validUntil` (R4-J1B: R4 never extends the
+ * owner's freshness). This is interpretation of the pack's
  * own domain, done here and not in Core — and it decides nothing: the agent
  * still chooses whether to read again.
  */
@@ -107,22 +110,28 @@ export function projectWorkspace(input: WorkspaceProjectionInput): Record<string
   };
 }
 
-/** Newest successful catalog observation mentioning each product, with whether it is still current. */
+/** Catalog keys an observation speaks about: search results' productKeys; a product context's key, sellable item and variant itemKeys. */
+function catalogKeysOf(o: Observation): unknown[] {
+  if (o.source.capabilityId === CAPABILITY_IDS.productContext) {
+    const payload = o.payload as { status?: unknown; productKey?: unknown; facts?: { sellableItemKey?: unknown; variantOptions?: { itemKey?: unknown }[] } } | null;
+    if (payload?.status !== 'found') return [];
+    return [payload.productKey, payload.facts?.sellableItemKey, ...(payload.facts?.variantOptions ?? []).map((v) => v.itemKey)];
+  }
+  if (o.source.capabilityId === CAPABILITY_IDS.catalogSearch) return ((o.payload as { results?: { productKey?: unknown }[] } | null)?.results ?? []).map((r) => r.productKey);
+  return [];
+}
+
+/** Newest successful catalog observation mentioning each catalog key, with whether it is still current (R4 and owner windows). */
 function catalogEvidence(observations: readonly Observation[], now: Date): Map<string, { observationId: string; current: boolean }> {
   const out = new Map<string, { observationId: string; current: boolean; observedAt: string }>();
   for (const o of observations) {
     if (o.source.kind !== 'capability' || o.outcome !== 'succeeded') continue;
-    const ids =
-      o.source.capabilityId === CAPABILITY_IDS.productContext
-        ? [(o.payload as { product?: { productId?: unknown } } | null)?.product?.productId]
-        : o.source.capabilityId === CAPABILITY_IDS.catalogSearch
-          ? ((o.payload as { results?: { productId?: unknown }[] } | null)?.results ?? []).map((r) => r.productId)
-          : [];
-    for (const id of ids) {
+    for (const id of new Set(catalogKeysOf(o))) {
       if (typeof id !== 'string') continue;
       const previous = out.get(id);
       if (!previous || o.observedAt > previous.observedAt || (o.observedAt === previous.observedAt && o.observationId > previous.observationId)) {
-        out.set(id, { observationId: o.observationId, current: isCurrent(o, now), observedAt: o.observedAt });
+        const validUntil = catalogEvidenceValidUntil(o);
+        out.set(id, { observationId: o.observationId, current: validUntil === null || Date.parse(validUntil) > now.getTime(), observedAt: o.observedAt });
       }
     }
   }

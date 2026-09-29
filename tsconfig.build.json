@@ -20,6 +20,7 @@
     { "path": "apps/evaluator" },
     { "path": "apps/channel-gateway" },
     { "path": "adapters/domains" },
+    { "path": "adapters/domains/catalog/http" },
     { "path": "adapters/models/openai-compatible" },
     { "path": "adapters/channels/whatsapp-cloud" },
     { "path": "agents/sales" }

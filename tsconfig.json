@@ -26,6 +26,7 @@
       "@r4/scheduler": ["./apps/scheduler/src/index.ts"],
       "@r4/channel-gateway": ["./apps/channel-gateway/src/index.ts"],
       "@r4-adapters/domains": ["./adapters/domains/src/index.ts"],
+      "@r4-adapters/catalog-http": ["./adapters/domains/catalog/http/src/index.ts"],
       "@r4-adapters/openai-compatible": ["./adapters/models/openai-compatible/src/index.ts"],
       "@r4-adapters/whatsapp-cloud/testing": ["./adapters/channels/whatsapp-cloud/src/testing.ts"],
       "@r4-adapters/whatsapp-cloud": ["./adapters/channels/whatsapp-cloud/src/index.ts"],
@@ -35,5 +36,5 @@
       "@r4-sales/agent": ["./agents/sales/src/index.ts"]
     }
   },
-  "include": ["packages/*/src", "apps/*/src", "adapters/domains/src", "adapters/models/*/src", "adapters/channels/*/src", "agents/sales/src", "tests", "vitest.config.ts", "eslint.config.js"]
+  "include": ["packages/*/src", "apps/*/src", "adapters/domains/src", "adapters/domains/catalog/http/src", "adapters/models/*/src", "adapters/channels/*/src", "agents/sales/src", "tests", "vitest.config.ts", "eslint.config.js"]
 }

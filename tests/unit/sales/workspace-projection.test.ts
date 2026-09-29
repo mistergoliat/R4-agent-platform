@@ -53,12 +53,26 @@ describe('Sales workspace projection (what the agent sees as current Sales state
   });
 
   it('points each selected item at its newest catalog evidence and says whether it is still current', () => {
-    const stale = observation('catalog.get_product_context', { found: true, product: { productId: 'BAR-OLY20' } }, '2026-09-23T11:00:00.000Z', '2026-09-23T11:15:00.000Z');
+    const stale = observation('catalog.get_product_context', { status: 'found', productKey: 'BAR-OLY20', facts: { sellableItemKey: 'BAR-OLY20', variantOptions: [] }, freshness: { validUntil: '2026-09-23T11:05:00.000Z' } }, '2026-09-23T11:00:00.000Z', '2026-09-23T11:05:00.000Z');
     let view = projectWorkspace({ workspace, binding: null, quotes: [], transitions: [], observations: [stale], now: NOW });
     expect(view.selection).toEqual([{ productId: 'BAR-OLY20', quantity: 1, sinceVersion: 2, catalogEvidence: { observationId: stale.observationId, current: false } }]);
-    const fresh = observation('catalog.search', { results: [{ productId: 'BAR-OLY20' }] }, '2026-09-23T11:59:00.000Z', '2026-09-23T12:14:00.000Z');
+    const fresh = observation('catalog.search', { results: [{ productKey: 'BAR-OLY20' }], freshness: { validUntil: '2026-09-23T12:04:00.000Z' } }, '2026-09-23T11:59:00.000Z', '2026-09-23T12:04:00.000Z');
     view = projectWorkspace({ workspace, binding: null, quotes: [], transitions: [], observations: [stale, fresh], now: NOW });
     expect(view.selection).toEqual([{ productId: 'BAR-OLY20', quantity: 1, sinceVersion: 2, catalogEvidence: { observationId: fresh.observationId, current: true } }]);
+  });
+
+  it("never extends the Catalog owner's freshness: evidence the owner declared expired is not current, even inside R4's window (J1B §8)", () => {
+    // R4's window is still open (12:04) but the owner vouched only until 11:59:30 (e.g. a cached answer).
+    const ownerExpired = observation('catalog.search', { results: [{ productKey: 'BAR-OLY20' }], freshness: { asOf: '2026-09-23T11:44:30.000Z', validUntil: '2026-09-23T11:59:30.000Z', cacheAgeMs: 900_000 } }, '2026-09-23T11:59:00.000Z', '2026-09-23T12:04:00.000Z');
+    const view = projectWorkspace({ workspace, binding: null, quotes: [], transitions: [], observations: [ownerExpired], now: NOW });
+    expect(view.selection).toEqual([{ productId: 'BAR-OLY20', quantity: 1, sinceVersion: 2, catalogEvidence: { observationId: ownerExpired.observationId, current: false } }]);
+  });
+
+  it('a selected variant itemKey is backed by the product context that lists it (itemKey stays the identity across turns)', () => {
+    const variantWorkspace: Workspace = { ...workspace, state: { ...workspace.state, items: [{ productId: 'KB-COMP-12', quantity: 1, sinceVersion: 2, updatedAt: NOW.toISOString() }] } };
+    const context = observation('catalog.get_product_context', { status: 'found', productKey: 'KB-COMP', facts: { sellableItemKey: null, variantOptions: [{ itemKey: 'KB-COMP-12' }, { itemKey: 'KB-COMP-24' }] }, freshness: { validUntil: '2026-09-23T12:04:00.000Z' } }, '2026-09-23T11:59:00.000Z', '2026-09-23T12:04:00.000Z');
+    const view = projectWorkspace({ workspace: variantWorkspace, binding: null, quotes: [], transitions: [], observations: [context], now: NOW });
+    expect(view.selection).toEqual([{ productId: 'KB-COMP-12', quantity: 1, sinceVersion: 2, catalogEvidence: { observationId: context.observationId, current: true } }]);
   });
 
   it('says a quote no longer matches once the selection or destination changed after it', () => {

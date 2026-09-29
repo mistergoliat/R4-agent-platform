@@ -29,7 +29,7 @@ import { CAPABILITY_IDS } from '../ids.js';
  */
 export const SALES_SHADOW_BINDINGS: readonly DomainBindingDescriptor[] = Object.freeze([
   { domain: 'customer', bindingId: 'fixture-customer', kind: 'fixture', version: 1, operations: { getContext: { effect: 'read' } }, contractRef: null, description: 'In-memory Customer owner with fictitious test customers (example.test).' },
-  { domain: 'catalog', bindingId: 'fixture-catalog', kind: 'fixture', version: 1, operations: { search: { effect: 'read' }, getProduct: { effect: 'read' } }, contractRef: null, description: 'In-memory Catalog owner (home-gym fixture catalog); price/stock can change between reads.' },
+  { domain: 'catalog', bindingId: 'fixture-catalog', kind: 'fixture', version: 1, operations: { search: { effect: 'read' }, getProductContext: { effect: 'read' }, getItemContext: { effect: 'read' } }, contractRef: null, description: 'In-memory Catalog owner (home-gym fixture catalog, R4-J1B contract shape); price/stock can change between reads.' },
   { domain: 'shipping', bindingId: 'fixture-shipping', kind: 'fixture', version: 1, operations: { quote: { effect: 'read' } }, contractRef: null, description: 'In-memory Shipping owner: cost by zone and weight; side-effect free.' },
   {
     domain: 'quote',

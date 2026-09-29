@@ -9,8 +9,13 @@
  * - temporarily_unavailable  the owner could not be reached before anything was sent; no effect
  * - timeout                  no answer in time; for a write the effect may or may not exist
  * - unknown_outcome          the request may have been applied; only a lookup can tell
+ * - unauthorized             the owner refused R4's credentials (401/403): a deployment
+ *                            misconfiguration; fail closed, never retried
+ * - contract_violation       the owner answered outside its published contract (unparseable,
+ *                            schema-invalid, unsupported schema version, unexpected status);
+ *                            R4 never repairs such an answer and never retries it
  */
-export const DOMAIN_ERROR_CATEGORIES = ['not_found', 'validation', 'conflict', 'temporarily_unavailable', 'timeout', 'unknown_outcome'] as const;
+export const DOMAIN_ERROR_CATEGORIES = ['not_found', 'validation', 'conflict', 'temporarily_unavailable', 'timeout', 'unknown_outcome', 'unauthorized', 'contract_violation'] as const;
 export type DomainErrorCategory = (typeof DOMAIN_ERROR_CATEGORIES)[number];
 
 export class DomainError extends Error {
@@ -38,6 +43,8 @@ export class DomainError extends Error {
 export interface CallOptions {
   /** Aborted by the caller's deadline; adapters must stop and report `timeout`. */
   readonly signal?: AbortSignal;
+  /** Propagated to the owner for cross-system tracing (never used for behavior). */
+  readonly correlationId?: string;
 }
 
 /** Amounts are integers in the currency's minor-less unit (CLP has no decimals). */

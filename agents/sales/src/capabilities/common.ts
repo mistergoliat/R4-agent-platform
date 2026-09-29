@@ -1,10 +1,11 @@
 import { z } from 'zod';
-import { DomainError } from '@r4-adapters/domains';
+import { CATALOG_KEY_PATTERN, DomainError } from '@r4-adapters/domains';
 import { CapabilityFailure } from '@r4/capability-runtime';
 import type { CapabilityDefinition } from '@r4/contracts';
 
 export const moneySchema = z.strictObject({ amount: z.int().nonnegative(), currency: z.literal('CLP') });
-export const itemQuantitySchema = z.strictObject({ productId: z.string().regex(/^[A-Z0-9][A-Z0-9-]{1,47}$/), quantity: z.int().min(1).max(99) });
+/** `productId` holds the Catalog owner's opaque sellable-item key (never a SKU). */
+export const itemQuantitySchema = z.strictObject({ productId: z.string().regex(CATALOG_KEY_PATTERN), quantity: z.int().min(1).max(99) });
 export const destinationSchema = z.strictObject({ commune: z.string().trim().min(2).max(80), region: z.string().trim().min(2).max(80).optional() });
 
 type ReadDefinition = Omit<CapabilityDefinition, 'inputSchema' | 'outputSchema'>;

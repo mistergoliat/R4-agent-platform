@@ -16,6 +16,7 @@ import {
   rolloutFingerprint,
 } from '@r4/live-ops';
 import { loadWorkerConfig, runWorkerProcess } from '@r4/worker';
+import { describeCatalogHttpConfig, loadCatalogHttpConfig } from '@r4-adapters/catalog-http';
 import { describeWhatsAppConfig, loadWhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
 import { adminDatabaseUrl } from '../harness/database.js';
 import { configuredModelProvider } from '../model.js';
@@ -87,6 +88,16 @@ async function plan(production: ReturnType<typeof loadProductionConfig>): Promis
       return { error: error instanceof Error ? error.message : String(error) };
     }
   })();
+  // R4-J1B: declarative only. Catalog stays UNAVAILABLE in this profile until catalog-service passes the J1A integration gate;
+  // a well-formed configuration proves neither authentication nor connectivity (nothing is probed here).
+  const catalog = (() => {
+    const gate = 'UNAVAILABLE in this profile: bound only after catalog-service R4-J1A passes the integration gate';
+    try {
+      return { binding: gate, ...describeCatalogHttpConfig(loadCatalogHttpConfig(process.env, { allowNetwork: production.config.allowNetwork })) };
+    } catch (error) {
+      return { binding: gate, configuration: `not usable: ${error instanceof Error ? error.message : String(error)}` };
+    }
+  })();
   const model = configuredModelProvider(process.env);
   const recipient = process.env.R4_PROD_SMOKE_RECIPIENT;
   const recipientKey = recipient && process.env.R4_WHATSAPP_PHONE_NUMBER_ID ? conversationKey(production.secrets.identityHashKey, 'whatsapp', process.env.R4_WHATSAPP_PHONE_NUMBER_ID, recipient) : null;
@@ -110,6 +121,7 @@ async function plan(production: ReturnType<typeof loadProductionConfig>): Promis
     productionConfigFingerprint: productionConfigFingerprint(production.config),
     model: model ? { provider: 'openai_compatible', ...model.description } : 'not configured (R4_MODEL_*)',
     channel: whatsapp,
+    catalog,
     recipient: recipientKey ? { conversationKey: `${recipientKey.slice(0, 12)}…`, eligibility: rolloutEligibility(production.config.rollout, recipientKey) } : 'R4_PROD_SMOKE_RECIPIENT not set',
     rollout: { percent: production.config.rollout.percent, allowlisted: production.config.rollout.allowlist.length, denylisted: production.config.rollout.denylist.length, fingerprint: rolloutFingerprint(production.config.rollout) },
     killSwitch,
@@ -168,7 +180,7 @@ async function validate(): Promise<void> {
     'evaluation-summary.json': stableJson(results.map((r) => ({ scenario: r.id, evaluation: r.evaluation }))),
     'report.md': [`# Production validation ${id}`, '', `Offline (no network, no credentials, no real person). Git ${git.sha}${git.dirty ? ' (dirty)' : ''}. Profile ${profileLabel(SALES_PRODUCTION_PROFILE)} (${profileFingerprint(SALES_PRODUCTION_PROFILE).slice(0, 12)}).`, '', ...results.flatMap((r) => [`## ${r.id} — ${r.title}`, '', ...r.checks.map((c) => `- ${c.passed ? 'PASS' : 'FAIL'} \`${c.id}\` — ${c.detail}`), '']), `Result: **${passed ? 'PASSED' : 'FAILED'}**`, ''].join('\n'),
   };
-  const dir = writeArtifacts(join(resolve('artifacts'), 'production-validation', id), files, { secrets: [...Object.values(VALIDATION_SECRETS), ...secretsFromEnv(process.env, ['R4_MODEL_API_KEY', 'R4_WHATSAPP_APP_SECRET', 'R4_WHATSAPP_ACCESS_TOKEN', 'R4_WHATSAPP_VERIFY_TOKEN', 'R4_PROD_IDENTITY_HASH_KEY'])] });
+  const dir = writeArtifacts(join(resolve('artifacts'), 'production-validation', id), files, { secrets: [...Object.values(VALIDATION_SECRETS), ...secretsFromEnv(process.env, ['R4_MODEL_API_KEY', 'R4_WHATSAPP_APP_SECRET', 'R4_WHATSAPP_ACCESS_TOKEN', 'R4_WHATSAPP_VERIFY_TOKEN', 'R4_PROD_IDENTITY_HASH_KEY', 'R4_CATALOG_API_KEY'])] });
   print(`\n${passed ? 'PASSED' : 'FAILED'} — artifacts: ${dir}`);
   if (!passed) process.exitCode = 1;
 }
@@ -216,7 +228,7 @@ async function smoke(production: ReturnType<typeof loadProductionConfig>): Promi
           'outbound.json': stableJson(outbound.map((o) => ({ outboundId: o.outboundId, status: o.status, attempts: o.attempts, providerMessageIdKnown: o.providerMessageId !== null, acceptedAt: o.acceptedAt, deliveredAt: o.deliveredAt, readAt: o.readAt }))),
           'metrics.json': stableJson(await store.metrics()),
         };
-        print(`smoke result: provider accepted; final status ${accepted.status} — ${writeArtifacts(join(resolve('artifacts'), 'production-validation', id), files, { secrets: secretsFromEnv(process.env, ['R4_MODEL_API_KEY', 'R4_WHATSAPP_APP_SECRET', 'R4_WHATSAPP_ACCESS_TOKEN', 'R4_WHATSAPP_VERIFY_TOKEN', 'R4_PROD_IDENTITY_HASH_KEY']) })}`);
+        print(`smoke result: provider accepted; final status ${accepted.status} — ${writeArtifacts(join(resolve('artifacts'), 'production-validation', id), files, { secrets: secretsFromEnv(process.env, ['R4_MODEL_API_KEY', 'R4_WHATSAPP_APP_SECRET', 'R4_WHATSAPP_ACCESS_TOKEN', 'R4_WHATSAPP_VERIFY_TOKEN', 'R4_PROD_IDENTITY_HASH_KEY', 'R4_CATALOG_API_KEY']) })}`);
         return;
       }
       if (Date.now() > deadline) {

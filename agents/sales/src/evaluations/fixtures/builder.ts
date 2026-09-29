@@ -1,4 +1,4 @@
-import { FIXTURE_CATALOG_UPDATED_AT, FIXTURE_PRODUCTS } from '@r4-adapters/domains';
+import { FixtureCatalog } from '@r4-adapters/domains';
 import {
   RUN_FAILURE_RECOVERY_KEY,
   failureClassOf,
@@ -20,6 +20,7 @@ import {
   type TerminationReason,
 } from '@r4/contracts';
 import { buildEvaluationSubject, fingerprint, type ContextSnapshotMeta, type DomainProjection, type EvaluationSubject, type ModelCallRecord, type TrajectoryRecords } from '@r4/evaluation';
+import { CATALOG_FRESHNESS_TTL_MS, catalogSearchView, productContextView } from '../../capabilities/catalog.js';
 import { SALES_AGENT_ID, SALES_TASK_TYPE, CAPABILITY_IDS } from '../../ids.js';
 import { SALES_ROOT_GOAL } from '../../harness/runtime.js';
 import { applyOperations, emptyWorkspace, selectionOf, type Workspace, type WorkspaceOperation } from '../../workspace/model.js';
@@ -230,7 +231,9 @@ export class SalesFixture {
     const observationId = this.#id();
     const at = this.#now();
     const ok = (options.outcome ?? 'succeeded') === 'succeeded';
-    const validFor = options.validForMs === undefined ? (capabilityId.startsWith('catalog.') ? 15 * 60_000 : null) : options.validForMs;
+    const validFor = options.validForMs === undefined ? (capabilityId.startsWith('catalog.') ? CATALOG_FRESHNESS_TTL_MS : null) : options.validForMs;
+    // A payload may depend on the observation instant (the owner's `asOf`).
+    if (typeof payload === 'function') payload = (payload as (observedAt: string) => unknown)(at);
     this.#observations.push({
       observationId, taskId: this.task.taskId, runId: this.#current?.run.runId ?? null, agentId: SALES_AGENT_ID,
       source: { kind: 'capability', capabilityId, capabilityVersion: 1, invocationId },
@@ -242,12 +245,12 @@ export class SalesFixture {
     return observationId;
   }
 
-  searchCatalog(args: JsonObject, productIds: readonly string[]): string {
-    return this.read(CAPABILITY_IDS.catalogSearch, args, catalogSearchPayload(productIds));
+  searchCatalog(args: JsonObject, productKeys: readonly string[]): string {
+    return this.read(CAPABILITY_IDS.catalogSearch, args, (at: string) => catalogSearchPayload(productKeys, at, typeof args.query === 'string' ? args.query : ''));
   }
 
-  productContext(productId: string): string {
-    return this.read(CAPABILITY_IDS.productContext, { productId }, productContextPayload(productId));
+  productContext(productKey: string): string {
+    return this.read(CAPABILITY_IDS.productContext, { productKey }, (at: string) => productContextPayload(productKey, at));
   }
 
   customerContext(): string {
@@ -319,8 +322,8 @@ export class SalesFixture {
   /** `quote.create` for the current workspace, priced from the fixture catalog like the Quote owner. */
   quote(customer: { name: string; email?: string }, options: { evidenceRefs?: readonly string[]; shippingAmount?: number } = {}): { quoteNumber: string; total: number; observationId: string } {
     const lines = selectionOf(this.#workspace.state).map((s) => {
-      const p = FIXTURE_PRODUCTS.find((x) => x.productId === s.productId)!;
-      return { productId: s.productId, name: p.name, quantity: s.quantity, unitPrice: { ...p.unitPrice }, lineTotal: { amount: p.unitPrice.amount * s.quantity, currency: 'CLP' } };
+      const item = CATALOG_OWNER.current(s.productId)!;
+      return { productId: s.productId, name: item.name, quantity: s.quantity, unitPrice: { ...item.unitPrice }, lineTotal: { amount: item.unitPrice.amount * s.quantity, currency: 'CLP' } };
     });
     const subtotal = lines.reduce((sum, l) => sum + l.lineTotal.amount, 0);
     const shipping = options.shippingAmount ?? 42_390;
@@ -422,20 +425,16 @@ export class SalesFixture {
 
 // --- catalog payloads, exactly as the Sales capabilities return them ------------
 
-const summary = (id: string) => {
-  const p = FIXTURE_PRODUCTS.find((x) => x.productId === id);
-  if (!p) throw new Error(`unknown fixture product ${id}`);
-  return { productId: p.productId, name: p.name, category: p.category, brand: p.brand, unitPrice: { ...p.unitPrice }, stock: { ...p.stock }, recordVersion: 1, updatedAt: FIXTURE_CATALOG_UPDATED_AT };
-};
+/** The fixture Catalog owner the payloads come from (its records never change here). */
+const CATALOG_OWNER = new FixtureCatalog();
 
-export function catalogSearchPayload(productIds: readonly string[]): unknown {
-  return { totalMatches: productIds.length, categories: [...new Set(FIXTURE_PRODUCTS.map((p) => p.category))].sort(), results: productIds.map(summary) };
+/** A complete search answer listing exactly `productKeys`, mapped by the capability's own view. */
+export function catalogSearchPayload(productKeys: readonly string[], observedAt: string, query: string): unknown {
+  return catalogSearchView(CATALOG_OWNER.searchAnswerOf(productKeys, new Date(observedAt)), query);
 }
 
-export function productContextPayload(productId: string): unknown {
-  const p = FIXTURE_PRODUCTS.find((x) => x.productId === productId);
-  if (!p) return { found: false, productId };
-  return { found: true, product: { ...summary(productId), description: p.description, weightKg: p.weightKg, footprintCm: p.footprintCm ? { ...p.footprintCm } : null, specs: { ...p.specs }, compatibleWith: [...p.compatibleWith], alternatives: [...p.alternatives] } };
+export function productContextPayload(productKey: string, observedAt: string): unknown {
+  return productContextView(CATALOG_OWNER.productContextAt(productKey, new Date(observedAt)));
 }
 
 /** The task status an ADR-028 disposition leaves (legacy `failed` when none is recorded). */
