@@ -3,7 +3,8 @@ import { runProductionControl } from '../production/control.js';
 /**
  * `npm run production:sales:control -- <command>` — production-host
  * administration of the autonomy kill switch and of tasks held because
- * autonomy was disabled (R4-I D-5/D-6). See `production/control.ts`.
+ * autonomy was disabled (R4-I D-5/D-6), and retirement of one task. See
+ * `production/control.ts`.
  * Reads the process environment only (never `.env`).
  */
 runProductionControl(process.argv.slice(2), process.env, {

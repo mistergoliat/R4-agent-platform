@@ -4,10 +4,10 @@ import { AutonomyControls, PRODUCTION_CONTROL_ACTOR } from '@r4/live-ops';
 import { PostgresProductionStore } from '@r4/persistence-postgres';
 import { runProductionControl } from '@r4-sales/agent/production';
 import { createMigratedTestDatabase, openPool } from '../support/database.js';
-import { LiveOpsTestbed, OPERATOR, say, waitInput } from '../support/live-ops.js';
+import { LiveOpsTestbed, OPERATOR, keyOf, say, waitInput } from '../support/live-ops.js';
 
 /**
- * R4-I D-5/D-6: production administration (`production:sales:control`).
+ * R4-I D-5/D-6 and task retirement: production administration (`production:sales:control`).
  * Every command runs the real CLI entry (`runProductionControl`) against the
  * bed's database with a pool and runtimes of its own — nothing it decides
  * can come from the bed's in-memory state.
@@ -496,5 +496,170 @@ describe('D-6 holds release', () => {
     } finally {
       await fresh.end();
     }
+  });
+});
+
+/** The bed's production environment without channel or model credentials (the command needs neither). */
+const credentialless = () => Object.fromEntries(Object.entries(bed!.env).filter(([k]) => !k.startsWith('R4_WHATSAPP_') && !k.startsWith('R4_MODEL_')));
+
+/** Everything a task cancellation must leave alone besides the task's own runtime state. */
+async function untouchedByCancellation() {
+  return {
+    ...(await channelState()),
+    controls: await bed!.rows('select scope, autonomy_enabled, reason, changed_by, version from autonomy_controls order by scope'),
+    controlEvents: await controlEvents(),
+  };
+}
+
+describe('tasks cancel (retire one task so rollout is re-evaluated on the next inbound)', () => {
+  it('cancels a task blocked on WAIT_FOR_HUMAN through the Temporal Runtime: terminal, attributed, its binding untouched, nothing runs or is sent', async () => {
+    bed = await LiveOpsTestbed.start();
+    await bed.customer(A, 'wamid.a.1', 'Hola');
+    const taskId = await bed.taskOf(A);
+    const [held] = await humansOf(taskId);
+    expect((await bed.api.temporal.inspect(taskId)).wait).toMatchObject({ kind: 'WAIT_FOR_HUMAN', status: 'waiting', referenceId: held!.requestId });
+    await bed.setAutonomy(true);
+    const before = await untouchedByCancellation();
+
+    const r = await control(credentialless(), 'tasks', 'cancel', '--task', taskId, '--reason', 'retire pre-rollout smoke conversation');
+    expect(r).toMatchObject({
+      code: 0,
+      err: '',
+      json: {
+        cancelled: { taskId, outcome: 'cancelled', taskStatus: 'cancelled', statusReason: 'cancelled' },
+        conversation: { channel: 'whatsapp', status: 'open', autonomy: 'excluded', eligibilityReason: 'not_in_cohort' },
+      },
+    });
+    // Binding, inbound, outbound, inputs, autonomy controls and their audit: exactly as they were.
+    expect(await untouchedByCancellation()).toEqual(before);
+
+    // Existing lifecycle semantics: the hold is cancelled, its WAIT_FOR_HUMAN closed, the task terminal and owned by nobody.
+    const inspected = await bed.api.temporal.inspect(taskId);
+    expect(inspected.humans).toEqual([expect.objectContaining({ requestId: held!.requestId, status: 'cancelled', humanRef: null })]);
+    expect(inspected.wait).toBeNull();
+    expect(inspected.waits.at(-1)).toMatchObject({ kind: 'WAIT_FOR_HUMAN', status: 'cancelled', resolution: 'cancelled', referenceId: held!.requestId });
+    expect(inspected.ownership.owner).toBe('none');
+    expect((await bed.api.tasks.getTask(taskId)).task).toMatchObject({ status: 'cancelled', statusReason: 'cancelled' });
+    const handoffEvent = inspected.events.find((e) => e.type === 'handoff.cancelled')!;
+    expect(handoffEvent).toMatchObject({ entityId: held!.requestId, actorRef: PRODUCTION_CONTROL_ACTOR, data: { cause: 'task_cancelled', initiatedBy: 'platform', content: 'retire pre-rollout smoke conversation' } });
+    const taskEvent = inspected.events.find((e) => e.type === 'task.cancelled')!;
+    expect(taskEvent).toMatchObject({ actorRef: PRODUCTION_CONTROL_ACTOR, data: { targetStatus: 'cancelled', initiatedBy: 'platform', content: 'retire pre-rollout smoke conversation' } });
+    expect(taskEvent.correlationId).toMatch(/^production-control:/);
+    expect(await bed.rows("select actor_kind, actor_ref from agent_task_transitions where task_id = $1 and to_status = 'cancelled'", [taskId])).toEqual([{ actor_kind: 'system', actor_ref: PRODUCTION_CONTROL_ACTOR }]);
+
+    // No model call, no Meta call; the worker finds nothing to do; the hold is gone from the listing.
+    expect(bed.model.callCount).toBe(0);
+    expect(bed.provider.sends).toHaveLength(0);
+    expect(await bed.runAgent()).toEqual([]);
+    expect((await ctl('holds', 'list')).json!.holds).toEqual([]);
+  });
+
+  it('repeating the cancel is safe: already_terminal, nothing changes; a task terminal by other means is reported as it is', async () => {
+    bed = await LiveOpsTestbed.start();
+    await bed.customer(A, 'wamid.a.1', 'Hola');
+    const taskId = await bed.taskOf(A);
+    expect((await ctl('tasks', 'cancel', '--task', taskId, '--reason', 'retire')).json).toMatchObject({ cancelled: { outcome: 'cancelled' } });
+    const inspected = await bed.api.temporal.inspect(taskId);
+    const state = await untouchedByCancellation();
+    const transitions = await bed.rows('select * from agent_task_transitions where task_id = $1', [taskId]);
+
+    const again = await ctl('tasks', 'cancel', '--task', taskId, '--reason', 'retire again');
+    expect(again).toMatchObject({ code: 0, json: { cancelled: { taskId, outcome: 'already_terminal', taskStatus: 'cancelled' } } });
+    expect(await bed.api.temporal.inspect(taskId)).toEqual(inspected);
+    expect(await untouchedByCancellation()).toEqual(state);
+    expect(await bed.rows('select * from agent_task_transitions where task_id = $1', [taskId])).toEqual(transitions);
+
+    // A task an operator already cancelled: a no-op as well.
+    await bed.customer(B, 'wamid.b.1', 'Hola');
+    const other = await bed.taskOf(B);
+    await bed.api.temporal.cancelTask(other, OPERATOR);
+    expect(await ctl('tasks', 'cancel', '--task', other, '--reason', 'retire')).toMatchObject({ code: 0, json: { cancelled: { outcome: 'already_terminal', taskStatus: 'cancelled' } } });
+    expect((await bed.api.temporal.inspect(other)).events.filter((e) => e.type === 'task.cancelled').map((e) => e.actorRef)).toEqual(['operator-1']);
+  });
+
+  it('fails closed: unknown task, malformed task id, missing or empty reason, bulk or wildcard targets — nothing changes', async () => {
+    bed = await LiveOpsTestbed.start();
+    await bed.customer(A, 'wamid.a.1', 'Hola');
+    const taskId = await bed.taskOf(A);
+    const before = { inspected: await bed.api.temporal.inspect(taskId), state: await untouchedByCancellation() };
+
+    expect(await ctl('tasks', 'cancel', '--task', '00000000-0000-7000-8000-000000000000', '--reason', 'x')).toMatchObject({ code: 1, json: null, err: expect.stringMatching(/task_not_found/) });
+    expect(await ctl('tasks', 'cancel', '--task', 'not-a-task', '--reason', 'x')).toMatchObject({ code: 1, err: expect.stringMatching(/invalid_task_id/) });
+    expect(await ctl('tasks', 'cancel', '--task', '*', '--reason', 'x')).toMatchObject({ code: 1, err: expect.stringMatching(/invalid_task_id/) });
+    for (const argv of [['tasks', 'cancel', '--task', taskId], ['tasks', 'cancel', '--task', taskId, '--reason', ''], ['tasks', 'cancel', '--task', taskId, '--reason', '   '], ['tasks', 'cancel', '--reason', 'x'], ['tasks', 'cancel', '--all', '--reason', 'x'], ['tasks', 'cancel-all', '--reason', 'x'], ['tasks', 'list']]) {
+      expect((await ctl(...argv)).code, argv.join(' ')).toBe(2);
+    }
+    expect(await bed.api.temporal.inspect(taskId)).toEqual(before.inspected);
+    expect(await untouchedByCancellation()).toEqual(before.state);
+  });
+
+  it('refuses outside a positively established production deployment and on a database it cannot trust (the task stays held)', async () => {
+    bed = await LiveOpsTestbed.start();
+    await bed.customer(A, 'wamid.a.1', 'Hola');
+    const taskId = await bed.taskOf(A);
+    const { R4_EXECUTION_MODE: _mode, ...undeclared } = bed.env;
+    for (const env of [undeclared, { ...bed.env, R4_EXECUTION_MODE: 'shadow' }, { ...bed.env, R4_EXECUTION_MODE: 'development' }, { ...bed.env, R4_DATABASE_URL: undefined }, { ...bed.env, R4_DATABASE_URL: '' }, { ...bed.env, R4_DATABASE_URL: 'sqlite://r4.db' }, { ...bed.env, R4_PROD_POLICY_PROFILE: 'other-pack@1' }]) {
+      const r = await control(env, 'tasks', 'cancel', '--task', taskId, '--reason', 'must not apply');
+      expect(r.code).toBe(1);
+      expect(r.err).not.toContain(bed.db.url);
+    }
+    const unreachable = await control({ ...bed.env, R4_DATABASE_URL: 'postgres://r4:secret-password@127.0.0.1:1/r4' }, 'tasks', 'cancel', '--task', taskId, '--reason', 'must not apply');
+    expect(unreachable.code).toBe(1);
+    expect(unreachable.err).not.toContain('secret-password');
+    const coreOnly = await createMigratedTestDatabase();
+    try {
+      expect(await control({ ...bed.env, R4_DATABASE_URL: coreOnly.url }, 'tasks', 'cancel', '--task', taskId, '--reason', 'must not apply')).toMatchObject({ code: 1, err: expect.stringMatching(/schema_not_current/) });
+    } finally {
+      await coreOnly.drop();
+    }
+    expect(await bed.store.taskState(taskId)).toMatchObject({ status: 'blocked', humanOwned: true });
+  });
+
+  it('the incident: a conversation bound before the rollout change is retired, and the next inbound opens a NEW autonomous binding and task', async () => {
+    // (a–c) The identity is not in the cohort and autonomy is disabled: the first inbound opens an excluded binding and a held task.
+    bed = await LiveOpsTestbed.start({ allowlist: [] });
+    await bed.customer(A, 'wamid.smoke.1', 'Hola, prueba');
+    const oldTask = await bed.taskOf(A);
+    const oldBinding = (await bed.store.findOpenBinding('whatsapp', keyOf(A)))!;
+    expect(oldBinding).toMatchObject({ taskId: oldTask, status: 'open', autonomy: 'excluded', eligibilityReason: 'not_in_cohort' });
+    expect(await humansOf(oldTask)).toEqual([expect.objectContaining({ kind: 'handoff', status: 'requested', payload: expect.objectContaining({ initiatedBy: 'platform', reason: 'autonomy_disabled' }) })]);
+    expect(await bed.store.taskState(oldTask)).toMatchObject({ status: 'blocked', humanOwned: true });
+
+    // (d) Autonomy is enabled and the rollout now allowlists the identity. The open binding stays excluded (sticky eligibility).
+    expect((await ctl('autonomy', 'on', '--reason', 'canary open')).code).toBe(0);
+    await bed.redeployGateway({ allowlist: [A] });
+    expect(await bed.store.findOpenBinding('whatsapp', keyOf(A))).toMatchObject({ bindingId: oldBinding.bindingId, autonomy: 'excluded' });
+
+    // (e–f) The operator retires the old task; the command does not touch the binding.
+    const bindingsBefore = await bed.rows('select * from channel_conversation_bindings order by created_at');
+    const r = await ctl('tasks', 'cancel', '--task', oldTask, '--reason', 'retire pre-rollout smoke conversation');
+    expect(r).toMatchObject({ code: 0, json: { cancelled: { taskId: oldTask, outcome: 'cancelled' }, conversation: { bindingId: oldBinding.bindingId, status: 'open', autonomy: 'excluded' } } });
+    expect(await bed.rows('select * from channel_conversation_bindings order by created_at')).toEqual(bindingsBefore);
+    expect(bed.model.callCount).toBe(0);
+    expect(bed.provider.sends).toHaveLength(0);
+
+    // (g–i) The next inbound: ingress sees the terminal task, closes the old binding and opens a new one with a fresh rollout evaluation.
+    expect(await bed.customer(A, 'wamid.smoke.2', 'Hola de nuevo')).toMatchObject({ status: 200, body: { ingested: 1 } });
+    const bindings = await bed.rows<{ binding_id: string; status: string; closed_reason: string | null; autonomy: string; eligibility_reason: string; task_id: string }>(
+      'select binding_id, status, closed_reason, autonomy, eligibility_reason, task_id from channel_conversation_bindings order by created_at',
+    );
+    expect(bindings).toHaveLength(2);
+    expect(bindings[0]).toMatchObject({ binding_id: oldBinding.bindingId, status: 'closed', closed_reason: 'task_cancelled', autonomy: 'excluded', eligibility_reason: 'not_in_cohort', task_id: oldTask });
+    // (j) The new binding is autonomous: the identity is allowlisted now.
+    expect(bindings[1]).toMatchObject({ status: 'open', closed_reason: null, autonomy: 'autonomous', eligibility_reason: 'allowlisted' });
+    expect(bindings[1]!.binding_id).not.toBe(oldBinding.bindingId);
+
+    // (k) A new task, not held, runnable by the normal worker; the old task stays cancelled (no resurrection).
+    const newTask = await bed.taskOf(A);
+    expect(newTask).not.toBe(oldTask);
+    expect(bindings[1]!.task_id).toBe(newTask);
+    expect(await humansOf(newTask)).toEqual([]);
+    expect(await bed.store.taskState(newTask)).toMatchObject({ humanOwned: false });
+    expect(['pending', 'running']).toContain((await bed.api.tasks.getTask(newTask)).task.status);
+    expect((await bed.api.tasks.getTask(oldTask)).task.status).toBe('cancelled');
+    bed.next(say('¡Hola! ¿En qué te ayudo?'), waitInput());
+    expect(await bed.runAgent()).not.toEqual([]);
+    await bed.deliver();
+    expect(bed.provider.sends.map((s) => s.text)).toEqual(['¡Hola! ¿En qué te ayudo?']);
   });
 });

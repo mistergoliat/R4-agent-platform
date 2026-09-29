@@ -22,9 +22,11 @@ const REQUESTS: HumanRequest[] = [
   request(8, 'consultation', 'requested', { question: 'q', contextRefs: [] }),
 ];
 
-function bed(options: { globalEnabled?: boolean; channels?: Record<string, boolean> } = {}) {
+function bed(options: { globalEnabled?: boolean; channels?: Record<string, boolean>; cancelled?: { status: string; statusReason: string; alreadyTerminal: boolean } } = {}) {
   const changes: AutonomyControlChange[] = [];
   const releases: unknown[] = [];
+  const cancellations: unknown[] = [];
+  const cancelled = options.cancelled ?? { status: 'cancelled', statusReason: 'cancelled', alreadyTerminal: false };
   const record = (c: AutonomyControlChange): AutonomyControlRecord => ({ scope: c.scope, autonomyEnabled: c.autonomyEnabled, reason: c.reason, changedBy: c.changedBy, changedAt: at, version: 2 });
   const store = {
     readControls: () => Promise.resolve({ state: { globalEnabled: options.globalEnabled ?? true, channels: options.channels ?? {}, version: '1' }, records: [] }),
@@ -32,7 +34,7 @@ function bed(options: { globalEnabled?: boolean; channels?: Record<string, boole
       changes.push(c);
       return Promise.resolve(record(c));
     },
-    bindingByTask: () => Promise.resolve({ channel: 'chat' }),
+    bindingByTask: () => Promise.resolve({ bindingId: 'b-1', channel: 'chat', status: 'open', autonomy: 'excluded', eligibilityReason: 'not_in_cohort' }),
     taskState: () => Promise.resolve({ status: 'blocked', terminalIntent: false, humanOwned: true }),
   } as unknown as ProductionStore;
   const temporal = {
@@ -41,9 +43,13 @@ function bed(options: { globalEnabled?: boolean; channels?: Record<string, boole
       releases.push({ taskId, release });
       return Promise.resolve({ ...REQUESTS[0]!, status: 'cancelled' });
     },
+    cancelTaskByPlatform: (taskId: string, cancellation: unknown) => {
+      cancellations.push({ taskId, cancellation });
+      return Promise.resolve({ task: { taskId, status: cancelled.status, statusReason: cancelled.statusReason }, alreadyTerminal: cancelled.alreadyTerminal });
+    },
   } as unknown as TemporalRuntime;
   const admin = new ProductionAdministration({ store, temporal, controls: new AutonomyControls({ store, logger: createSilentLogger() }), correlationId: 'production-control:test' });
-  return { admin, changes, releases };
+  return { admin, changes, releases, cancellations };
 }
 
 describe('production administration (D-5/D-6)', () => {
@@ -76,5 +82,28 @@ describe('production administration (D-5/D-6)', () => {
     await expect(admin.releaseHold(T(1), ' ')).rejects.toMatchObject({ code: 'reason_required' });
     await expect(admin.releaseHold('*', 'x')).rejects.toMatchObject({ code: 'invalid_task_id' });
     expect(releases).toHaveLength(1);
+  });
+
+  it('cancels one task through the runtime primitive, attributed to production control with the administrator reason; the binding is only reported', async () => {
+    const { admin, cancellations, changes, releases } = bed();
+    expect(await admin.cancelTask(T(1), ' retire pre-rollout conversation ')).toEqual({
+      taskId: T(1), outcome: 'cancelled', taskStatus: 'cancelled', statusReason: 'cancelled',
+      conversation: { bindingId: 'b-1', channel: 'chat', status: 'open', autonomy: 'excluded', eligibilityReason: 'not_in_cohort' },
+    });
+    expect(cancellations).toEqual([{ taskId: T(1), cancellation: { note: 'retire pre-rollout conversation', actorRef: PRODUCTION_CONTROL_ACTOR, correlationId: 'production-control:test' } }]);
+    // No autonomy change, no hold release.
+    expect([changes, releases]).toEqual([[], []]);
+  });
+
+  it('reports what the runtime did: already terminal, or deferred by an uncertain effect', async () => {
+    expect(await bed({ cancelled: { status: 'completed', statusReason: 'done', alreadyTerminal: true } }).admin.cancelTask(T(1), 'retire')).toMatchObject({ outcome: 'already_terminal', taskStatus: 'completed' });
+    expect(await bed({ cancelled: { status: 'blocked', statusReason: 'awaiting_reconciliation', alreadyTerminal: false } }).admin.cancelTask(T(1), 'retire')).toMatchObject({ outcome: 'cancellation_deferred', taskStatus: 'blocked' });
+  });
+
+  it('refuses a cancellation without a reason or with a malformed task id, without touching the runtime', async () => {
+    const { admin, cancellations } = bed();
+    for (const reason of [undefined, '', '   ']) await expect(admin.cancelTask(T(1), reason)).rejects.toMatchObject({ code: 'reason_required' });
+    for (const id of ['*', 'not-a-task', '', `${T(1)} `]) await expect(admin.cancelTask(id, 'retire')).rejects.toMatchObject({ code: 'invalid_task_id' });
+    expect(cancellations).toEqual([]);
   });
 });

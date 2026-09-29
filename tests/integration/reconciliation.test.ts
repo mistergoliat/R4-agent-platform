@@ -148,6 +148,19 @@ describe('uncertainty from every exit path', () => {
     expect(healthy.provider.callCount).toBe(0);
   });
 
+  it('(R4-I) a platform cancellation during an uncertain action is deferred exactly like a human one', async () => {
+    const { taskId } = await uncertainTask('platform-cancel-uncertain');
+    const cancellation = { note: 'retire conversation', actorRef: 'platform:production-control', correlationId: 'production-control:test' };
+    expect(await platform.temporal.cancelTaskByPlatform(taskId, cancellation)).toMatchObject({ task: { status: 'blocked' }, alreadyTerminal: false });
+    expect((await platform.temporal.inspect(taskId)).ownership.terminalIntent).toBe('cancelled');
+    expect((await platform.pool.query('select actor_kind, actor_ref from task_terminal_intents where task_id = $1', [taskId])).rows).toEqual([{ actor_kind: 'system', actor_ref: 'platform:production-control' }]);
+    await drain(testScheduler(platform.pool).scheduler);
+    const healthy = await worker({ capabilities: actionCapabilities(platform.pool), policy: WRITES, script: sequence([]) });
+    expect(await healthy.platform.worker.runOnce()).toMatchObject({ kind: 'reconciled', outcome: 'resolved' });
+    expect((await platform.tasks.getTask(taskId)).task.status).toBe('cancelled');
+    expect(healthy.provider.callCount).toBe(0);
+  });
+
   it('a run abandoned mid-call (recovery limit): flagged with its work in the same transaction; failure applies only after reconciliation', async () => {
     const taskId = await createActionTask(platform);
     let release!: () => void;

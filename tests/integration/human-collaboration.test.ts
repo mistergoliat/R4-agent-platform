@@ -357,4 +357,36 @@ describe('cancellation of human work', () => {
       expect((await platform.temporal.cancelTask(taskId, HUMAN)).status).toBe('cancelled');
     }
   });
+
+  it('(R4-I) a trusted platform caller cancels through the same transition: the active run is fenced, attributed to the platform, no human identity', async () => {
+    const PLATFORM = { note: 'retire pre-rollout conversation', actorRef: 'platform:production-control', correlationId: 'production-control:test' };
+    const taskId = await createActionTask(platform);
+    const w = await worker({ script: sequence([]) });
+    const claim = await w.platform.execution.claimNext({ workerId: 'platform-cancel', leaseDurationMs: 60_000 });
+    if (claim?.kind !== 'started') throw new Error(`expected a started run, got ${claim?.kind ?? 'nothing'}`);
+    expect(claim.run.taskId).toBe(taskId);
+
+    const { task, alreadyTerminal } = await platform.temporal.cancelTaskByPlatform(taskId, PLATFORM);
+    expect([task.status, task.statusReason, alreadyTerminal]).toEqual(['cancelled', 'cancelled', false]);
+    // Existing fencing: the worker that held the run can no longer write, and nobody can claim the task.
+    await expect(w.platform.execution.recordStep(claim.lease, { runId: claim.run.runId, iteration: 1, decision: { type: 'respond', content: 'zombie' }, outcome: 'recorded', usage: { inputTokens: 0, outputTokens: 0 } })).rejects.toBeTruthy();
+    expect(await w.platform.execution.claimNext({ workerId: 'late', leaseDurationMs: 60_000 })).toBeNull();
+    expect((await platform.pool.query('select status from agent_runs where task_id = $1', [taskId])).rows).toEqual([{ status: 'cancelled' }]);
+    expect((await platform.pool.query("select actor_kind, actor_ref, correlation_id from agent_task_transitions where task_id = $1 and to_status = 'cancelled'", [taskId])).rows).toEqual([{ actor_kind: 'system', actor_ref: PLATFORM.actorRef, correlation_id: PLATFORM.correlationId }]);
+    expect(await events(taskId, 'task.cancelled')).toEqual([expect.objectContaining({ actorRef: PLATFORM.actorRef, correlationId: PLATFORM.correlationId, data: { targetStatus: 'cancelled', initiatedBy: 'platform', content: PLATFORM.note } })]);
+
+    // Repeating it is a no-op that says so.
+    const before = await platform.temporal.inspect(taskId);
+    expect(await platform.temporal.cancelTaskByPlatform(taskId, PLATFORM)).toMatchObject({ task: { status: 'cancelled' }, alreadyTerminal: true });
+    expect(await platform.temporal.inspect(taskId)).toEqual(before);
+  });
+
+  it('(R4-I) a platform cancellation needs a note, a valid actor and a correlation id; an unknown task fails closed', async () => {
+    const taskId = await createActionTask(platform);
+    for (const bad of [{ note: ' ' }, { actorRef: 'not a ref' }, { correlationId: '' }]) {
+      await expect(platform.temporal.cancelTaskByPlatform(taskId, { note: 'x', actorRef: 'platform:production-control', correlationId: 'c', ...bad })).rejects.toMatchObject({ code: 'validation_failed' });
+    }
+    await expect(platform.temporal.cancelTaskByPlatform('00000000-0000-7000-8000-000000000000', { note: 'x', actorRef: 'platform:production-control', correlationId: 'c' })).rejects.toMatchObject({ code: 'task_not_found' });
+    expect((await platform.tasks.getTask(taskId)).task.status).toBe('pending');
+  });
 });

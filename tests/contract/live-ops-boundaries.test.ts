@@ -173,6 +173,19 @@ describe('R4-I boundaries: production administration (D-5/D-6) is host tooling, 
     expect(scripts['production:sales:bootstrap']).toBe('node agents/sales/dist/cli/production-bootstrap.js');
   });
 
+  it('task retirement goes through the Temporal Runtime only: never binding, rollout or autonomy state, never a human cancellation', () => {
+    for (const f of ADMIN) {
+      const source = code(f);
+      expect(source, f).not.toMatch(/closeBinding|openBinding|attachTask|touchBinding|rolloutEligibility|R4_PROD_ROLLOUT|\.cancelTask\([^)]*(OPERATOR|context|human)/);
+    }
+    const admin = code('packages/live-ops/src/administration.ts');
+    const cancel = admin.slice(admin.indexOf('async cancelTask('));
+    const body = cancel.slice(0, cancel.indexOf('\n  }\n'));
+    expect(body).toMatch(/this\.#temporal\.cancelTaskByPlatform\(taskId, \{ note, actorRef: PRODUCTION_CONTROL_ACTOR, correlationId: this\.#correlationId \}\)/);
+    // Only reads besides the runtime call: no control change, no release, no other store method.
+    expect([...body.matchAll(/this\.#(store|controls|temporal)\.(\w+)\(/g)].map((m) => `${m[1]}.${m[2]}`)).toEqual(['temporal.cancelTaskByPlatform', 'store.bindingByTask']);
+  });
+
   it('offers no bulk, wildcard or automatic release', () => {
     const control = text(join(ROOT, 'agents/sales/src/production/control.ts'));
     expect(control).not.toMatch(/release-all|releaseAll|--all\b/);

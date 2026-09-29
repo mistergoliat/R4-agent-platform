@@ -46,9 +46,11 @@ function requireReason(reason: string | undefined): string {
  * autonomy was disabled. Its trust boundary is access to the production
  * runtime host — it is not the operator plane and never builds a
  * TrustedHumanContext. It only calls existing durable primitives:
- * `AutonomyControls.set` (audited control events) and
- * `TemporalRuntime.releasePlatformHold` (the handoff/wait transition). It
- * never runs cognition, never dispatches, never touches delivery state.
+ * `AutonomyControls.set` (audited control events),
+ * `TemporalRuntime.releasePlatformHold` (the handoff/wait transition) and
+ * `TemporalRuntime.cancelTaskByPlatform` (the task cancellation). It never
+ * runs cognition, never dispatches, never touches delivery, binding or
+ * rollout state.
  *
  *   autonomy on  ≠  release held tasks   (each release is explicit, per task)
  */
@@ -106,6 +108,45 @@ export class ProductionAdministration {
     const request = await this.#temporal.releasePlatformHold(taskId, { reason: HOLD_REASONS.killSwitch, note, actorRef: PRODUCTION_CONTROL_ACTOR, correlationId: this.#correlationId });
     return { taskId, request, taskStatus: (await this.#store.taskState(taskId))?.status ?? null };
   }
+
+  /**
+   * Retires exactly one task through the Temporal Runtime's cancellation
+   * (the same transition as an operator cancelling it), attributed to
+   * production control with the administrator's reason. Typical use: a
+   * conversation whose binding was opened before a rollout change — its
+   * eligibility is sticky while the binding is open, so its task is
+   * retired and the next inbound opens a new binding with a fresh rollout
+   * evaluation. The binding is only read, never changed: closing it stays
+   * the ingress's job. Repeating it on a terminal task changes nothing.
+   */
+  async cancelTask(taskId: string, reason: string | undefined): Promise<TaskCancellation> {
+    const note = requireReason(reason);
+    if (!TASK_ID.test(taskId)) throw new PlatformError('validation', 'invalid_task_id', 'the task id must be a UUID');
+    const { task, alreadyTerminal } = await this.#temporal.cancelTaskByPlatform(taskId, { note, actorRef: PRODUCTION_CONTROL_ACTOR, correlationId: this.#correlationId });
+    const binding = await this.#store.bindingByTask(taskId);
+    return {
+      taskId,
+      outcome: alreadyTerminal ? 'already_terminal' : task.status === 'cancelled' ? 'cancelled' : 'cancellation_deferred',
+      taskStatus: task.status,
+      statusReason: task.statusReason,
+      conversation: binding ? { bindingId: binding.bindingId, channel: binding.channel, status: binding.status, autonomy: binding.autonomy, eligibilityReason: binding.eligibilityReason } : null,
+    };
+  }
+}
+
+/**
+ * What an administrative task cancellation did: `cancelled` (terminal now),
+ * `cancellation_deferred` (an effect of the task is uncertain: it stays
+ * blocked with a cancellation intent until reconciliation settles it) or
+ * `already_terminal` (nothing changed). `conversation` is the task's
+ * binding as it is — untouched by the cancellation.
+ */
+export interface TaskCancellation {
+  readonly taskId: string;
+  readonly outcome: 'cancelled' | 'cancellation_deferred' | 'already_terminal';
+  readonly taskStatus: string;
+  readonly statusReason: string | null;
+  readonly conversation: { readonly bindingId: string; readonly channel: string; readonly status: string; readonly autonomy: string; readonly eligibilityReason: string } | null;
 }
 
 function isAutonomyHold(request: HumanRequest): boolean {

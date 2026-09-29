@@ -234,6 +234,7 @@ npm run production:sales:control -- autonomy off --reason "<motivo operacional>"
 npm run production:sales:control -- autonomy on  --reason "<motivo operacional>"
 npm run production:sales:control -- holds list
 npm run production:sales:control -- holds release --task <task-id> --reason "<motivo operacional>"
+npm run production:sales:control -- tasks cancel   --task <task-id> --reason "<motivo operacional>"
 ```
 
 **Frontera de confianza.** Es tooling de administración del despliegue, no el
@@ -288,13 +289,57 @@ esquema, BD, elegibilidad, mutación). Nunca imprime URL de BD ni secretos.
   humano (`handoff_owned_by_human`), otras causas de plataforma
   (`rollout_excluded`, `autonomy_denied`, contenido no soportado, recuperación
   ADR-028 agotada), consultas, aprobaciones y reconciliación.
+- `tasks cancel` retira **una** task (UUID explícito, motivo obligatorio;
+  sin comodines ni operación masiva). Usa `TemporalRuntime.cancelTaskByPlatform`,
+  que ejecuta **la misma transición** que `cancelTask` de un operador (un
+  único cuerpo compartido): run activo `cancelled` (el worker que lo tenía
+  pierde el lease y sus escrituras fenced fallan), lease liberado, wait
+  abierta `cancelled`, human requests abiertos `cancelled` (o `released` si
+  un humano los había aceptado), timers cancelados y la task `cancelled`. Si
+  un efecto de la task es incierto, la cancelación queda **diferida**
+  (`cancellation_deferred`: la task sigue `blocked` con intención terminal
+  hasta que la reconciliación establezca el resultado). Una task ya terminal
+  ⇒ `already_terminal`, sin cambios (repetir es seguro). Una task inexistente
+  ⇒ `task_not_found`, código 1. Atribución: transición con actor
+  `system:platform:production-control`, eventos `handoff.cancelled` /
+  `task.cancelled` con `actor_ref = platform:production-control`,
+  `initiatedBy = platform` y el motivo como evidencia. **No** toca el binding
+  de la conversación (sólo lo informa), **no** cambia rollout ni autonomía,
+  **no** llama al modelo ni a Meta.
+
+**Recuperación: retirar una conversación existente para que el rollout se
+re-evalúe en el próximo inbound.** La elegibilidad de rollout se decide al
+abrir el binding y es **pegajosa** mientras el binding siga abierto: si una
+identidad escribió antes de estar en el allowlist (o antes de habilitar la
+autonomía), su binding queda `autonomy = excluded` y ni `autonomy on`, ni
+cambiar el allowlist, ni `holds release` la vuelven autónoma (el siguiente
+inbound la re-retendría como `rollout_excluded`). El caso se detectó en el
+primer smoke productivo de WhatsApp. Procedimiento:
+
+1. Confirmar que la autonomía está habilitada (`autonomy status`) y que el
+   rollout desplegado ya incluye la identidad.
+2. Retirar la task asociada al binding:
+   `npm run production:sales:control -- tasks cancel --task <task-id> --reason "retire pre-rollout smoke conversation"`.
+   La salida muestra `outcome: cancelled` y el binding **aún** `open`/`excluded`.
+3. En el próximo inbound de esa conversación, ChannelIngress ve la task
+   terminal, cierra el binding antiguo (`closed_reason = task_cancelled`) y
+   abre uno **nuevo** con evaluación de rollout fresca (p. ej.
+   `autonomy = autonomous`, `eligibility_reason = allowlisted`) y una task
+   nueva ejecutable por el worker normal. La task antigua sigue `cancelled`
+   (sin resurrección ni memoria entre tasks).
+
+Si la salida fuera `cancellation_deferred`, el binding se cierra igual en el
+próximo inbound (la ingress trata una intención terminal como terminal).
 
 **Limitación conocida (evidencia R4-J / plano del operador).** Una task que el
 agente de Sales entrega a humanos (`request_handoff`) queda esperando hasta que
 exista integración CRM/operador. Este comando no ofrece atajo para ella.
 
-**Evidencia.** `tests/integration/production-control.test.ts`,
-`tests/unit/live-ops/administration.test.ts`,
+**Evidencia.** `tests/integration/production-control.test.ts` (incluye el
+incidente completo: binding excluido → rollout cambia → `tasks cancel` →
+binding nuevo autónomo), `tests/integration/human-collaboration.test.ts` y
+`tests/integration/reconciliation.test.ts` (cancelación de plataforma con run
+activo y con efecto incierto), `tests/unit/live-ops/administration.test.ts`,
 `tests/contract/live-ops-boundaries.test.ts`,
 `tests/recovery/production-control-process.test.ts` (un proceso real por
 comando), `npm run test:mutation:production-control`.

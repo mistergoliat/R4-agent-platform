@@ -64,4 +64,24 @@ describe('production control across process restarts', () => {
       { changed_by: PRODUCTION_CONTROL_ACTOR, reason: 'drill over' },
     ]);
   });
+
+  it('tasks cancel retires a held task in its own process; a repeat in another process is a no-op; the next inbound opens a new binding', async () => {
+    bed = await LiveOpsTestbed.start();
+    await bed.customer(CUSTOMER, 'wamid.in.1', 'Hola');
+    const taskId = await bed.taskOf(CUSTOMER);
+    expect(run('autonomy', 'on', '--reason', 'canary open').code).toBe(0);
+    await bed.redeployGateway({ allowlist: [CUSTOMER] });
+
+    expect(run('tasks', 'cancel', '--task', taskId, '--reason', 'retire pre-rollout smoke conversation')).toMatchObject({ code: 0, json: { cancelled: { taskId, outcome: 'cancelled', taskStatus: 'cancelled' }, conversation: { status: 'open', autonomy: 'excluded' } } });
+    expect(run('tasks', 'cancel', '--task', taskId, '--reason', 'retire pre-rollout smoke conversation')).toMatchObject({ code: 0, json: { cancelled: { outcome: 'already_terminal' } } });
+    expect(run('tasks', 'cancel', '--task', '00000000-0000-7000-8000-000000000000', '--reason', 'x')).toMatchObject({ code: 1, json: null, stderr: expect.stringMatching(/task_not_found/) });
+
+    await bed.customer(CUSTOMER, 'wamid.in.2', 'Hola de nuevo');
+    expect(await bed.rows('select status, autonomy, eligibility_reason from channel_conversation_bindings order by created_at')).toEqual([
+      { status: 'closed', autonomy: 'excluded', eligibility_reason: 'not_in_cohort' },
+      { status: 'open', autonomy: 'autonomous', eligibility_reason: 'allowlisted' },
+    ]);
+    expect(await bed.taskOf(CUSTOMER)).not.toBe(taskId);
+    expect(bed.provider.sends).toHaveLength(0);
+  });
 });

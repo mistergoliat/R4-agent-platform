@@ -115,6 +115,30 @@ function parsePlatformHoldRelease(release: PlatformHoldRelease): PlatformHoldRel
   return { reason: release.reason, note: release.note.trim(), actorRef: release.actorRef, correlationId: release.correlationId };
 }
 
+/**
+ * (R4-I) Cancellation of a task by a trusted platform administration
+ * caller (see `cancelTaskByPlatform`): `note` is the administrator's
+ * operational reason, kept as durable evidence.
+ */
+export interface PlatformTaskCancellation {
+  readonly note: string;
+  readonly actorRef: string;
+  readonly correlationId: string;
+}
+
+function parsePlatformCancellation(cancellation: PlatformTaskCancellation): PlatformTaskCancellation {
+  if (typeof cancellation.note !== 'string' || cancellation.note.trim().length === 0 || cancellation.note.length > 2000) {
+    throw new PlatformError('validation', 'validation_failed', 'a platform cancellation needs a non-empty note (at most 2000 characters)');
+  }
+  if (typeof cancellation.actorRef !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$/.test(cancellation.actorRef)) {
+    throw new PlatformError('validation', 'validation_failed', 'a platform cancellation needs a valid actor reference');
+  }
+  if (typeof cancellation.correlationId !== 'string' || cancellation.correlationId.length === 0 || cancellation.correlationId.length > 200) {
+    throw new PlatformError('validation', 'validation_failed', 'a platform cancellation needs a correlation id');
+  }
+  return { note: cancellation.note.trim(), actorRef: cancellation.actorRef, correlationId: cancellation.correlationId };
+}
+
 function parsePlatformHold(hold: PlatformHold): PlatformHold {
   parseOrThrow(statusReasonSchema, hold.reason);
   if (typeof hold.summary !== 'string' || hold.summary.trim().length === 0 || hold.summary.length > 2000) {
@@ -608,29 +632,58 @@ export class TemporalRuntime implements RunFailureHandoff {
   async cancelTask(taskId: string, context: TrustedHumanContext): Promise<AgentTask> {
     const human = parseOrThrow(trustedHumanContextSchema, context);
     requireScope(human, 'task.cancel');
-    return this.write(async (uow, events) => {
-      let task = await this.lockTask(uow, taskId);
-      const p = temporalOf(uow);
-      const now = await p.now();
-      if (isTerminalTaskStatus(task.status)) return task;
-      const active = await uow.findActiveRun(taskId);
-      // Marks any attempt in flight `needs_reconciliation` (and its durable work) in this transaction.
-      if (active) await finishRunWithin(uow, active, { status: 'cancelled', correlationId: human.correlationId }, now, events);
-      const locked = await uow.lockTaskLease(taskId);
-      if (locked?.lease) await uow.releaseLease(locked.lease);
-      const wait = await p.activeWait(taskId);
-      if (wait) await p.finishWait(wait.waitId, 'cancelled', 'cancelled', now);
-      for (const h of await p.listHumans(taskId)) {
-        if (h.status !== 'requested' && h.status !== 'active') continue;
-        const status = h.status === 'active' ? 'released' : 'cancelled';
-        await p.updateHuman({ ...h, status, updatedAt: now });
-        await this.event(uow, task, h.requestId, status === 'released' ? 'handoff.released' : `${h.kind}.cancelled`, now, events, { cause: 'task_cancelled' }, human.humanRef);
-      }
-      await this.cancelSchedulesWithin(uow, task, now, events);
-      task = await transitionTaskWithin(uow, this.#options.ids, task, 'cancelled', 'cancelled', { kind: 'user', ref: human.humanRef }, human.correlationId, now, events);
-      await this.event(uow, task, taskId, task.status === 'cancelled' ? 'task.cancelled' : 'task.terminal.deferred', now, events, { targetStatus: 'cancelled' }, human.humanRef);
-      return task;
-    });
+    const { task } = await this.write((uow, events) =>
+      this.#cancelWithin(uow, taskId, { actor: { kind: 'user', ref: human.humanRef }, correlationId: human.correlationId }, events),
+    );
+    return task;
+  }
+
+  /**
+   * (R4-I) `cancelTask` for a trusted platform administration caller —
+   * deployment tooling, never a model, never a request body, never a human
+   * identity. Exactly the same durable transition (run, lease, wait, open
+   * human requests, timers, deferred terminal intent under uncertain
+   * effects); the actor is the platform reference and the administrator's
+   * note is kept as durable evidence. A task already terminal is returned
+   * unchanged (`alreadyTerminal`); an unknown task fails with task_not_found.
+   * It never touches channel state: whoever bound the task observes it.
+   */
+  async cancelTaskByPlatform(taskId: string, cancellation: PlatformTaskCancellation): Promise<{ task: AgentTask; alreadyTerminal: boolean }> {
+    const body = parsePlatformCancellation(cancellation);
+    return this.write((uow, events) =>
+      this.#cancelWithin(uow, taskId, { actor: { kind: 'system', ref: body.actorRef }, correlationId: body.correlationId, evidence: { initiatedBy: 'platform', content: body.note } }, events),
+    );
+  }
+
+  async #cancelWithin(
+    uow: ExecutionUnitOfWork,
+    taskId: string,
+    by: { readonly actor: Principal; readonly correlationId: string; readonly evidence?: Record<string, unknown> },
+    events: PendingEvent[],
+  ): Promise<{ task: AgentTask; alreadyTerminal: boolean }> {
+    let task = await this.lockTask(uow, taskId);
+    const p = temporalOf(uow);
+    const now = await p.now();
+    if (isTerminalTaskStatus(task.status)) return { task, alreadyTerminal: true };
+    // Platform cancellations carry their own correlation; a human's events keep the task's (as before).
+    const eventCorrelation = by.evidence ? by.correlationId : task.correlationId;
+    const active = await uow.findActiveRun(taskId);
+    // Marks any attempt in flight `needs_reconciliation` (and its durable work) in this transaction.
+    if (active) await finishRunWithin(uow, active, { status: 'cancelled', correlationId: by.correlationId }, now, events);
+    const locked = await uow.lockTaskLease(taskId);
+    if (locked?.lease) await uow.releaseLease(locked.lease);
+    const wait = await p.activeWait(taskId);
+    if (wait) await p.finishWait(wait.waitId, 'cancelled', 'cancelled', now);
+    for (const h of await p.listHumans(taskId)) {
+      if (h.status !== 'requested' && h.status !== 'active') continue;
+      const status = h.status === 'active' ? 'released' : 'cancelled';
+      await p.updateHuman({ ...h, status, updatedAt: now });
+      await this.event(uow, task, h.requestId, status === 'released' ? 'handoff.released' : `${h.kind}.cancelled`, now, events, { cause: 'task_cancelled', ...by.evidence }, by.actor.ref, null, eventCorrelation);
+    }
+    await this.cancelSchedulesWithin(uow, task, now, events);
+    task = await transitionTaskWithin(uow, this.#options.ids, task, 'cancelled', 'cancelled', by.actor, by.correlationId, now, events);
+    await this.event(uow, task, taskId, task.status === 'cancelled' ? 'task.cancelled' : 'task.terminal.deferred', now, events, { targetStatus: 'cancelled', ...by.evidence }, by.actor.ref, null, eventCorrelation);
+    return { task, alreadyTerminal: false };
   }
 
   /**

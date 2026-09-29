@@ -15,7 +15,8 @@ import { SALES_PRODUCTION_PROFILE } from './profile.js';
 
 /**
  * `npm run production:sales:control -- <command>` — production
- * administration of the Sales deployment (R4-I, D-5/D-6).
+ * administration of the Sales deployment (R4-I, D-5/D-6, plus the
+ * retirement of one task so its conversation's rollout is re-evaluated).
  *
  * Trust boundary: access to the production host and its environment. This
  * is deployment tooling, NOT the operator plane: it never builds a human
@@ -32,13 +33,15 @@ export const CONTROL_USAGE = [
   '  autonomy on --reason "<reason>"          (does NOT release held tasks)',
   '  holds list                               (tasks held because autonomy was disabled)',
   '  holds release --task <task-id> --reason "<reason>"   (one task; autonomy must be on)',
+  '  tasks cancel --task <task-id> --reason "<reason>"    (retire one task; the next inbound re-evaluates rollout)',
 ].join('\n');
 
 export type ControlCommand =
   | { readonly kind: 'autonomy-status' }
   | { readonly kind: 'autonomy-set'; readonly enabled: boolean; readonly reason: string }
   | { readonly kind: 'holds-list' }
-  | { readonly kind: 'holds-release'; readonly taskId: string; readonly reason: string };
+  | { readonly kind: 'holds-release'; readonly taskId: string; readonly reason: string }
+  | { readonly kind: 'tasks-cancel'; readonly taskId: string; readonly reason: string };
 
 export class ControlUsageError extends Error {
   readonly code = 'invalid_command';
@@ -72,6 +75,10 @@ export function parseControlCommand(argv: readonly string[]): ControlCommand {
   if (group === 'holds' && verb === 'release') {
     const o = options(rest, ['task', 'reason']);
     return { kind: 'holds-release', taskId: o.task!, reason: reasonOf(o.reason!) };
+  }
+  if (group === 'tasks' && verb === 'cancel') {
+    const o = options(rest, ['task', 'reason']);
+    return { kind: 'tasks-cancel', taskId: o.task!, reason: reasonOf(o.reason!) };
   }
   throw new ControlUsageError(`unknown command: ${argv.join(' ') || '(none)'}`);
 }
@@ -159,6 +166,16 @@ async function execute(admin: ProductionAdministration, command: ControlCommand)
     case 'holds-release': {
       const r = await admin.releaseHold(command.taskId, command.reason);
       return { released: { taskId: r.taskId, requestId: r.request.requestId, status: r.request.status }, taskStatus: r.taskStatus, next: 'the normal worker claims the task when it is runnable; nothing was executed or sent' };
+    }
+    case 'tasks-cancel': {
+      const r = await admin.cancelTask(command.taskId, command.reason);
+      return {
+        cancelled: { taskId: r.taskId, outcome: r.outcome, taskStatus: r.taskStatus, statusReason: r.statusReason },
+        conversation: r.conversation,
+        next: r.outcome === 'cancellation_deferred'
+          ? 'an effect of the task is uncertain: it becomes cancelled once reconciliation settles it; the binding is unchanged'
+          : 'the binding is unchanged; the next inbound on this conversation closes it and opens a new one with a fresh rollout evaluation',
+      };
     }
   }
 }

@@ -94,6 +94,20 @@ const MUTATIONS = [
     edits: [{ file: DELIVERY, from: '  if (f.supersededByNewerInput) return { kind: \'cancel\', reason: CANCEL_REASONS.supersededByNewerInput };\n', to: '' }],
     tests: [control('stale pending agent response')],
   },
+  {
+    name: 'M10 tasks cancel closes the conversation binding itself (ingress no longer owns it)',
+    edits: [{
+      file: ADMIN,
+      from: '    const binding = await this.#store.bindingByTask(taskId);\n    return {\n      taskId,\n      outcome:',
+      to: "    const found = await this.#store.bindingByTask(taskId);\n    if (found) await this.#store.closeBinding(found.bindingId, 'task_cancelled');\n    const binding = await this.#store.bindingByTask(taskId);\n    return {\n      taskId,\n      outcome:",
+    }],
+    tests: [CONTRACT, control('the incident')],
+  },
+  {
+    name: 'M11 a repeated cancel on a terminal task is reported as a fresh cancellation',
+    edits: [{ file: ADMIN, from: "outcome: alreadyTerminal ? 'already_terminal' :", to: "outcome: false ? 'already_terminal' :" }],
+    tests: [UNIT, control('repeating the cancel is safe')],
+  },
 ];
 
 function vitest(args, reportFailure = false) {

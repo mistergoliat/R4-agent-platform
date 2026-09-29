@@ -50,13 +50,14 @@ export class LiveOpsTestbed {
   readonly db: TestDatabase;
   readonly pool: Pool;
   readonly api: Platform;
-  readonly gateway: GatewayPlatform;
+  /** Replaced by `redeployGateway` (a rollout configuration change). */
+  gateway: GatewayPlatform;
   readonly provider: FakeWhatsAppProvider;
   readonly store: PostgresProductionStore;
-  readonly production: { config: ProductionConfig; secrets: ProductionSecrets };
+  production: { config: ProductionConfig; secrets: ProductionSecrets };
   readonly model: FakeModelProvider;
   /** The production environment of this bed (for child processes). */
-  readonly env: Readonly<Record<string, string>>;
+  env: Readonly<Record<string, string>>;
   readonly #queue: FakeModelStep[];
   #workers: WorkerPlatform[] = [];
   #timestamp = Math.floor(Date.now() / 1000) - 600;
@@ -101,13 +102,26 @@ export class LiveOpsTestbed {
     const production = loadProductionConfig(env);
     const logger = createSilentLogger();
     const api = await createPlatform({ databaseUrl: db.url, host: '127.0.0.1', port: 0, logLevel: 'silent', agentDefinitionsDir: options.agentDefinitionsDir ?? SALES_AGENT_DIR, dbPoolMax: 4 }, { logger, humanContext: () => OPERATOR });
-    const { bindings } = composeSalesGateway({ pool, production, env });
-    const gateway = await createGatewayPlatform({ databaseUrl: db.url, host: '127.0.0.1', port: 0, logLevel: 'silent', dbPoolMax: 4, gatewayId: 'gateway-test', dispatch: false, resumeAfterMs: 1000 }, bindings, { logger });
+    const gateway = await startGateway(db.url, pool, production, env);
     const queue: FakeModelStep[] = [];
     const model = new FakeModelProvider((_request, index) => queue.shift() ?? { type: 'provider_error', message: `no scripted step for model call ${index + 1}` });
     const bed = new LiveOpsTestbed({ db, pool, api, gateway, provider, production, model, queue, env: { ...env, R4_DATABASE_URL: db.url } });
     if (options.autonomy) await bed.setAutonomy(true);
     return bed;
+  }
+
+  /**
+   * A rollout configuration change: the gateway is redeployed over the same
+   * database with another allowlist (everything else unchanged). Open
+   * bindings keep the eligibility they were opened with.
+   */
+  async redeployGateway(rollout: { readonly allowlist: readonly string[] }): Promise<void> {
+    const env = { ...this.env, R4_PROD_ROLLOUT_ALLOWLIST: rollout.allowlist.map(keyOf).join(',') };
+    const production = loadProductionConfig(env);
+    await this.gateway.close();
+    this.gateway = await startGateway(this.db.url, this.pool, production, env);
+    this.production = production;
+    this.env = env;
   }
 
   /** Queues the stand-in model's next decisions, one per model call. */
@@ -196,6 +210,11 @@ export class LiveOpsTestbed {
     await this.pool.end().catch(() => undefined);
     await this.db.drop().catch(() => undefined);
   }
+}
+
+function startGateway(databaseUrl: string, pool: Pool, production: { config: ProductionConfig; secrets: ProductionSecrets }, env: Readonly<Record<string, string | undefined>>): Promise<GatewayPlatform> {
+  const { bindings } = composeSalesGateway({ pool, production, env });
+  return createGatewayPlatform({ databaseUrl, host: '127.0.0.1', port: 0, logLevel: 'silent', dbPoolMax: 4, gatewayId: 'gateway-test', dispatch: false, resumeAfterMs: 1000 }, bindings, { logger: createSilentLogger() });
 }
 
 export interface WorkerOverridesForTest {
