@@ -4,7 +4,7 @@ import { ProductionConfigError, declaredExecutionMode, loadProductionConfig, pro
 import { createLogger } from '@r4/observability';
 import { SALES_AGENT_DIR, SALES_MIGRATIONS_DIR } from '../definition.js';
 import { SALES_AGENT_ID } from '../ids.js';
-import { SALES_PRODUCTION_PROFILE } from './profile.js';
+import { SALES_PRODUCTION_PROFILES, salesProductionProfile } from './profile-v2.js';
 
 /**
  * `npm run production:sales:bootstrap` — registers the Sales AgentDefinition
@@ -47,8 +47,8 @@ export async function runProductionBootstrap(
     // Production must be positively established; nothing is guessed or defaulted.
     if (declaredExecutionMode(env) !== 'production') throw new ProductionConfigError('production_mode_not_declared', 'R4_EXECUTION_MODE must be "production" for the production bootstrap');
     const { config } = loadProductionConfig(env);
-    if (config.policyProfile !== profileLabel(SALES_PRODUCTION_PROFILE)) {
-      throw new ProductionConfigError('invalid_production_config', `R4_PROD_POLICY_PROFILE=${config.policyProfile} is not the Sales production profile ${profileLabel(SALES_PRODUCTION_PROFILE)}`);
+    if (!salesProductionProfile(config.policyProfile)) {
+      throw new ProductionConfigError('invalid_production_config', `R4_PROD_POLICY_PROFILE=${config.policyProfile} is not a Sales production profile (${SALES_PRODUCTION_PROFILES.map(profileLabel).join(', ')})`);
     }
     const databaseUrl = env.R4_DATABASE_URL;
     if (!databaseUrl || !DATABASE_URL.test(databaseUrl)) throw new ProductionConfigError('production_config_incomplete', 'R4_DATABASE_URL (postgres://) of the production deployment is required');

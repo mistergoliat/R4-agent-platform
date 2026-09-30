@@ -16,12 +16,12 @@ import {
   rolloutFingerprint,
 } from '@r4/live-ops';
 import { loadWorkerConfig, runWorkerProcess } from '@r4/worker';
-import { describeCatalogHttpConfig, loadCatalogHttpConfig } from '@r4-adapters/catalog-http';
+import { HttpCatalogAdapter, describeCatalogHttpConfig, loadCatalogHttpConfig, type CatalogFetch } from '@r4-adapters/catalog-http';
 import { describeWhatsAppConfig, loadWhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
 import { adminDatabaseUrl } from '../harness/database.js';
 import { configuredModelProvider } from '../model.js';
-import { composeSalesGateway, composeSalesProductionWorker } from '../production/composition.js';
-import { SALES_PRODUCTION_PROFILE } from '../production/profile.js';
+import { composeSalesGateway, composeSalesProductionWorker, selectedSalesProductionProfile } from '../production/composition.js';
+import { SALES_DOMAINS, SALES_PRODUCTION_PROFILE } from '../production/profile.js';
 import { flag, loadLocalEnv, option, print } from './common.js';
 import { VALIDATION_SCENARIOS, VALIDATION_SECRETS, validationIdentity, type ScenarioResult } from './production-validation.js';
 
@@ -74,10 +74,23 @@ async function main(): Promise<void> {
   print('usage: --plan | --validate | --smoke | --gateway | --worker | --identity-key <wa_id>');
 }
 
+const nodeFetch: CatalogFetch = async (url, init) => {
+  const response = await fetch(url, init);
+  return { status: response.status, text: () => response.text() };
+};
+
+/** The catalog-service binding when the selected profile makes Catalog REAL (v2); undefined under v1. Nothing is called here. */
+function productionCatalog(production: ReturnType<typeof loadProductionConfig>, logger?: ReturnType<typeof createLogger>): HttpCatalogAdapter | undefined {
+  if (selectedSalesProductionProfile(production.config).domains[SALES_DOMAINS.catalog]?.status !== 'REAL') return undefined;
+  const config = loadCatalogHttpConfig(process.env, { allowNetwork: production.config.allowNetwork });
+  return new HttpCatalogAdapter({ config, fetch: nodeFetch, ...(logger ? { onCall: (event) => logger.info({ event: 'catalog.call', ...event }, 'catalog call') } : {}) });
+}
+
 function composition() {
   const noStore = { readControls: () => Promise.reject(new Error('plan only')) } as never;
   const production = loadProductionConfig(process.env);
-  return composeSalesProductionWorker({ pool: { query: () => Promise.reject(new Error('plan only')) } as never, store: noStore, production, modelProvider: { providerId: 'plan', invoke: () => Promise.reject(new Error('plan only')) }, logger: createLogger({ service: 'plan', level: 'silent' }) });
+  const catalog = productionCatalog(production);
+  return composeSalesProductionWorker({ pool: { query: () => Promise.reject(new Error('plan only')) } as never, store: noStore, production, modelProvider: { providerId: 'plan', invoke: () => Promise.reject(new Error('plan only')) }, logger: createLogger({ service: 'plan', level: 'silent' }), ...(catalog ? { catalog } : {}) });
 }
 
 async function plan(production: ReturnType<typeof loadProductionConfig>): Promise<void> {
@@ -88,10 +101,9 @@ async function plan(production: ReturnType<typeof loadProductionConfig>): Promis
       return { error: error instanceof Error ? error.message : String(error) };
     }
   })();
-  // R4-J1B: declarative only. Catalog stays UNAVAILABLE in this profile until catalog-service passes the J1A integration gate;
-  // a well-formed configuration proves neither authentication nor connectivity (nothing is probed here).
+  // A well-formed configuration proves neither authentication nor connectivity (nothing is probed here).
   const catalog = (() => {
-    const gate = 'UNAVAILABLE in this profile: bound only after catalog-service R4-J1A passes the integration gate';
+    const gate = selectedSalesProductionProfile(production.config).domains[SALES_DOMAINS.catalog]?.status === 'REAL' ? 'REAL: catalog-service v2 over HTTP (read-only)' : 'UNAVAILABLE in this profile';
     try {
       return { binding: gate, ...describeCatalogHttpConfig(loadCatalogHttpConfig(process.env, { allowNetwork: production.config.allowNetwork })) };
     } catch (error) {
@@ -147,7 +159,8 @@ async function worker(production: ReturnType<typeof loadProductionConfig>): Prom
   const config = loadWorkerConfig(process.env);
   const logger = createLogger({ service: 'r4-worker', level: config.logLevel });
   const pool = createPool({ connectionString: config.databaseUrl, logger, applicationName: 'r4-worker-bindings', max: 2 });
-  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger });
+  const catalog = productionCatalog(production, logger);
+  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...(catalog ? { catalog } : {}) });
   logger.info({ event: 'service.composed', profile: composed.report.profile, profileFingerprint: composed.report.profileFingerprint }, 'production worker composed');
   await runWorkerProcess(config, composed.bindings, { logger });
 }
@@ -224,7 +237,7 @@ async function smoke(production: ReturnType<typeof loadProductionConfig>): Promi
         const git = gitState();
         const id = `psmoke_${new Date().toISOString().replace(/[:.]/g, '-')}`;
         const files = {
-          'manifest.json': stableJson({ smokeId: id, kind: 'real-channel-smoke', gitSha: git.sha, gitDirty: git.dirty, profile: profileLabel(SALES_PRODUCTION_PROFILE), conversationKey: `${key.slice(0, 12)}…`, rolloutFingerprint: rolloutFingerprint(production.config.rollout) }),
+          'manifest.json': stableJson({ smokeId: id, kind: 'real-channel-smoke', gitSha: git.sha, gitDirty: git.dirty, profile: profileLabel(selectedSalesProductionProfile(production.config)), conversationKey: `${key.slice(0, 12)}…`, rolloutFingerprint: rolloutFingerprint(production.config.rollout) }),
           'outbound.json': stableJson(outbound.map((o) => ({ outboundId: o.outboundId, status: o.status, attempts: o.attempts, providerMessageIdKnown: o.providerMessageId !== null, acceptedAt: o.acceptedAt, deliveredAt: o.deliveredAt, readAt: o.readAt }))),
           'metrics.json': stableJson(await store.metrics()),
         };

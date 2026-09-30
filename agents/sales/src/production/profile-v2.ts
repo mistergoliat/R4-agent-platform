@@ -1,21 +1,19 @@
-import type { ProductionProfile } from '@r4/live-ops';
+import { profileLabel, type ProductionProfile } from '@r4/live-ops';
 import { WHATSAPP_CHANNEL_ID, WHATSAPP_CLOUD_CONTRACT_REF } from '@r4-adapters/whatsapp-cloud';
 import { CATALOG_FRESHNESS_TTL_MS } from '../capabilities/catalog.js';
 import { CAPABILITY_IDS } from '../ids.js';
 import { SALES_DOMAINS, SALES_PRODUCTION_PROFILE } from './profile.js';
 
 /**
- * Sales production profile, version 2 — CANDIDATE, NOT ENABLED (R4-J1C).
+ * Sales production profile, version 2 (defined R4-J1C, enablement authorized R4-J1 Step 6).
  *
  * The only change from v1: Catalog becomes a REAL, read-only owner bound over
  * HTTP to catalog-service's converged v2 contract. Everything else is v1
  * verbatim (Customer/Shipping/Quote UNAVAILABLE, same channel, same writes).
  *
- * Nothing composes this profile: `composeSalesProductionWorker`, the
- * bootstrap and the control CLI accept only SALES_PRODUCTION_PROFILE (v1),
- * whose fingerprint is part of the deployed execution contract and is left
- * untouched. Enabling v2 is a later, explicitly authorized step that must
- * first clear every blocker in SALES_PRODUCTION_PROFILE_V2_GATE.
+ * A deployment composes it only by selecting it explicitly
+ * (R4_PROD_POLICY_PROFILE=sales-production@2) and providing the Catalog
+ * binding (R4_CATALOG_*); v1 stays selectable and its fingerprint is untouched.
  */
 export const CATALOG_CONTRACT_REF = 'catalog-service:contracts/catalog/v2 (catalog-commercial-v2, schemaVersion 1; converged R4-J1C)';
 
@@ -69,8 +67,8 @@ export const SALES_PRODUCTION_V2_CATALOG_BINDING = Object.freeze({
 });
 
 /**
- * What must be true before v2 may be enabled. Every item is open in J1C;
- * evidence for each belongs in docs/architecture/R4-J1C_CATALOG_CONTRACT_CONVERGENCE.md §12.
+ * What had to be true before v2 was enabled (all satisfied, evidence in
+ * docs/architecture/R4-J1D_PRODUCTION_CATALOG_CLOSURE.md: Steps 1–5 and J1D-R1).
  */
 export const SALES_PRODUCTION_PROFILE_V2_GATE = Object.freeze([
   { id: 'owner-commit', blocking: true, requirement: 'catalog-service J1C changes committed/deployed; R4 fixtures re-synced from that commit (SOURCE.json ownerContractFilesUncommitted=false)' },
@@ -79,3 +77,11 @@ export const SALES_PRODUCTION_PROFILE_V2_GATE = Object.freeze([
   { id: 'live-read-only-smoke', blocking: true, requirement: 'authorized read-only smoke of the three v2 endpoints against the deployed catalog-service with the R4 key' },
   { id: 'explicit-authorization', blocking: true, requirement: 'explicit user authorization to compose profile v2 (J1 CLOSED is a separate decision)' },
 ] as const);
+
+/** The Sales production profiles a deployment may select with R4_PROD_POLICY_PROFILE. */
+export const SALES_PRODUCTION_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_PRODUCTION_PROFILE, SALES_PRODUCTION_PROFILE_V2_CANDIDATE]);
+
+/** The Sales production profile declared by `label` (`sales-production@1|2`), or null. */
+export function salesProductionProfile(label: string): ProductionProfile | null {
+  return SALES_PRODUCTION_PROFILES.find((profile) => profileLabel(profile) === label) ?? null;
+}

@@ -14,6 +14,7 @@ import {
   profileLabel,
   type ConversationTaskFactory,
   type ProductionCompositionReport,
+  type ProductionProfile,
   type ProductionConfig,
   type ProductionSecrets,
   type ProductionStore,
@@ -25,7 +26,9 @@ import { SALES_AGENT_ID, SALES_TASK_TYPE, CAPABILITY_IDS } from '../ids.js';
 import { SALES_ROOT_GOAL } from '../goal.js';
 import { SalesWorkspaceContextSource } from '../workspace/context-source.js';
 import { PostgresSalesStore } from '../workspace/store.js';
-import { SALES_DOMAINS, SALES_PRODUCTION_ACTION_POLICY, SALES_PRODUCTION_PROFILE } from './profile.js';
+import { SALES_DOMAINS, SALES_PRODUCTION_ACTION_POLICY } from './profile.js';
+import { SALES_PRODUCTION_PROFILES, salesProductionProfile } from './profile-v2.js';
+import { catalogCapabilities } from '../capabilities/catalog.js';
 
 /** Who opens production Sales conversations: the channel ingress (a platform service, never the model). */
 export const SALES_CHANNEL_INGRESS: Principal = { kind: 'service', ref: 'sales-channel-ingress' };
@@ -56,6 +59,15 @@ export interface SalesProductionWorkerOptions {
   readonly modelProvider: ModelProvider;
   readonly logger: Logger;
   readonly clock?: Clock;
+  /** The catalog-service binding; required when the selected profile makes Catalog REAL (v2). */
+  readonly catalog?: CatalogPort & { readonly bindingKind: string };
+}
+
+/** The Sales production profile the deployment declared, or a refusal (nothing is defaulted). */
+export function selectedSalesProductionProfile(config: ProductionConfig): ProductionProfile {
+  const profile = salesProductionProfile(config.policyProfile);
+  if (!profile) throw new Error(`refusing production composition: R4_PROD_POLICY_PROFILE=${config.policyProfile} is not a Sales production profile (${SALES_PRODUCTION_PROFILES.map(profileLabel).join(', ')})`);
+  return profile;
 }
 
 export interface SalesProductionWorker {
@@ -78,17 +90,32 @@ export interface SalesProductionWorker {
  */
 export function composeSalesProductionWorker(options: SalesProductionWorkerOptions): SalesProductionWorker {
   const config = assertProductionMode(options.production.config);
-  const profile = SALES_PRODUCTION_PROFILE;
-  if (profileLabel(profile) !== config.policyProfile) throw new Error(`refusing production composition: R4_PROD_POLICY_PROFILE=${config.policyProfile} but the Sales pack provides ${profileLabel(profile)}`);
+  const profile = selectedSalesProductionProfile(config);
   const clock = options.clock ?? systemClock;
   const sales = new PostgresSalesStore(options.pool);
   const controls = new AutonomyControls({ store: options.store, logger: options.logger });
   const capabilities = new CapabilityRegistry();
-  if (capabilityAvailability(profile, CAPABILITY_IDS.workspaceUpdate).available) {
-    capabilities.registerWrite(workspaceCapability({ store: sales, catalog: UNAVAILABLE_CATALOG, clock }));
+  // Catalog is bound only when the profile makes it REAL (v2); otherwise every call is refused honestly.
+  const catalogReal = profile.domains[SALES_DOMAINS.catalog]?.status === 'REAL';
+  if (catalogReal && (!options.catalog || options.catalog.bindingKind === UNAVAILABLE_CATALOG.bindingKind)) {
+    throw new Error(`refusing production composition: ${profileLabel(profile)} binds Catalog REAL but no catalog-service binding was provided (R4_CATALOG_*)`);
   }
-  // Customer / Catalog / Shipping / Quote are UNAVAILABLE in this profile: their capabilities are deliberately not registered.
-  const report = assertProductionComposition(profile, [{ domain: SALES_DOMAINS.workspace, bindingKind: 'internal' }, { domain: SALES_DOMAINS.catalog, bindingKind: UNAVAILABLE_CATALOG.bindingKind }], capabilities.list().map((c) => c.capabilityId));
+  const catalog: CatalogPort = catalogReal ? options.catalog! : UNAVAILABLE_CATALOG;
+  if (capabilityAvailability(profile, CAPABILITY_IDS.workspaceUpdate).available) {
+    capabilities.registerWrite(workspaceCapability({ store: sales, catalog, clock }));
+  }
+  if (catalogReal) {
+    // READ capabilities offered to the model; they execute through the CapabilityInvoker only.
+    const [catalogSearch, productContext] = catalogCapabilities(catalog);
+    capabilities.register(catalogSearch);
+    capabilities.register(productContext);
+  }
+  // Customer / Shipping / Quote (and Catalog under v1) are UNAVAILABLE: their capabilities are deliberately not registered.
+  const report = assertProductionComposition(
+    profile,
+    [{ domain: SALES_DOMAINS.workspace, bindingKind: 'internal' }, { domain: SALES_DOMAINS.catalog, bindingKind: catalogReal ? 'real' : UNAVAILABLE_CATALOG.bindingKind }],
+    capabilities.list().map((c) => c.capabilityId),
+  );
   return {
     report,
     controls,
@@ -133,7 +160,7 @@ export function composeSalesGateway(options: SalesGatewayOptions): { bindings: G
     describe: describeWhatsAppConfig(whatsapp),
     bindings: {
       production: options.production,
-      profile: SALES_PRODUCTION_PROFILE,
+      profile: selectedSalesProductionProfile(config),
       inbound: [new WhatsAppInboundAdapter(whatsapp)],
       outbound: [new WhatsAppOutboundAdapter(whatsapp, options.fetch ? { fetch: options.fetch } : {})],
       taskFactory: salesConversationTaskFactory(options.pool),

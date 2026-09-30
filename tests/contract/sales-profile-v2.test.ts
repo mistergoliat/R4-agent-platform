@@ -1,6 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { assertProductionProfile, capabilityAvailability, loadProductionConfig, profileFingerprint, profileLabel, type ProductionStore } from '@r4/live-ops';
 import { createSilentLogger } from '@r4/observability';
@@ -11,16 +8,18 @@ import {
   SALES_PRODUCTION_PROFILE_V2_CANDIDATE,
   SALES_PRODUCTION_PROFILE_V2_GATE,
   SALES_PRODUCTION_V2_CATALOG_BINDING,
+  UNAVAILABLE_CATALOG,
   composeSalesProductionWorker,
 } from '@r4-sales/agent/production';
+import type { CatalogPort } from '@r4-adapters/domains';
 import { CATALOG_ENV } from '@r4-adapters/catalog-http';
 
 /**
- * R4-J1C: profile v2 is PREPARED, not enabled. The deployed v1 profile (and
- * its fingerprint, part of the execution contract) is unchanged, and nothing
- * can compose v2 yet.
+ * R4-J1C defined profile v2; R4-J1 Step 6 enables it by explicit selection
+ * (R4_PROD_POLICY_PROFILE=sales-production@2) with a catalog-service binding.
+ * The deployed v1 profile (and its fingerprint, part of the execution
+ * contract) is unchanged and still selectable.
  */
-const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const V1_FINGERPRINT = 'bd30523fba7cd17b2996af8205862e30c6756b4efb812777d00c2a5f9f84d313';
 
 describe('Sales production profile v1 is untouched', () => {
@@ -31,7 +30,7 @@ describe('Sales production profile v1 is untouched', () => {
   });
 });
 
-describe('Sales production profile v2 (candidate, not enabled)', () => {
+describe('Sales production profile v2', () => {
   it('is a valid production profile that differs from v1 only in the Catalog domain', () => {
     const v2 = assertProductionProfile(SALES_PRODUCTION_PROFILE_V2_CANDIDATE);
     expect(profileLabel(v2)).toBe('sales-production@2');
@@ -60,15 +59,33 @@ describe('Sales production profile v2 (candidate, not enabled)', () => {
     expect(b.timeouts.capabilityTimeoutMs).toBe(10_000);
   });
 
-  it('every enablement gate is blocking and open', () => {
+  it('every enablement gate is blocking', () => {
     expect(SALES_PRODUCTION_PROFILE_V2_GATE.map((g) => g.id)).toEqual(['owner-commit', 'prod-unknowns', 'owner-decisions', 'live-read-only-smoke', 'explicit-authorization']);
     expect(SALES_PRODUCTION_PROFILE_V2_GATE.every((g) => g.blocking)).toBe(true);
   });
 
-  it('nothing composes v2: composition, bootstrap and control accept only v1', () => {
-    const production = loadProductionConfig({ R4_EXECUTION_MODE: 'production', R4_PROD_POLICY_PROFILE: 'sales-production@2', R4_PROD_ROLLOUT_PERCENT: '0', R4_PROD_IDENTITY_HASH_KEY: 'x'.repeat(40), R4_PROD_ALLOW_NETWORK: 'false' });
-    const noStore = { readControls: () => Promise.reject(new Error('unused')) } as unknown as ProductionStore;
-    expect(() => composeSalesProductionWorker({ pool: { query: () => Promise.reject(new Error('no db')) } as never, store: noStore, production, modelProvider: { providerId: 'none', invoke: () => Promise.reject(new Error('unused')) }, logger: createSilentLogger() })).toThrow(/sales-production@1/);
-    for (const f of ['composition.ts', 'bootstrap.ts', 'control.ts']) expect(readFileSync(join(ROOT, 'agents/sales/src/production', f), 'utf8'), f).not.toMatch(/PROFILE_V2|profile-v2/);
+  const env = (profile: string) => loadProductionConfig({ R4_EXECUTION_MODE: 'production', R4_PROD_POLICY_PROFILE: profile, R4_PROD_ROLLOUT_PERCENT: '0', R4_PROD_IDENTITY_HASH_KEY: 'x'.repeat(40), R4_PROD_ALLOW_NETWORK: 'false' });
+  const noStore = { readControls: () => Promise.reject(new Error('unused')) } as unknown as ProductionStore;
+  const compose = (profile: string, catalog?: CatalogPort & { bindingKind: string }) => composeSalesProductionWorker({ pool: { query: () => Promise.reject(new Error('no db')) } as never, store: noStore, production: env(profile), modelProvider: { providerId: 'none', invoke: () => Promise.reject(new Error('unused')) }, logger: createSilentLogger(), ...(catalog ? { catalog } : {}) });
+  const httpCatalog = { bindingKind: 'http', search: () => Promise.reject(new Error('unused')), getProductContext: () => Promise.reject(new Error('unused')), getItemContext: () => Promise.reject(new Error('unused')) } as CatalogPort & { bindingKind: string };
+
+  it('is selected explicitly and refuses to compose without the catalog-service binding', () => {
+    expect(() => compose('sales-production@2')).toThrow(/catalog-service binding/);
+    expect(() => compose('sales-production@2', UNAVAILABLE_CATALOG)).toThrow(/catalog-service binding/);
+    expect(() => compose('sales-production@3', httpCatalog)).toThrow(/not a Sales production profile/);
+  });
+
+  it('composed with the binding, offers exactly the workspace and the two READ Catalog capabilities', () => {
+    const { bindings, report } = compose('sales-production@2', httpCatalog);
+    expect(bindings.capabilities.list().map((c) => c.capabilityId).sort()).toEqual([CAPABILITY_IDS.catalogSearch, CAPABILITY_IDS.productContext, CAPABILITY_IDS.workspaceUpdate].sort());
+    expect(report.profile).toBe('sales-production@2');
+    expect(bindings.presence).toEqual({ executionMode: 'production', runtimeProfile: 'sales-production@2' });
+    expect(report.writes.requireApproval).toContain(CAPABILITY_IDS.quoteCreate);
+  });
+
+  it('v1 still composes without Catalog and ignores any binding', () => {
+    const { bindings, report } = compose('sales-production@1', httpCatalog);
+    expect(bindings.capabilities.list().map((c) => c.capabilityId)).toEqual([CAPABILITY_IDS.workspaceUpdate]);
+    expect(report.profileFingerprint).toBe(V1_FINGERPRINT);
   });
 });
