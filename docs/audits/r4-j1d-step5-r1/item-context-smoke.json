@@ -1,0 +1,768 @@
+[
+  {
+    "key": "P2248",
+    "query": "quantity=1",
+    "status": 200,
+    "ms": 322.8,
+    "body": {
+      "schemaVersion": 1,
+      "status": "found",
+      "itemKey": "P2248",
+      "ref": {
+        "productId": "2248",
+        "variantId": null
+      },
+      "parentProduct": {
+        "productKey": "P2248",
+        "name": "Swivel para Saco de Boxeo | Rising",
+        "sku": "RS3017"
+      },
+      "variant": {
+        "variantId": null,
+        "sku": "RS3017",
+        "attributes": []
+      },
+      "pricing": {
+        "status": "available",
+        "quantity": 1,
+        "regularGross": {
+          "amount": 20990,
+          "currency": "CLP"
+        },
+        "finalGross": {
+          "amount": 20990,
+          "currency": "CLP"
+        },
+        "promotion": null,
+        "tax": {
+          "included": true,
+          "rate": 0.19,
+          "basis": "configured_flat_rate"
+        },
+        "engineVersion": "catalog-commercial-v2.2.0"
+      },
+      "availability": {
+        "availableQuantity": 47,
+        "sellability": "sellable",
+        "reason": "in_stock",
+        "leadTime": null
+      },
+      "freshness": {
+        "asOf": "2026-09-30T18:18:13.382Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 5
+        },
+        "validUntil": "2026-09-30T18:18:28.382Z"
+      },
+      "provenance": {
+        "source": "prestashop",
+        "service": "catalog-service",
+        "serviceBuildRef": "catalog-service@local",
+        "sourceUpdatedAt": null
+      }
+    }
+  },
+  {
+    "key": "P2338",
+    "query": "quantity=1",
+    "status": 200,
+    "ms": 187,
+    "body": {
+      "schemaVersion": 1,
+      "status": "found",
+      "itemKey": "P2338",
+      "ref": {
+        "productId": "2338",
+        "variantId": null
+      },
+      "parentProduct": {
+        "productKey": "P2338",
+        "name": "Banco Regulable Alpha - 2da Selección | HWM® (HWM-AP-B101-SU50-4)",
+        "sku": "RE-HWM-AP-B101"
+      },
+      "variant": {
+        "variantId": null,
+        "sku": "RE-HWM-AP-B101",
+        "attributes": []
+      },
+      "pricing": {
+        "status": "available",
+        "quantity": 1,
+        "regularGross": {
+          "amount": 269990,
+          "currency": "CLP"
+        },
+        "finalGross": {
+          "amount": 134995,
+          "currency": "CLP"
+        },
+        "promotion": {
+          "type": "percentage",
+          "percentOff": 0.5,
+          "amountOffGross": null,
+          "validUntil": null
+        },
+        "tax": {
+          "included": true,
+          "rate": 0.19,
+          "basis": "configured_flat_rate"
+        },
+        "engineVersion": "catalog-commercial-v2.2.0"
+      },
+      "availability": {
+        "availableQuantity": 0,
+        "sellability": "not_sellable",
+        "reason": "out_of_stock",
+        "leadTime": null
+      },
+      "freshness": {
+        "asOf": "2026-09-30T18:18:13.709Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 4
+        },
+        "validUntil": "2026-09-30T18:18:28.709Z"
+      },
+      "provenance": {
+        "source": "prestashop",
+        "service": "catalog-service",
+        "serviceBuildRef": "catalog-service@local",
+        "sourceUpdatedAt": null
+      }
+    }
+  },
+  {
+    "key": "P2340",
+    "query": "quantity=1",
+    "status": 200,
+    "ms": 176.1,
+    "body": {
+      "schemaVersion": 1,
+      "status": "found",
+      "itemKey": "P2340",
+      "ref": {
+        "productId": "2340",
+        "variantId": null
+      },
+      "parentProduct": {
+        "productKey": "P2340",
+        "name": "Colchoneta Oxford Negro/Rojo 100x50x5cm - 2da Selección | FullFit (FICLE3-SU55,-1)",
+        "sku": "RE-FICLE3"
+      },
+      "variant": {
+        "variantId": null,
+        "sku": "RE-FICLE3",
+        "attributes": []
+      },
+      "pricing": {
+        "status": "available",
+        "quantity": 1,
+        "regularGross": {
+          "amount": 13990,
+          "currency": "CLP"
+        },
+        "finalGross": {
+          "amount": 6296,
+          "currency": "CLP"
+        },
+        "promotion": {
+          "type": "percentage",
+          "percentOff": 0.55,
+          "amountOffGross": null,
+          "validUntil": null
+        },
+        "tax": {
+          "included": true,
+          "rate": 0.19,
+          "basis": "configured_flat_rate"
+        },
+        "engineVersion": "catalog-commercial-v2.2.0"
+      },
+      "availability": {
+        "availableQuantity": 10,
+        "sellability": "sellable",
+        "reason": "in_stock",
+        "leadTime": null
+      },
+      "freshness": {
+        "asOf": "2026-09-30T18:18:13.896Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 5
+        },
+        "validUntil": "2026-09-30T18:18:28.896Z"
+      },
+      "provenance": {
+        "source": "prestashop",
+        "service": "catalog-service",
+        "serviceBuildRef": "catalog-service@local",
+        "sourceUpdatedAt": null
+      }
+    }
+  },
+  {
+    "key": "P2195",
+    "query": "quantity=1",
+    "status": 200,
+    "ms": 169.4,
+    "body": {
+      "schemaVersion": 1,
+      "status": "found",
+      "itemKey": "P2195",
+      "ref": {
+        "productId": "2195",
+        "variantId": null
+      },
+      "parentProduct": {
+        "productKey": "P2195",
+        "name": "Pack 3 Agarres Ergonómicos - Accesorio Polea | Obelix",
+        "sku": "PACK-SAO"
+      },
+      "variant": {
+        "variantId": null,
+        "sku": "PACK-SAO",
+        "attributes": []
+      },
+      "pricing": {
+        "status": "available",
+        "quantity": 1,
+        "regularGross": {
+          "amount": 86970,
+          "currency": "CLP"
+        },
+        "finalGross": {
+          "amount": 73925,
+          "currency": "CLP"
+        },
+        "promotion": {
+          "type": "percentage",
+          "percentOff": 0.15,
+          "amountOffGross": null,
+          "validUntil": null
+        },
+        "tax": {
+          "included": true,
+          "rate": 0.19,
+          "basis": "configured_flat_rate"
+        },
+        "engineVersion": "catalog-commercial-v2.2.0"
+      },
+      "availability": {
+        "availableQuantity": 1,
+        "sellability": "sellable",
+        "reason": "in_stock",
+        "leadTime": null
+      },
+      "freshness": {
+        "asOf": "2026-09-30T18:18:14.061Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 4
+        },
+        "validUntil": "2026-09-30T18:18:29.061Z"
+      },
+      "provenance": {
+        "source": "prestashop",
+        "service": "catalog-service",
+        "serviceBuildRef": "catalog-service@local",
+        "sourceUpdatedAt": null
+      }
+    }
+  },
+  {
+    "key": "P545",
+    "query": "quantity=1",
+    "status": 200,
+    "ms": 165.7,
+    "body": {
+      "schemaVersion": 1,
+      "status": "found",
+      "itemKey": "P545",
+      "ref": {
+        "productId": "545",
+        "variantId": null
+      },
+      "parentProduct": {
+        "productKey": "P545",
+        "name": "Barra Olímpica 20kg 220cm Eco Serie | PROmachine",
+        "sku": "BORE20"
+      },
+      "variant": {
+        "variantId": null,
+        "sku": "BORE20",
+        "attributes": []
+      },
+      "pricing": {
+        "status": "available",
+        "quantity": 1,
+        "regularGross": {
+          "amount": 84990,
+          "currency": "CLP"
+        },
+        "finalGross": {
+          "amount": 84990,
+          "currency": "CLP"
+        },
+        "promotion": null,
+        "tax": {
+          "included": true,
+          "rate": 0.19,
+          "basis": "configured_flat_rate"
+        },
+        "engineVersion": "catalog-commercial-v2.2.0"
+      },
+      "availability": {
+        "availableQuantity": 4,
+        "sellability": "sellable",
+        "reason": "in_stock",
+        "leadTime": null
+      },
+      "freshness": {
+        "asOf": "2026-09-30T18:18:14.228Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 8
+        },
+        "validUntil": "2026-09-30T18:18:29.228Z"
+      },
+      "provenance": {
+        "source": "prestashop",
+        "service": "catalog-service",
+        "serviceBuildRef": "catalog-service@local",
+        "sourceUpdatedAt": null
+      }
+    }
+  },
+  {
+    "key": "P2128-V663",
+    "query": "quantity=1",
+    "status": 200,
+    "ms": 180.7,
+    "body": {
+      "schemaVersion": 1,
+      "status": "found",
+      "itemKey": "P2128-V663",
+      "ref": {
+        "productId": "2128",
+        "variantId": "663"
+      },
+      "parentProduct": {
+        "productKey": "P2128",
+        "name": "Par Collarines Olímpico Magnéticos | Rising",
+        "sku": "RS6060"
+      },
+      "variant": {
+        "variantId": "663",
+        "sku": "RS6060-RO",
+        "attributes": [
+          {
+            "group": "Color",
+            "value": "Rosado"
+          }
+        ]
+      },
+      "pricing": {
+        "status": "available",
+        "quantity": 1,
+        "regularGross": {
+          "amount": 15990,
+          "currency": "CLP"
+        },
+        "finalGross": {
+          "amount": 15990,
+          "currency": "CLP"
+        },
+        "promotion": null,
+        "tax": {
+          "included": true,
+          "rate": 0.19,
+          "basis": "configured_flat_rate"
+        },
+        "engineVersion": "catalog-commercial-v2.2.0"
+      },
+      "availability": {
+        "availableQuantity": 47,
+        "sellability": "sellable",
+        "reason": "in_stock",
+        "leadTime": null
+      },
+      "freshness": {
+        "asOf": "2026-09-30T18:18:14.408Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 5
+        },
+        "validUntil": "2026-09-30T18:18:29.408Z"
+      },
+      "provenance": {
+        "source": "prestashop",
+        "service": "catalog-service",
+        "serviceBuildRef": "catalog-service@local",
+        "sourceUpdatedAt": null
+      }
+    }
+  },
+  {
+    "key": "P2128-V664",
+    "query": "quantity=1",
+    "status": 200,
+    "ms": 180.3,
+    "body": {
+      "schemaVersion": 1,
+      "status": "found",
+      "itemKey": "P2128-V664",
+      "ref": {
+        "productId": "2128",
+        "variantId": "664"
+      },
+      "parentProduct": {
+        "productKey": "P2128",
+        "name": "Par Collarines Olímpico Magnéticos | Rising",
+        "sku": "RS6060"
+      },
+      "variant": {
+        "variantId": "664",
+        "sku": "RS6060-AM",
+        "attributes": [
+          {
+            "group": "Color",
+            "value": "Amarillo"
+          }
+        ]
+      },
+      "pricing": {
+        "status": "available",
+        "quantity": 1,
+        "regularGross": {
+          "amount": 15990,
+          "currency": "CLP"
+        },
+        "finalGross": {
+          "amount": 15990,
+          "currency": "CLP"
+        },
+        "promotion": null,
+        "tax": {
+          "included": true,
+          "rate": 0.19,
+          "basis": "configured_flat_rate"
+        },
+        "engineVersion": "catalog-commercial-v2.2.0"
+      },
+      "availability": {
+        "availableQuantity": 43,
+        "sellability": "sellable",
+        "reason": "in_stock",
+        "leadTime": null
+      },
+      "freshness": {
+        "asOf": "2026-09-30T18:18:14.589Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 4
+        },
+        "validUntil": "2026-09-30T18:18:29.589Z"
+      },
+      "provenance": {
+        "source": "prestashop",
+        "service": "catalog-service",
+        "serviceBuildRef": "catalog-service@local",
+        "sourceUpdatedAt": null
+      }
+    }
+  },
+  {
+    "key": "P1136-V229",
+    "query": "quantity=1",
+    "status": 200,
+    "ms": 199.3,
+    "body": {
+      "schemaVersion": 1,
+      "status": "found",
+      "itemKey": "P1136-V229",
+      "ref": {
+        "productId": "1136",
+        "variantId": "229"
+      },
+      "parentProduct": {
+        "productKey": "P1136",
+        "name": "Par Rodilleras de Neopreno Red 5mm | HWM®",
+        "sku": "RNHR"
+      },
+      "variant": {
+        "variantId": "229",
+        "sku": "RNHRS",
+        "attributes": [
+          {
+            "group": "Talla",
+            "value": "S"
+          }
+        ]
+      },
+      "pricing": {
+        "status": "available",
+        "quantity": 1,
+        "regularGross": {
+          "amount": 30990,
+          "currency": "CLP"
+        },
+        "finalGross": {
+          "amount": 21693,
+          "currency": "CLP"
+        },
+        "promotion": {
+          "type": "percentage",
+          "percentOff": 0.3,
+          "amountOffGross": null,
+          "validUntil": null
+        },
+        "tax": {
+          "included": true,
+          "rate": 0.19,
+          "basis": "configured_flat_rate"
+        },
+        "engineVersion": "catalog-commercial-v2.2.0"
+      },
+      "availability": {
+        "availableQuantity": 89,
+        "sellability": "sellable",
+        "reason": "in_stock",
+        "leadTime": null
+      },
+      "freshness": {
+        "asOf": "2026-09-30T18:18:14.768Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 26
+        },
+        "validUntil": "2026-09-30T18:18:29.768Z"
+      },
+      "provenance": {
+        "source": "prestashop",
+        "service": "catalog-service",
+        "serviceBuildRef": "catalog-service@local",
+        "sourceUpdatedAt": null
+      }
+    }
+  },
+  {
+    "key": "P1136-V230",
+    "query": "quantity=1",
+    "status": 200,
+    "ms": 191.5,
+    "body": {
+      "schemaVersion": 1,
+      "status": "found",
+      "itemKey": "P1136-V230",
+      "ref": {
+        "productId": "1136",
+        "variantId": "230"
+      },
+      "parentProduct": {
+        "productKey": "P1136",
+        "name": "Par Rodilleras de Neopreno Red 5mm | HWM®",
+        "sku": "RNHR"
+      },
+      "variant": {
+        "variantId": "230",
+        "sku": "RNHRM",
+        "attributes": [
+          {
+            "group": "Talla",
+            "value": "M"
+          }
+        ]
+      },
+      "pricing": {
+        "status": "available",
+        "quantity": 1,
+        "regularGross": {
+          "amount": 30990,
+          "currency": "CLP"
+        },
+        "finalGross": {
+          "amount": 21693,
+          "currency": "CLP"
+        },
+        "promotion": {
+          "type": "percentage",
+          "percentOff": 0.3,
+          "amountOffGross": null,
+          "validUntil": null
+        },
+        "tax": {
+          "included": true,
+          "rate": 0.19,
+          "basis": "configured_flat_rate"
+        },
+        "engineVersion": "catalog-commercial-v2.2.0"
+      },
+      "availability": {
+        "availableQuantity": 9,
+        "sellability": "sellable",
+        "reason": "in_stock",
+        "leadTime": null
+      },
+      "freshness": {
+        "asOf": "2026-09-30T18:18:14.964Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 22
+        },
+        "validUntil": "2026-09-30T18:18:29.964Z"
+      },
+      "provenance": {
+        "source": "prestashop",
+        "service": "catalog-service",
+        "serviceBuildRef": "catalog-service@local",
+        "sourceUpdatedAt": null
+      }
+    }
+  },
+  {
+    "key": "P1136",
+    "query": "quantity=1",
+    "status": 200,
+    "ms": 195.7,
+    "body": {
+      "schemaVersion": 1,
+      "status": "variant_required",
+      "itemKey": "P1136",
+      "productKey": "P1136"
+    }
+  },
+  {
+    "key": "P2327",
+    "query": "quantity=1",
+    "status": 200,
+    "ms": 172.7,
+    "body": {
+      "schemaVersion": 1,
+      "status": "found",
+      "itemKey": "P2327",
+      "ref": {
+        "productId": "2327",
+        "variantId": null
+      },
+      "parentProduct": {
+        "productKey": "P2327",
+        "name": "PACK 5 BALONES BLACK HWM",
+        "sku": "PACK-BSBP100"
+      },
+      "variant": {
+        "variantId": null,
+        "sku": "PACK-BSBP100",
+        "attributes": []
+      },
+      "pricing": {
+        "status": "available",
+        "quantity": 1,
+        "regularGross": {
+          "amount": 268950,
+          "currency": "CLP"
+        },
+        "finalGross": {
+          "amount": 228608,
+          "currency": "CLP"
+        },
+        "promotion": {
+          "type": "percentage",
+          "percentOff": 0.15,
+          "amountOffGross": null,
+          "validUntil": null
+        },
+        "tax": {
+          "included": true,
+          "rate": 0.19,
+          "basis": "configured_flat_rate"
+        },
+        "engineVersion": "catalog-commercial-v2.2.0"
+      },
+      "availability": {
+        "availableQuantity": 0,
+        "sellability": "not_sellable",
+        "reason": "inactive",
+        "leadTime": null
+      },
+      "freshness": {
+        "asOf": "2026-09-30T18:18:15.348Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 5
+        },
+        "validUntil": "2026-09-30T18:18:30.348Z"
+      },
+      "provenance": {
+        "source": "prestashop",
+        "service": "catalog-service",
+        "serviceBuildRef": "catalog-service@local",
+        "sourceUpdatedAt": null
+      }
+    }
+  },
+  {
+    "key": "P2248",
+    "query": "quantity=3",
+    "status": 200,
+    "ms": 155,
+    "body": {
+      "schemaVersion": 1,
+      "status": "found",
+      "itemKey": "P2248",
+      "ref": {
+        "productId": "2248",
+        "variantId": null
+      },
+      "parentProduct": {
+        "productKey": "P2248",
+        "name": "Swivel para Saco de Boxeo | Rising",
+        "sku": "RS3017"
+      },
+      "variant": {
+        "variantId": null,
+        "sku": "RS3017",
+        "attributes": []
+      },
+      "pricing": {
+        "status": "available",
+        "quantity": 3,
+        "regularGross": {
+          "amount": 20990,
+          "currency": "CLP"
+        },
+        "finalGross": {
+          "amount": 20990,
+          "currency": "CLP"
+        },
+        "promotion": null,
+        "tax": {
+          "included": true,
+          "rate": 0.19,
+          "basis": "configured_flat_rate"
+        },
+        "engineVersion": "catalog-commercial-v2.2.0"
+      },
+      "availability": {
+        "availableQuantity": 47,
+        "sellability": "sellable",
+        "reason": "in_stock",
+        "leadTime": null
+      },
+      "freshness": {
+        "asOf": "2026-09-30T18:18:15.505Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 4
+        },
+        "validUntil": "2026-09-30T18:18:30.505Z"
+      },
+      "provenance": {
+        "source": "prestashop",
+        "service": "catalog-service",
+        "serviceBuildRef": "catalog-service@local",
+        "sourceUpdatedAt": null
+      }
+    }
+  }
+]

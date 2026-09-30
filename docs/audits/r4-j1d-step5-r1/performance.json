@@ -1,0 +1,671 @@
+{
+  "perRequest": [
+    {
+      "label": "exact",
+      "iteration": 0,
+      "status": 200,
+      "ms": 190.6,
+      "cacheHit": false
+    },
+    {
+      "label": "broad",
+      "iteration": 0,
+      "status": 200,
+      "ms": 1171.3,
+      "cacheHit": false
+    },
+    {
+      "label": "multi",
+      "iteration": 0,
+      "status": 200,
+      "ms": 531.8,
+      "cacheHit": false
+    },
+    {
+      "label": "product",
+      "iteration": 0,
+      "status": 200,
+      "ms": 403.5,
+      "cacheHit": false
+    },
+    {
+      "label": "item",
+      "iteration": 0,
+      "status": 200,
+      "ms": 321.4,
+      "cacheHit": false
+    },
+    {
+      "label": "exact",
+      "iteration": 1,
+      "status": 200,
+      "ms": 217.6,
+      "cacheHit": false
+    },
+    {
+      "label": "broad",
+      "iteration": 1,
+      "status": 200,
+      "ms": 1349.3,
+      "cacheHit": false
+    },
+    {
+      "label": "multi",
+      "iteration": 1,
+      "status": 200,
+      "ms": 258.3,
+      "cacheHit": false
+    },
+    {
+      "label": "product",
+      "iteration": 1,
+      "status": 200,
+      "ms": 164,
+      "cacheHit": false
+    },
+    {
+      "label": "item",
+      "iteration": 1,
+      "status": 200,
+      "ms": 172,
+      "cacheHit": false
+    },
+    {
+      "label": "exact",
+      "iteration": 2,
+      "status": 200,
+      "ms": 187.4,
+      "cacheHit": false
+    },
+    {
+      "label": "broad",
+      "iteration": 2,
+      "status": 200,
+      "ms": 1235.9,
+      "cacheHit": false
+    },
+    {
+      "label": "multi",
+      "iteration": 2,
+      "status": 200,
+      "ms": 243.5,
+      "cacheHit": false
+    },
+    {
+      "label": "product",
+      "iteration": 2,
+      "status": 200,
+      "ms": 174.8,
+      "cacheHit": false
+    },
+    {
+      "label": "item",
+      "iteration": 2,
+      "status": 200,
+      "ms": 179.7,
+      "cacheHit": false
+    }
+  ],
+  "all": [
+    {
+      "label": "v1-product",
+      "path": "/v1/products/545",
+      "method": "GET",
+      "status": 200,
+      "ms": 422.6
+    },
+    {
+      "label": "v1-product-semantics",
+      "path": "/v1/products/545/semantics",
+      "method": "GET",
+      "status": 200,
+      "ms": 317.9
+    },
+    {
+      "label": "v1-semantics-registry",
+      "path": "/v1/products/semantics/registry",
+      "method": "GET",
+      "status": 200,
+      "ms": 182.8
+    },
+    {
+      "label": "v1-training-registry",
+      "path": "/v1/products/training-semantics/registry",
+      "method": "GET",
+      "status": 200,
+      "ms": 181.4
+    },
+    {
+      "label": "v1-semantics-batch",
+      "path": "/v1/products/semantics/batch",
+      "method": "POST",
+      "status": 200,
+      "ms": 196.9
+    },
+    {
+      "label": "v1-batch",
+      "path": "/v1/products/batch",
+      "method": "POST",
+      "status": 200,
+      "ms": 280.1
+    },
+    {
+      "label": "v1-search",
+      "path": "/v1/products/search",
+      "method": "GET",
+      "status": 200,
+      "ms": 211.3
+    },
+    {
+      "label": "v2-recommendations",
+      "path": "/api/v2/recommendations/search-products",
+      "method": "POST",
+      "status": 200,
+      "ms": 220
+    },
+    {
+      "label": "search-BORE20",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 232.9
+    },
+    {
+      "label": "search-barra olimpica 20 kg",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 288
+    },
+    {
+      "label": "search-kettlebell",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 224
+    },
+    {
+      "label": "search-kettlebell 20 kg",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 223.5
+    },
+    {
+      "label": "search-disco 10 kg",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 292.3
+    },
+    {
+      "label": "search-banco ajustable",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 243.5
+    },
+    {
+      "label": "search-pesa rusa",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 291.1
+    },
+    {
+      "label": "search-banca ajustable",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 203.8
+    },
+    {
+      "label": "search-mancuena",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 187.8
+    },
+    {
+      "label": "search-kettelbell",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 190.9
+    },
+    {
+      "label": "search-barra",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 1360.3
+    },
+    {
+      "label": "search-rack",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 431.2
+    },
+    {
+      "label": "search-set",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 346.9
+    },
+    {
+      "label": "product-P545",
+      "path": "/v2/catalog/products/P545/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 173.9
+    },
+    {
+      "label": "product-P2248",
+      "path": "/v2/catalog/products/P2248/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 159.4
+    },
+    {
+      "label": "product-P2338",
+      "path": "/v2/catalog/products/P2338/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 168.6
+    },
+    {
+      "label": "product-P2128",
+      "path": "/v2/catalog/products/P2128/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 171.1
+    },
+    {
+      "label": "product-P1136",
+      "path": "/v2/catalog/products/P1136/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 179.1
+    },
+    {
+      "label": "product-P382",
+      "path": "/v2/catalog/products/P382/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 188.1
+    },
+    {
+      "label": "product-P2340",
+      "path": "/v2/catalog/products/P2340/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 164.1
+    },
+    {
+      "label": "product-P2195",
+      "path": "/v2/catalog/products/P2195/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 195.9
+    },
+    {
+      "label": "product-P2337",
+      "path": "/v2/catalog/products/P2337/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 171.5
+    },
+    {
+      "label": "product-P2264",
+      "path": "/v2/catalog/products/P2264/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 159.3
+    },
+    {
+      "label": "product-P2328",
+      "path": "/v2/catalog/products/P2328/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 164.3
+    },
+    {
+      "label": "product-P435",
+      "path": "/v2/catalog/products/P435/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 167.3
+    },
+    {
+      "label": "product-P1415",
+      "path": "/v2/catalog/products/P1415/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 167.9
+    },
+    {
+      "label": "product-P2327",
+      "path": "/v2/catalog/products/P2327/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 163.5
+    },
+    {
+      "label": "product-P99999",
+      "path": "/v2/catalog/products/P99999/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 167.6
+    },
+    {
+      "label": "item-P2248",
+      "path": "/v2/catalog/items/P2248/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 322.8
+    },
+    {
+      "label": "item-P2338",
+      "path": "/v2/catalog/items/P2338/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 187
+    },
+    {
+      "label": "item-P2340",
+      "path": "/v2/catalog/items/P2340/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 176.1
+    },
+    {
+      "label": "item-P2195",
+      "path": "/v2/catalog/items/P2195/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 169.4
+    },
+    {
+      "label": "item-P545",
+      "path": "/v2/catalog/items/P545/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 165.7
+    },
+    {
+      "label": "item-P2128-V663",
+      "path": "/v2/catalog/items/P2128-V663/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 180.7
+    },
+    {
+      "label": "item-P2128-V664",
+      "path": "/v2/catalog/items/P2128-V664/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 180.3
+    },
+    {
+      "label": "item-P1136-V229",
+      "path": "/v2/catalog/items/P1136-V229/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 199.3
+    },
+    {
+      "label": "item-P1136-V230",
+      "path": "/v2/catalog/items/P1136-V230/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 191.5
+    },
+    {
+      "label": "item-P1136",
+      "path": "/v2/catalog/items/P1136/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 195.7
+    },
+    {
+      "label": "item-P2327",
+      "path": "/v2/catalog/items/P2327/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 172.7
+    },
+    {
+      "label": "item-P2248-q3",
+      "path": "/v2/catalog/items/P2248/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 155
+    },
+    {
+      "label": "err-unknown-product",
+      "path": "/v2/catalog/products/P99999/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 162.6
+    },
+    {
+      "label": "err-unknown-item",
+      "path": "/v2/catalog/items/P99999-V1/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 169.8
+    },
+    {
+      "label": "err-unknown-variant",
+      "path": "/v2/catalog/items/P2128-V999999/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 159.9
+    },
+    {
+      "label": "err-variant-required",
+      "path": "/v2/catalog/items/P1136/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 156.3
+    },
+    {
+      "label": "err-malformed-product",
+      "path": "/v2/catalog/products/X545/context",
+      "method": "GET",
+      "status": 400,
+      "ms": 163
+    },
+    {
+      "label": "err-malformed-item",
+      "path": "/v2/catalog/items/P545-X1/context",
+      "method": "GET",
+      "status": 400,
+      "ms": 154.8
+    },
+    {
+      "label": "err-quantity-0",
+      "path": "/v2/catalog/items/P2248/context",
+      "method": "GET",
+      "status": 400,
+      "ms": 171.5
+    },
+    {
+      "label": "err-quantity-100",
+      "path": "/v2/catalog/items/P2248/context",
+      "method": "GET",
+      "status": 400,
+      "ms": 176.6
+    },
+    {
+      "label": "err-search-short",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 400,
+      "ms": 164.3
+    },
+    {
+      "label": "err-search-extra-field",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 1200.3
+    },
+    {
+      "label": "err-unauthorized",
+      "path": "/v2/catalog/products/P545/context",
+      "method": "GET",
+      "status": 401,
+      "ms": 158.9
+    },
+    {
+      "label": "fresh-1",
+      "path": "/v2/catalog/items/P2248/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 167.2
+    },
+    {
+      "label": "fresh-2-immediate",
+      "path": "/v2/catalog/items/P2248/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 151.8
+    },
+    {
+      "label": "cache-search-1",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 247.9
+    },
+    {
+      "label": "cache-search-normalized",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 152
+    },
+    {
+      "label": "fresh-3-after-validUntil",
+      "path": "/v2/catalog/items/P2248/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 176
+    },
+    {
+      "label": "cache-search-after",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 150.9
+    },
+    {
+      "label": "perf-exact-0",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 190.6
+    },
+    {
+      "label": "perf-broad-0",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 1171.3
+    },
+    {
+      "label": "perf-multi-0",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 531.8
+    },
+    {
+      "label": "perf-product-0",
+      "path": "/v2/catalog/products/P2128/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 403.5
+    },
+    {
+      "label": "perf-item-0",
+      "path": "/v2/catalog/items/P2340/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 321.4
+    },
+    {
+      "label": "perf-exact-1",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 217.6
+    },
+    {
+      "label": "perf-broad-1",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 1349.3
+    },
+    {
+      "label": "perf-multi-1",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 258.3
+    },
+    {
+      "label": "perf-product-1",
+      "path": "/v2/catalog/products/P2128/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 164
+    },
+    {
+      "label": "perf-item-1",
+      "path": "/v2/catalog/items/P2340/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 172
+    },
+    {
+      "label": "perf-exact-2",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 187.4
+    },
+    {
+      "label": "perf-broad-2",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 1235.9
+    },
+    {
+      "label": "perf-multi-2",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 243.5
+    },
+    {
+      "label": "perf-product-2",
+      "path": "/v2/catalog/products/P2128/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 174.8
+    },
+    {
+      "label": "perf-item-2",
+      "path": "/v2/catalog/items/P2340/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 179.7
+    }
+  ]
+}

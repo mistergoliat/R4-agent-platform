@@ -1,0 +1,92 @@
+[
+  {
+    "sequence": 3,
+    "runId": "01a0f3b6-edcc-7311-879d-d9303e19d8cc",
+    "agentVersion": 1,
+    "inboundAt": "2026-09-30T19:07:26.437Z",
+    "runStart": "2026-09-30T19:07:27.048Z",
+    "inboundToRunMs": 611,
+    "runToFirstCatalogMs": 2555,
+    "catalogCalls": 3,
+    "lastObsToRespondMs": 9555,
+    "inboundToAcceptedMs": [
+      40677
+    ],
+    "modelCalls": 5
+  },
+  {
+    "sequence": 4,
+    "runId": "01a0f3b8-4b6f-7989-9760-514940100686",
+    "agentVersion": 1,
+    "inboundAt": "2026-09-30T19:08:56.222Z",
+    "runStart": "2026-09-30T19:08:56.558Z",
+    "inboundToRunMs": 336,
+    "runToFirstCatalogMs": 4748,
+    "catalogCalls": 1,
+    "lastObsToRespondMs": 11364,
+    "inboundToAcceptedMs": [
+      17866
+    ],
+    "modelCalls": 3
+  },
+  {
+    "sequence": 5,
+    "runId": "01a0f3b8-b41b-7fb6-b6fd-3874200696cc",
+    "agentVersion": 1,
+    "inboundAt": "2026-09-30T19:09:22.479Z",
+    "runStart": "2026-09-30T19:09:23.353Z",
+    "inboundToRunMs": 874,
+    "runToFirstCatalogMs": 1568,
+    "catalogCalls": 1,
+    "lastObsToRespondMs": 4882,
+    "inboundToAcceptedMs": [
+      8257
+    ],
+    "modelCalls": 3
+  },
+  {
+    "sequence": 6,
+    "runId": "01a0f3b8-ea49-7c88-a20c-a133903c281b",
+    "agentVersion": 1,
+    "inboundAt": "2026-09-30T19:09:32.887Z",
+    "runStart": "2026-09-30T19:09:37.223Z",
+    "inboundToRunMs": 4336,
+    "runToFirstCatalogMs": 2802,
+    "catalogCalls": 2,
+    "lastObsToRespondMs": 4575,
+    "inboundToAcceptedMs": [
+      16539
+    ],
+    "modelCalls": 4
+  },
+  {
+    "sequence": 7,
+    "runId": "01a0f3b9-8d23-7667-b6f9-4e8b7b5ad12a",
+    "agentVersion": 1,
+    "inboundAt": "2026-09-30T19:10:18.821Z",
+    "runStart": "2026-09-30T19:10:18.912Z",
+    "inboundToRunMs": 91,
+    "runToFirstCatalogMs": 2232,
+    "catalogCalls": 3,
+    "lastObsToRespondMs": 10021,
+    "inboundToAcceptedMs": [
+      43879
+    ],
+    "modelCalls": 6
+  },
+  {
+    "sequence": 8,
+    "runId": "01a0f3ba-d30b-7561-9bc1-ad3ce526109e",
+    "agentVersion": 1,
+    "inboundAt": "2026-09-30T19:11:41.554Z",
+    "runStart": "2026-09-30T19:11:42.345Z",
+    "inboundToRunMs": 791,
+    "runToFirstCatalogMs": 6641,
+    "catalogCalls": 3,
+    "lastObsToRespondMs": 14873,
+    "inboundToAcceptedMs": [
+      49425
+    ],
+    "modelCalls": 5
+  }
+]

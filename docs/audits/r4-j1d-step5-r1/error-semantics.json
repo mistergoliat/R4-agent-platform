@@ -1,0 +1,345 @@
+[
+  {
+    "label": "err-unknown-product",
+    "path": "/v2/catalog/products/P99999/context",
+    "status": 200,
+    "ms": 162.6,
+    "body": {
+      "schemaVersion": 1,
+      "status": "not_found",
+      "productKey": "P99999"
+    }
+  },
+  {
+    "label": "err-unknown-item",
+    "path": "/v2/catalog/items/P99999-V1/context",
+    "status": 200,
+    "ms": 169.8,
+    "body": {
+      "schemaVersion": 1,
+      "status": "not_found",
+      "itemKey": "P99999-V1"
+    }
+  },
+  {
+    "label": "err-unknown-variant",
+    "path": "/v2/catalog/items/P2128-V999999/context",
+    "status": 200,
+    "ms": 159.9,
+    "body": {
+      "schemaVersion": 1,
+      "status": "not_found",
+      "itemKey": "P2128-V999999"
+    }
+  },
+  {
+    "label": "err-variant-required",
+    "path": "/v2/catalog/items/P1136/context",
+    "status": 200,
+    "ms": 156.3,
+    "body": {
+      "schemaVersion": 1,
+      "status": "variant_required",
+      "itemKey": "P1136",
+      "productKey": "P1136"
+    }
+  },
+  {
+    "label": "err-malformed-product",
+    "path": "/v2/catalog/products/X545/context",
+    "status": 400,
+    "ms": 163,
+    "body": {
+      "error": {
+        "code": "invalid_request",
+        "message": "Invalid request",
+        "correlationId": "r4-j1d-step5-err-malformed-product-1790792296136"
+      }
+    }
+  },
+  {
+    "label": "err-malformed-item",
+    "path": "/v2/catalog/items/P545-X1/context",
+    "status": 400,
+    "ms": 154.8,
+    "body": {
+      "error": {
+        "code": "invalid_request",
+        "message": "Invalid request",
+        "correlationId": "r4-j1d-step5-err-malformed-item-1790792296300"
+      }
+    }
+  },
+  {
+    "label": "err-quantity-0",
+    "path": "/v2/catalog/items/P2248/context?quantity=0",
+    "status": 400,
+    "ms": 171.5,
+    "body": {
+      "error": {
+        "code": "invalid_request",
+        "message": "Invalid request",
+        "correlationId": "r4-j1d-step5-err-quantity-0-1790792296455"
+      }
+    }
+  },
+  {
+    "label": "err-quantity-100",
+    "path": "/v2/catalog/items/P2248/context?quantity=100",
+    "status": 400,
+    "ms": 176.6,
+    "body": {
+      "error": {
+        "code": "invalid_request",
+        "message": "Invalid request",
+        "correlationId": "r4-j1d-step5-err-quantity-100-1790792296626"
+      }
+    }
+  },
+  {
+    "label": "err-search-short",
+    "path": "/v2/catalog/search",
+    "status": 400,
+    "ms": 164.3,
+    "body": {
+      "error": {
+        "code": "invalid_request",
+        "message": "Invalid request",
+        "correlationId": "r4-j1d-step5-err-search-short-1790792296803"
+      }
+    }
+  },
+  {
+    "label": "err-search-extra-field",
+    "path": "/v2/catalog/search",
+    "status": 200,
+    "ms": 1200.3,
+    "body": {
+      "schemaVersion": 1,
+      "results": [
+        {
+          "productKey": "P45",
+          "ref": {
+            "productId": "45"
+          },
+          "name": "Barra Preolímpica Romana",
+          "sku": "BPRO",
+          "category": {
+            "id": "255",
+            "name": "Barras Preolímpicas"
+          },
+          "variants": {
+            "count": 0,
+            "requiresSelection": false
+          },
+          "priceSummary": {
+            "kind": "exact",
+            "basis": "not_offerable",
+            "finalGross": {
+              "amount": 26990,
+              "currency": "CLP"
+            },
+            "regularGross": {
+              "amount": 26990,
+              "currency": "CLP"
+            },
+            "discounted": false
+          },
+          "availabilitySummary": {
+            "sellability": "not_sellable",
+            "reason": "out_of_stock",
+            "sellableVariants": null
+          },
+          "match": {
+            "type": "name",
+            "matchedTokens": 1,
+            "totalTokens": 1
+          }
+        },
+        {
+          "productKey": "P1035",
+          "ref": {
+            "productId": "1035"
+          },
+          "name": "Barra Dominadas Puerta | FullFit",
+          "sku": "BP",
+          "category": {
+            "id": "429",
+            "name": "Barras de Dominadas"
+          },
+          "variants": {
+            "count": 0,
+            "requiresSelection": false
+          },
+          "priceSummary": {
+            "kind": "exact",
+            "basis": "not_offerable",
+            "finalGross": {
+              "amount": 9990,
+              "currency": "CLP"
+            },
+            "regularGross": {
+              "amount": 9990,
+              "currency": "CLP"
+            },
+            "discounted": false
+          },
+          "availabilitySummary": {
+            "sellability": "not_sellable",
+            "reason": "out_of_stock",
+            "sellableVariants": null
+          },
+          "match": {
+            "type": "name",
+            "matchedTokens": 1,
+            "totalTokens": 1
+          }
+        },
+        {
+          "productKey": "P23",
+          "ref": {
+            "productId": "23"
+          },
+          "name": "Barra Olímpica Fat | HWM®",
+          "sku": "BOF",
+          "category": {
+            "id": "253",
+            "name": "Barras Especiales"
+          },
+          "variants": {
+            "count": 0,
+            "requiresSelection": false
+          },
+          "priceSummary": {
+            "kind": "exact",
+            "basis": "not_offerable",
+            "finalGross": {
+              "amount": 50990,
+              "currency": "CLP"
+            },
+            "regularGross": {
+              "amount": 50990,
+              "currency": "CLP"
+            },
+            "discounted": false
+          },
+          "availabilitySummary": {
+            "sellability": "not_sellable",
+            "reason": "out_of_stock",
+            "sellableVariants": null
+          },
+          "match": {
+            "type": "name",
+            "matchedTokens": 1,
+            "totalTokens": 1
+          }
+        },
+        {
+          "productKey": "P43",
+          "ref": {
+            "productId": "43"
+          },
+          "name": "Barra Preolímpica 150cm 7.5kg",
+          "sku": "BPR150",
+          "category": {
+            "id": "255",
+            "name": "Barras Preolímpicas"
+          },
+          "variants": {
+            "count": 0,
+            "requiresSelection": false
+          },
+          "priceSummary": {
+            "kind": "exact",
+            "basis": "not_offerable",
+            "finalGross": {
+              "amount": 17990,
+              "currency": "CLP"
+            },
+            "regularGross": {
+              "amount": 17990,
+              "currency": "CLP"
+            },
+            "discounted": false
+          },
+          "availabilitySummary": {
+            "sellability": "not_sellable",
+            "reason": "out_of_stock",
+            "sellableVariants": null
+          },
+          "match": {
+            "type": "name",
+            "matchedTokens": 1,
+            "totalTokens": 1
+          }
+        },
+        {
+          "productKey": "P40",
+          "ref": {
+            "productId": "40"
+          },
+          "name": "Barra Preolímpica Mancuerna (Unidad)",
+          "sku": "BPM",
+          "category": {
+            "id": "255",
+            "name": "Barras Preolímpicas"
+          },
+          "variants": {
+            "count": 0,
+            "requiresSelection": false
+          },
+          "priceSummary": {
+            "kind": "exact",
+            "basis": "offerable",
+            "finalGross": {
+              "amount": 4990,
+              "currency": "CLP"
+            },
+            "regularGross": {
+              "amount": 4990,
+              "currency": "CLP"
+            },
+            "discounted": false
+          },
+          "availabilitySummary": {
+            "sellability": "sellable",
+            "reason": "in_stock",
+            "sellableVariants": null
+          },
+          "match": {
+            "type": "name",
+            "matchedTokens": 1,
+            "totalTokens": 1
+          }
+        }
+      ],
+      "completeness": {
+        "totalMatches": 213,
+        "truncated": true
+      },
+      "searchMode": "lexical",
+      "freshness": {
+        "asOf": "2026-09-30T18:18:17.141Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 1048
+        },
+        "validUntil": "2026-09-30T18:18:32.141Z"
+      }
+    }
+  },
+  {
+    "label": "err-unauthorized",
+    "path": "/v2/catalog/products/P545/context",
+    "status": 401,
+    "ms": 158.9,
+    "body": {
+      "error": {
+        "code": "unauthorized",
+        "message": "Invalid API key",
+        "correlationId": "r4-j1d-step5-err-unauthorized-1790792298168",
+        "retryable": false
+      }
+    }
+  }
+]

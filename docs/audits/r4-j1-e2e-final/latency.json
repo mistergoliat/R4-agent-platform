@@ -1,0 +1,92 @@
+[
+  {
+    "sequence": 1,
+    "input": "¿Tienen BORE20?",
+    "inboundToRunMs": 500,
+    "runToFirstCatalogMs": 1158,
+    "platformRefreshes": 0,
+    "inboundToFirstAcceptedMs": 6925,
+    "modelCalls": 3,
+    "status": "suspended"
+  },
+  {
+    "sequence": 2,
+    "input": "¿Cuánto cuesta?",
+    "inboundToRunMs": 302,
+    "runToFirstCatalogMs": 4874,
+    "platformRefreshes": 1,
+    "inboundToFirstAcceptedMs": 6791,
+    "modelCalls": 2,
+    "status": "suspended"
+  },
+  {
+    "sequence": 3,
+    "input": "Tienen kettlebell de 20 kg?",
+    "inboundToRunMs": 2825,
+    "runToFirstCatalogMs": 987,
+    "platformRefreshes": 0,
+    "inboundToFirstAcceptedMs": 9004,
+    "modelCalls": 3,
+    "status": "suspended"
+  },
+  {
+    "sequence": 4,
+    "input": "¿Tienen disco de 10 kg?",
+    "inboundToRunMs": 947,
+    "runToFirstCatalogMs": 1231,
+    "platformRefreshes": 0,
+    "inboundToFirstAcceptedMs": 6083,
+    "modelCalls": 3,
+    "status": "suspended"
+  },
+  {
+    "sequence": 5,
+    "input": "Quiero el par de collarines olímpicos magnéticos Rising",
+    "inboundToRunMs": 752,
+    "runToFirstCatalogMs": null,
+    "platformRefreshes": 0,
+    "inboundToFirstAcceptedMs": null,
+    "modelCalls": 1,
+    "status": "failed"
+  },
+  {
+    "sequence": 6,
+    "input": "Quiero el par de collarines olímpicos magnéticos Rising",
+    "inboundToRunMs": 2411,
+    "runToFirstCatalogMs": 2075,
+    "platformRefreshes": 0,
+    "inboundToFirstAcceptedMs": 12014,
+    "modelCalls": 4,
+    "status": "suspended"
+  },
+  {
+    "sequence": 7,
+    "input": "amarillo porfa",
+    "inboundToRunMs": 254,
+    "runToFirstCatalogMs": 12760,
+    "platformRefreshes": 6,
+    "inboundToFirstAcceptedMs": 27321,
+    "modelCalls": 4,
+    "status": "suspended"
+  },
+  {
+    "sequence": 8,
+    "input": "¿Cuánto cuesta la colchoneta Oxford negro/rojo de segunda selección?",
+    "inboundToRunMs": 837,
+    "runToFirstCatalogMs": 1492,
+    "platformRefreshes": 6,
+    "inboundToFirstAcceptedMs": 12281,
+    "modelCalls": 11,
+    "status": "suspended"
+  },
+  {
+    "sequence": 9,
+    "input": "¿En cuánto me queda todo?",
+    "inboundToRunMs": 8094,
+    "runToFirstCatalogMs": 15632,
+    "platformRefreshes": 3,
+    "inboundToFirstAcceptedMs": 112914,
+    "modelCalls": 7,
+    "status": "running"
+  }
+]

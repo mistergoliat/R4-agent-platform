@@ -816,3 +816,93 @@ redeploy, rerun Step 5. R4 was not connected; profile v2 not enabled.
 - Separate: `CAT-HOTFIX-V1-ZERO-DATE-PROMOTIONS` (Catalog `docs/audits/`), open, not fixed.
 
 **R4-J1 — NOT CLOSED.**
+
+---
+
+## Final closure run — J1D-R1 commits, deploy, Step 5 rerun (2026-09-30)
+
+- Catalog `fea0dc552b28137391b5757b23572e67196c7e14` — `fix(catalog): price with PrestaShop storefront
+  rounding (R4-J1D-R1)`, pushed (`origin/main`). Gates: typecheck/build/lint PASS; 2 381 passed, 12
+  pre-existing snapshot-data failures.
+- R4 `007d9a5de69082ec82bed246da0886887f9514b4` — `chore(r4): sync Catalog J1D-R1 owner contract`,
+  pushed. `SOURCE.json`: owner `fea0dc5…`, manifest `5532c7b7edcd653caa04af042842e49c5872ce88f192d8c5966c22fbc399f993`,
+  `ownerContractFilesUncommitted: false`. Gates: build/typecheck/lint PASS; unit 854, contract 229,
+  catalog adapter 29, sales 29, shadow 5, recovery 16, integration 324 (+12 opt-in skipped).
+- Deployed Catalog `fea0dc5` on EC2 at 18:15:30Z (fast-forward, `npm ci`, build, `pm2 restart --update-env`);
+  live 200 in 4 s, ready 200 `ok`, all capabilities `ok`; previous known-good `47875d5`.
+- Step 5 rerun (`docs/audits/r4-j1d-step5-r1/`): v2 pricing 20/20 boundary units = storefront
+  (PRICING_CONTRADICTION on `/v2/catalog/*` RESOLVED); all other groups PASS.
+- **Open:** the commercial-truth path (`resolve-product-intent`, recommendations; CRM-only) prices 0/20
+  promoted units at the storefront price — it applies no zero-dated promotion (pre-existing
+  `specificPriceSelector.parseDate` Invalid-Date handling, unchanged since `7a214f4`). Stopped before
+  Step 6 for an explicit decision; R4 not connected, profile v2 not enabled.
+
+**R4-J1 — NOT CLOSED.**
+
+---
+
+## Step 6 — R4 → production Catalog (2026-09-30)
+
+Evidence: `docs/audits/r4-j1-step6/`. Decision A recorded: the J1 pricing gate is **20/20 parity on the
+R4-consumed `/v2/catalog/*` path** plus **no new regression on active legacy consumers**; J1 does not require
+pre-existing legacy commercial paths to become correct (commercial-truth / `resolve-product-intent` /
+recommendations zero-date defect → `CAT-HOTFIX-ZERO-DATE-PROMOTIONS`, scope: v1 `priceResolver`,
+`specificPriceSelector`, `resolve-product-intent`, `recommendations/search-products`; shared rule
+`0000-00-00…` = unbounded + `PRESTASHOP_TIMEZONE` + `prestashopUnitPrice`).
+
+- R4 commits: `7c76a9e` (compose profile v2 with catalog-service; v1 unchanged), `9e7e3f6` (Sales agent
+  definition v2 — J1B instructions). Deployed `9e7e3f6`; bootstrap `registered: sales@2`.
+- Catalog auth: legacy key retained + dedicated R4 key (`CATALOG_API_KEYS`); matrix v2 legacy/R4 200, none/wrong
+  401, v1 legacy 200.
+- Direct CatalogPort smoke on the host: PASS (exact, multi-token, variants, item, promotion P2340 6 296,
+  not_found, variant_required, out_of_stock P2297, unauthorized/deadline → typed DomainError, ADR-030).
+- Profile v2 enabled 19:04:03Z: worker `sales-production@2` ready; Catalog REAL; rollout 0 %, 1 allowlisted.
+
+## Step 7 — WhatsApp E2E audit (2026-09-30)
+
+Evidence: `docs/audits/r4-j1-e2e/` (`VERDICT.md`, `trace.json`, `latency.json`).
+
+Catalog v2 usage, durability, outbound and logs PASS; but **NOT CLOSED**:
+1. every turn ran `sales@1` (the conversation was opened on 2026-09-29 and its task is pinned to v1);
+2. case 3 claimed the out-of-stock 24 kg kettlebell as available (NOT_GROUNDED);
+3. STALE commercial claims (evidence past its 15 s owner validity at send time: +8 s … +110 s), no refresh;
+4. model-computed totals presented as prices.
+
+**R4-J1 — NOT CLOSED.**
+
+---
+
+## J1E — Commercial evidence enforcement before outbound (2026-09-30)
+
+First E2E findings (§ Step 7): the conversation ran `sales@1` (correct version pinning of a task opened
+on 2026-09-29 — not a bug); a kettlebell out of stock was presented as available; replies were sent
+with evidence past its owner validity. Catalog's 15 s window stays (Catalog owns `validUntil`).
+
+- **ADR-031** (narrow amendment of ADR-025 §1): one deterministic authority boundary immediately
+  before a proposed `respond` becomes durable. Kernel (domain-neutral, seam in `@r4/contracts`):
+  ALLOW / REVALIDATION_REQUIRED (token-free `origin=platform` READs, migration `0009_run_step_origin`,
+  same draft re-validated) / REJECT (draft recorded `refused`, never sent, structured feedback, one
+  model correction, then the pack's safe degradation). Sales: `SalesCommercialEvidenceValidator`
+  (amount/name-anchored claims bound to the latest Catalog observation; sellability/availability,
+  "desde" for variant prices, freshness to send time, labelled derived totals).
+- Commits: `cb9d2f0` (J1E), `3d566cd` (revalidated replies recorded against their own iteration's
+  snapshot — production run failed with `agent_run_steps_context_snapshot_fk`; the in-memory session
+  now mirrors the FK). Deployed `3d566cd`; migration 0009 applied; `sales-production@2` ready.
+- Pre-v2 smoke task `01a0f411`'s predecessor `01a0ee77…` cancelled with the production control
+  (history kept, still `sales@1`); the next inbound opened a new `sales@2` conversation.
+
+## Second WhatsApp E2E (sales@2) — interim
+
+Evidence: `docs/audits/r4-j1-e2e-final/`. New task `sales@2`, Catalog v2 only, 0 contradictions and
+0 stale claims among the sent replies, derived total labelled referential, durability and outbound
+PASS. **Blocking (J1E):** refresh inside Catalog's cache window cannot renew validity (→ unverifiable),
+the availability qualifier is checked per sentence (honest drafts refused), and the degradation can
+repeat within a run — 3 degraded replies reached the customer. Fix planned: refresh after the owner
+validity ends (bounded wait), block-level consistency with a wider negation lexicon, one degradation
+per run; then rerun cases 6 and 8.
+
+Transferred out of J1: `CAT-HOTFIX-ZERO-DATE-PROMOTIONS` (Catalog; v1 `priceResolver`,
+`specificPriceSelector`, `resolve-product-intent`, `recommendations/search-products`) and the Catalog
+nonblocking findings → `CATALOG_PLATFORM_V2_PRD.md` Appendix J1D-R1.
+
+**R4-J1 — NOT CLOSED.**

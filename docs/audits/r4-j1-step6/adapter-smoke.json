@@ -1,0 +1,194 @@
+{
+ "config": {
+  "baseHost": "127.0.0.1:4010",
+  "timeoutMs": 2500,
+  "apiKeyConfigured": true,
+  "authentication": "declared, not verified",
+  "connectivity": "not tested"
+ },
+ "results": [
+  {
+   "id": "search-exact-BORE20",
+   "ok": true,
+   "ms": 217,
+   "top": "P545",
+   "match": "exact_reference",
+   "ownerValidUntil": "2026-09-30T19:02:54.158Z",
+   "recordedValidUntil": "2026-09-30T19:02:54.158Z",
+   "boundedByOwner": true
+  },
+  {
+   "id": "search-multitoken",
+   "ok": true,
+   "ms": 80,
+   "total": 3,
+   "keys": [
+    "P186",
+    "P196",
+    "P1202"
+   ]
+  },
+  {
+   "id": "product-variants-P2128",
+   "ok": true,
+   "ms": 37,
+   "status": "found",
+   "variants": [
+    "P2128-V663",
+    "P2128-V664"
+   ],
+   "priceSummary": {
+    "kind": "from",
+    "basis": "offerable",
+    "finalGross": {
+     "amount": 15990,
+     "currency": "CLP"
+    },
+    "regularGross": {
+     "amount": 15990,
+     "currency": "CLP"
+    },
+    "discounted": false
+   },
+   "viewKeys": [
+    "status",
+    "productKey",
+    "facts",
+    "catalogText",
+    "derived",
+    "inferred",
+    "freshness"
+   ]
+  },
+  {
+   "id": "item-concrete-P2128-V663",
+   "ok": true,
+   "ms": 313,
+   "status": "found",
+   "finalGross": 15990,
+   "engineVersion": "catalog-commercial-v2.2.0",
+   "sellability": "sellable",
+   "validUntil": "2026-09-30T19:02:54.430Z"
+  },
+  {
+   "id": "item-promotion-P2340",
+   "ok": true,
+   "ms": 40,
+   "finalGross": 6296,
+   "regularGross": 13990,
+   "promotion": {
+    "type": "percentage",
+    "percentOff": 0.55,
+    "amountOffGross": null,
+    "validUntil": null
+   }
+  },
+  {
+   "id": "product-not-found",
+   "ok": true,
+   "ms": 7,
+   "status": "not_found"
+  },
+  {
+   "id": "item-not-found",
+   "ok": true,
+   "ms": 9,
+   "status": "not_found"
+  },
+  {
+   "id": "item-variant-required-P1136",
+   "ok": true,
+   "ms": 47,
+   "status": "variant_required"
+  },
+  {
+   "id": "out-of-stock-P2338",
+   "ok": false,
+   "ms": 12,
+   "sellability": "not_sellable",
+   "reason": "inactive"
+  },
+  {
+   "id": "unauthorized-maps-to-DomainError",
+   "ok": true,
+   "ms": 4,
+   "thrown": {
+    "kind": "unauthorized",
+    "code": "unauthorized",
+    "retryable": false
+   }
+  },
+  {
+   "id": "timeout-maps-to-DomainError",
+   "ok": false,
+   "ms": 2,
+   "thrown": {
+    "kind": "deadline_exceeded",
+    "code": "deadline_exceeded",
+    "retryable": true
+   }
+  }
+ ],
+ "telemetry": [
+  {
+   "op": "search",
+   "status": 200,
+   "outcome": "ok",
+   "ms": 213
+  },
+  {
+   "op": "search",
+   "status": 200,
+   "outcome": "ok",
+   "ms": 79
+  },
+  {
+   "op": "getProductContext",
+   "status": 200,
+   "outcome": "ok",
+   "ms": 34
+  },
+  {
+   "op": "getItemContext",
+   "status": 200,
+   "outcome": "ok",
+   "ms": 313
+  },
+  {
+   "op": "getItemContext",
+   "status": 200,
+   "outcome": "ok",
+   "ms": 40
+  },
+  {
+   "op": "getProductContext",
+   "status": 200,
+   "outcome": "ok",
+   "ms": 7
+  },
+  {
+   "op": "getItemContext",
+   "status": 200,
+   "outcome": "ok",
+   "ms": 9
+  },
+  {
+   "op": "getItemContext",
+   "status": 200,
+   "outcome": "ok",
+   "ms": 46
+  },
+  {
+   "op": "getItemContext",
+   "status": 200,
+   "outcome": "ok",
+   "ms": 11
+  },
+  {
+   "op": "search",
+   "status": null,
+   "outcome": "failed",
+   "ms": 2
+  }
+ ]
+}

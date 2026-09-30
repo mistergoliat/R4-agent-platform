@@ -1,0 +1,1898 @@
+[
+  {
+    "key": "P545",
+    "status": 200,
+    "ms": 173.9,
+    "body": {
+      "schemaVersion": 1,
+      "status": "found",
+      "productKey": "P545",
+      "ref": {
+        "productId": "545"
+      },
+      "facts": {
+        "name": "Barra Olímpica 20kg 220cm Eco Serie | PROmachine",
+        "sku": "BORE20",
+        "shortDescription": "Barra olímpica diseñada para entrenamientos básicos, permitiendo realizar ejercicios como sentadillas, press banco, press de hombro, peso muerto, entre otros movimientos que abarcan la totalidad de cuerpo. La barra ECO esta diseñada para usuarios principiantes, pero no te dejes engañar, podrás entrenar con cargas medianamente elevadas, ya que soporta hasta 249 kg. de carga máxima ! Entrena sin límites y ponte a prueba para superar tus límites con una barra olímpica económica; entrena con constancia y sube de nivel gracias a una herramienta de gimnasio semi-profesional, pero de alto rendimient…",
+        "category": {
+          "id": "249",
+          "name": "Barras Hombre 20 kg"
+        },
+        "brand": "PROMACHINE",
+        "weightKg": 22,
+        "specifications": [
+          {
+            "name": "Categoría",
+            "value": "Olímpico"
+          },
+          {
+            "name": "Peso Neto (N.W.)",
+            "value": "20 kg. Aprox. (No calibrada)"
+          },
+          {
+            "name": "Peso Bruto (G.W.)",
+            "value": "22 kg."
+          },
+          {
+            "name": "Dimensiones del Empaque",
+            "value": "Largo: 225 cm. Ancho: 10 cm. Alto: 10 cm."
+          },
+          {
+            "name": "Carga máxima",
+            "value": "550 lb. / 249 kg."
+          },
+          {
+            "name": "Largo total",
+            "value": "220 cm."
+          },
+          {
+            "name": "Largo de la manga",
+            "value": "35.5 cm."
+          },
+          {
+            "name": "Largo de agarre",
+            "value": "138 cm."
+          },
+          {
+            "name": "Diámetro de agarre",
+            "value": "Ø30 mm"
+          },
+          {
+            "name": "Diámetro de manga",
+            "value": "Ø50 mm"
+          },
+          {
+            "name": "Rodamiento / Cojinete",
+            "value": "1 buje de bronce por lado"
+          },
+          {
+            "name": "Moleteado",
+            "value": "Una marca de agarre / con moleteado central"
+          },
+          {
+            "name": "Material",
+            "value": "Acero"
+          },
+          {
+            "name": "Acabado",
+            "value": "Normal chromed"
+          },
+          {
+            "name": "Tolerancia (Margen de error en peso)",
+            "value": "± 20% de su peso declarado"
+          },
+          {
+            "name": "Marca",
+            "value": "PROMACHINE"
+          },
+          {
+            "name": "Garantía Legal",
+            "value": "6 meses por fallas de fábrica"
+          }
+        ],
+        "status": {
+          "active": true,
+          "listed": true,
+          "orderable": true
+        },
+        "sellableItem": {
+          "itemKey": "P545",
+          "ref": {
+            "productId": "545",
+            "variantId": null
+          }
+        },
+        "variantOptions": [],
+        "stock": {
+          "availableQuantity": 4,
+          "scope": "variant"
+        }
+      },
+      "derived": {
+        "priceSummary": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 84990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 84990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "availability": {
+          "sellability": "sellable",
+          "reason": "in_stock",
+          "sellableVariants": null,
+          "leadTime": null
+        },
+        "publicUrl": "https://pesaschile.cl/categories/545-barra-olimpica-20kg-220cm-eco-serie-promachine.html"
+      },
+      "inferred": {
+        "frequentlyBoughtTogether": {
+          "status": "unavailable",
+          "reason": "snapshot_unavailable"
+        }
+      },
+      "provenance": {
+        "source": "prestashop",
+        "service": "catalog-service",
+        "serviceBuildRef": "catalog-service@local",
+        "sourceUpdatedAt": null
+      },
+      "freshness": {
+        "asOf": "2026-09-30T18:18:10.808Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 8
+        },
+        "validUntil": "2026-09-30T18:18:25.808Z"
+      }
+    }
+  },
+  {
+    "key": "P2248",
+    "status": 200,
+    "ms": 159.4,
+    "body": {
+      "schemaVersion": 1,
+      "status": "found",
+      "productKey": "P2248",
+      "ref": {
+        "productId": "2248"
+      },
+      "facts": {
+        "name": "Swivel para Saco de Boxeo | Rising",
+        "sku": "RS3017",
+        "shortDescription": "Elimina trabas, ruidos y vibraciones inestables en tu entrenamiento. El Swivel Rising® ofrece una rotación ultrasuave de 360° con una capacidad de carga de 500 kg, garantizando máxima velocidad, fluidez y ritmo en cada golpe. ✓ CAPACIDAD BRUTAL DE 500 KG: Fabricado en acero HG-Steel con anillo totalmente soldado sobre una base de 9 cm para máxima seguridad. ✓ ROTACIÓN FLUIDA EN 360°: Núcleo de baja fricción que permite giros continuos y sin rebotes a altas revoluciones. ✓ LIBERACIÓN RÁPIDA Y FÁCIL MONTAJE: Sistema de perno transversal para desmonte veloz e incluye 4 pernos de expansión para h…",
+        "category": {
+          "id": "467",
+          "name": "Boxeo & MMA"
+        },
+        "brand": "RISING FIT",
+        "weightKg": 1,
+        "specifications": [
+          {
+            "name": "Peso Neto (N.W.)",
+            "value": "0.8 kg"
+          },
+          {
+            "name": "Peso Bruto (G.W.)",
+            "value": "1 kg"
+          },
+          {
+            "name": "Dimensiones del producto",
+            "value": "Largo: 9 cm Ancho: 9 cm Alto: 9 cm"
+          },
+          {
+            "name": "Dimensiones del Empaque",
+            "value": "Largo: 12 cm Ancho: 12 cm Alto: 12 cm"
+          },
+          {
+            "name": "Contenido",
+            "value": "1 swivel + 4 pernos de expansión"
+          },
+          {
+            "name": "Peso máximo de carga",
+            "value": "500 kg"
+          },
+          {
+            "name": "Material",
+            "value": "Acero"
+          },
+          {
+            "name": "Color(es)",
+            "value": "Negro"
+          },
+          {
+            "name": "Marca",
+            "value": "RISING FIT"
+          },
+          {
+            "name": "Precauciones Importantes",
+            "value": "Instalar solo en techos de hormigón armado"
+          },
+          {
+            "name": "Garantía Legal",
+            "value": "6 meses por fallas de fábrica"
+          }
+        ],
+        "status": {
+          "active": true,
+          "listed": true,
+          "orderable": true
+        },
+        "sellableItem": {
+          "itemKey": "P2248",
+          "ref": {
+            "productId": "2248",
+            "variantId": null
+          }
+        },
+        "variantOptions": [],
+        "stock": {
+          "availableQuantity": 47,
+          "scope": "variant"
+        }
+      },
+      "derived": {
+        "priceSummary": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 20990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 20990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "availability": {
+          "sellability": "sellable",
+          "reason": "in_stock",
+          "sellableVariants": null,
+          "leadTime": null
+        },
+        "publicUrl": "https://pesaschile.cl/categories/2248-swivel-para-saco-de-boxeo-rising.html"
+      },
+      "inferred": {
+        "frequentlyBoughtTogether": {
+          "status": "unavailable",
+          "reason": "snapshot_unavailable"
+        }
+      },
+      "provenance": {
+        "source": "prestashop",
+        "service": "catalog-service",
+        "serviceBuildRef": "catalog-service@local",
+        "sourceUpdatedAt": null
+      },
+      "freshness": {
+        "asOf": "2026-09-30T18:18:10.972Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 5
+        },
+        "validUntil": "2026-09-30T18:18:25.972Z"
+      }
+    }
+  },
+  {
+    "key": "P2338",
+    "status": 200,
+    "ms": 168.6,
+    "body": {
+      "schemaVersion": 1,
+      "status": "found",
+      "productKey": "P2338",
+      "ref": {
+        "productId": "2338"
+      },
+      "facts": {
+        "name": "Banco Regulable Alpha - 2da Selección | HWM® (HWM-AP-B101-SU50-4)",
+        "sku": "RE-HWM-AP-B101",
+        "shortDescription": "PRODUCTO DE SEGUNDA SELECCIÓN, CONTIENE SEÑALES DE USO, SIN EMPAQUE. IMAGEN REFERENCIAL - El banco regulable Alpha de HWM® proporciona una base sólida para un amplia gama de ejercicios de peso libre. Nuestro banco es completamente ajustable con estructura de acero robusta para soportar cargas de hasta 350 kg. Su innovadora superficie de PVC con diseño micro diamantado non-slip, proporciona un agarre superior en esos entrenamientos de cargas máximas, mejorando la fijación de la espalda con el respaldo del banco, aumentando la estabilidad en el movimiento y evitando el deslizamiento. Su respald…",
+        "category": null,
+        "brand": "HWM",
+        "weightKg": 46.5,
+        "specifications": [
+          {
+            "name": "Clasificación de Uso",
+            "value": "USO INTENSIVO - COMERCIAL"
+          },
+          {
+            "name": "Peso Neto (N.W.)",
+            "value": "43 kg."
+          },
+          {
+            "name": "Peso Bruto (G.W.)",
+            "value": "46,5 kg."
+          },
+          {
+            "name": "Dimensiones del producto",
+            "value": "Largo: 134 cm. Ancho: 68 cm. Alto: 45 cm. (posición plana)"
+          },
+          {
+            "name": "Dimensiones del Empaque",
+            "value": "Largo: 122 cm. Ancho: 48 cm. Alto: 24 cm."
+          },
+          {
+            "name": "Peso máximo de carga",
+            "value": "350 kg. Incluido el peso del usuario"
+          },
+          {
+            "name": "Perfiles",
+            "value": "75*50*3.0 mm."
+          },
+          {
+            "name": "Acabado",
+            "value": "Black powder coat finish (Acabado mate)"
+          },
+          {
+            "name": "Marca",
+            "value": "HWM"
+          },
+          {
+            "name": "Modelo",
+            "value": "Alpha Series"
+          },
+          {
+            "name": "Servicio de Armado",
+            "value": "No incluido (Se vende por separado)"
+          },
+          {
+            "name": "Condición de Venta",
+            "value": "Producto de Segunda Selección."
+          },
+          {
+            "name": "Garantía Legal",
+            "value": "Producto sin derecho a retracto"
+          }
+        ],
+        "status": {
+          "active": true,
+          "listed": true,
+          "orderable": true
+        },
+        "sellableItem": {
+          "itemKey": "P2338",
+          "ref": {
+            "productId": "2338",
+            "variantId": null
+          }
+        },
+        "variantOptions": [],
+        "stock": {
+          "availableQuantity": 0,
+          "scope": "variant"
+        }
+      },
+      "derived": {
+        "priceSummary": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 134995,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 269990,
+            "currency": "CLP"
+          },
+          "discounted": true
+        },
+        "availability": {
+          "sellability": "not_sellable",
+          "reason": "out_of_stock",
+          "sellableVariants": null,
+          "leadTime": null
+        },
+        "publicUrl": "https://pesaschile.cl/categories/2338-banco-regulable-alpha-2da-seleccion-hwm-hwm-ap-b101-su50-4.html"
+      },
+      "inferred": {
+        "frequentlyBoughtTogether": {
+          "status": "unavailable",
+          "reason": "snapshot_unavailable"
+        }
+      },
+      "provenance": {
+        "source": "prestashop",
+        "service": "catalog-service",
+        "serviceBuildRef": "catalog-service@local",
+        "sourceUpdatedAt": null
+      },
+      "freshness": {
+        "asOf": "2026-09-30T18:18:11.137Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 4
+        },
+        "validUntil": "2026-09-30T18:18:26.137Z"
+      }
+    }
+  },
+  {
+    "key": "P2128",
+    "status": 200,
+    "ms": 171.1,
+    "body": {
+      "schemaVersion": 1,
+      "status": "found",
+      "productKey": "P2128",
+      "ref": {
+        "productId": "2128"
+      },
+      "facts": {
+        "name": "Par Collarines Olímpico Magnéticos | Rising",
+        "sku": "RS6060",
+        "shortDescription": "Seguridad Extrema y Almacenamiento Inteligente Los Collarines Olímpicos Magnéticos Rising son la evolución definitiva en accesorios de sujeción para atletas de alta exigencia. Diseñados para quienes no permiten errores ni demoras en su entrenamiento, estos collarines combinan una seguridad inquebrantable con una funcionalidad innovadora. Fabricados en nailon de alta resistencia, cuentan con un anillo interior de TPE antideslizante que garantiza un bloqueo rápido, firme y protector, evitando que los discos se desplacen incluso en los movimientos más explosivos. Lo que realmente marca la difere…",
+        "category": {
+          "id": "275",
+          "name": "Accesorios para Barras"
+        },
+        "brand": "RISING FIT",
+        "weightKg": 0.38,
+        "specifications": [
+          {
+            "name": "Categoría",
+            "value": "Olímpico"
+          },
+          {
+            "name": "Peso Neto (N.W.)",
+            "value": "320 gr. (par)"
+          },
+          {
+            "name": "Peso Bruto (G.W.)",
+            "value": "380 gr."
+          },
+          {
+            "name": "Dimensiones del producto",
+            "value": "Diámetro externo: Ø9 cm. Ancho: 4 cm."
+          },
+          {
+            "name": "Dimensiones del Empaque",
+            "value": "Largo: 12 cm. Ancho: 12 cm. Alto: 7 cm."
+          },
+          {
+            "name": "Diámetro interno",
+            "value": "Ø50 mm"
+          },
+          {
+            "name": "Material",
+            "value": "Nailon, TPE"
+          },
+          {
+            "name": "Color(es)",
+            "value": "Rosado, Amarillo"
+          },
+          {
+            "name": "Marca",
+            "value": "RISING FIT"
+          }
+        ],
+        "status": {
+          "active": true,
+          "listed": true,
+          "orderable": true
+        },
+        "sellableItem": null,
+        "variantOptions": [
+          {
+            "itemKey": "P2128-V663",
+            "ref": {
+              "productId": "2128",
+              "variantId": "663"
+            },
+            "sku": "RS6060-RO",
+            "attributes": [
+              {
+                "group": "Color",
+                "value": "Rosado"
+              }
+            ],
+            "isDefault": true
+          },
+          {
+            "itemKey": "P2128-V664",
+            "ref": {
+              "productId": "2128",
+              "variantId": "664"
+            },
+            "sku": "RS6060-AM",
+            "attributes": [
+              {
+                "group": "Color",
+                "value": "Amarillo"
+              }
+            ],
+            "isDefault": false
+          }
+        ],
+        "stock": {
+          "availableQuantity": 90,
+          "scope": "product_total"
+        }
+      },
+      "derived": {
+        "priceSummary": {
+          "kind": "from",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 15990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 15990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "availability": {
+          "sellability": "sellable",
+          "reason": "in_stock",
+          "sellableVariants": 2,
+          "leadTime": null
+        },
+        "publicUrl": "https://pesaschile.cl/categories/2128-par-collarines-olimpico-magneticos-rising.html"
+      },
+      "inferred": {
+        "frequentlyBoughtTogether": {
+          "status": "unavailable",
+          "reason": "snapshot_unavailable"
+        }
+      },
+      "provenance": {
+        "source": "prestashop",
+        "service": "catalog-service",
+        "serviceBuildRef": "catalog-service@local",
+        "sourceUpdatedAt": null
+      },
+      "freshness": {
+        "asOf": "2026-09-30T18:18:11.313Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 4
+        },
+        "validUntil": "2026-09-30T18:18:26.313Z"
+      }
+    }
+  },
+  {
+    "key": "P1136",
+    "status": 200,
+    "ms": 179.1,
+    "body": {
+      "schemaVersion": 1,
+      "status": "found",
+      "productKey": "P1136",
+      "ref": {
+        "productId": "1136"
+      },
+      "facts": {
+        "name": "Par Rodilleras de Neopreno Red 5mm | HWM®",
+        "sku": "RNHR",
+        "shortDescription": "Rodilleras de Neopreno HWM®: Máximo Soporte en cada Levantamiento Las Rodilleras de Neopreno HWM® ofrecen a los atletas un ajuste, compresión y flexibilidad inigualables, brindando un soporte excepcional para tus entrenamientos más duros. Fabricadas a mano, puntada tras puntada, con materiales de primera calidad, estas rodilleras están hechas con neopreno transpirable de 5 mm de espesor, que es flexible y de alta calidad. Su diseño con costuras contorneadas y materiales de compresión elásticos proporciona estabilidad y confianza, permitiendo un movimiento libre mientras entrenas. Son de horma…",
+        "category": {
+          "id": "353",
+          "name": "Rodilleras"
+        },
+        "brand": "HWM",
+        "weightKg": 0.5,
+        "specifications": [
+          {
+            "name": "Espesor",
+            "value": "5 mm"
+          },
+          {
+            "name": "Material",
+            "value": "100% Neopreno Libre De Látex / Nailon"
+          },
+          {
+            "name": "Color(es)",
+            "value": "Rojo"
+          },
+          {
+            "name": "Marca",
+            "value": "HWM"
+          },
+          {
+            "name": "Modelo",
+            "value": "Live Hard Series"
+          },
+          {
+            "name": "Garantía Legal",
+            "value": "6 meses por fallas de fábrica"
+          }
+        ],
+        "status": {
+          "active": true,
+          "listed": true,
+          "orderable": true
+        },
+        "sellableItem": null,
+        "variantOptions": [
+          {
+            "itemKey": "P1136-V229",
+            "ref": {
+              "productId": "1136",
+              "variantId": "229"
+            },
+            "sku": "RNHRS",
+            "attributes": [
+              {
+                "group": "Talla",
+                "value": "S"
+              }
+            ],
+            "isDefault": true
+          },
+          {
+            "itemKey": "P1136-V230",
+            "ref": {
+              "productId": "1136",
+              "variantId": "230"
+            },
+            "sku": "RNHRM",
+            "attributes": [
+              {
+                "group": "Talla",
+                "value": "M"
+              }
+            ],
+            "isDefault": false
+          },
+          {
+            "itemKey": "P1136-V231",
+            "ref": {
+              "productId": "1136",
+              "variantId": "231"
+            },
+            "sku": "RNHRL",
+            "attributes": [
+              {
+                "group": "Talla",
+                "value": "L"
+              }
+            ],
+            "isDefault": false
+          },
+          {
+            "itemKey": "P1136-V232",
+            "ref": {
+              "productId": "1136",
+              "variantId": "232"
+            },
+            "sku": "RNHRXL",
+            "attributes": [
+              {
+                "group": "Talla",
+                "value": "XL"
+              }
+            ],
+            "isDefault": false
+          }
+        ],
+        "stock": {
+          "availableQuantity": 98,
+          "scope": "product_total"
+        }
+      },
+      "derived": {
+        "priceSummary": {
+          "kind": "from",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 21693,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 30990,
+            "currency": "CLP"
+          },
+          "discounted": true
+        },
+        "availability": {
+          "sellability": "sellable",
+          "reason": "in_stock",
+          "sellableVariants": 2,
+          "leadTime": null
+        },
+        "publicUrl": "https://pesaschile.cl/categories/1136-par-rodilleras-de-neopreno-red-5mm-hwm.html"
+      },
+      "inferred": {
+        "frequentlyBoughtTogether": {
+          "status": "unavailable",
+          "reason": "snapshot_unavailable"
+        }
+      },
+      "provenance": {
+        "source": "prestashop",
+        "service": "catalog-service",
+        "serviceBuildRef": "catalog-service@local",
+        "sourceUpdatedAt": null
+      },
+      "freshness": {
+        "asOf": "2026-09-30T18:18:11.476Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 22
+        },
+        "validUntil": "2026-09-30T18:18:26.476Z"
+      }
+    }
+  },
+  {
+    "key": "P382",
+    "status": 200,
+    "ms": 188.1,
+    "body": {
+      "schemaVersion": 1,
+      "status": "found",
+      "productKey": "P382",
+      "ref": {
+        "productId": "382"
+      },
+      "facts": {
+        "name": "Set 10 Pares Mancuernas PU (desde 2.5kg a 25kg) + Rack | Obelix",
+        "sku": "PRMC",
+        "shortDescription": "Obelix® es la alternativa perfecta para equipar un gimnasio comercial, con mancuernas en pares desde los 2,5 kg hasta los 25 kg con un mango recto de cromo endurecido soldado en una sola pieza, un moleteado suave y un acabado negro mate de aspecto limpio y elegante. SOLUCIÓN DE ALMACENAMIENTO CONVENIENTE. El marco modular fuerte y duradero puede contener hasta 10 pares de mancuernas. El diseño de 2 niveles permite ahorrar espacio y proporciona una solución para almacenar tus mancuernas de forma ordenada. El estante horizontal para mancuernas Obelix® con cunas en ángulo para un calce perfecto,…",
+        "category": {
+          "id": "269",
+          "name": "Mancuernas Pu"
+        },
+        "brand": "OBELIX",
+        "weightKg": 326,
+        "specifications": [
+          {
+            "name": "Peso Neto (N.W.)",
+            "value": "275 kg. en mancuernas + rack de 51 kg."
+          },
+          {
+            "name": "Dimensiones del producto",
+            "value": "Largo: 245 cm Ancho: 71 cm Alto: 83"
+          },
+          {
+            "name": "Material",
+            "value": "Mancuernas de Pu / Rack de acero."
+          },
+          {
+            "name": "Tolerancia (Margen de error en peso)",
+            "value": "± 3% de su peso declarado"
+          },
+          {
+            "name": "Marca",
+            "value": "OBELIX"
+          },
+          {
+            "name": "Servicio de Armado",
+            "value": "No incluido (Se vende por separado)"
+          },
+          {
+            "name": "Garantía Legal",
+            "value": "6 meses por fallas de fábrica"
+          }
+        ],
+        "status": {
+          "active": true,
+          "listed": true,
+          "orderable": true
+        },
+        "sellableItem": {
+          "itemKey": "P382",
+          "ref": {
+            "productId": "382",
+            "variantId": null
+          }
+        },
+        "variantOptions": [],
+        "stock": {
+          "availableQuantity": 1,
+          "scope": "variant"
+        }
+      },
+      "derived": {
+        "priceSummary": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 1240890,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 1459870,
+            "currency": "CLP"
+          },
+          "discounted": true
+        },
+        "availability": {
+          "sellability": "sellable",
+          "reason": "in_stock",
+          "sellableVariants": null,
+          "leadTime": null
+        },
+        "publicUrl": "https://pesaschile.cl/categories/382-set-10-pares-mancuernas-pu-desde-025kg-a-25kg-rack-obelix.html"
+      },
+      "inferred": {
+        "frequentlyBoughtTogether": {
+          "status": "unavailable",
+          "reason": "snapshot_unavailable"
+        }
+      },
+      "provenance": {
+        "source": "prestashop",
+        "service": "catalog-service",
+        "serviceBuildRef": "catalog-service@local",
+        "sourceUpdatedAt": null
+      },
+      "freshness": {
+        "asOf": "2026-09-30T18:18:11.680Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 5
+        },
+        "validUntil": "2026-09-30T18:18:26.680Z"
+      }
+    }
+  },
+  {
+    "key": "P2340",
+    "status": 200,
+    "ms": 164.1,
+    "body": {
+      "schemaVersion": 1,
+      "status": "found",
+      "productKey": "P2340",
+      "ref": {
+        "productId": "2340"
+      },
+      "facts": {
+        "name": "Colchoneta Oxford Negro/Rojo 100x50x5cm - 2da Selección | FullFit (FICLE3-SU55,-1)",
+        "sku": "RE-FICLE3",
+        "shortDescription": "PRODUCTO CON SEÑALES DE USO, SIN EMPAQUE, SU VALOR EQUIVALE A LA UNIDAD. IMAGEN REFERENCIAL - La colchoneta deportiva de FullFit® es perfecta para estiramientos y ejercicios en el suelo. Siempre puedes utilizar una colchoneta en casa o en el gimnasio para realizar tus ejercicios diarios de peso corporal. La capa externa es de lona, específicamente de tela tipo Oxford , que asegura el máximo confort durante cualquier movimiento en el suelo. Su material se destaca por ser un tejido ligero, lustroso y suave al tacto. La tela es fabricada a partir de una mezcla de algodón con poliéster, es lavabl…",
+        "category": null,
+        "brand": "FULLFIT",
+        "weightKg": 6.25,
+        "specifications": [
+          {
+            "name": "Peso Neto (N.W.)",
+            "value": "1 kg"
+          },
+          {
+            "name": "Dimensiones del producto",
+            "value": "Largo: 100 cm Ancho: 50 cm"
+          },
+          {
+            "name": "Espesor",
+            "value": "5 cm"
+          },
+          {
+            "name": "Densidad",
+            "value": "50 Kg/M3"
+          },
+          {
+            "name": "Material",
+            "value": "Tela Oxford"
+          },
+          {
+            "name": "Relleno",
+            "value": "EPE Foam (Espuma De Polietileno Expandido)"
+          },
+          {
+            "name": "Marca",
+            "value": "FULLFIT"
+          },
+          {
+            "name": "Condición de Venta",
+            "value": "Producto de Segunda Selección."
+          },
+          {
+            "name": "Garantía Legal",
+            "value": "Producto sin derecho a retracto"
+          }
+        ],
+        "status": {
+          "active": true,
+          "listed": true,
+          "orderable": true
+        },
+        "sellableItem": {
+          "itemKey": "P2340",
+          "ref": {
+            "productId": "2340",
+            "variantId": null
+          }
+        },
+        "variantOptions": [],
+        "stock": {
+          "availableQuantity": 10,
+          "scope": "variant"
+        }
+      },
+      "derived": {
+        "priceSummary": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 6296,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 13990,
+            "currency": "CLP"
+          },
+          "discounted": true
+        },
+        "availability": {
+          "sellability": "sellable",
+          "reason": "in_stock",
+          "sellableVariants": null,
+          "leadTime": null
+        },
+        "publicUrl": "https://pesaschile.cl/categories/2340-colchoneta-oxford-negrorojo-100x50x5cm-2da-seleccion-fullfit-ficle3-su55-1.html"
+      },
+      "inferred": {
+        "frequentlyBoughtTogether": {
+          "status": "unavailable",
+          "reason": "snapshot_unavailable"
+        }
+      },
+      "provenance": {
+        "source": "prestashop",
+        "service": "catalog-service",
+        "serviceBuildRef": "catalog-service@local",
+        "sourceUpdatedAt": null
+      },
+      "freshness": {
+        "asOf": "2026-09-30T18:18:11.845Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 4
+        },
+        "validUntil": "2026-09-30T18:18:26.845Z"
+      }
+    }
+  },
+  {
+    "key": "P2195",
+    "status": 200,
+    "ms": 195.9,
+    "body": {
+      "schemaVersion": 1,
+      "status": "found",
+      "productKey": "P2195",
+      "ref": {
+        "productId": "2195"
+      },
+      "facts": {
+        "name": "Pack 3 Agarres Ergonómicos - Accesorio Polea | Obelix",
+        "sku": "PACK-SAO",
+        "shortDescription": "Los nuevos agarres sólidos de Obelix están fabricados en acero con un recubrimiento en goma impregnada de alta calidad, que proporcionan un agarre firme y ergonómico durante toda la rutina de entrenamiento, además de aumentar la comodidad y la seguridad. Las empuñaduras de goma ergonómicas están moleteadas con un relieve suave pero a la vez antideslizante para mayor comodidad y seguridad. Conéctelo fácilmente a cualquier máquina de cable para gimnasio y siéntete seguro entrenando con estos agarres que soportan una carga de hasta 400 kg . ¡Amplíe la gama de ejercicios y maximiza la efectividad…",
+        "category": {
+          "id": "451",
+          "name": "Accesorios de Polea"
+        },
+        "brand": "OBELIX",
+        "weightKg": 12,
+        "specifications": [
+          {
+            "name": "Peso Neto (N.W.)",
+            "value": "Agarre amplio: 4.1 Kg. ≈"
+          },
+          {
+            "name": "Peso Neto (N.W.)",
+            "value": "Agarre medio: 2.9 Kg. ≈"
+          },
+          {
+            "name": "Peso Neto (N.W.)",
+            "value": "Agarre neutro: 2.9 Kg. ≈"
+          },
+          {
+            "name": "Peso Bruto (G.W.)",
+            "value": "12 kg."
+          },
+          {
+            "name": "Dimensiones del producto",
+            "value": "Agarre neutro: Largo: 33 Cm. Ancho: 13 Cm. Alto: 20 Cm."
+          },
+          {
+            "name": "Dimensiones del producto",
+            "value": "Agarre amplio: Largo: 84.5 Cm. Ancho: 10.5 Cm. Alto: 17 Cm."
+          },
+          {
+            "name": "Dimensiones del producto",
+            "value": "Agarre medio: Largo: 59.5 Cm. Ancho: 10.5 Cm. Alto: 17 Cm."
+          },
+          {
+            "name": "Dimensiones del Empaque",
+            "value": "Largo: 87 cm. Ancho: 30 cm. Alto: 24 cm."
+          },
+          {
+            "name": "Peso máximo de carga",
+            "value": "400 kg. cada agarre"
+          },
+          {
+            "name": "Largo de agarre",
+            "value": "Agarre amplio: 83 Cm."
+          },
+          {
+            "name": "Largo de agarre",
+            "value": "Agarre medio: 58 Cm."
+          },
+          {
+            "name": "Largo de agarre",
+            "value": "Agarre neutro:  20 Cm."
+          },
+          {
+            "name": "Diámetro de agarre",
+            "value": "Ø30 mm"
+          },
+          {
+            "name": "Material",
+            "value": "Exterior de caucho / Interior de acero"
+          },
+          {
+            "name": "Marca",
+            "value": "OBELIX"
+          }
+        ],
+        "status": {
+          "active": true,
+          "listed": true,
+          "orderable": true
+        },
+        "sellableItem": {
+          "itemKey": "P2195",
+          "ref": {
+            "productId": "2195",
+            "variantId": null
+          }
+        },
+        "variantOptions": [],
+        "stock": {
+          "availableQuantity": 1,
+          "scope": "variant"
+        }
+      },
+      "derived": {
+        "priceSummary": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 73925,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 86970,
+            "currency": "CLP"
+          },
+          "discounted": true
+        },
+        "availability": {
+          "sellability": "sellable",
+          "reason": "in_stock",
+          "sellableVariants": null,
+          "leadTime": null
+        },
+        "publicUrl": "https://pesaschile.cl/categories/2195-pack-3-agarres-ergonomicos-accesorio-polea-obelix.html"
+      },
+      "inferred": {
+        "frequentlyBoughtTogether": {
+          "status": "unavailable",
+          "reason": "snapshot_unavailable"
+        }
+      },
+      "provenance": {
+        "source": "prestashop",
+        "service": "catalog-service",
+        "serviceBuildRef": "catalog-service@local",
+        "sourceUpdatedAt": null
+      },
+      "freshness": {
+        "asOf": "2026-09-30T18:18:12.025Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 4
+        },
+        "validUntil": "2026-09-30T18:18:27.025Z"
+      }
+    }
+  },
+  {
+    "key": "P2337",
+    "status": 200,
+    "ms": 171.5,
+    "body": {
+      "schemaVersion": 1,
+      "status": "found",
+      "productKey": "P2337",
+      "ref": {
+        "productId": "2337"
+      },
+      "facts": {
+        "name": "Par Discos Olímpicos Grip Rubber 20kg - 2da Selección | PROmachine (DOP20-SU45-1)",
+        "sku": "RE-DOP20",
+        "shortDescription": "PRODUCTO CON SEÑALES DE USO, SIN EMPAQUE, SU VALOR EQUIVALE AL PAR. IMAGEN REFERENCIAL - ¿Estás buscando llevar tu entrenamiento al siguiente nivel? ¡Entonces los discos olímpicos PROmachine son la solución perfecta para ti! Estos discos versátiles te permiten ejercitar una amplia variedad de músculos en todo tu cuerpo, incluyendo brazos, piernas, hombros, espalda y más. Fabricadas con materiales comerciales sólidos y duraderos, los Grip Rubber están diseñados para resistir el desgaste y el paso del tiempo. Invertir en los discos Grip Rubber es invertir en tu salud y bienestar. Con ellos, pod…",
+        "category": null,
+        "brand": "PROMACHINE",
+        "weightKg": 42,
+        "specifications": [
+          {
+            "name": "Categoría",
+            "value": "Olímpico"
+          },
+          {
+            "name": "Peso Neto (N.W.)",
+            "value": "20 kg. cada disco"
+          },
+          {
+            "name": "Peso Bruto (G.W.)",
+            "value": "42 kg."
+          },
+          {
+            "name": "Dimensiones del Empaque",
+            "value": "2 CAJAS. Largo: 42,5 cm. Ancho: 42,5 cm. Alto: 6,5 cm."
+          },
+          {
+            "name": "Anillo central",
+            "value": "Acero - Regular Steel Insert"
+          },
+          {
+            "name": "Diámetro externo",
+            "value": "420 mm."
+          },
+          {
+            "name": "Diámetro interno",
+            "value": "Ø50.4 mm"
+          },
+          {
+            "name": "Espesor",
+            "value": "55 mm."
+          },
+          {
+            "name": "Material",
+            "value": "Exterior de caucho / Interior de acero"
+          },
+          {
+            "name": "Tolerancia (Margen de error en peso)",
+            "value": "± 3% de su peso declarado"
+          },
+          {
+            "name": "Marca",
+            "value": "PROMACHINE"
+          },
+          {
+            "name": "Condición de Venta",
+            "value": "Producto de Segunda Selección."
+          },
+          {
+            "name": "Garantía Legal",
+            "value": "Producto sin derecho a retracto"
+          }
+        ],
+        "status": {
+          "active": true,
+          "listed": true,
+          "orderable": true
+        },
+        "sellableItem": {
+          "itemKey": "P2337",
+          "ref": {
+            "productId": "2337",
+            "variantId": null
+          }
+        },
+        "variantOptions": [],
+        "stock": {
+          "availableQuantity": 0,
+          "scope": "variant"
+        }
+      },
+      "derived": {
+        "priceSummary": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 52795,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 95990,
+            "currency": "CLP"
+          },
+          "discounted": true
+        },
+        "availability": {
+          "sellability": "not_sellable",
+          "reason": "out_of_stock",
+          "sellableVariants": null,
+          "leadTime": null
+        },
+        "publicUrl": "https://pesaschile.cl/categories/2337-par-discos-olimpicos-grip-rubber-20kg-2da-seleccion-promachine-dop20-su45-1.html"
+      },
+      "inferred": {
+        "frequentlyBoughtTogether": {
+          "status": "unavailable",
+          "reason": "snapshot_unavailable"
+        }
+      },
+      "provenance": {
+        "source": "prestashop",
+        "service": "catalog-service",
+        "serviceBuildRef": "catalog-service@local",
+        "sourceUpdatedAt": null
+      },
+      "freshness": {
+        "asOf": "2026-09-30T18:18:12.212Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 7
+        },
+        "validUntil": "2026-09-30T18:18:27.212Z"
+      }
+    }
+  },
+  {
+    "key": "P2264",
+    "status": 200,
+    "ms": 159.3,
+    "body": {
+      "schemaVersion": 1,
+      "status": "found",
+      "productKey": "P2264",
+      "ref": {
+        "productId": "2264"
+      },
+      "facts": {
+        "name": "Barra Olímpica Cerakote Amarillo 15kg - 2da Selección (Wodstock) | KONG",
+        "sku": "WST-BOKA15",
+        "shortDescription": "PRODUCTO CON SEÑALES DE USO, SIN EMPAQUE, SU VALOR EQUIVALE A LA UNIDAD. IMAGEN REFERENCIAL - KONG x HWM® lleva la estética al límite diseñando una barra con estilo y con el más alto nivel de calidad. Las Barras KONG® están compuestas por tecnología y características que marcarán la diferencia en cada uno de tus entrenamientos. Las KONG® se distinguen por el uso de un revestimiento avanzado a base de cerámica, originalmente establecido en la industria de las armas de fuego por su notable durabilidad. Este acabado único ofrece una excelente resistencia a la abrasión, el desgaste y la corrosión…",
+        "category": null,
+        "brand": "KONG",
+        "weightKg": 17,
+        "specifications": [
+          {
+            "name": "Categoría",
+            "value": "Olímpico"
+          },
+          {
+            "name": "Peso Neto (N.W.)",
+            "value": "15 kg."
+          },
+          {
+            "name": "Peso Bruto (G.W.)",
+            "value": "17 kg."
+          },
+          {
+            "name": "Dimensiones del Empaque",
+            "value": "Largo: 205 cm. Ancho: 10 cm. Alto: 10 cm."
+          },
+          {
+            "name": "Carga máxima",
+            "value": "1200 lb. / 544 kg."
+          },
+          {
+            "name": "Largo total",
+            "value": "200 cm."
+          },
+          {
+            "name": "Largo de la manga",
+            "value": "31 cm."
+          },
+          {
+            "name": "Largo de agarre",
+            "value": "131.5 cm."
+          },
+          {
+            "name": "Diámetro de agarre",
+            "value": "Ø25 mm"
+          },
+          {
+            "name": "Diámetro de manga",
+            "value": "Ø50 mm"
+          },
+          {
+            "name": "Rodamiento / Cojinete",
+            "value": "4 rodamientos de aguja por lado / 1 buje de bronce de protección por lado"
+          },
+          {
+            "name": "Moleteado",
+            "value": "Doble marca de agarre / sin moleteado central"
+          },
+          {
+            "name": "Material",
+            "value": "Acero resorte"
+          },
+          {
+            "name": "Acabado",
+            "value": "Eje: Polímero-Cerámica (Cerakote) / Mangas: Black Hard Chrome"
+          },
+          {
+            "name": "Resistencia a la tracción",
+            "value": "190,000 PSI"
+          },
+          {
+            "name": "Tolerancia (Margen de error en peso)",
+            "value": "± 1% de su peso declarado"
+          },
+          {
+            "name": "Certificación",
+            "value": "9.000 caídas a 1.5 mt. de altura."
+          },
+          {
+            "name": "Marca",
+            "value": "KONG"
+          },
+          {
+            "name": "Condición de Venta",
+            "value": "Producto de Segunda Selección."
+          },
+          {
+            "name": "Garantía Legal",
+            "value": "Producto sin derecho a retracto"
+          }
+        ],
+        "status": {
+          "active": true,
+          "listed": true,
+          "orderable": true
+        },
+        "sellableItem": {
+          "itemKey": "P2264",
+          "ref": {
+            "productId": "2264",
+            "variantId": null
+          }
+        },
+        "variantOptions": [],
+        "stock": {
+          "availableQuantity": 15,
+          "scope": "variant"
+        }
+      },
+      "derived": {
+        "priceSummary": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 116993,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 179990,
+            "currency": "CLP"
+          },
+          "discounted": true
+        },
+        "availability": {
+          "sellability": "sellable",
+          "reason": "in_stock",
+          "sellableVariants": null,
+          "leadTime": null
+        },
+        "publicUrl": "https://pesaschile.cl/categories/2264-barra-olimpica-cerakote-amarillo-15kg-2da-seleccion-wodstock-kong.html"
+      },
+      "inferred": {
+        "frequentlyBoughtTogether": {
+          "status": "unavailable",
+          "reason": "snapshot_unavailable"
+        }
+      },
+      "provenance": {
+        "source": "prestashop",
+        "service": "catalog-service",
+        "serviceBuildRef": "catalog-service@local",
+        "sourceUpdatedAt": null
+      },
+      "freshness": {
+        "asOf": "2026-09-30T18:18:12.373Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 4
+        },
+        "validUntil": "2026-09-30T18:18:27.373Z"
+      }
+    }
+  },
+  {
+    "key": "P2328",
+    "status": 200,
+    "ms": 164.3,
+    "body": {
+      "schemaVersion": 1,
+      "status": "found",
+      "productKey": "P2328",
+      "ref": {
+        "productId": "2328"
+      },
+      "facts": {
+        "name": "Bicicleta de Spinning Training Lite Series - 2da Selección | Obelix (OBL2001-SU45-3)",
+        "sku": "RE-OBL2001",
+        "shortDescription": "PRODUCTO REACONDICIONADO, CONTIENE SEÑALES DE USO, SIN EMPAQUE. IMAGEN REFERENCIAL - La nueva línea de máquinas Lite Series de Obelix® incluye características que potenciarán tu entrenamiento, sin descuidar el diseño y tecnología que lo complementa. Su diseño vanguardista y personalizado, promete elegancia y calidez para entrenamientos intensivos en la comodidad de tu hogar, sin comprometer la calidad de tus rutinas. Si estás buscando un equipo de ejercicio simple pero efectivo que pueda usarse sin preparación en ningún momento... Lite Series de Obelix® es para ti. Esta nueva línea de máquina…",
+        "category": null,
+        "brand": "OBELIX",
+        "weightKg": 47,
+        "specifications": [
+          {
+            "name": "Clasificación de Uso",
+            "value": "USO REGULAR - HOGAR - 2 horas de uso continuo - 7 a 20 horas de uso promedio semanal"
+          },
+          {
+            "name": "Peso Neto (N.W.)",
+            "value": "40.9 kg"
+          },
+          {
+            "name": "Peso Bruto (G.W.)",
+            "value": "46.1 kg"
+          },
+          {
+            "name": "Dimensiones del producto armado",
+            "value": "Largo: 138 cm Ancho: 51 cm Alto: 110 cm"
+          },
+          {
+            "name": "Peso máximo de usuario",
+            "value": "120 kg."
+          },
+          {
+            "name": "Resistencia",
+            "value": "24 niveles"
+          },
+          {
+            "name": "Motor",
+            "value": "Resistencia Magnética"
+          },
+          {
+            "name": "Voltaje de alimentación",
+            "value": "220V"
+          },
+          {
+            "name": "Sistema HRC (Medidor de pulso)",
+            "value": "Si"
+          },
+          {
+            "name": "Disco de inercia",
+            "value": "9 kg."
+          },
+          {
+            "name": "Sistema de transmisión",
+            "value": "Correa"
+          },
+          {
+            "name": "Marca",
+            "value": "OBELIX"
+          },
+          {
+            "name": "Modelo",
+            "value": "Lite Series"
+          },
+          {
+            "name": "Servicio de Armado",
+            "value": "No incluido (Se vende por separado)"
+          },
+          {
+            "name": "Condición de Venta",
+            "value": "Producto Reacondicionado"
+          },
+          {
+            "name": "Garantía Legal",
+            "value": "Producto sin derecho a retracto"
+          }
+        ],
+        "status": {
+          "active": true,
+          "listed": true,
+          "orderable": true
+        },
+        "sellableItem": {
+          "itemKey": "P2328",
+          "ref": {
+            "productId": "2328",
+            "variantId": null
+          }
+        },
+        "variantOptions": [],
+        "stock": {
+          "availableQuantity": 3,
+          "scope": "variant"
+        }
+      },
+      "derived": {
+        "priceSummary": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 230995,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 419990,
+            "currency": "CLP"
+          },
+          "discounted": true
+        },
+        "availability": {
+          "sellability": "sellable",
+          "reason": "in_stock",
+          "sellableVariants": null,
+          "leadTime": null
+        },
+        "publicUrl": "https://pesaschile.cl/categories/2328-bicicleta-de-spinning-training-lite-series-2da-seleccion-obelix.html"
+      },
+      "inferred": {
+        "frequentlyBoughtTogether": {
+          "status": "unavailable",
+          "reason": "snapshot_unavailable"
+        }
+      },
+      "provenance": {
+        "source": "prestashop",
+        "service": "catalog-service",
+        "serviceBuildRef": "catalog-service@local",
+        "sourceUpdatedAt": null
+      },
+      "freshness": {
+        "asOf": "2026-09-30T18:18:12.537Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 4
+        },
+        "validUntil": "2026-09-30T18:18:27.537Z"
+      }
+    }
+  },
+  {
+    "key": "P435",
+    "status": 200,
+    "ms": 167.3,
+    "body": {
+      "schemaVersion": 1,
+      "status": "found",
+      "productKey": "P435",
+      "ref": {
+        "productId": "435"
+      },
+      "facts": {
+        "name": "Set 10 Body Pump + Rack | FullFit",
+        "sku": "SRBP10",
+        "shortDescription": "",
+        "category": {
+          "id": "441",
+          "name": "Body Pump"
+        },
+        "brand": "FULLFIT",
+        "weightKg": 240,
+        "specifications": [
+          {
+            "name": "Peso Neto (N.W.)",
+            "value": "Cada barra pesa 2 kg."
+          },
+          {
+            "name": "Peso Neto (N.W.)",
+            "value": "Cada barra contiene 17.5 kg. en discos."
+          },
+          {
+            "name": "Peso Neto (N.W.)",
+            "value": "Rack sin peso: 40 kg."
+          },
+          {
+            "name": "Peso Neto (N.W.)",
+            "value": "Peso total: 235 kg. (Rack + barras)"
+          },
+          {
+            "name": "Dimensiones del producto armado",
+            "value": "Largo: 160 cm. Ancho: 90 cm. (Profundidad). Alto: 150 cm."
+          },
+          {
+            "name": "Peso máximo de carga",
+            "value": "Cada barra no soporta mas de 17.5 kg."
+          },
+          {
+            "name": "Espesor de material",
+            "value": "3 mm."
+          },
+          {
+            "name": "Estructura",
+            "value": "Acero"
+          },
+          {
+            "name": "Largo total",
+            "value": "Cada barra mide 150 cm."
+          },
+          {
+            "name": "Diámetro de agarre",
+            "value": "35 mm."
+          },
+          {
+            "name": "Material",
+            "value": "Discos: Exterior de caucho / Interior de acero"
+          },
+          {
+            "name": "Material",
+            "value": "Barra: Tubo de acero engomado en zona central."
+          },
+          {
+            "name": "Garantía Legal",
+            "value": "6 meses por fallas de fábrica"
+          }
+        ],
+        "status": {
+          "active": true,
+          "listed": true,
+          "orderable": true
+        },
+        "sellableItem": {
+          "itemKey": "P435",
+          "ref": {
+            "productId": "435",
+            "variantId": null
+          }
+        },
+        "variantOptions": [],
+        "stock": {
+          "availableQuantity": 1,
+          "scope": "variant"
+        }
+      },
+      "derived": {
+        "priceSummary": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 696907,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 819890,
+            "currency": "CLP"
+          },
+          "discounted": true
+        },
+        "availability": {
+          "sellability": "sellable",
+          "reason": "in_stock",
+          "sellableVariants": null,
+          "leadTime": null
+        },
+        "publicUrl": "https://pesaschile.cl/categories/435-set-10-body-pump-rack-fullfit.html"
+      },
+      "inferred": {
+        "frequentlyBoughtTogether": {
+          "status": "unavailable",
+          "reason": "snapshot_unavailable"
+        }
+      },
+      "provenance": {
+        "source": "prestashop",
+        "service": "catalog-service",
+        "serviceBuildRef": "catalog-service@local",
+        "sourceUpdatedAt": null
+      },
+      "freshness": {
+        "asOf": "2026-09-30T18:18:12.700Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 5
+        },
+        "validUntil": "2026-09-30T18:18:27.700Z"
+      }
+    }
+  },
+  {
+    "key": "P1415",
+    "status": 200,
+    "ms": 167.9,
+    "body": {
+      "schemaVersion": 1,
+      "status": "found",
+      "productKey": "P1415",
+      "ref": {
+        "productId": "1415"
+      },
+      "facts": {
+        "name": "Set 10 Barras Rectas Peso Fijo PU (10 a 55kg) + Rack | Obelix",
+        "sku": "OB-BCF325",
+        "shortDescription": "ULTRA CONVENIENTE. Ya sea que sea que quieras equipar tu homegym o renovar tu gimnasio, las barras rectas fijas son la máxima comodidad. Las barras de PU de Obelix vienen en 10 incrementos de peso preestablecidos, por lo que puedes obtener rápidamente el peso perfecto para tu entrenamiento sin hacer cálculos para ahorrar tiempo y energía mental. Y con un juego completo de 10kg a 55kg (con incrementos cada 5kg) , puedes despedirte permanentemente de la tarea de manipular los discos de pesas; además, la mayor flexibilidad del gimnasio en casa es una comodidad incomparable 💪🏻 El juego de barra…",
+        "category": {
+          "id": "256",
+          "name": "Barras de Peso Fijo"
+        },
+        "brand": "OBELIX",
+        "weightKg": 404,
+        "specifications": [
+          {
+            "name": "Clasificación de Uso",
+            "value": "USO INTENSIVO - COMERCIAL"
+          },
+          {
+            "name": "Peso Neto (N.W.)",
+            "value": "Total Barras: 325 kg."
+          },
+          {
+            "name": "Peso Neto (N.W.)",
+            "value": "Rack: 44 kg."
+          },
+          {
+            "name": "Peso Bruto (G.W.)",
+            "value": "404 kg."
+          },
+          {
+            "name": "Dimensiones del producto armado",
+            "value": "Largo: 119.5 cm. Ancho: 120 cm. Alto: 158 cm."
+          },
+          {
+            "name": "Largo de agarre",
+            "value": "100 cm."
+          },
+          {
+            "name": "Diámetro de agarre",
+            "value": "32 mm."
+          },
+          {
+            "name": "Material",
+            "value": "Acero, PU"
+          },
+          {
+            "name": "Marca",
+            "value": "OBELIX"
+          }
+        ],
+        "status": {
+          "active": true,
+          "listed": true,
+          "orderable": true
+        },
+        "sellableItem": {
+          "itemKey": "P1415",
+          "ref": {
+            "productId": "1415",
+            "variantId": null
+          }
+        },
+        "variantOptions": [],
+        "stock": {
+          "availableQuantity": 1,
+          "scope": "variant"
+        }
+      },
+      "derived": {
+        "priceSummary": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 916207,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 1077890,
+            "currency": "CLP"
+          },
+          "discounted": true
+        },
+        "availability": {
+          "sellability": "sellable",
+          "reason": "in_stock",
+          "sellableVariants": null,
+          "leadTime": null
+        },
+        "publicUrl": "https://pesaschile.cl/categories/1415-set-10-barras-rectas-peso-fijo-pu-10-a-55kg-rack-obelix.html"
+      },
+      "inferred": {
+        "frequentlyBoughtTogether": {
+          "status": "unavailable",
+          "reason": "snapshot_unavailable"
+        }
+      },
+      "provenance": {
+        "source": "prestashop",
+        "service": "catalog-service",
+        "serviceBuildRef": "catalog-service@local",
+        "sourceUpdatedAt": null
+      },
+      "freshness": {
+        "asOf": "2026-09-30T18:18:12.873Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 5
+        },
+        "validUntil": "2026-09-30T18:18:27.873Z"
+      }
+    }
+  },
+  {
+    "key": "P2327",
+    "status": 200,
+    "ms": 163.5,
+    "body": {
+      "schemaVersion": 1,
+      "status": "found",
+      "productKey": "P2327",
+      "ref": {
+        "productId": "2327"
+      },
+      "facts": {
+        "name": "PACK 5 BALONES BLACK HWM",
+        "sku": "PACK-BSBP100",
+        "shortDescription": "Set de cinco balones medicinales Black Series HWM de 3, 5, 7, 9 y 12 kg. Diseñado para entrenamientos funcionales, Cross Training y acondicionamiento físico, ofrece diferentes niveles de carga para trabajar potencia, coordinación, fuerza y resistencia.",
+        "category": {
+          "id": "386",
+          "name": "PACKS"
+        },
+        "brand": null,
+        "weightKg": 95,
+        "specifications": [],
+        "status": {
+          "active": false,
+          "listed": true,
+          "orderable": true
+        },
+        "sellableItem": {
+          "itemKey": "P2327",
+          "ref": {
+            "productId": "2327",
+            "variantId": null
+          }
+        },
+        "variantOptions": [],
+        "stock": {
+          "availableQuantity": 0,
+          "scope": "variant"
+        }
+      },
+      "derived": {
+        "priceSummary": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 228608,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 268950,
+            "currency": "CLP"
+          },
+          "discounted": true
+        },
+        "availability": {
+          "sellability": "not_sellable",
+          "reason": "inactive",
+          "sellableVariants": null,
+          "leadTime": null
+        },
+        "publicUrl": "https://pesaschile.cl/categories/2327-pack-5-balones-black-hwm.html"
+      },
+      "inferred": {
+        "frequentlyBoughtTogether": {
+          "status": "unavailable",
+          "reason": "snapshot_unavailable"
+        }
+      },
+      "provenance": {
+        "source": "prestashop",
+        "service": "catalog-service",
+        "serviceBuildRef": "catalog-service@local",
+        "sourceUpdatedAt": null
+      },
+      "freshness": {
+        "asOf": "2026-09-30T18:18:13.036Z",
+        "cache": {
+          "hit": false,
+          "ageMs": 5
+        },
+        "validUntil": "2026-09-30T18:18:28.036Z"
+      }
+    }
+  },
+  {
+    "key": "P99999",
+    "status": 200,
+    "ms": 167.6,
+    "body": {
+      "schemaVersion": 1,
+      "status": "not_found",
+      "productKey": "P99999"
+    }
+  }
+]
