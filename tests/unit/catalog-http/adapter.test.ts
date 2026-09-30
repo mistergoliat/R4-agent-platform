@@ -73,7 +73,7 @@ describe('HttpCatalogAdapter — success paths (transport only, owner fixtures)'
     const { catalog, requests } = adapter(() => json(200, catalogFixture('item-promotion.json')));
     const item = await catalog.getItemContext({ itemKey: 'P12', quantity: 2 });
     expect(requests[0]!.url).toBe('http://127.0.0.1:4010/v2/catalog/items/P12/context?quantity=2');
-    expect(item).toMatchObject({ status: 'found', itemKey: 'P12', ref: { productId: '12', variantId: null }, pricing: { quantity: 2, regularGross: { amount: 119_000 }, finalGross: { amount: 107_100 }, promotion: { type: 'percentage', percentOff: 0.1, amountOffGross: null }, engineVersion: 'catalog-commercial-v2.1.0' }, availability: { leadTime: null } });
+    expect(item).toMatchObject({ status: 'found', itemKey: 'P12', ref: { productId: '12', variantId: null }, pricing: { quantity: 2, regularGross: { amount: 119_000 }, finalGross: { amount: 107_100 }, promotion: { type: 'percentage', percentOff: 0.1, amountOffGross: null }, engineVersion: 'catalog-commercial-v2.2.0' }, availability: { leadTime: null } });
     expect(item.status === 'found' && item.pricing).not.toHaveProperty('lineFinalGross');
   });
 

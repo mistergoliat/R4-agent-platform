@@ -33,7 +33,7 @@
       "rate": 0.19,
       "basis": "configured_flat_rate"
     },
-    "engineVersion": "catalog-commercial-v2.1.0"
+    "engineVersion": "catalog-commercial-v2.2.0"
   },
   "availability": {
     "availableQuantity": 0,

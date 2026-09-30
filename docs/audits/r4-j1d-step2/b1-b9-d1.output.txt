@@ -1,0 +1,683 @@
+started 2026-09-30T16:19:18Z
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
+--------------
+SET SESSION max_statement_time = 30
+--------------
+
+Query OK, 0 rows affected (0.141 sec)
+
+--------------
+SET SESSION TRANSACTION READ ONLY
+--------------
+
+Query OK, 0 rows affected (0.154 sec)
+
+--------------
+START TRANSACTION READ ONLY
+--------------
+
+Query OK, 0 rows affected (0.142 sec)
+
+--------------
+SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT
+FROM information_schema.COLUMNS
+WHERE TABLE_SCHEMA = DATABASE()
+  AND (TABLE_NAME, COLUMN_NAME) IN (
+    ('ps_product','id_product'),('ps_product','reference'),('ps_product','price'),('ps_product','weight'),('ps_product','active'),
+    ('ps_product','available_for_order'),('ps_product','id_category_default'),('ps_product','id_manufacturer'),
+    ('ps_product_shop','price'),('ps_product_shop','active'),('ps_product_shop','visibility'),('ps_product_shop','available_for_order'),('ps_product_shop','id_tax_rules_group'),
+    ('ps_product_lang','name'),('ps_product_lang','description_short'),('ps_product_lang','description'),('ps_product_lang','link_rewrite'),('ps_product_lang','id_shop'),
+    ('ps_category_lang','name'),('ps_category_lang','id_shop'),('ps_manufacturer','name'),
+    ('ps_product_attribute','reference'),('ps_product_attribute','price'),('ps_product_attribute','default_on'),
+    ('ps_product_attribute_shop','price'),('ps_product_attribute_combination','id_attribute'),
+    ('ps_attribute','id_attribute_group'),('ps_attribute_lang','name'),('ps_attribute_group_lang','name'),
+    ('ps_stock_available','quantity'),('ps_stock_available','out_of_stock'),('ps_stock_available','id_shop'),
+    ('ps_feature','position'),('ps_feature_lang','name'),('ps_feature_product','id_feature_value'),('ps_feature_value','custom'),('ps_feature_value_lang','value'),
+    ('ps_specific_price','reduction_tax'),('ps_specific_price','reduction_type'),('ps_specific_price','from'),('ps_specific_price','to'),('ps_specific_price','id_cart'),
+    ('ps_configuration','name'),('ps_configuration','value'),
+    
+    ('ps_category','id_category'),('ps_category','level_depth'),('ps_category','active'),
+    ('ps_category_product','id_category'),('ps_category_product','id_product'))
+ORDER BY TABLE_NAME, COLUMN_NAME
+--------------
+
++----------------------------------+---------------------+-----------+-------------+----------------+
+| TABLE_NAME                       | COLUMN_NAME         | DATA_TYPE | IS_NULLABLE | COLUMN_DEFAULT |
++----------------------------------+---------------------+-----------+-------------+----------------+
+| ps_attribute                     | id_attribute_group  | int       | NO          | NULL           |
+| ps_attribute_group_lang          | name                | varchar   | NO          | NULL           |
+| ps_attribute_lang                | name                | varchar   | NO          | NULL           |
+| ps_category                      | active              | tinyint   | NO          | 0              |
+| ps_category                      | id_category         | int       | NO          | NULL           |
+| ps_category                      | level_depth         | tinyint   | NO          | 0              |
+| ps_category_lang                 | id_shop             | int       | NO          | 1              |
+| ps_category_lang                 | name                | varchar   | NO          | NULL           |
+| ps_category_product              | id_category         | int       | NO          | NULL           |
+| ps_category_product              | id_product          | int       | NO          | NULL           |
+| ps_configuration                 | name                | varchar   | NO          | NULL           |
+| ps_configuration                 | value               | text      | YES         | NULL           |
+| ps_feature                       | position            | int       | NO          | 0              |
+| ps_feature_lang                  | name                | varchar   | YES         | NULL           |
+| ps_feature_product               | id_feature_value    | int       | NO          | NULL           |
+| ps_feature_value                 | custom              | tinyint   | YES         | NULL           |
+| ps_feature_value_lang            | value               | varchar   | YES         | NULL           |
+| ps_manufacturer                  | name                | varchar   | NO          | NULL           |
+| ps_product                       | active              | tinyint   | NO          | 0              |
+| ps_product                       | available_for_order | tinyint   | NO          | 1              |
+| ps_product                       | id_category_default | int       | YES         | NULL           |
+| ps_product                       | id_manufacturer     | int       | YES         | NULL           |
+| ps_product                       | id_product          | int       | NO          | NULL           |
+| ps_product                       | price               | decimal   | NO          | 0.000000       |
+| ps_product                       | reference           | varchar   | YES         | NULL           |
+| ps_product                       | weight              | decimal   | NO          | 0.000000       |
+| ps_product_attribute             | default_on          | tinyint   | YES         | NULL           |
+| ps_product_attribute             | price               | decimal   | NO          | 0.000000       |
+| ps_product_attribute             | reference           | varchar   | YES         | NULL           |
+| ps_product_attribute_combination | id_attribute        | int       | NO          | NULL           |
+| ps_product_attribute_shop        | price               | decimal   | NO          | 0.000000       |
+| ps_product_lang                  | description         | text      | YES         | NULL           |
+| ps_product_lang                  | description_short   | text      | YES         | NULL           |
+| ps_product_lang                  | id_shop             | int       | NO          | 1              |
+| ps_product_lang                  | link_rewrite        | varchar   | NO          | NULL           |
+| ps_product_lang                  | name                | varchar   | NO          | NULL           |
+| ps_product_shop                  | active              | tinyint   | NO          | 0              |
+| ps_product_shop                  | available_for_order | tinyint   | NO          | 1              |
+| ps_product_shop                  | id_tax_rules_group  | int       | NO          | NULL           |
+| ps_product_shop                  | price               | decimal   | NO          | 0.000000       |
+| ps_product_shop                  | visibility          | enum      | NO          | 'both'         |
+| ps_specific_price                | from                | datetime  | NO          | NULL           |
+| ps_specific_price                | id_cart             | int       | NO          | NULL           |
+| ps_specific_price                | reduction_tax       | tinyint   | NO          | 1              |
+| ps_specific_price                | reduction_type      | enum      | NO          | NULL           |
+| ps_specific_price                | to                  | datetime  | NO          | NULL           |
+| ps_stock_available               | id_shop             | int       | NO          | NULL           |
+| ps_stock_available               | out_of_stock        | tinyint   | NO          | 0              |
+| ps_stock_available               | quantity            | int       | NO          | 0              |
++----------------------------------+---------------------+-----------+-------------+----------------+
+49 rows in set (0.164 sec)
+
+--------------
+SELECT name, value FROM ps_configuration WHERE name IN ('PS_VERSION_DB', 'PS_INSTALL_VERSION')
+--------------
+
++--------------------+---------+
+| name               | value   |
++--------------------+---------+
+| PS_INSTALL_VERSION | 1.7.8.3 |
+| PS_VERSION_DB      | 1.7.8.3 |
++--------------------+---------+
+2 rows in set (0.153 sec)
+
+--------------
+SELECT ps.id_tax_rules_group, COUNT(*) AS products
+FROM ps_product_shop ps
+WHERE ps.id_shop = 1 AND ps.active = 1 AND ps.visibility <> 'none' AND ps.available_for_order = 1
+GROUP BY ps.id_tax_rules_group
+ORDER BY products DESC
+--------------
+
++--------------------+----------+
+| id_tax_rules_group | products |
++--------------------+----------+
+|                  1 |      875 |
++--------------------+----------+
+1 row in set (0.146 sec)
+
+--------------
+SELECT trg.id_tax_rules_group, trg.name AS rules_group, trg.active AS group_active, tr.id_country, c.iso_code,
+       tr.id_state, tr.zipcode_from, tr.zipcode_to, tr.behavior, t.id_tax, t.rate, t.active AS tax_active
+FROM ps_tax_rules_group trg
+LEFT JOIN ps_tax_rule tr ON tr.id_tax_rules_group = trg.id_tax_rules_group
+LEFT JOIN ps_tax t ON t.id_tax = tr.id_tax
+LEFT JOIN ps_country c ON c.id_country = tr.id_country
+WHERE trg.id_tax_rules_group IN (SELECT DISTINCT id_tax_rules_group FROM ps_product_shop WHERE id_shop = 1 AND active = 1)
+ORDER BY trg.id_tax_rules_group, tr.id_country, tr.id_state
+--------------
+
++--------------------+------------------------+--------------+------------+----------+----------+--------------+------------+----------+--------+--------+------------+
+| id_tax_rules_group | rules_group            | group_active | id_country | iso_code | id_state | zipcode_from | zipcode_to | behavior | id_tax | rate   | tax_active |
++--------------------+------------------------+--------------+------------+----------+----------+--------------+------------+----------+--------+--------+------------+
+|                  1 | CL Standard Rate (19%) |            1 |         68 | CL       |        0 | 0            | 0          |        0 |      1 | 19.000 |          1 |
++--------------------+------------------------+--------------+------------+----------+----------+--------------+------------+----------+--------+--------+------------+
+1 row in set (0.160 sec)
+
+--------------
+SELECT name, value FROM ps_configuration
+WHERE name IN ('PS_TAX', 'PS_COUNTRY_DEFAULT', 'PS_CURRENCY_DEFAULT', 'PS_PRICE_ROUND_MODE', 'PS_ROUND_TYPE', 'PS_PRICE_DISPLAY_PRECISION', 'PS_TAX_DISPLAY', 'PS_CUSTOMER_GROUP', 'PS_UNIDENTIFIED_GROUP', 'PS_GUEST_GROUP')
+--------------
+
++-----------------------+-------+
+| name                  | value |
++-----------------------+-------+
+| PS_COUNTRY_DEFAULT    | 68    |
+| PS_CURRENCY_DEFAULT   | 1     |
+| PS_CUSTOMER_GROUP     | 3     |
+| PS_GUEST_GROUP        | 2     |
+| PS_PRICE_ROUND_MODE   | 2     |
+| PS_ROUND_TYPE         | 2     |
+| PS_TAX                | 1     |
+| PS_TAX_DISPLAY        | 0     |
+| PS_UNIDENTIFIED_GROUP | 1     |
++-----------------------+-------+
+9 rows in set (0.143 sec)
+
+--------------
+SELECT sp.reduction_type, sp.reduction_tax,
+       (sp.price >= 0) AS fixed_price_override,
+       (sp.id_customer <> 0) AS customer_scoped, (sp.id_group <> 0) AS group_scoped,
+       (sp.id_currency <> 0) AS currency_scoped, (sp.id_country <> 0) AS country_scoped,
+       (sp.id_product_attribute <> 0) AS combination_scoped, (sp.from_quantity > 1) AS quantity_tier,
+       (sp.id_specific_price_rule <> 0) AS from_catalog_rule, (sp.id_shop = 0) AS all_shops,
+       SUM(sp.`from` = '0000-00-00 00:00:00') AS unbounded_start, SUM(sp.`to` = '0000-00-00 00:00:00') AS unbounded_end,
+       COUNT(*) AS rows_count
+FROM ps_specific_price sp
+WHERE sp.id_cart = 0
+  AND (sp.`to` = '0000-00-00 00:00:00' OR sp.`to` >= NOW())
+GROUP BY 1,2,3,4,5,6,7,8,9,10,11
+ORDER BY rows_count DESC
+--------------
+
++----------------+---------------+----------------------+-----------------+--------------+-----------------+----------------+--------------------+---------------+-------------------+-----------+-----------------+---------------+------------+
+| reduction_type | reduction_tax | fixed_price_override | customer_scoped | group_scoped | currency_scoped | country_scoped | combination_scoped | quantity_tier | from_catalog_rule | all_shops | unbounded_start | unbounded_end | rows_count |
++----------------+---------------+----------------------+-----------------+--------------+-----------------+----------------+--------------------+---------------+-------------------+-----------+-----------------+---------------+------------+
+| percentage     |             1 |                    0 |               0 |            0 |               0 |              0 |                  0 |             0 |                 0 |         1 |             179 |           203 |        203 |
+| percentage     |             1 |                    0 |               0 |            0 |               0 |              0 |                  0 |             0 |                 0 |         0 |              24 |            24 |         24 |
++----------------+---------------+----------------------+-----------------+--------------+-----------------+----------------+--------------------+---------------+-------------------+-----------+-----------------+---------------+------------+
+2 rows in set (0.160 sec)
+
+--------------
+SELECT sp.id_product, sp.id_product_attribute, sp.id_shop, sp.id_currency, sp.id_country, sp.id_group, sp.from_quantity,
+       COUNT(*) AS candidates, GROUP_CONCAT(sp.id_specific_price ORDER BY sp.id_specific_price) AS ids,
+       GROUP_CONCAT(CONCAT(sp.reduction_type, ':', sp.reduction, ':', sp.reduction_tax) ORDER BY sp.id_specific_price) AS reductions
+FROM ps_specific_price sp
+WHERE sp.id_cart = 0 AND sp.id_customer = 0
+  AND (sp.`from` = '0000-00-00 00:00:00' OR sp.`from` <= NOW())
+  AND (sp.`to` = '0000-00-00 00:00:00' OR sp.`to` >= NOW())
+GROUP BY sp.id_product, sp.id_product_attribute, sp.id_shop, sp.id_currency, sp.id_country, sp.id_group, sp.from_quantity
+HAVING COUNT(*) > 1
+ORDER BY candidates DESC
+LIMIT 200
+--------------
+
+Empty set (0.148 sec)
+
+--------------
+SELECT name, value FROM ps_configuration WHERE name = 'PS_SPECIFIC_PRICE_PRIORITIES'
+--------------
+
++------------------------------+-----------------------------------------+
+| name                         | value                                   |
++------------------------------+-----------------------------------------+
+| PS_SPECIFIC_PRICE_PRIORITIES | id_shop;id_currency;id_country;id_group |
++------------------------------+-----------------------------------------+
+1 row in set (0.149 sec)
+
+--------------
+SELECT name, value FROM ps_configuration WHERE name IN ('PS_ORDER_OUT_OF_STOCK', 'PS_STOCK_MANAGEMENT', 'PS_ADVANCED_STOCK_MANAGEMENT', 'PS_DISPLAY_QTIES', 'PS_PACK_STOCK_TYPE')
+--------------
+
++------------------------------+-------+
+| name                         | value |
++------------------------------+-------+
+| PS_ADVANCED_STOCK_MANAGEMENT | 0     |
+| PS_DISPLAY_QTIES             | 1     |
+| PS_ORDER_OUT_OF_STOCK        | 0     |
+| PS_PACK_STOCK_TYPE           | 1     |
+| PS_STOCK_MANAGEMENT          | 1     |
++------------------------------+-------+
+5 rows in set (0.150 sec)
+
+--------------
+SELECT sa.out_of_stock, (sa.quantity <= 0) AS zero_or_less, (sa.id_product_attribute <> 0) AS combination_row, COUNT(*) AS rows_count
+FROM ps_stock_available sa
+JOIN ps_product_shop ps ON ps.id_product = sa.id_product AND ps.id_shop = 1 AND ps.active = 1 AND ps.visibility <> 'none'
+WHERE sa.id_shop = 1
+GROUP BY sa.out_of_stock, zero_or_less, combination_row
+ORDER BY rows_count DESC
+--------------
+
++--------------+--------------+-----------------+------------+
+| out_of_stock | zero_or_less | combination_row | rows_count |
++--------------+--------------+-----------------+------------+
+|            2 |            0 |               0 |        489 |
+|            0 |            0 |               0 |        167 |
+|            2 |            1 |               0 |        165 |
+|            2 |            0 |               1 |        123 |
+|            2 |            1 |               1 |         84 |
+|            0 |            1 |               0 |         64 |
+|            0 |            1 |               1 |         11 |
+|            0 |            0 |               1 |          9 |
++--------------+--------------+-----------------+------------+
+8 rows in set (0.157 sec)
+
+--------------
+SELECT COUNT(*) AS simple_products_without_stock_row
+FROM ps_product_shop ps
+WHERE ps.id_shop = 1 AND ps.active = 1
+  AND NOT EXISTS (SELECT 1 FROM ps_product_attribute pa WHERE pa.id_product = ps.id_product)
+  AND NOT EXISTS (SELECT 1 FROM ps_stock_available sa WHERE sa.id_product = ps.id_product AND sa.id_product_attribute = 0 AND sa.id_shop = 1)
+--------------
+
++-----------------------------------+
+| simple_products_without_stock_row |
++-----------------------------------+
+|                                 0 |
++-----------------------------------+
+1 row in set (0.160 sec)
+
+--------------
+SELECT @@global.time_zone AS global_tz, @@session.time_zone AS session_tz, NOW() AS db_now, UTC_TIMESTAMP() AS db_utc_now
+--------------
+
++-----------+------------+---------------------+---------------------+
+| global_tz | session_tz | db_now              | db_utc_now          |
++-----------+------------+---------------------+---------------------+
+| UTC       | UTC        | 2026-09-30 16:19:24 | 2026-09-30 16:19:24 |
++-----------+------------+---------------------+---------------------+
+1 row in set (0.141 sec)
+
+--------------
+SELECT name, value FROM ps_configuration WHERE name = 'PS_TIMEZONE'
+--------------
+
++-------------+------------------+
+| name        | value            |
++-------------+------------------+
+| PS_TIMEZONE | America/Santiago |
++-------------+------------------+
+1 row in set (0.143 sec)
+
+--------------
+SELECT MAX(c) AS max_combinations_per_product, SUM(c > 100) AS products_over_100
+FROM (SELECT pa.id_product, COUNT(*) AS c FROM ps_product_attribute pa JOIN ps_product_shop ps ON ps.id_product = pa.id_product AND ps.id_shop = 1 AND ps.active = 1 GROUP BY pa.id_product) x
+--------------
+
++------------------------------+-------------------+
+| max_combinations_per_product | products_over_100 |
++------------------------------+-------------------+
+|                            6 |                 0 |
++------------------------------+-------------------+
+1 row in set (0.152 sec)
+
+--------------
+SELECT MAX(c) AS max_attributes_per_combination FROM (SELECT id_product_attribute, COUNT(*) AS c FROM ps_product_attribute_combination GROUP BY id_product_attribute) x
+--------------
+
++--------------------------------+
+| max_attributes_per_combination |
++--------------------------------+
+|                              1 |
++--------------------------------+
+1 row in set (0.147 sec)
+
+--------------
+SELECT MAX(c) AS max_features_per_product, SUM(c > 40) AS products_over_40 FROM (SELECT id_product, COUNT(*) AS c FROM ps_feature_product GROUP BY id_product) x
+--------------
+
++--------------------------+------------------+
+| max_features_per_product | products_over_40 |
++--------------------------+------------------+
+|                       37 |                0 |
++--------------------------+------------------+
+1 row in set (0.148 sec)
+
+--------------
+SELECT SUM(TRIM(pl.name) = '') AS empty_names, MAX(CHAR_LENGTH(pl.name)) AS max_name_len
+FROM ps_product_lang pl JOIN ps_product_shop ps ON ps.id_product = pl.id_product AND ps.id_shop = 1 AND ps.active = 1
+WHERE pl.id_lang = 1 AND pl.id_shop = 1
+--------------
+
++-------------+--------------+
+| empty_names | max_name_len |
++-------------+--------------+
+|           0 |           84 |
++-------------+--------------+
+1 row in set (0.160 sec)
+
+--------------
+SELECT SUM(fvl.value IS NULL OR TRIM(fvl.value) = '') AS empty_feature_values, MAX(CHAR_LENGTH(fvl.value)) AS max_feature_value_len
+FROM ps_feature_value_lang fvl WHERE fvl.id_lang = 1
+--------------
+
++----------------------+-----------------------+
+| empty_feature_values | max_feature_value_len |
++----------------------+-----------------------+
+|                    0 |                   255 |
++----------------------+-----------------------+
+1 row in set (0.157 sec)
+
+--------------
+SELECT ps.id_category_default, cl.name, COUNT(*) AS products
+FROM ps_product_shop ps
+LEFT JOIN ps_category_lang cl ON cl.id_category = ps.id_category_default AND cl.id_lang = 1 AND cl.id_shop = 1
+WHERE ps.id_shop = 1 AND ps.active = 1 AND ps.visibility <> 'none'
+GROUP BY ps.id_category_default, cl.name ORDER BY products DESC LIMIT 20
+--------------
+
++---------------------+-------------+----------+
+| id_category_default | name        | products |
++---------------------+-------------+----------+
+|                   2 | CATEGORÍAS  |      885 |
++---------------------+-------------+----------+
+1 row in set (0.151 sec)
+
+--------------
+SELECT c.id_category, c.active, c.level_depth, cl.name
+FROM ps_category c JOIN ps_category_lang cl ON cl.id_category = c.id_category AND cl.id_lang = 1 AND cl.id_shop = 1
+WHERE c.id_category IN (SELECT id_category FROM ps_category_product) ORDER BY c.id_category
+--------------
+
++-------------+--------+-------------+--------------------------------------+
+| id_category | active | level_depth | name                                 |
++-------------+--------+-------------+--------------------------------------+
+|           2 |      1 |           1 | CATEGORÍAS                           |
+|           8 |      0 |           2 | Test                                 |
+|          60 |      1 |           3 | Obelix Cardiovascular                |
+|          61 |      1 |           3 | Obelix MO Series                     |
+|          62 |      1 |           3 | Obelix T8 Series                     |
+|          63 |      1 |           3 | Obelix V8 Series                     |
+|          64 |      0 |           4 | Mancuernas Hexagonales               |
+|          65 |      0 |           4 | Kettlebells                          |
+|          66 |      0 |           4 | Bumper Plates                        |
+|          67 |      0 |           4 | Barras Olímpicas                     |
+|          68 |      0 |           4 | Power Racks y Bancos                 |
+|          69 |      0 |           4 | Gimnasia y Acondicionamiento         |
+|         143 |      0 |           4 | Accesorios y Complementos            |
+|         248 |      1 |           2 | FUERZA                               |
+|         249 |      1 |           4 | Barras Hombre 20 kg                  |
+|         250 |      1 |           4 | Barras Mujer 15 kg                   |
+|         251 |      1 |           4 | Barras Técnicas                      |
+|         252 |      1 |           4 | Barras Junior                        |
+|         253 |      1 |           4 | Barras Especiales                    |
+|         254 |      1 |           4 | Barras Powerlifting                  |
+|         255 |      1 |           4 | Barras Preolímpicas                  |
+|         256 |      1 |           4 | Barras de Peso Fijo                  |
+|         258 |      1 |           3 | Barras                               |
+|         259 |      1 |           3 | Discos                               |
+|         260 |      1 |           4 | Discos Bumper                        |
+|         261 |      1 |           4 | Discos de Competición                |
+|         262 |      1 |           4 | Discos Fraccionados                  |
+|         263 |      1 |           4 | Discos Con Agarre                    |
+|         264 |      1 |           4 | Discos de Acero                      |
+|         265 |      1 |           4 | Discos de Powerlifting               |
+|         266 |      1 |           4 | Discos Preolímpicos                  |
+|         267 |      1 |           3 | Mancuernas                           |
+|         268 |      1 |           4 | Mancuernas Hexagonales               |
+|         269 |      1 |           4 | Mancuernas Pu                        |
+|         270 |      1 |           4 | Mancuernas de Acero                  |
+|         271 |      1 |           4 | Mancuernas de Neopreno               |
+|         272 |      1 |           4 | Mancuernas Ajustables                |
+|         273 |      1 |           4 | Set de Mancuernas                    |
+|         274 |      1 |           4 | Set de Barras                        |
+|         275 |      1 |           3 | Accesorios para Barras               |
+|         276 |      1 |           3 | Kettlebells                          |
+|         277 |      1 |           4 | Kettlebells de Acero                 |
+|         278 |      1 |           4 | Kettlebells de Vinilo                |
+|         279 |      1 |           4 | Clubells                             |
+|         280 |      1 |           2 | EQUIPAMIENTO                         |
+|         281 |      1 |           3 | Máquinas Selectorizadas              |
+|         282 |      1 |           4 | Serie Movment                        |
+|         283 |      1 |           4 | Serie Movement 2.0                   |
+|         284 |      1 |           4 | Serie Virgin8                        |
+|         285 |      1 |           3 | Máquinas con Carga de Discos         |
+|         286 |      1 |           4 | Training8 Series                     |
+|         287 |      1 |           4 | Movement 2.0 Series                  |
+|         288 |      1 |           4 | Virgin8 Series                       |
+|         289 |      1 |           4 | Solid Rock Series                    |
+|         290 |      1 |           3 | Máquinas con Poleas                  |
+|         291 |      1 |           3 | Máquinas Multifuncionales            |
+|         292 |      1 |           3 | Accesorios para Máquinas             |
+|         293 |      1 |           3 | Racks                                |
+|         294 |      1 |           4 | Power Racks                          |
+|         295 |      1 |           4 | Half Racks                           |
+|         296 |      1 |           4 | Squat Racks                          |
+|         297 |      1 |           4 | Atriles                              |
+|         298 |      1 |           4 | Powerlifting Racks                   |
+|         299 |      1 |           4 | Wall Racks                           |
+|         300 |      1 |           4 | Accesorios para Racks                |
+|         301 |      1 |           3 | Bancos                               |
+|         302 |      1 |           4 | Bancos Olímpicos                     |
+|         303 |      1 |           4 | Bancos Planos                        |
+|         304 |      1 |           4 | Bancos Ajustables                    |
+|         305 |      1 |           4 | Bancos Ergo                          |
+|         306 |      1 |           4 | Bancos Abdominales                   |
+|         307 |      1 |           4 | Bancos Especiales                    |
+|         308 |      1 |           3 | Cardio                               |
+|         309 |      1 |           4 | Trotadoras                           |
+|         310 |      1 |           4 | Elípticas                            |
+|         311 |      1 |           4 | Escaladoras                          |
+|         312 |      1 |           4 | Bicicletas                           |
+|         313 |      1 |           4 | Remos & Ski                          |
+|         314 |      1 |           3 | Máquinas Home Gym                    |
+|         315 |      1 |           4 | Accesorios para Bancos               |
+|         316 |      1 |           4 | Beast Series                         |
+|         317 |      1 |           2 | ACONDICIONAMIENTO                    |
+|         318 |      1 |           3 | Balones & Sacos                      |
+|         319 |      1 |           3 | Barras Pull Up & Push Up             |
+|         320 |      1 |           3 | Bandas                               |
+|         321 |      1 |           3 | Cuerdas                              |
+|         322 |      1 |           3 | Lastre                               |
+|         323 |      1 |           3 | Gimnasia & Funcional                 |
+|         341 |      1 |           2 | PISO                                 |
+|         342 |      1 |           3 | Palmetas de Caucho                   |
+|         343 |      1 |           3 | Pisos Interlock                      |
+|         344 |      1 |           3 | Rollos de Caucho                     |
+|         345 |      1 |           3 | Pasto Sintético                      |
+|         346 |      1 |           3 | Crash Pads                           |
+|         347 |      1 |           3 | Plataformas de Levantamiento         |
+|         348 |      1 |           2 | ACCESORIOS                           |
+|         349 |      1 |           3 | Accesorios de Protección             |
+|         350 |      1 |           4 | Calleras                             |
+|         351 |      1 |           4 | Cinturones de Levantamiento          |
+|         352 |      1 |           4 | Muñequeras                           |
+|         353 |      1 |           4 | Rodilleras                           |
+|         354 |      1 |           4 | Correas de Levantamiento             |
+|         355 |      1 |           3 | Abdominales                          |
+|         356 |      1 |           3 | Agarres OCR                          |
+|         359 |      1 |           3 | Botellas & Shakers                   |
+|         362 |      1 |           3 | Elevadores de Talones                |
+|         363 |      1 |           3 | Magnesio                             |
+|         364 |      1 |           3 | Timers                               |
+|         365 |      1 |           3 | Ventiladores                         |
+|         366 |      1 |           2 | RECOVERY                             |
+|         367 |      1 |           3 | Cámaras Hiperbáricas                 |
+|         368 |      1 |           3 | Foam Rollers                         |
+|         369 |      1 |           3 | Masajeadores                         |
+|         370 |      1 |           3 | Pistolas de Masaje                   |
+|         371 |      1 |           3 | Presoterapia                         |
+|         372 |      1 |           3 | Vendaje K-Tape                       |
+|         373 |      1 |           2 | ALMACENAMIENTO                       |
+|         374 |      1 |           3 | Racks para Balones                   |
+|         375 |      1 |           3 | Racks para Barras                    |
+|         376 |      1 |           3 | Racks para Discos                    |
+|         377 |      1 |           3 | Racks para Kettlebells               |
+|         378 |      1 |           3 | Racks para Mancuernas                |
+|         379 |      0 |           2 | APPAREL                              |
+|         380 |      1 |           3 | Poleras                              |
+|         381 |      1 |           3 | Polerones                            |
+|         382 |      1 |           3 | Gorras                               |
+|         383 |      1 |           3 | Mochilas & Bolsos                    |
+|         384 |      1 |           3 | Llaveros                             |
+|         385 |      1 |           3 | Pulseras                             |
+|         386 |      1 |           2 | PACKS                                |
+|         387 |      1 |           3 | Packs de Discos, Barras & Mancuernas |
+|         388 |      1 |           3 | Packs CrossFit                       |
+|         389 |      1 |           3 | Packs Garage Gym                     |
+|         390 |      1 |           3 | Packs Gimnasio                       |
+|         391 |      1 |           3 | Otros Packs                          |
+|         392 |      1 |           2 | COLECCIONES                          |
+|         394 |      1 |           3 | Movement 2.0 Series                  |
+|         396 |      1 |           3 | Virgin8 Series                       |
+|         397 |      1 |           3 | Beast Series                         |
+|         398 |      1 |           3 | Delta Series                         |
+|         399 |      1 |           3 | Alpha Series                         |
+|         400 |      1 |           3 | Magnum Series                        |
+|         402 |      1 |           3 | Star1 Series                         |
+|         404 |      1 |           3 | Zero Series                          |
+|         405 |      1 |           3 | Live Hard Series                     |
+|         407 |      1 |           3 | Home FZ Series                       |
+|         409 |      0 |           2 | POR DEPORTE                          |
+|         410 |      0 |           3 | CrossFit HWM®                        |
+|         411 |      0 |           3 | Powerlifting                         |
+|         412 |      0 |           3 | Calistenia                           |
+|         414 |      0 |           3 | Yoga & Pilates                       |
+|         417 |      1 |           2 | NEW ARRIVALS                         |
+|         418 |      1 |           2 | EN TENDENCIA                         |
+|         419 |      1 |           2 | DESTACADOS                           |
+|         420 |      1 |           2 | OUTLET                               |
+|         421 |      1 |           3 | Wodstock Chile                       |
+|         422 |      1 |           3 | Nuevos - Fuera de Temporada          |
+|         423 |      1 |           3 | Segunda Selección                    |
+|         424 |      1 |           4 | Balones de Pilates                   |
+|         425 |      1 |           4 | Balones Medicinales                  |
+|         426 |      1 |           4 | Bosu                                 |
+|         427 |      1 |           4 | Slam Balls                           |
+|         428 |      1 |           4 | Sand Bags                            |
+|         429 |      1 |           4 | Barras de Dominadas                  |
+|         430 |      1 |           4 | Barras Paralelas                     |
+|         431 |      1 |           4 | Bandas de Resistencia                |
+|         432 |      1 |           4 | Glute Bands                          |
+|         433 |      1 |           4 | Tubos Elásticos                      |
+|         434 |      1 |           4 | Cuerdas de Salto                     |
+|         435 |      1 |           4 | Battle Ropes                         |
+|         436 |      1 |           4 | Sogas de Trepa                       |
+|         437 |      1 |           4 | Chalecos de Lastre                   |
+|         438 |      1 |           4 | Cinturones de Lastre                 |
+|         439 |      1 |           4 | Cinturones para Hip Thrust           |
+|         440 |      1 |           4 | Pesos de Tobillo & Muñeca            |
+|         441 |      1 |           4 | Body Pump                            |
+|         442 |      1 |           4 | Anillas & Bandas de Suspensión       |
+|         443 |      1 |           4 | Colchonetas & Mats                   |
+|         444 |      1 |           4 | Cajones de Salto                     |
+|         445 |      1 |           4 | Escaleras & Conos de Agilidad        |
+|         446 |      1 |           4 | Step Aeróbicos                       |
+|         447 |      1 |           4 | Tablas de Escalada                   |
+|         448 |      1 |           4 | Trineos de Arrastre                  |
+|         449 |      1 |           4 | Vallas de Salto                      |
+|         450 |      1 |           4 | Guantes                              |
+|         451 |      1 |           4 | Accesorios de Polea                  |
+|         453 |      0 |           2 | TESTDEPTI                            |
+|         454 |      1 |           3 | TEST1                                |
+|         458 |      0 |           2 | CYBERDAY                             |
+|         459 |      0 |           2 | PRIMAVERA                            |
+|         460 |      0 |           2 | BLACK FRIDAY                         |
+|         461 |      0 |           2 | NAVIDAD                              |
+|         463 |      0 |           2 | SUMMER SALE                          |
+|         465 |      1 |           3 | Pantalones                           |
+|         466 |      1 |           5 | Accesorios Delta                     |
+|         467 |      1 |           4 | Boxeo & MMA                          |
+|         468 |      1 |           4 | Vendaje                              |
+|         469 |      1 |           4 | Zero Series                          |
+|         470 |      0 |           2 | FALL SEASON                          |
+|         471 |      1 |           3 | Rising Fit Series                    |
+|         472 |      1 |           4 | Martillos                            |
+|         473 |      0 |           2 | WINTER SALE                          |
+|         474 |      1 |           5 | Accesorios Alpha                     |
+|         475 |      0 |           2 | EQUIPATÓN                            |
+|         476 |      1 |           4 | Peach Builder                        |
+|         477 |      1 |           3 | Peach Builder                        |
+|         478 |      1 |           3 | Accesorios de Weightlifting          |
+|         479 |      0 |           2 | SPRINGFIT                            |
+|         480 |      1 |           3 | Home FZLUX Series                    |
+|         481 |      1 |           3 | Discos & Barras                      |
+|         482 |      1 |           3 | Máquinas Comerciales                 |
+|         483 |      1 |           3 | Home Gym                             |
+|         484 |      1 |           3 | Accesorios                           |
+|         485 |      1 |           3 | Funcional                            |
+|         486 |      1 |           3 | Discos & Barras                      |
+|         487 |      1 |           3 | Funcional                            |
+|         488 |      1 |           3 | Máquinas                             |
+|         489 |      1 |           3 | Accesorios                           |
+|         490 |      1 |           3 | Protección                           |
+|         491 |      1 |           3 | Mancuernas                           |
+|         492 |      0 |           2 | BLACK SALE                           |
+|         493 |      0 |           3 | HYROX                                |
+|         494 |      1 |           3 | Discos & Barras                      |
+|         495 |      1 |           3 | Funcional                            |
+|         496 |      1 |           3 | Máquinas                             |
+|         497 |      1 |           3 | Mancuernas                           |
+|         500 |      1 |           3 | Accesorios                           |
+|         501 |      0 |           2 | PESAS DAYS                           |
+|         502 |      1 |           3 | Fuerza                               |
+|         503 |      1 |           3 | Máquinas                             |
+|         505 |      1 |           3 | Accesorios                           |
+|         506 |      1 |           3 | Funcional                            |
+|         507 |      1 |           3 | Fuerza                               |
+|         508 |      1 |           3 | Máquinas                             |
+|         509 |      1 |           3 | Accesorios                           |
+|         510 |      1 |           3 | Funcional                            |
+|         511 |      1 |           3 | Home Gym                             |
+|         512 |      1 |           3 | GYM / Alto Tráfico                   |
+|         513 |      1 |           3 | Hurricane Series                     |
++-------------+--------+-------------+--------------------------------------+
+239 rows in set (0.162 sec)
+
+--------------
+SELECT n_categories, COUNT(*) AS products FROM (
+  SELECT ps.id_product, COUNT(cp.id_category) AS n_categories
+  FROM ps_product_shop ps LEFT JOIN ps_category_product cp ON cp.id_product = ps.id_product
+  WHERE ps.id_shop = 1 AND ps.active = 1 AND ps.visibility <> 'none' GROUP BY ps.id_product
+) x GROUP BY n_categories ORDER BY n_categories
+--------------
+
++--------------+----------+
+| n_categories | products |
++--------------+----------+
+|            1 |        3 |
+|            2 |        6 |
+|            3 |       57 |
+|            4 |      117 |
+|            5 |      151 |
+|            6 |      172 |
+|            7 |       85 |
+|            8 |       66 |
+|            9 |       73 |
+|           10 |       42 |
+|           11 |       23 |
+|           12 |       35 |
+|           13 |       17 |
+|           14 |       32 |
+|           15 |        4 |
+|           16 |        1 |
+|           18 |        1 |
++--------------+----------+
+17 rows in set (0.163 sec)
+
+--------------
+SELECT TABLE_NAME, COLUMN_NAME, CHARACTER_SET_NAME, COLLATION_NAME
+FROM information_schema.COLUMNS
+WHERE TABLE_SCHEMA = DATABASE()
+  AND (TABLE_NAME, COLUMN_NAME) IN (('ps_product','reference'),('ps_product_lang','name'),('ps_product_lang','description_short'),('ps_product_lang','description'),('ps_product_attribute','reference'))
+--------------
+
++----------------------+-------------------+--------------------+--------------------+
+| TABLE_NAME           | COLUMN_NAME       | CHARACTER_SET_NAME | COLLATION_NAME     |
++----------------------+-------------------+--------------------+--------------------+
+| ps_product           | reference         | utf8mb4            | utf8mb4_general_ci |
+| ps_product_lang      | description       | utf8mb4            | utf8mb4_general_ci |
+| ps_product_lang      | description_short | utf8mb4            | utf8mb4_general_ci |
+| ps_product_lang      | name              | utf8mb4            | utf8mb4_general_ci |
+| ps_product_attribute | reference         | utf8mb4            | utf8mb4_general_ci |
++----------------------+-------------------+--------------------+--------------------+
+5 rows in set (0.167 sec)
+
+--------------
+SELECT @@global.sql_mode AS global_sql_mode
+--------------
+
++------------------------+
+| global_sql_mode        |
++------------------------+
+| NO_ENGINE_SUBSTITUTION |
++------------------------+
+1 row in set (0.145 sec)
+
+--------------
+COMMIT
+--------------
+
+Query OK, 0 rows affected (0.143 sec)
+
+Bye
+exit 0
+finished 2026-09-30T16:19:26Z

@@ -1,0 +1,402 @@
+[
+  {
+    "label": "v1-product",
+    "path": "/v1/products/545",
+    "status": 200,
+    "ms": 455.6,
+    "shape": [
+      "product",
+      "selectedVariant",
+      "attributes",
+      "variants",
+      "pricing",
+      "stock",
+      "weightKg",
+      "freshness",
+      "publicLink"
+    ],
+    "summary": {
+      "keys": [
+        "product",
+        "selectedVariant",
+        "attributes",
+        "variants",
+        "pricing",
+        "stock",
+        "weightKg",
+        "freshness",
+        "publicLink"
+      ]
+    },
+    "body": {
+      "product": {
+        "productId": 545,
+        "name": "Barra Olímpica 20kg 220cm Eco Serie | PROmachine",
+        "sku": "BORE20",
+        "shortDescription": "Barra olímpica diseñada para entrenamientos básicos, permitiendo realizar ejercicios como sentadillas, press banco, press de hombro, peso muerto, entre otros movimientos que abarcan la totalidad de cuerpo. La barra ECO esta diseñada para usuarios principiantes, pero no te dejes engañar, podrás entrenar con cargas medianamente elevadas, ya que soporta hasta 249 kg. de carga máxima ! Entrena sin límites y ponte a prueba para superar tus límites con una barra olímpica económica; entrena con constancia y sube de nivel gracias a una herramienta de gimnasio semi-profesional, pero de alto rendimiento. Complementa tu barra con Discos Grip (ver más) y lleva tus entrenamientos a otro nivel!!",
+        "longDescription": "BARRA OLÍMPICA 20KG 220CM ECO SERIE | PROMACHINE La máxima durabilidad típica de la barra olímpica, pero a un precio inigualable. ¿Estás buscando una barra para tu gimnasio boutique o homegym? La barra olímpica cromada de la línea Eco Series es lo que estás buscando. Es un poco más liviana que las barras olímpicas tradicionales de levantamiento pero mantiene muy buenos parámetros que te permitirán poder realizar todos los entrenamientos básicos y multifuncionales. LO QUE DEBES SABER... La Barra Olímpica Eco Series de 20 kg es una barra híbrida, ya que presenta todas las características de la barra olímpica estándar con un largo de 220 cm. La Barra Olímpica está fabricada en acero convencional con un acabado cromado para soportar cargas pesadas de hasta 249 kg. La barra olímpica de 220 cm con acabado cromado, a diferencia de la mayoría de las barras, es unisex. Por lo tanto, es adecuada para entrenar en el gimnasio tanto para hombres como para mujeres. Pero ojo, debes considerar que su empuñadura es de 30 mm de diámetro y no a todas las mujeres les acomoda. Su versatilidad hace que la barra olímpica sea perfecta para una gran cantidad de ejercicios de levantamiento de pesas, tanto en el banco plano como simplemente con la barra, para entrenar hombros, pectorales y glúteos de una forma más intensa y segura. Tu entrenamiento con esta barra puede incluir ejercicios de gimnasio como peso muerto, levantamientos en banco, sentadillas con barra, peso muerto sumo, press francés para tríceps, curls de bíceps, estocadas, levantamientos frontales y ejercicios isométricos. . El moleteado de diamante hace que el agarre y la adherencia de la empuñadura en la espalda durante el levantamiento de pesas sean aún más seguros, para garantizar la máxima seguridad en el levantamiento de pesos pesados. Las estrías en sus mangas ayudan a evitar el deslizamiento de los discos y la fijación mas segura de las pinzas. Incluye 2 seguros tipo pinza (tenazas metálicas), para un bloqueo rápido y seguro en tus entrenamientos, evitando la vibración de los discos para entregar la mayor seguridad. Nota importante: La barra no resiste caídas, por lo que no es apta para entrenamientos específicos como en CrossFit ni Powerlifting, debido a que no contiene sistema de rodamientos ni buje de protección, además, su perno de fijación es expuesto, lo que al recibir vibraciones debido a impactos, este se suelta, lo que puede traer como efecto que la manga se salga. TASA DE OXIDACIÓN La resistencia de una barra a la oxidación depende del tipo de acero y revestimiento. Las barras categorizadas \"menos resistentes\" requerirán mas cuidado y mantenimiento para preservar su apariencia que las barras categorizadas como \"mas resistentes\". La barra Eco Series está fabricada en acero convencional y está recubierta en Normal Chromed, que es un tipo de cromado simple. Este tipo de tratamiento de acero requiere de un cuidado máximo. Contiene un acabado brillante en toda la barra que le da un aspecto elegante y sofisticado. *La garantía contra la flexión no cubre ninguna barra que se haya dañado debido a un mal mantenimiento, alteración, almacenamiento indebido y/o manejo negligente o defectuoso por parte del usuario. El uso negligente o defectuoso incluye dejar caer la barra de forma abusiva (es decir, dejar caer la barra sobre una caja, banco, brazos o clavijas de seguridad, caídas excesivas con bumpers insuficientes o dañados, o caídas excesivas con discos de hierro y usos similares). Cualquier problema específico relacionado con un producto con el que un cliente no esté satisfecho se revisará caso por caso. Recomendamos utilizar piso de caucho. La barra no se debe almacenar con discos cargados en un rack. Solo para uso en interiores, el desgaste normal no está cubierto por la garantía. Garantía válida únicamente para el comprador original.",
+        "active": true
+      },
+      "selectedVariant": {
+        "combinationId": 0,
+        "sku": "BORE20",
+        "label": null,
+        "attributes": []
+      },
+      "attributes": [],
+      "variants": [],
+      "pricing": {
+        "quantity": 1,
+        "baseUnitPrice": 84990,
+        "effectiveUnitPrice": 84990,
+        "subtotal": 84990,
+        "currency": "CLP",
+        "taxIncluded": true,
+        "taxRate": 0.19,
+        "taxMode": "configured_rate",
+        "discountApplied": false,
+        "discountType": null,
+        "discountValue": null,
+        "specificPriceId": null,
+        "pricingMode": "sql_specific_price"
+      },
+      "stock": {
+        "physicalQuantity": 13,
+        "available": true,
+        "shopId": 1
+      },
+      "weightKg": 22,
+      "freshness": {
+        "productCheckedAt": "2026-09-30T17:12:08.329Z",
+        "priceCalculatedAt": "2026-09-30T17:12:08.337Z",
+        "stockCheckedAt": "2026-09-30T17:12:08.337Z",
+        "cached": false
+      },
+      "publicLink": {
+        "canonicalUrl": "https://pesaschile.cl/categories/545-barra-olimpica-20kg-220cm-eco-serie-promachine.html",
+        "scope": "exact_product",
+        "available": true,
+        "requiresVariantSelection": false,
+        "variantAttributeLabels": []
+      }
+    }
+  },
+  {
+    "label": "v1-product-semantics",
+    "path": "/v1/products/545/semantics",
+    "status": 200,
+    "ms": 313,
+    "shape": [
+      "productId",
+      "catalogPresence",
+      "classificationStatus",
+      "primaryProductFamily",
+      "secondaryProductFamilies",
+      "disciplines",
+      "useContexts",
+      "ontologyVersion",
+      "ontologyHash",
+      "classifierVersion",
+      "snapshotId",
+      "provenance"
+    ]
+  },
+  {
+    "label": "v1-semantics-registry",
+    "path": "/v1/products/semantics/registry",
+    "status": 200,
+    "ms": 156.7,
+    "shape": [
+      "schemaVersion",
+      "ontologyVersion",
+      "ontologyHash",
+      "status",
+      "axes"
+    ]
+  },
+  {
+    "label": "v1-training-registry",
+    "path": "/v1/products/training-semantics/registry",
+    "status": 200,
+    "ms": 175.3,
+    "shape": [
+      "schemaVersion",
+      "registryVersion",
+      "registryHash",
+      "status",
+      "exerciseCapabilities",
+      "trainingFunctions",
+      "bodyRegions",
+      "muscleGroups",
+      "trainingPatterns",
+      "exerciseDerivedRelations",
+      "familyTrainingFunctionDerivations",
+      "semanticBoundaries"
+    ]
+  },
+  {
+    "label": "v1-semantics-batch",
+    "path": "/v1/products/semantics/batch",
+    "status": 200,
+    "ms": 174.8,
+    "shape": [
+      "schemaVersion",
+      "snapshotId",
+      "ontologyVersion",
+      "ontologyHash",
+      "classifierVersion",
+      "semanticChecksum",
+      "products",
+      "missingProductIds"
+    ]
+  },
+  {
+    "label": "v1-batch",
+    "path": "/v1/products/batch",
+    "status": 200,
+    "ms": 399.7,
+    "shape": [
+      "items"
+    ],
+    "summary": [
+      {
+        "ok": true,
+        "price": null
+      },
+      {
+        "ok": true,
+        "price": null
+      },
+      {
+        "ok": true,
+        "price": null
+      }
+    ],
+    "body": {
+      "items": [
+        {
+          "ok": true,
+          "input": {
+            "productId": 545,
+            "combinationId": 0,
+            "quantity": 1
+          },
+          "product": {
+            "product": {
+              "productId": 545,
+              "name": "Barra Olímpica 20kg 220cm Eco Serie | PROmachine",
+              "sku": "BORE20",
+              "shortDescription": "Barra olímpica diseñada para entrenamientos básicos, permitiendo realizar ejercicios como sentadillas, press banco, press de hombro, peso muerto, entre otros movimientos que abarcan la totalidad de cuerpo. La barra ECO esta diseñada para usuarios principiantes, pero no te dejes engañar, podrás entrenar con cargas medianamente elevadas, ya que soporta hasta 249 kg. de carga máxima ! Entrena sin límites y ponte a prueba para superar tus límites con una barra olímpica económica; entrena con constancia y sube de nivel gracias a una herramienta de gimnasio semi-profesional, pero de alto rendimiento. Complementa tu barra con Discos Grip (ver más) y lleva tus entrenamientos a otro nivel!!",
+              "longDescription": "BARRA OLÍMPICA 20KG 220CM ECO SERIE | PROMACHINE La máxima durabilidad típica de la barra olímpica, pero a un precio inigualable. ¿Estás buscando una barra para tu gimnasio boutique o homegym? La barra olímpica cromada de la línea Eco Series es lo que estás buscando. Es un poco más liviana que las barras olímpicas tradicionales de levantamiento pero mantiene muy buenos parámetros que te permitirán poder realizar todos los entrenamientos básicos y multifuncionales. LO QUE DEBES SABER... La Barra Olímpica Eco Series de 20 kg es una barra híbrida, ya que presenta todas las características de la barra olímpica estándar con un largo de 220 cm. La Barra Olímpica está fabricada en acero convencional con un acabado cromado para soportar cargas pesadas de hasta 249 kg. La barra olímpica de 220 cm con acabado cromado, a diferencia de la mayoría de las barras, es unisex. Por lo tanto, es adecuada para entrenar en el gimnasio tanto para hombres como para mujeres. Pero ojo, debes considerar que su empuñadura es de 30 mm de diámetro y no a todas las mujeres les acomoda. Su versatilidad hace que la barra olímpica sea perfecta para una gran cantidad de ejercicios de levantamiento de pesas, tanto en el banco plano como simplemente con la barra, para entrenar hombros, pectorales y glúteos de una forma más intensa y segura. Tu entrenamiento con esta barra puede incluir ejercicios de gimnasio como peso muerto, levantamientos en banco, sentadillas con barra, peso muerto sumo, press francés para tríceps, curls de bíceps, estocadas, levantamientos frontales y ejercicios isométricos. . El moleteado de diamante hace que el agarre y la adherencia de la empuñadura en la espalda durante el levantamiento de pesas sean aún más seguros, para garantizar la máxima seguridad en el levantamiento de pesos pesados. Las estrías en sus mangas ayudan a evitar el deslizamiento de los discos y la fijación mas segura de las pinzas. Incluye 2 seguros tipo pinza (tenazas metálicas), para un bloqueo rápido y seguro en tus entrenamientos, evitando la vibración de los discos para entregar la mayor seguridad. Nota importante: La barra no resiste caídas, por lo que no es apta para entrenamientos específicos como en CrossFit ni Powerlifting, debido a que no contiene sistema de rodamientos ni buje de protección, además, su perno de fijación es expuesto, lo que al recibir vibraciones debido a impactos, este se suelta, lo que puede traer como efecto que la manga se salga. TASA DE OXIDACIÓN La resistencia de una barra a la oxidación depende del tipo de acero y revestimiento. Las barras categorizadas \"menos resistentes\" requerirán mas cuidado y mantenimiento para preservar su apariencia que las barras categorizadas como \"mas resistentes\". La barra Eco Series está fabricada en acero convencional y está recubierta en Normal Chromed, que es un tipo de cromado simple. Este tipo de tratamiento de acero requiere de un cuidado máximo. Contiene un acabado brillante en toda la barra que le da un aspecto elegante y sofisticado. *La garantía contra la flexión no cubre ninguna barra que se haya dañado debido a un mal mantenimiento, alteración, almacenamiento indebido y/o manejo negligente o defectuoso por parte del usuario. El uso negligente o defectuoso incluye dejar caer la barra de forma abusiva (es decir, dejar caer la barra sobre una caja, banco, brazos o clavijas de seguridad, caídas excesivas con bumpers insuficientes o dañados, o caídas excesivas con discos de hierro y usos similares). Cualquier problema específico relacionado con un producto con el que un cliente no esté satisfecho se revisará caso por caso. Recomendamos utilizar piso de caucho. La barra no se debe almacenar con discos cargados en un rack. Solo para uso en interiores, el desgaste normal no está cubierto por la garantía. Garantía válida únicamente para el comprador original.",
+              "active": true
+            },
+            "selectedVariant": {
+              "combinationId": 0,
+              "sku": "BORE20",
+              "label": null,
+              "attributes": []
+            },
+            "attributes": [],
+            "variants": [],
+            "pricing": {
+              "quantity": 1,
+              "baseUnitPrice": 84990,
+              "effectiveUnitPrice": 84990,
+              "subtotal": 84990,
+              "currency": "CLP",
+              "taxIncluded": true,
+              "taxRate": 0.19,
+              "taxMode": "configured_rate",
+              "discountApplied": false,
+              "discountType": null,
+              "discountValue": null,
+              "specificPriceId": null,
+              "pricingMode": "sql_specific_price"
+            },
+            "stock": {
+              "physicalQuantity": 13,
+              "available": true,
+              "shopId": 1
+            },
+            "weightKg": 22,
+            "freshness": {
+              "productCheckedAt": "2026-09-30T17:12:08.329Z",
+              "priceCalculatedAt": "2026-09-30T17:12:08.337Z",
+              "stockCheckedAt": "2026-09-30T17:12:08.337Z",
+              "cached": true
+            },
+            "publicLink": {
+              "canonicalUrl": "https://pesaschile.cl/categories/545-barra-olimpica-20kg-220cm-eco-serie-promachine.html",
+              "scope": "exact_product",
+              "available": true,
+              "requiresVariantSelection": false,
+              "variantAttributeLabels": []
+            }
+          }
+        },
+        {
+          "ok": true,
+          "input": {
+            "productId": 2248,
+            "combinationId": 0,
+            "quantity": 1
+          },
+          "product": {
+            "product": {
+              "productId": 2248,
+              "name": "Swivel para Saco de Boxeo | Rising",
+              "sku": "RS3017",
+              "shortDescription": "Elimina trabas, ruidos y vibraciones inestables en tu entrenamiento. El Swivel Rising® ofrece una rotación ultrasuave de 360° con una capacidad de carga de 500 kg, garantizando máxima velocidad, fluidez y ritmo en cada golpe. ✓ CAPACIDAD BRUTAL DE 500 KG: Fabricado en acero HG-Steel con anillo totalmente soldado sobre una base de 9 cm para máxima seguridad. ✓ ROTACIÓN FLUIDA EN 360°: Núcleo de baja fricción que permite giros continuos y sin rebotes a altas revoluciones. ✓ LIBERACIÓN RÁPIDA Y FÁCIL MONTAJE: Sistema de perno transversal para desmonte veloz e incluye 4 pernos de expansión para hormigón.",
+              "longDescription": "Rotación profesional de alta velocidad para un entrenamiento sin interrupciones En el boxeo y las artes marciales, la precisión y el ritmo del rebote marcan la diferencia entre una sesión fluida y un entrenamiento frustrante. Los soportes convencionales se traban, generan ruidos molestos y limitan la velocidad de reacción del atleta al deformar el movimiento natural del saco. El Swivel para Saco de Boxeo Rising® resuelve este problema de raíz mediante un núcleo de rotación continua de baja fricción. Diseñado para resistir los impactos más intensos tanto en gimnasios comerciales como en home gyms , acompaña cada gancho, directo o patada con un movimiento limpio, simétrico y de nivel profesional. LO QUE DEBES SABER DE ESTE PRODUCTO Construcción indestructible en acero HG-Steel: Su cuerpo macizo de 0.8 kg está protegido con un baño de níquel negro antioxidante que repele la humedad y la intemperie, permitiendo su instalación en interiores, patios o terrazas. Mecanismo de cambio rápido sin desarmar la base: Incorpora un sistema de seguridad con perno y tuerca transversal que te permite desmontar, limpiar o cambiar de saco en segundos sin desinstalar la placa del techo. Fijación rígida con kit de anclaje incluido: Viene equipado con 4 pernos metálicos de expansión de alta resistencia diseñados para un anclaje firme en techos o vigas de hormigón, anulando vibraciones indeseadas. Versatilidad multipropósito: Aunque está optimizado para sacos y peras de velocidad, su estructura soporta hasta 500 kg de tensión activa, siendo perfecto para anillas de gimnasia, sistemas de suspensión TRX, yoga aéreo o sillas hamaca. Especificaciones Técnicas Característica Detalle Técnico Marca / Modelo Rising® / Rotor Giratorio 360° Material Base Acero de alta resistencia de grado militar (HG-Steel) Acabado Baño de Níquel Negro (anticorrosivo) y logo grabado con láser Capacidad Máxima de Carga 500 kg de tensión activa Dimensiones de la Base Disco de montaje de 9 cm de diámetro Peso del Producto 0.8 kg Anclaje Incluido 4 pernos metálicos de expansión para hormigón Mecanismo de Desmonte Perno y tuerca transversal de seguridad de liberación rápida Uso Recomendado Boxeo, MMA, Gimnasios Comerciales, Home Gym, TRX, Yoga Aéreo",
+              "active": true
+            },
+            "selectedVariant": {
+              "combinationId": 0,
+              "sku": "RS3017",
+              "label": null,
+              "attributes": []
+            },
+            "attributes": [],
+            "variants": [],
+            "pricing": {
+              "quantity": 1,
+              "baseUnitPrice": 20990,
+              "effectiveUnitPrice": 20990,
+              "subtotal": 20990,
+              "currency": "CLP",
+              "taxIncluded": true,
+              "taxRate": 0.19,
+              "taxMode": "configured_rate",
+              "discountApplied": false,
+              "discountType": null,
+              "discountValue": null,
+              "specificPriceId": null,
+              "pricingMode": "sql_specific_price"
+            },
+            "stock": {
+              "physicalQuantity": 48,
+              "available": true,
+              "shopId": 1
+            },
+            "weightKg": 1,
+            "freshness": {
+              "productCheckedAt": "2026-09-30T17:12:09.436Z",
+              "priceCalculatedAt": "2026-09-30T17:12:09.443Z",
+              "stockCheckedAt": "2026-09-30T17:12:09.443Z",
+              "cached": false
+            },
+            "publicLink": {
+              "canonicalUrl": "https://pesaschile.cl/categories/2248-swivel-para-saco-de-boxeo-rising.html",
+              "scope": "exact_product",
+              "available": true,
+              "requiresVariantSelection": false,
+              "variantAttributeLabels": []
+            }
+          }
+        },
+        {
+          "ok": true,
+          "input": {
+            "productId": 2340,
+            "combinationId": 0,
+            "quantity": 1
+          },
+          "product": {
+            "product": {
+              "productId": 2340,
+              "name": "Colchoneta Oxford Negro/Rojo 100x50x5cm - 2da Selección | FullFit (FICLE3-SU55,-1)",
+              "sku": "RE-FICLE3",
+              "shortDescription": "PRODUCTO CON SEÑALES DE USO, SIN EMPAQUE, SU VALOR EQUIVALE A LA UNIDAD. IMAGEN REFERENCIAL - La colchoneta deportiva de FullFit® es perfecta para estiramientos y ejercicios en el suelo. Siempre puedes utilizar una colchoneta en casa o en el gimnasio para realizar tus ejercicios diarios de peso corporal. La capa externa es de lona, específicamente de tela tipo Oxford , que asegura el máximo confort durante cualquier movimiento en el suelo. Su material se destaca por ser un tejido ligero, lustroso y suave al tacto. La tela es fabricada a partir de una mezcla de algodón con poliéster, es lavable y resistente , perfecta para entrenamientos al aire libre.",
+              "longDescription": "COLCHONETA OXFORD NEGRO/ROJO 100x50x5CM | FULLFIT La colchoneta black/red oxford de FullFit ® , brinda una superficie de apoyo acolchada para todas tus sesiones de ejercicio, lo que te permitirá llevar tus entrenamientos al siguiente nivel y entrenar sin límites. La colchoneta es un implemento multifuncional, por lo que podrás utilizarla para ejercicios en el suelo como abdominales, estiramientos y zancadas. Gracias a su acolchado de alta densidad, puedes entrenar con absoluta comodidad, mientras proteges tus articulaciones al realizar ejercicio. LO QUE DEBES SABER... Su interior de espuma y su fabricación exterior en tela Oxford de alta resistencia, permite un menor desgaste para que la colchoneta mantenga su forma en el tiempo y tenga una larga duración. Contiene esquinas reforzadas de PVC para aumentar aún mas su durabilidad. Su peso ligero de 1 kg la hace muy fácil de mover de un lugar a otro, por lo que podrás usarla donde más prefieras y podrás encontrar fácilmente un lugar para poder guardarla. Incluye un asa de transporte para facilitar su traslado, además, cuenta con un cierre lateral, para que puedas lavar el forro exterior y con el tiempo, reemplazar fácilmente el relleno. ELEGANCIA & FUNCIONALIDAD. La colchoneta tiene una textura suave pero con gran estabilidad para que realices tus ejercicios cómodamente y no pierdas el agarre sobre la superficie. Cada colchoneta está equipado con el logotipo de FullFit®.",
+              "active": true
+            },
+            "selectedVariant": {
+              "combinationId": 0,
+              "sku": "RE-FICLE3",
+              "label": null,
+              "attributes": []
+            },
+            "attributes": [],
+            "variants": [],
+            "pricing": {
+              "quantity": 1,
+              "baseUnitPrice": 13990,
+              "effectiveUnitPrice": 13990,
+              "subtotal": 13990,
+              "currency": "CLP",
+              "taxIncluded": true,
+              "taxRate": 0.19,
+              "taxMode": "configured_rate",
+              "discountApplied": false,
+              "discountType": null,
+              "discountValue": null,
+              "specificPriceId": null,
+              "pricingMode": "sql_specific_price"
+            },
+            "stock": {
+              "physicalQuantity": 0,
+              "available": false,
+              "shopId": 1
+            },
+            "weightKg": 6.25,
+            "freshness": {
+              "productCheckedAt": "2026-09-30T17:12:09.443Z",
+              "priceCalculatedAt": "2026-09-30T17:12:09.458Z",
+              "stockCheckedAt": "2026-09-30T17:12:09.458Z",
+              "cached": false
+            },
+            "publicLink": {
+              "canonicalUrl": "https://pesaschile.cl/categories/2340-colchoneta-oxford-negrorojo-100x50x5cm-2da-seleccion-fullfit-ficle3-su55-1.html",
+              "scope": "exact_product",
+              "available": true,
+              "requiresVariantSelection": false,
+              "variantAttributeLabels": []
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "label": "v1-search",
+    "path": "/v1/products/search?q=barra",
+    "status": 200,
+    "ms": 275,
+    "shape": [
+      "query",
+      "items",
+      "freshness"
+    ]
+  },
+  {
+    "label": "v2-recommendations",
+    "path": "/api/v2/recommendations/search-products",
+    "status": 200,
+    "ms": 232.8,
+    "shape": [
+      "sourceProduct",
+      "recommendations",
+      "warnings",
+      "statistics",
+      "execution",
+      "query",
+      "excluded",
+      "personalization",
+      "snapshot"
+    ],
+    "summary": {
+      "resultCount": 0,
+      "keys": [
+        "sourceProduct",
+        "recommendations",
+        "warnings",
+        "statistics",
+        "execution",
+        "query",
+        "excluded",
+        "personalization",
+        "snapshot"
+      ]
+    }
+  }
+]

@@ -1,0 +1,6 @@
+PM2 logs (out + error) 2026-09-30T17:03:50Z -> 17:25:14Z (pids 1875533, 1880086, 1880319)
+levels: info x375; warn/error/fatal: 0; error log empty; no contract_output_invalid, SQL, timeout, ECONN, snapshot or validation events
+status: 0 x 5xx. 400 x5 (intentional malformed/quantity/short-query probes), 401 x1 (intentional no-key probe), rest 200
+slow (>1 s server-side): 6, all broad POST /v2/catalog/search ("barra", 213 matches): 1.07–1.29 s
+restarts: 17:12:37Z and 17:13:07Z graceful SIGINT stops issued through PM2 by an operator session (see runtime.txt)
+Result: NO_RELEVANT_ERRORS

@@ -1,0 +1,475 @@
+{
+  "goldSetVersion": "catalog-search-gold-v0",
+  "source": "http:127.0.0.1:14010",
+  "classes": {
+    "exact_sku": {
+      "gate": "hard",
+      "cases": 7,
+      "passed": 7,
+      "passRate": 1,
+      "hitAt1": 1,
+      "recallAtLimit": null,
+      "exclusionViolations": 0,
+      "gatePassed": true
+    },
+    "product_name": {
+      "gate": "hard",
+      "cases": 4,
+      "passed": 4,
+      "passRate": 1,
+      "hitAt1": 1,
+      "recallAtLimit": null,
+      "exclusionViolations": 0,
+      "gatePassed": true
+    },
+    "multi_token_nominal": {
+      "gate": "hard",
+      "cases": 4,
+      "passed": 4,
+      "passRate": 1,
+      "hitAt1": 1,
+      "recallAtLimit": 1,
+      "exclusionViolations": 0,
+      "gatePassed": true
+    },
+    "unit_bearing": {
+      "gate": "hard",
+      "cases": 3,
+      "passed": 3,
+      "passRate": 1,
+      "hitAt1": 1,
+      "recallAtLimit": 1,
+      "exclusionViolations": 0,
+      "gatePassed": true
+    },
+    "supported_synonyms": {
+      "gate": "hard",
+      "cases": 6,
+      "passed": 6,
+      "passRate": 1,
+      "hitAt1": 1,
+      "recallAtLimit": 1,
+      "exclusionViolations": 0,
+      "gatePassed": true
+    },
+    "typo": {
+      "gate": "measured",
+      "cases": 4,
+      "passed": 0,
+      "passRate": 0,
+      "hitAt1": 0,
+      "recallAtLimit": 0,
+      "exclusionViolations": 0,
+      "gatePassed": true
+    }
+  },
+  "outcomes": [
+    {
+      "id": "sku-kh20",
+      "class": "exact_sku",
+      "query": "KH20",
+      "pass": true,
+      "top1Hit": true,
+      "recall": null,
+      "exclusionViolations": [],
+      "missing": [],
+      "returned": [
+        186
+      ]
+    },
+    {
+      "id": "sku-kh20-lower",
+      "class": "exact_sku",
+      "query": "kh20",
+      "pass": true,
+      "top1Hit": true,
+      "recall": null,
+      "exclusionViolations": [],
+      "missing": [],
+      "returned": [
+        186
+      ]
+    },
+    {
+      "id": "sku-dob10",
+      "class": "exact_sku",
+      "query": "DOB10",
+      "pass": true,
+      "top1Hit": true,
+      "recall": null,
+      "exclusionViolations": [],
+      "missing": [],
+      "returned": [
+        100
+      ]
+    },
+    {
+      "id": "sku-boeh",
+      "class": "exact_sku",
+      "query": "BOEH",
+      "pass": true,
+      "top1Hit": true,
+      "recall": null,
+      "exclusionViolations": [],
+      "missing": [],
+      "returned": [
+        21
+      ]
+    },
+    {
+      "id": "sku-v8-101",
+      "class": "exact_sku",
+      "query": "V8-101",
+      "pass": true,
+      "top1Hit": true,
+      "recall": null,
+      "exclusionViolations": [],
+      "missing": [],
+      "returned": [
+        471
+      ]
+    },
+    {
+      "id": "sku-mh35",
+      "class": "exact_sku",
+      "query": "MH35",
+      "pass": true,
+      "top1Hit": true,
+      "recall": null,
+      "exclusionViolations": [],
+      "missing": [],
+      "returned": [
+        236
+      ]
+    },
+    {
+      "id": "sku-pm202",
+      "class": "exact_sku",
+      "query": "PM202",
+      "pass": true,
+      "top1Hit": true,
+      "recall": null,
+      "exclusionViolations": [],
+      "missing": [],
+      "returned": [
+        981
+      ]
+    },
+    {
+      "id": "name-kettlebell-acero-20",
+      "class": "product_name",
+      "query": "Kettlebell Acero 20kg | HWM®",
+      "pass": true,
+      "top1Hit": true,
+      "recall": null,
+      "exclusionViolations": [],
+      "missing": [],
+      "returned": [
+        186
+      ]
+    },
+    {
+      "id": "name-barra-hex-20",
+      "class": "product_name",
+      "query": "Barra Olímpica Hexagonal 20kg | HWM®",
+      "pass": true,
+      "top1Hit": true,
+      "recall": null,
+      "exclusionViolations": [],
+      "missing": [],
+      "returned": [
+        24
+      ]
+    },
+    {
+      "id": "name-banco-v8",
+      "class": "product_name",
+      "query": "Banco Abdominal Ajustable V8 Series | Obelix",
+      "pass": true,
+      "top1Hit": true,
+      "recall": null,
+      "exclusionViolations": [],
+      "missing": [],
+      "returned": [
+        471
+      ]
+    },
+    {
+      "id": "name-disco-preolimpico-10",
+      "class": "product_name",
+      "query": "Par Discos Preolímpicos 10kg | Barbell",
+      "pass": true,
+      "top1Hit": true,
+      "recall": null,
+      "exclusionViolations": [],
+      "missing": [],
+      "returned": [
+        145
+      ]
+    },
+    {
+      "id": "nominal-kettlebell-20-kg",
+      "class": "multi_token_nominal",
+      "query": "kettlebell 20 kg",
+      "pass": true,
+      "top1Hit": null,
+      "recall": 1,
+      "exclusionViolations": [],
+      "missing": [],
+      "returned": [
+        186,
+        196,
+        1202
+      ]
+    },
+    {
+      "id": "nominal-disco-10-kg",
+      "class": "multi_token_nominal",
+      "query": "disco 10 kg",
+      "pass": true,
+      "top1Hit": null,
+      "recall": 1,
+      "exclusionViolations": [],
+      "missing": [],
+      "returned": [
+        145,
+        1497,
+        1824,
+        1221,
+        647,
+        1323,
+        1415
+      ]
+    },
+    {
+      "id": "nominal-banco-ajustable",
+      "class": "multi_token_nominal",
+      "query": "banco ajustable",
+      "pass": true,
+      "top1Hit": null,
+      "recall": 1,
+      "exclusionViolations": [],
+      "missing": [],
+      "returned": [
+        1852,
+        1280,
+        471,
+        1281,
+        1706,
+        981,
+        2094,
+        1550,
+        1338,
+        1112
+      ]
+    },
+    {
+      "id": "nominal-mancuerna-hexagonal",
+      "class": "multi_token_nominal",
+      "query": "mancuerna hexagonal 35kg",
+      "pass": true,
+      "top1Hit": true,
+      "recall": null,
+      "exclusionViolations": [],
+      "missing": [],
+      "returned": [
+        236
+      ]
+    },
+    {
+      "id": "unit-barra-olimpica-20kg",
+      "class": "unit_bearing",
+      "query": "barra olímpica 20kg",
+      "pass": true,
+      "top1Hit": null,
+      "recall": 1,
+      "exclusionViolations": [],
+      "missing": [],
+      "returned": [
+        21,
+        32,
+        31,
+        545,
+        24,
+        795,
+        611,
+        1651,
+        1208,
+        2263
+      ]
+    },
+    {
+      "id": "unit-bumper-10kg",
+      "class": "unit_bearing",
+      "query": "bumper 10 kg",
+      "pass": true,
+      "top1Hit": null,
+      "recall": 1,
+      "exclusionViolations": [],
+      "missing": [],
+      "returned": [
+        323,
+        824,
+        100,
+        1458,
+        830,
+        835,
+        840
+      ]
+    },
+    {
+      "id": "unit-kettlebell-acero-20kg",
+      "class": "unit_bearing",
+      "query": "kettlebell acero 20kg",
+      "pass": true,
+      "top1Hit": true,
+      "recall": null,
+      "exclusionViolations": [],
+      "missing": [],
+      "returned": [
+        186
+      ]
+    },
+    {
+      "id": "syn-case",
+      "class": "supported_synonyms",
+      "query": "KETTLEBELL ACERO 20KG",
+      "pass": true,
+      "top1Hit": true,
+      "recall": null,
+      "exclusionViolations": [],
+      "missing": [],
+      "returned": [
+        186
+      ]
+    },
+    {
+      "id": "syn-accents",
+      "class": "supported_synonyms",
+      "query": "barra olimpica hexagonal 20kg",
+      "pass": true,
+      "top1Hit": true,
+      "recall": null,
+      "exclusionViolations": [],
+      "missing": [],
+      "returned": [
+        24
+      ]
+    },
+    {
+      "id": "syn-kilos",
+      "class": "supported_synonyms",
+      "query": "kettlebell 20 kilos",
+      "pass": true,
+      "top1Hit": null,
+      "recall": 1,
+      "exclusionViolations": [],
+      "missing": [],
+      "returned": [
+        186,
+        196,
+        1202
+      ]
+    },
+    {
+      "id": "syn-kgs",
+      "class": "supported_synonyms",
+      "query": "mancuerna hexagonal 35kgs",
+      "pass": true,
+      "top1Hit": true,
+      "recall": null,
+      "exclusionViolations": [],
+      "missing": [],
+      "returned": [
+        236
+      ]
+    },
+    {
+      "id": "syn-plural",
+      "class": "supported_synonyms",
+      "query": "discos preolimpicos 10 kg",
+      "pass": true,
+      "top1Hit": true,
+      "recall": null,
+      "exclusionViolations": [],
+      "missing": [],
+      "returned": [
+        145
+      ]
+    },
+    {
+      "id": "syn-singular",
+      "class": "supported_synonyms",
+      "query": "bancos ajustables",
+      "pass": true,
+      "top1Hit": null,
+      "recall": 1,
+      "exclusionViolations": [],
+      "missing": [],
+      "returned": [
+        1852,
+        1280,
+        471,
+        1281,
+        1706,
+        981,
+        2094,
+        1550,
+        1338,
+        1112
+      ]
+    },
+    {
+      "id": "typo-kettelbell",
+      "class": "typo",
+      "query": "kettelbell 20 kg",
+      "pass": false,
+      "top1Hit": null,
+      "recall": 0,
+      "exclusionViolations": [],
+      "missing": [
+        186
+      ],
+      "returned": []
+    },
+    {
+      "id": "typo-hexagnal",
+      "class": "typo",
+      "query": "mancuerna hexagnal 35kg",
+      "pass": false,
+      "top1Hit": false,
+      "recall": null,
+      "exclusionViolations": [],
+      "missing": [],
+      "returned": []
+    },
+    {
+      "id": "typo-ajustabel",
+      "class": "typo",
+      "query": "banco ajustabel",
+      "pass": false,
+      "top1Hit": null,
+      "recall": 0,
+      "exclusionViolations": [],
+      "missing": [
+        471
+      ],
+      "returned": []
+    },
+    {
+      "id": "typo-missing-space",
+      "class": "typo",
+      "query": "kettlebell20kg",
+      "pass": false,
+      "top1Hit": null,
+      "recall": 0,
+      "exclusionViolations": [],
+      "missing": [
+        186
+      ],
+      "returned": []
+    }
+  ],
+  "deterministic": true,
+  "passed": true
+}

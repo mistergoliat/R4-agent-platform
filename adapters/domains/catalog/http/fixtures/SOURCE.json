@@ -2,9 +2,9 @@
   "owner": "MS-pesaschile-catalog-service",
   "contract": "catalog-commercial-v2",
   "schemaVersion": 1,
-  "ownerCommit": "47875d5fe0f98f17c1d96863f02a5ed7e4195694",
+  "ownerCommit": "fea0dc552b28137391b5757b23572e67196c7e14",
   "ownerContractFilesUncommitted": false,
-  "manifestSha256": "223b35502afa0e88de17184cb6c7dba36ef3b4a5b3b7e5b1e006f79f382cc72e",
+  "manifestSha256": "5532c7b7edcd653caa04af042842e49c5872ce88f192d8c5966c22fbc399f993",
   "fixtures": 24,
   "syncedWith": "scripts/sync-catalog-fixtures.mjs"
 }

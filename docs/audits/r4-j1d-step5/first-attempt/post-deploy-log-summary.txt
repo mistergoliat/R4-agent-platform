@@ -1,0 +1,8 @@
+PM2 logs (out + error) since 2026-09-30T16:50Z, read 17:00:56Z:
+levels: info(30) x10; no warn/error/fatal; error log empty
+16:52:35Z relationship_snapshot_loaded sha256:021c4b5e…09
+16:52:35Z product_semantic_snapshot_loaded sha256:a86a8c6f…9d (2011)
+16:52:35Z training_semantic_snapshot_v2_loaded sha256:045f04fb…c1 (2011)
+16:52:36Z Server listening at http://127.0.0.1:4010 / Catalog service started
+requests after start: only this preflight's GET /health/live 200, GET /health/ready 200
+Result: NO_RELEVANT_ERRORS (post-deploy window)

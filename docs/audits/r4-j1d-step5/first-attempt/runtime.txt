@@ -1,0 +1,18 @@
+R4-J1D Step 5 — preflight (read-only), 2026-09-30T17:00:10Z
+host: ip-172-31-1-183.ec2.internal (ssh ec2-user@98.80.166.131, identity crm.pem, StrictHostKeyChecking=yes)
+node: v22.23.1
+service dir: /home/ec2-user/services/MS-pesaschile-catalog-service
+git HEAD: 47875d5fe0f98f17c1d96863f02a5ed7e4195694 (2026-09-30 01:49:53 -0300), dirty tracked files: 0
+dist/src/server.js built: 2026-09-30 16:51:40 UTC; zonedTime.js present; catalogV2Routes.js present
+pm2: catalog-service pid 1869519 online, restarts 1, up since 2026-09-30T16:52:33Z, cwd = /proc cwd = service dir, exec dist/src/server.js
+listener: 127.0.0.1:4010 (pid 1869519)
+
+effective config (process env > .env):
+  PRESTASHOP_SHOP_ID  = 1     [.env]   expected 1                OK
+  TAX_RATE            = 0.19  [.env]   expected 0.19             OK
+  PRESTASHOP_TIMEZONE = <unset> -> code default UTC
+                                       expected America/Santiago FAIL -> DEPLOY_CONFIG_INCORRECT
+  PRESTASHOP_LANG_ID=1, NODE_ENV=production, PORT=4010, CACHE_DRIVER=memory
+  API_KEY PRESENT, CATALOG_API_KEYS MISSING, DB_PASSWORD PRESENT (values REDACTED)
+absence cross-checked by key names only: .env (mtime 2026-08-21 17:35, unchanged by the deploy) has no *TIMEZONE* key;
+/proc/<pid>/environ has none; PM2 stored env has none; no ecosystem file.

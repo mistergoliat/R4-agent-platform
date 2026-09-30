@@ -1,0 +1,2680 @@
+[
+  {
+    "class": "exact",
+    "query": "BORE20",
+    "status": 200,
+    "ms": 293.2,
+    "schemaVersion": 1,
+    "completeness": {
+      "totalMatches": 1,
+      "truncated": false
+    },
+    "freshness": {
+      "asOf": "2026-09-30T17:12:10.331Z",
+      "cache": {
+        "hit": false,
+        "ageMs": 73
+      },
+      "validUntil": "2026-09-30T17:12:25.331Z"
+    },
+    "results": [
+      {
+        "productKey": "P545",
+        "name": "Barra Olímpica 20kg 220cm Eco Serie | PROmachine",
+        "sku": "BORE20",
+        "category": "Barras Hombre 20 kg",
+        "match": {
+          "type": "exact_reference",
+          "matchedTokens": 0,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 84990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 84990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      }
+    ]
+  },
+  {
+    "class": "nominal",
+    "query": "barra olimpica 20 kg",
+    "status": 200,
+    "ms": 299.7,
+    "schemaVersion": 1,
+    "completeness": {
+      "totalMatches": 11,
+      "truncated": true
+    },
+    "freshness": {
+      "asOf": "2026-09-30T17:12:10.615Z",
+      "cache": {
+        "hit": false,
+        "ageMs": 138
+      },
+      "validUntil": "2026-09-30T17:12:25.615Z"
+    },
+    "results": [
+      {
+        "productKey": "P21",
+        "name": "Barra Olímpica 20kg Elite | HWM®",
+        "sku": "BOEH",
+        "category": "Barras Hombre 20 kg",
+        "match": {
+          "type": "name",
+          "matchedTokens": 3,
+          "totalTokens": 3
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 189990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 189990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P32",
+        "name": "Barra Olímpica 20kg Training | HWM®",
+        "sku": "BORT",
+        "category": "Barras Hombre 20 kg",
+        "match": {
+          "type": "name",
+          "matchedTokens": 3,
+          "totalTokens": 3
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 149990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 149990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P31",
+        "name": "Barra Olímpica 20kg Classic Serie | PROmachine",
+        "sku": "BORP",
+        "category": "Barras Hombre 20 kg",
+        "match": {
+          "type": "name",
+          "matchedTokens": 3,
+          "totalTokens": 3
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 79990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 79990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P545",
+        "name": "Barra Olímpica 20kg 220cm Eco Serie | PROmachine",
+        "sku": "BORE20",
+        "category": "Barras Hombre 20 kg",
+        "match": {
+          "type": "name",
+          "matchedTokens": 3,
+          "totalTokens": 3
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 84990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 84990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P24",
+        "name": "Barra Olímpica Hexagonal 20kg | HWM®",
+        "sku": "BOH",
+        "category": "Barras Especiales",
+        "match": {
+          "type": "name",
+          "matchedTokens": 3,
+          "totalTokens": 3
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 126990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 126990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P795",
+        "name": "Barra Olímpica Cerakote Black 20kg | KONG",
+        "sku": "BOKN20",
+        "category": "Barras Hombre 20 kg",
+        "match": {
+          "type": "name",
+          "matchedTokens": 3,
+          "totalTokens": 3
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 209990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 209990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P611",
+        "name": "Barra Olímpica Cerakote Rojo 20kg | KONG",
+        "sku": "BOKR20",
+        "category": "Barras Hombre 20 kg",
+        "match": {
+          "type": "name",
+          "matchedTokens": 3,
+          "totalTokens": 3
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 209990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 209990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1651",
+        "name": "Barra Olímpica Power Bar 20kg | KONG",
+        "sku": "KO-BOPOW20",
+        "category": "Barras Hombre 20 kg",
+        "match": {
+          "type": "name",
+          "matchedTokens": 3,
+          "totalTokens": 3
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 189990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 189990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1208",
+        "name": "Barra Olímpica Cerakote Black Camo 700lb 20kg | HWM",
+        "sku": "BOTN20",
+        "category": "Barras Hombre 20 kg",
+        "match": {
+          "type": "name",
+          "matchedTokens": 3,
+          "totalTokens": 3
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 129990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 129990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P2263",
+        "name": "Barra Olímpica Cerakote Rojo 20kg - 2da Selección (Wodstock) | KONG",
+        "sku": "WST-BOKR20",
+        "category": null,
+        "match": {
+          "type": "name",
+          "matchedTokens": 3,
+          "totalTokens": 3
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 136494,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 209990,
+            "currency": "CLP"
+          },
+          "discounted": true
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      }
+    ]
+  },
+  {
+    "class": "nominal",
+    "query": "kettlebell",
+    "status": 200,
+    "ms": 272,
+    "schemaVersion": 1,
+    "completeness": {
+      "totalMatches": 27,
+      "truncated": true
+    },
+    "freshness": {
+      "asOf": "2026-09-30T17:12:10.920Z",
+      "cache": {
+        "hit": false,
+        "ageMs": 103
+      },
+      "validUntil": "2026-09-30T17:12:25.920Z"
+    },
+    "results": [
+      {
+        "productKey": "P183",
+        "name": "Kettlebell Acero 10kg | HWM®",
+        "sku": "KH10",
+        "category": "Kettlebells de Acero",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 29990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 29990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P184",
+        "name": "Kettlebell Acero 12kg | HWM®",
+        "sku": "KH12",
+        "category": "Kettlebells de Acero",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 34990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 34990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P185",
+        "name": "Kettlebell Acero 16kg | HWM®",
+        "sku": "KH16",
+        "category": "Kettlebells de Acero",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 45990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 45990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P186",
+        "name": "Kettlebell Acero 20kg | HWM®",
+        "sku": "KH20",
+        "category": "Kettlebells de Acero",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 56990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 56990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P187",
+        "name": "Kettlebell Acero 24kg | HWM®",
+        "sku": "KH24",
+        "category": "Kettlebells de Acero",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 67990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 67990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P188",
+        "name": "Kettlebell Acero 28kg | HWM®",
+        "sku": "KH28",
+        "category": "Kettlebells de Acero",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 78990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 78990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P189",
+        "name": "Kettlebell Acero 32kg | HWM®",
+        "sku": "KH32",
+        "category": "Kettlebells de Acero",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 89990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 89990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P180",
+        "name": "Kettlebell Acero 4kg | HWM®",
+        "sku": "KH04",
+        "category": "Kettlebells de Acero",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 12990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 12990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P181",
+        "name": "Kettlebell Acero 6kg | HWM®",
+        "sku": "KH06",
+        "category": "Kettlebells de Acero",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 17990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 17990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P182",
+        "name": "Kettlebell Acero 8kg | HWM®",
+        "sku": "KH08",
+        "category": "Kettlebells de Acero",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 23990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 23990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      }
+    ]
+  },
+  {
+    "class": "nominal",
+    "query": "kettlebell 20 kg",
+    "status": 200,
+    "ms": 255.5,
+    "schemaVersion": 1,
+    "completeness": {
+      "totalMatches": 3,
+      "truncated": false
+    },
+    "freshness": {
+      "asOf": "2026-09-30T17:12:11.191Z",
+      "cache": {
+        "hit": false,
+        "ageMs": 90
+      },
+      "validUntil": "2026-09-30T17:12:26.191Z"
+    },
+    "results": [
+      {
+        "productKey": "P186",
+        "name": "Kettlebell Acero 20kg | HWM®",
+        "sku": "KH20",
+        "category": "Kettlebells de Acero",
+        "match": {
+          "type": "name",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 56990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 56990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P196",
+        "name": "Kettlebell de Vinilo 20kg",
+        "sku": "KV20",
+        "category": "Kettlebells de Vinilo",
+        "match": {
+          "type": "name",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 35990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 35990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1202",
+        "name": "Set 20kg Mancuernas Eco + Kettlebell (Color Rojo) | Forza",
+        "sku": "PME20K",
+        "category": "Mancuernas Ajustables",
+        "match": {
+          "type": "name",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 29990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 29990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      }
+    ]
+  },
+  {
+    "class": "nominal",
+    "query": "disco 10 kg",
+    "status": 200,
+    "ms": 298.9,
+    "schemaVersion": 1,
+    "completeness": {
+      "totalMatches": 7,
+      "truncated": false
+    },
+    "freshness": {
+      "asOf": "2026-09-30T17:12:11.458Z",
+      "cache": {
+        "hit": false,
+        "ageMs": 122
+      },
+      "validUntil": "2026-09-30T17:12:26.458Z"
+    },
+    "results": [
+      {
+        "productKey": "P145",
+        "name": "Par Discos Preolímpicos 10kg | Barbell",
+        "sku": "DPB10",
+        "category": "Discos de Acero",
+        "match": {
+          "type": "name",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 45990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 45990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1497",
+        "name": "Par Discos Olímpicos Grip Rubber 10kg | PROmachine",
+        "sku": "DOP10",
+        "category": "Discos Con Agarre",
+        "match": {
+          "type": "name",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 47990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 47990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1824",
+        "name": "Dead Lift Barra \"T\" | Rising",
+        "sku": "RS1038",
+        "category": "Barras Especiales",
+        "match": {
+          "type": "description",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 66990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 66990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1221",
+        "name": "Barra EZ Peso Fijo PU 10kg | Obelix®",
+        "sku": "BPUFZ10",
+        "category": "Barras de Peso Fijo",
+        "match": {
+          "type": "description",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 43990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 43990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P647",
+        "name": "Barra Recta Peso Fijo PU 10kg | Obelix®",
+        "sku": "BPUF10",
+        "category": "Barras de Peso Fijo",
+        "match": {
+          "type": "description",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 45990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 45990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1323",
+        "name": "Piso de Caucho Interlock 100x100cm x 10mm (Unidad) Incluye Bordes",
+        "sku": "PCI100B",
+        "category": "Pisos Interlock",
+        "match": {
+          "type": "description",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 31990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 31990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1415",
+        "name": "Set 10 Barras Rectas Peso Fijo PU (10 a 55kg) + Rack | Obelix",
+        "sku": "OB-BCF325",
+        "category": "Barras de Peso Fijo",
+        "match": {
+          "type": "description",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 916206,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 1077890,
+            "currency": "CLP"
+          },
+          "discounted": true
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      }
+    ]
+  },
+  {
+    "class": "nominal",
+    "query": "banco ajustable",
+    "status": 200,
+    "ms": 272.2,
+    "schemaVersion": 1,
+    "completeness": {
+      "totalMatches": 21,
+      "truncated": true
+    },
+    "freshness": {
+      "asOf": "2026-09-30T17:12:11.755Z",
+      "cache": {
+        "hit": false,
+        "ageMs": 97
+      },
+      "validUntil": "2026-09-30T17:12:26.755Z"
+    },
+    "results": [
+      {
+        "productKey": "P1852",
+        "name": "Banco Step Aeróbico Ajustable | Rising",
+        "sku": "RSB011",
+        "category": "Bancos Ajustables",
+        "match": {
+          "type": "name",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 157990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 157990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1280",
+        "name": "Banco Abdominal Ajustable MO 2.0 | Obelix®",
+        "sku": "OB-MO2-T45",
+        "category": "Bancos Abdominales",
+        "match": {
+          "type": "name",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 399990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 399990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P471",
+        "name": "Banco Abdominal Ajustable V8 Series | Obelix",
+        "sku": "V8-101",
+        "category": "Bancos Abdominales",
+        "match": {
+          "type": "name",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 359994,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 599990,
+            "currency": "CLP"
+          },
+          "discounted": true
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1281",
+        "name": "Banco Lumbar Ajustable MO 2.0 | Obelix®",
+        "sku": "OB-MO2-T89",
+        "category": "Bancos Ergo",
+        "match": {
+          "type": "name",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 499990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 499990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1706",
+        "name": "Banco Lumbar Ajustable Multifuncional 1.0 | Forza",
+        "sku": "FZ5513",
+        "category": "Bancos Ergo",
+        "match": {
+          "type": "name",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 58990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 58990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P981",
+        "name": "Banco Olímpico Ajustable ZR Series| PROmachine",
+        "sku": "PM202",
+        "category": "Bancos Olímpicos",
+        "match": {
+          "type": "name",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 540990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 540990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P2094",
+        "name": "Banco Multifunción Magnum | HWM®",
+        "sku": "HWM-MN-B4003",
+        "category": "Bancos Ajustables",
+        "match": {
+          "type": "description",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 212990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 212990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1550",
+        "name": "Banco Regulable Alpha | HWM®",
+        "sku": "HWM-AP-B101",
+        "category": "Bancos Ajustables",
+        "match": {
+          "type": "description",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 269990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 269990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1338",
+        "name": "Banco Regulable Negro | KONG",
+        "sku": "HWM808N",
+        "category": "Bancos Ajustables",
+        "match": {
+          "type": "description",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 249990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 249990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1112",
+        "name": "Banco Sentadilla Búlgara | HWM®",
+        "sku": "HWM855",
+        "category": "Bancos Ergo",
+        "match": {
+          "type": "description",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 89990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 89990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      }
+    ]
+  },
+  {
+    "class": "edge",
+    "query": "pesa rusa",
+    "status": 200,
+    "ms": 284.9,
+    "schemaVersion": 1,
+    "completeness": {
+      "totalMatches": 22,
+      "truncated": true
+    },
+    "freshness": {
+      "asOf": "2026-09-30T17:12:12.022Z",
+      "cache": {
+        "hit": false,
+        "ageMs": 114
+      },
+      "validUntil": "2026-09-30T17:12:27.022Z"
+    },
+    "results": [
+      {
+        "productKey": "P183",
+        "name": "Kettlebell Acero 10kg | HWM®",
+        "sku": "KH10",
+        "category": "Kettlebells de Acero",
+        "match": {
+          "type": "description",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 29990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 29990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P184",
+        "name": "Kettlebell Acero 12kg | HWM®",
+        "sku": "KH12",
+        "category": "Kettlebells de Acero",
+        "match": {
+          "type": "description",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 34990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 34990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P185",
+        "name": "Kettlebell Acero 16kg | HWM®",
+        "sku": "KH16",
+        "category": "Kettlebells de Acero",
+        "match": {
+          "type": "description",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 45990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 45990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P186",
+        "name": "Kettlebell Acero 20kg | HWM®",
+        "sku": "KH20",
+        "category": "Kettlebells de Acero",
+        "match": {
+          "type": "description",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 56990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 56990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P187",
+        "name": "Kettlebell Acero 24kg | HWM®",
+        "sku": "KH24",
+        "category": "Kettlebells de Acero",
+        "match": {
+          "type": "description",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 67990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 67990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P188",
+        "name": "Kettlebell Acero 28kg | HWM®",
+        "sku": "KH28",
+        "category": "Kettlebells de Acero",
+        "match": {
+          "type": "description",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 78990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 78990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P189",
+        "name": "Kettlebell Acero 32kg | HWM®",
+        "sku": "KH32",
+        "category": "Kettlebells de Acero",
+        "match": {
+          "type": "description",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 89990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 89990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P180",
+        "name": "Kettlebell Acero 4kg | HWM®",
+        "sku": "KH04",
+        "category": "Kettlebells de Acero",
+        "match": {
+          "type": "description",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 12990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 12990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P181",
+        "name": "Kettlebell Acero 6kg | HWM®",
+        "sku": "KH06",
+        "category": "Kettlebells de Acero",
+        "match": {
+          "type": "description",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 17990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 17990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P182",
+        "name": "Kettlebell Acero 8kg | HWM®",
+        "sku": "KH08",
+        "category": "Kettlebells de Acero",
+        "match": {
+          "type": "description",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 23990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 23990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      }
+    ]
+  },
+  {
+    "class": "edge",
+    "query": "banca ajustable",
+    "status": 200,
+    "ms": 226.9,
+    "schemaVersion": 1,
+    "completeness": {
+      "totalMatches": 2,
+      "truncated": false
+    },
+    "freshness": {
+      "asOf": "2026-09-30T17:12:12.308Z",
+      "cache": {
+        "hit": false,
+        "ageMs": 46
+      },
+      "validUntil": "2026-09-30T17:12:27.308Z"
+    },
+    "results": [
+      {
+        "productKey": "P1118",
+        "name": "Banco Preolímpico Multifuncional Pro | Forza",
+        "sku": "FZ5430B",
+        "category": "Bancos Especiales",
+        "match": {
+          "type": "description",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 101990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 101990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1285",
+        "name": "Banco Regulable MO 2.0 | Obelix®",
+        "sku": "OB-MO2-T87",
+        "category": "Bancos Ajustables",
+        "match": {
+          "type": "description",
+          "matchedTokens": 2,
+          "totalTokens": 2
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 399990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 399990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      }
+    ]
+  },
+  {
+    "class": "typo",
+    "query": "mancuena",
+    "status": 200,
+    "ms": 213.7,
+    "schemaVersion": 1,
+    "completeness": {
+      "totalMatches": 0,
+      "truncated": false
+    },
+    "freshness": {
+      "asOf": "2026-09-30T17:12:12.540Z",
+      "cache": {
+        "hit": false,
+        "ageMs": 37
+      },
+      "validUntil": "2026-09-30T17:12:27.540Z"
+    },
+    "results": []
+  },
+  {
+    "class": "typo",
+    "query": "kettelbell",
+    "status": 200,
+    "ms": 197.9,
+    "schemaVersion": 1,
+    "completeness": {
+      "totalMatches": 0,
+      "truncated": false
+    },
+    "freshness": {
+      "asOf": "2026-09-30T17:12:12.740Z",
+      "cache": {
+        "hit": false,
+        "ageMs": 38
+      },
+      "validUntil": "2026-09-30T17:12:27.740Z"
+    },
+    "results": []
+  },
+  {
+    "class": "broad",
+    "query": "barra",
+    "status": 200,
+    "ms": 1354.1,
+    "schemaVersion": 1,
+    "completeness": {
+      "totalMatches": 213,
+      "truncated": true
+    },
+    "freshness": {
+      "asOf": "2026-09-30T17:12:12.936Z",
+      "cache": {
+        "hit": false,
+        "ageMs": 1195
+      },
+      "validUntil": "2026-09-30T17:12:27.936Z"
+    },
+    "results": [
+      {
+        "productKey": "P45",
+        "name": "Barra Preolímpica Romana",
+        "sku": "BPRO",
+        "category": "Barras Preolímpicas",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 26990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 26990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1035",
+        "name": "Barra Dominadas Puerta | FullFit",
+        "sku": "BP",
+        "category": "Barras de Dominadas",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 9990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 9990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P23",
+        "name": "Barra Olímpica Fat | HWM®",
+        "sku": "BOF",
+        "category": "Barras Especiales",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 50990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 50990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P43",
+        "name": "Barra Preolímpica 150cm 7.5kg",
+        "sku": "BPR150",
+        "category": "Barras Preolímpicas",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 17990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 17990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P40",
+        "name": "Barra Preolímpica Mancuerna (Unidad)",
+        "sku": "BPM",
+        "category": "Barras Preolímpicas",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 4990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 4990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1168",
+        "name": "Almohadilla de Barra Camo | FullFit",
+        "sku": "HBFC",
+        "category": "Accesorios para Barras",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 18990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 18990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1169",
+        "name": "Almohadilla de Barra Diamond | FullFit",
+        "sku": "HBFD",
+        "category": "Accesorios para Barras",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 18990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 18990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1170",
+        "name": "Almohadilla de Barra Skull | FullFit",
+        "sku": "HBFS",
+        "category": "Accesorios para Barras",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 18990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 18990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P22",
+        "name": "Barra Olímpica 15kg Elite | HWM®",
+        "sku": "BOEM",
+        "category": "Barras Mujer 15 kg",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 189990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 189990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P33",
+        "name": "Barra Olímpica 15kg Training | HWM®",
+        "sku": "BORT15",
+        "category": "Barras Mujer 15 kg",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 149990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 149990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      }
+    ]
+  },
+  {
+    "class": "broad",
+    "query": "rack",
+    "status": 200,
+    "ms": 465.5,
+    "schemaVersion": 1,
+    "completeness": {
+      "totalMatches": 85,
+      "truncated": true
+    },
+    "freshness": {
+      "asOf": "2026-09-30T17:12:14.300Z",
+      "cache": {
+        "hit": false,
+        "ageMs": 298
+      },
+      "validUntil": "2026-09-30T17:12:29.300Z"
+    },
+    "results": [
+      {
+        "productKey": "P1541",
+        "name": "Half Rack Alpha | HWM®",
+        "sku": "HWM-AP60-HR-RN",
+        "category": "Half Racks",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 259990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 259990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1537",
+        "name": "Half Rack Delta | HWM®",
+        "sku": "HWM-DT50-HR-N",
+        "category": "Half Racks",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 129990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 129990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1546",
+        "name": "Half Rack Magnum | HWM®",
+        "sku": "HWM-MN75-HR-NC",
+        "category": "Half Racks",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 587990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 587990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1543",
+        "name": "Power Rack Alpha | HWM®",
+        "sku": "HWM-AP60-PR-RN",
+        "category": "Power Racks",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 414990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 414990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1538",
+        "name": "Power Rack Delta | HWM®",
+        "sku": "HWM-DT50-PR-N",
+        "category": "Power Racks",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 269990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 269990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1547",
+        "name": "Power Rack Magnum | HWM®",
+        "sku": "HWM-MN75-PR-NC",
+        "category": "Power Racks",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 529990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 529990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1540",
+        "name": "Squat Rack Alpha | HWM®",
+        "sku": "HWM-AP60-SR-RN",
+        "category": "Squat Racks",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 149990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 149990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1536",
+        "name": "Squat Rack Delta | HWM®",
+        "sku": "HWM-DT50-SR-N",
+        "category": "Squat Racks",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 109990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 109990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1545",
+        "name": "Squat Rack Magnum | HWM®",
+        "sku": "HWM-MN75-SR-NC",
+        "category": "Squat Racks",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 299990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 299990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P2098",
+        "name": "Rack de Almacenamiento Funcional | Rising",
+        "sku": "RS5012",
+        "category": "Racks para Balones",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 369990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 369990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      }
+    ]
+  },
+  {
+    "class": "broad",
+    "query": "set",
+    "status": 200,
+    "ms": 387.7,
+    "schemaVersion": 1,
+    "completeness": {
+      "totalMatches": 30,
+      "truncated": true
+    },
+    "freshness": {
+      "asOf": "2026-09-30T17:12:14.768Z",
+      "cache": {
+        "hit": false,
+        "ageMs": 216
+      },
+      "validUntil": "2026-09-30T17:12:29.768Z"
+    },
+    "results": [
+      {
+        "productKey": "P426",
+        "name": "Set Tubos Elásticos | FullFit",
+        "sku": "SET",
+        "category": "Tubos Elásticos",
+        "match": {
+          "type": "exact_reference",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 19990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 19990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P363",
+        "name": "Set 19kg Discos Eco",
+        "sku": "PME20",
+        "category": null,
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 19990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 19990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P425",
+        "name": "Set Body Pump | FullFit",
+        "sku": "SBP",
+        "category": "Body Pump",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 68990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 68990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P427",
+        "name": "Set Glute Bands | FullFit",
+        "sku": "SGB",
+        "category": "Glute Bands",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "not_offerable",
+          "finalGross": {
+            "amount": 17990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 17990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "not_sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P366",
+        "name": "Set 20kg Maletín Cast Iron",
+        "sku": "PMY",
+        "category": "Mancuernas Ajustables",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 49990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 49990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P536",
+        "name": "Set 30kg Maletín Cast Iron",
+        "sku": "PMY30",
+        "category": "Mancuernas Ajustables",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 70990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 70990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P435",
+        "name": "Set 10 Body Pump + Rack | FullFit",
+        "sku": "SRBP10",
+        "category": "Body Pump",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 696906,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 819890,
+            "currency": "CLP"
+          },
+          "discounted": true
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P1826",
+        "name": "Set 16 Conos de Agilidad | Rising",
+        "sku": "RS2011",
+        "category": "Escaleras & Conos de Agilidad",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 29990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 29990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P548",
+        "name": "Set 20kg Mancuernas Eco Rojo | PROmachine",
+        "sku": "PME20R",
+        "category": "Mancuernas Ajustables",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 17990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 17990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      },
+      {
+        "productKey": "P549",
+        "name": "Set 30kg Mancuernas Eco Rojo | Forza",
+        "sku": "PME30R",
+        "category": "Mancuernas Ajustables",
+        "match": {
+          "type": "name",
+          "matchedTokens": 1,
+          "totalTokens": 1
+        },
+        "price": {
+          "kind": "exact",
+          "basis": "offerable",
+          "finalGross": {
+            "amount": 27990,
+            "currency": "CLP"
+          },
+          "regularGross": {
+            "amount": 27990,
+            "currency": "CLP"
+          },
+          "discounted": false
+        },
+        "sellability": "sellable",
+        "variants": {
+          "count": 0,
+          "requiresSelection": false
+        }
+      }
+    ]
+  }
+]

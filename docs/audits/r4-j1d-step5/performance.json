@@ -1,0 +1,265 @@
+{
+  "perRequest": [
+    {
+      "label": "exact",
+      "iteration": 0,
+      "status": 200,
+      "ms": 237.6,
+      "cacheHit": false
+    },
+    {
+      "label": "broad",
+      "iteration": 0,
+      "status": 200,
+      "ms": 1370.9,
+      "cacheHit": false
+    },
+    {
+      "label": "multi",
+      "iteration": 0,
+      "status": 200,
+      "ms": 288.4,
+      "cacheHit": false
+    },
+    {
+      "label": "product",
+      "iteration": 0,
+      "status": 200,
+      "ms": 408.8,
+      "cacheHit": false
+    },
+    {
+      "label": "item",
+      "iteration": 0,
+      "status": 200,
+      "ms": 215.2,
+      "cacheHit": false
+    },
+    {
+      "label": "exact",
+      "iteration": 1,
+      "status": 200,
+      "ms": 225.5,
+      "cacheHit": false
+    },
+    {
+      "label": "broad",
+      "iteration": 1,
+      "status": 200,
+      "ms": 1285.8,
+      "cacheHit": false
+    },
+    {
+      "label": "multi",
+      "iteration": 1,
+      "status": 200,
+      "ms": 275.6,
+      "cacheHit": false
+    },
+    {
+      "label": "product",
+      "iteration": 1,
+      "status": 200,
+      "ms": 171.5,
+      "cacheHit": false
+    },
+    {
+      "label": "item",
+      "iteration": 1,
+      "status": 200,
+      "ms": 169.5,
+      "cacheHit": false
+    },
+    {
+      "label": "exact",
+      "iteration": 2,
+      "status": 200,
+      "ms": 243.2,
+      "cacheHit": false
+    },
+    {
+      "label": "broad",
+      "iteration": 2,
+      "status": 200,
+      "ms": 1355.5,
+      "cacheHit": false
+    },
+    {
+      "label": "multi",
+      "iteration": 2,
+      "status": 200,
+      "ms": 268,
+      "cacheHit": false
+    },
+    {
+      "label": "product",
+      "iteration": 2,
+      "status": 200,
+      "ms": 184.5,
+      "cacheHit": false
+    },
+    {
+      "label": "item",
+      "iteration": 2,
+      "status": 200,
+      "ms": 172.1,
+      "cacheHit": false
+    }
+  ],
+  "all": [
+    {
+      "label": "v1-product",
+      "path": "/v1/products/545",
+      "method": "GET",
+      "status": 200,
+      "ms": 460.3
+    },
+    {
+      "label": "fresh-1",
+      "path": "/v2/catalog/items/P2248/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 601
+    },
+    {
+      "label": "fresh-2-immediate",
+      "path": "/v2/catalog/items/P2248/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 166.1
+    },
+    {
+      "label": "cache-search-1",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 273.4
+    },
+    {
+      "label": "cache-search-normalized",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 176.2
+    },
+    {
+      "label": "fresh-3-after-validUntil",
+      "path": "/v2/catalog/items/P2248/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 187.1
+    },
+    {
+      "label": "cache-search-after",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 260.3
+    },
+    {
+      "label": "perf-exact-0",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 237.6
+    },
+    {
+      "label": "perf-broad-0",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 1370.9
+    },
+    {
+      "label": "perf-multi-0",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 288.4
+    },
+    {
+      "label": "perf-product-0",
+      "path": "/v2/catalog/products/P2128/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 408.8
+    },
+    {
+      "label": "perf-item-0",
+      "path": "/v2/catalog/items/P2340/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 215.2
+    },
+    {
+      "label": "perf-exact-1",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 225.5
+    },
+    {
+      "label": "perf-broad-1",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 1285.8
+    },
+    {
+      "label": "perf-multi-1",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 275.6
+    },
+    {
+      "label": "perf-product-1",
+      "path": "/v2/catalog/products/P2128/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 171.5
+    },
+    {
+      "label": "perf-item-1",
+      "path": "/v2/catalog/items/P2340/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 169.5
+    },
+    {
+      "label": "perf-exact-2",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 243.2
+    },
+    {
+      "label": "perf-broad-2",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 1355.5
+    },
+    {
+      "label": "perf-multi-2",
+      "path": "/v2/catalog/search",
+      "method": "POST",
+      "status": 200,
+      "ms": 268
+    },
+    {
+      "label": "perf-product-2",
+      "path": "/v2/catalog/products/P2128/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 184.5
+    },
+    {
+      "label": "perf-item-2",
+      "path": "/v2/catalog/items/P2340/context",
+      "method": "GET",
+      "status": 200,
+      "ms": 172.1
+    }
+  ]
+}

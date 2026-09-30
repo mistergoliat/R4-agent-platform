@@ -1,0 +1,8 @@
+started 2026-09-30T16:36:55Z
+WARNING: option --ssl-verify-server-cert is disabled, because of an insecure passwordless login.
++-------------------------------------+---------------+---------------+---------------+
+| priced_units_with_active_percentage | units_changed | min_delta_clp | max_delta_clp |
++-------------------------------------+---------------+---------------+---------------+
+|                                 117 |            20 |            -1 |             0 |
++-------------------------------------+---------------+---------------+---------------+
+exit 0

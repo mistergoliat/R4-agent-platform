@@ -1,0 +1,1 @@
+{"request":"GET /health/ready","at":"2026-09-30T17:00:56Z","http":200,"latency_s":0.034,"body":{"status":"ok","checks":{"database":"ok","redis":"ok","relationshipSnapshot":"ok","capabilities":{"commercialTruth":"ok","relationships":"ok","productSemantics":"ok","trainingSemantics":"ok"}}}}

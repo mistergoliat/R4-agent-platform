@@ -1,0 +1,13 @@
+R4-J1D Step 5 (rerun) — preflight, 2026-09-30T17:06:28Z (read-only)
+host ip-172-31-1-183.ec2.internal (ssh ec2-user@98.80.166.131, crm.pem, StrictHostKeyChecking=yes), node v22.23.1
+git HEAD 47875d5fe0f98f17c1d96863f02a5ed7e4195694, dirty tracked files 0, dist built 2026-09-30 16:51:40Z
+.env modified 2026-09-30 17:03:57Z (operator); pm2 catalog-service pid 1875533 online since 17:03:58Z (restarts 2); 127.0.0.1:4010
+effective config: PRESTASHOP_SHOP_ID=1 [.env]  TAX_RATE=0.19 [.env]  PRESTASHOP_TIMEZONE=America/Santiago [.env]
+                  PRESTASHOP_LANG_ID=1, NODE_ENV=production, CACHE_DRIVER=memory; API_KEY PRESENT, CATALOG_API_KEYS MISSING, DB_PASSWORD PRESENT
+health: /health/live 200 {"status":"ok"}; /health/ready 200 {"status":"ok", capabilities commercialTruth/relationships/productSemantics/trainingSemantics = ok}
+smoke transport: local SSH port-forward 14010 -> 127.0.0.1:4010 (no remote command), closed after the smoke; key = CATALOG_AUDIT_API_KEY (hash-equal to the service API_KEY)
+
+operator restarts during the smoke (not caused by the smoke): pm2.log 17:12:37Z and 17:13:07Z
+"Stopping app:catalog-service ... exited with code [0] via signal [SIGINT]" + service log "Shutting down catalog service";
+4 interactive ssh sessions from the operator address; no crontab, pm2 watch=false. New pid 1880319 since 17:13:07Z (restarts 4).
+Every request answered; the smoke's freshness/performance sections were rerun after 17:14Z.
