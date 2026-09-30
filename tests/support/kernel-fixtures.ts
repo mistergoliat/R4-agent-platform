@@ -329,6 +329,7 @@ export class MemorySession implements KernelSession {
       observationId: null,
       contextSnapshotId: record.contextSnapshotId ?? null,
       proposalId: record.decision?.type === 'propose_action' && record.outcome === 'pending' ? uuidv7() : null,
+      origin: record.origin ?? 'model',
       usage: record.usage,
       correlationId: this.task.correlationId,
       createdAt: T0,

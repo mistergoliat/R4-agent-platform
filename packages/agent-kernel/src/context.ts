@@ -9,6 +9,7 @@ import type {
   RiskClass,
   RunStep,
 } from '@r4/contracts';
+import { RESPONSE_AUTHORITY_ERROR_PREFIX } from '@r4/contracts';
 import { resolveExecutionLimits, type ExecutionLimits, type ExecutionPolicy, type ExecutionUsage } from './budget.js';
 
 /** What the kernel knows about a capability. Execution stays behind the session port. */
@@ -41,8 +42,10 @@ export interface ExecutionContext {
   /** The iteration about to execute (1-based). */
   readonly iteration: number;
   readonly observations: readonly Observation[];
-  /** `respond` outputs already recorded by this run, so the agent knows what it said. */
+  /** `respond` outputs already recorded by this run, so the agent knows what it said (refused drafts were never said). */
   readonly responses: readonly { readonly iteration: number; readonly content: string }[];
+  /** ADR-031: drafts the response-authority validator refused since this run's last recorded response. */
+  readonly responseAuthority: { readonly rejectedDrafts: number };
   /**
    * Capabilities the agent's scopes grant, with their risk class. READ ones
    * are invoked (`read_capability`); since R4-D, write classes may only be
@@ -92,16 +95,24 @@ export interface ExecutionStateInput {
 /** Pure: the same durable state always yields the same context. */
 export function buildExecutionState(input: ExecutionStateInput): ExecutionState {
   const { steps } = input;
+  // ADR-031: platform steps (response revalidation READs) call no model.
+  const modelSteps = steps.filter((s) => s.origin !== 'platform');
   const usage: ExecutionUsage = {
-    iterations: steps.length,
-    // Every step records exactly one model call.
-    modelCalls: steps.length,
+    iterations: modelSteps.length,
+    // Every model step records exactly one model call.
+    modelCalls: modelSteps.length,
     readCapabilityCalls: steps.filter((s) => s.decision?.type === 'read_capability' && (s.outcome === 'pending' || s.outcome === 'observed')).length,
     tokens: steps.reduce((sum, s) => sum + s.usage.inputTokens + s.usage.outputTokens, 0),
     elapsedMs: Math.max(0, input.now.getTime() - Date.parse(input.run.startedAt)),
     writeActions: input.writeActions ?? 0,
   };
-  const responses = steps.flatMap((s) => (s.decision?.type === 'respond' ? [{ iteration: s.iteration, content: s.decision.content }] : []));
+  const responses = steps.flatMap((s) => (s.decision?.type === 'respond' && s.outcome === 'recorded' ? [{ iteration: s.iteration, content: s.decision.content }] : []));
+  let rejectedDrafts = 0;
+  for (const s of steps) {
+    if (s.decision?.type !== 'respond') continue;
+    if (s.outcome === 'recorded') rejectedDrafts = 0;
+    else if (s.outcome === 'refused' && s.error?.code.startsWith(RESPONSE_AUTHORITY_ERROR_PREFIX)) rejectedDrafts += 1;
+  }
   const last = steps.at(-1);
   const pendingRead =
     last && last.outcome === 'pending' && last.decision?.type === 'read_capability' ? { step: last, decision: last.decision } : null;
@@ -117,6 +128,7 @@ export function buildExecutionState(input: ExecutionStateInput): ExecutionState 
       iteration: steps.length + 1,
       observations: input.observations,
       responses,
+      responseAuthority: { rejectedDrafts },
       capabilities: input.capabilities,
       budget: { limits: resolveExecutionLimits(input.policy, input.task.budget), usage },
     },

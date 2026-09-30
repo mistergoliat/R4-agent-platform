@@ -10,7 +10,9 @@ import {
   runFailureDisposition,
   runFailureRecoveryOf,
   runStatusForTermination,
+  RESPONSE_AUTHORITY_ERROR_PREFIX,
   runStepSchema,
+  type RunStepOrigin,
   type JsonValue,
   type RunFailureRecovery,
   type AgentDecision,
@@ -137,6 +139,8 @@ export interface RecordStepCommand {
   readonly usage: { readonly inputTokens: number; readonly outputTokens: number };
   /** R4-C2: the snapshot of (run, iteration) the model call was made with. */
   readonly contextSnapshotId?: string | null;
+  /** ADR-031: `platform` for a token-free READ the kernel issued to revalidate a response (default `model`). */
+  readonly origin?: RunStepOrigin;
 }
 
 /**
@@ -420,7 +424,9 @@ export class ExecutionRuntime {
    * this task.
    */
   async recordStep(token: LeaseToken, command: RecordStepCommand): Promise<RunStep> {
-    if (command.outcome !== 'pending' && command.outcome !== 'recorded') {
+    // ADR-031: a response the authority validator rejected is recorded refused and the run continues.
+    const authorityRefusal = command.outcome === 'refused' && command.decision?.type === 'respond' && (command.error?.code ?? '').startsWith(RESPONSE_AUTHORITY_ERROR_PREFIX);
+    if (command.outcome !== 'pending' && command.outcome !== 'recorded' && !authorityRefusal) {
       throw new PlatformError('validation', 'terminal_step_requires_finish', `a "${command.outcome}" step ends the run: record it with finishExecution`);
     }
     if (command.decision?.type === 'complete') {
@@ -695,6 +701,7 @@ export class ExecutionRuntime {
       observationId: null,
       contextSnapshotId: command.contextSnapshotId ?? null,
       proposalId: proposal ? this.#ids.next() : null,
+      origin: command.origin ?? 'model',
       usage: { inputTokens: command.usage.inputTokens, outputTokens: command.usage.outputTokens },
       correlationId: task.correlationId,
       createdAt: timestamp,
@@ -729,12 +736,12 @@ export class ExecutionRuntime {
       await uow.insertActionProposal(stored);
       events.push(['action.proposed', { taskId: task.taskId, runId: run.runId, agentId: task.agentId, workerId: token.owner, iteration: step.iteration, proposalId: stored.proposalId, capabilityId: truncate(stored.capabilityId).slice(0, 128), evidenceRefs: evidenceRefs.length }]);
     }
-    // Every step is exactly one model call: charge it with the step.
+    // Every model step is exactly one model call: charge it with the step (platform steps call no model).
     const updated: AgentRun = {
       ...run,
       usage: {
         ...run.usage,
-        modelCalls: run.usage.modelCalls + 1,
+        modelCalls: run.usage.modelCalls + (step.origin === 'model' ? 1 : 0),
         inputTokens: run.usage.inputTokens + step.usage.inputTokens,
         outputTokens: run.usage.outputTokens + step.usage.outputTokens,
       },

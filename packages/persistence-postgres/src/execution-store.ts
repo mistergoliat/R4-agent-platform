@@ -131,12 +131,12 @@ class PostgresExecutionUnitOfWork extends PostgresTaskUnitOfWork implements Exec
       `insert into agent_run_steps (
          step_id, run_id, task_id, iteration, lease_generation, decision_type, decision, outcome,
          error_code, error_message, invocation_id, observation_id, input_tokens, output_tokens,
-         correlation_id, created_at, completed_at, context_snapshot_id, proposal_id)
-       values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
+         correlation_id, created_at, completed_at, context_snapshot_id, proposal_id, origin)
+       values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
       [
         step.stepId, step.runId, step.taskId, step.iteration, step.leaseGeneration, step.decision?.type ?? null, jsonb(step.decision), step.outcome,
         step.error?.code ?? null, step.error?.message ?? null, step.invocationId, step.observationId, step.usage.inputTokens, step.usage.outputTokens,
-        step.correlationId, step.createdAt, step.completedAt, step.contextSnapshotId, step.proposalId,
+        step.correlationId, step.createdAt, step.completedAt, step.contextSnapshotId, step.proposalId, step.origin,
       ],
     );
   }

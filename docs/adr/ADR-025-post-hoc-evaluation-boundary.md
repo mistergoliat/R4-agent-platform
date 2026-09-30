@@ -4,6 +4,7 @@
 - **Fecha:** 2026-09-23
 - **Autoridad superior:** Constitución §28 ("Evaluation first-class"), §25; PRD §21–§24, §41–§44; ADR-002, 004, 008, 016, 020
 - **Relacionado:** ADR-026, ADR-023, ADR-024
+- **Enmendado por:** ADR-031 (§1: una única frontera determinista de autoridad previa a `respond`; lo demás de §1 sigue vigente)
 
 ## Contexto
 

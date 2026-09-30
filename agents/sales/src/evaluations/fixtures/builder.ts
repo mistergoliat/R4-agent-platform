@@ -211,7 +211,7 @@ export class SalesFixture {
     const at = this.#now();
     const step: RunStep = {
       stepId: this.#id(), runId: this.#current.run.runId, taskId: this.task.taskId, iteration, leaseGeneration: 1, decision, outcome,
-      error: extra.error ?? null, invocationId: extra.invocationId ?? null, observationId: extra.observationId ?? null, contextSnapshotId: snapshot.snapshotId, proposalId: extra.proposalId ?? null,
+      error: extra.error ?? null, invocationId: extra.invocationId ?? null, observationId: extra.observationId ?? null, contextSnapshotId: snapshot.snapshotId, proposalId: extra.proposalId ?? null, origin: 'model',
       usage, correlationId: this.task.correlationId, createdAt: at, completedAt: outcome === 'pending' ? null : at,
     };
     this.#current.steps.push(step);

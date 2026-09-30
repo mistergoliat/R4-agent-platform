@@ -638,7 +638,7 @@ export class PostgresProductionStore implements ProductionStore {
       human_handoffs: await one(`select count(*) as n from human_requests where kind = 'handoff' and task_id in (${bound})`),
       approvals: await one(`select count(*) as n from human_requests where kind = 'approval' and task_id in (${bound})`),
       run_failure_recoveries: await one(`select count(*) as n from agent_runs where termination_details->'runFailureRecovery'->>'outcome' = 'continued' and task_id in (${bound})`),
-      model_calls: await one(`select count(*) as n from agent_run_steps where task_id in (${bound})`),
+      model_calls: await one(`select count(*) as n from agent_run_steps where origin = 'model' and task_id in (${bound})`),
       writes_by_capability: await grouped(`select capability_id as k, count(*) as n from action_executions where task_id in (${bound}) group by 1`),
       latency: {
         outboundDispatchMs: await pct(`select extract(epoch from (accepted_at - created_at)) * 1000 as ms from outbound_messages where accepted_at is not null`),

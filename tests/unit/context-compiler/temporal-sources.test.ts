@@ -13,7 +13,7 @@ const EARLIER_RUN = '0190e7a0-0000-7000-8000-0000000000e1';
 function step(runId: string, iteration: number, decision: AgentDecision, createdAt: string, outcome: RunStep['outcome'] = 'recorded', error: RunStep['error'] = null): RunStep {
   return {
     stepId: newId(), runId, taskId: TASK.taskId, iteration, leaseGeneration: 1, decision, outcome, error, invocationId: null, observationId: null,
-    contextSnapshotId: null, proposalId: null, usage: { inputTokens: 0, outputTokens: 0 }, correlationId: 'c', createdAt, completedAt: createdAt,
+    contextSnapshotId: null, proposalId: null, origin: 'model', usage: { inputTokens: 0, outputTokens: 0 }, correlationId: 'c', createdAt, completedAt: createdAt,
   };
 }
 function consultation(createdAt: string, question: string): HumanRequest {

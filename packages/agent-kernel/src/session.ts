@@ -78,6 +78,8 @@ export interface StepRecord {
   readonly usage: { readonly inputTokens: number; readonly outputTokens: number };
   /** The ContextSnapshot the step's model call was made with (always set by the kernel). */
   readonly contextSnapshotId?: string | null;
+  /** ADR-031: `platform` for a token-free READ the kernel issued to revalidate a response (default `model`). */
+  readonly origin?: 'model' | 'platform';
 }
 
 export interface KernelTermination {

@@ -37,7 +37,7 @@ function fakeStore(options: { fail?: () => boolean } = {}) {
 function presence(store: WorkerPresenceStore, clock: { t: number }) {
   return new WorkerPresence({
     store,
-    identity: { workerId: 'w-1', executionMode: 'production', compatibility: '0008_worker_presence:p@1', buildRef: null },
+    identity: { workerId: 'w-1', executionMode: 'production', compatibility: '0009_run_step_origin:p@1', buildRef: null },
     freshForMs: 3000,
     heartbeatIntervalMs: 1000,
     logger: createSilentLogger(),

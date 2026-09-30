@@ -220,6 +220,7 @@ export function stepFromRow(row: Row): RunStep {
     observationId: (row.observation_id as string | null) ?? null,
     contextSnapshotId: (row.context_snapshot_id as string | null) ?? null,
     proposalId: (row.proposal_id as string | null) ?? null,
+    origin: ((row.origin as string | undefined) ?? 'model') as RunStep['origin'],
     usage: { inputTokens: row.input_tokens as number, outputTokens: row.output_tokens as number },
     correlationId: row.correlation_id as string,
     createdAt: iso(row.created_at),

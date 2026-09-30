@@ -33,7 +33,19 @@ import {
  * R4-D: `proposalId` names the durable ActionProposal of an accepted
  * `propose_action`, assigned by the platform when the step is recorded. A
  * step whose action outcome is unknown stays `pending`: nothing may follow it.
+ *
+ * ADR-031: `origin` says who decided the step. `model` (default) — one model
+ * call. `platform` — a READ the kernel issued itself to revalidate the
+ * evidence of a proposed response (no model call, no tokens); only READs.
+ * A `respond` the response-authority validator rejected is recorded
+ * `refused` (non-terminal) with its structured feedback and is never sent.
  */
+export const RUN_STEP_ORIGINS = ['model', 'platform'] as const;
+export const runStepOriginSchema = z.enum(RUN_STEP_ORIGINS);
+export type RunStepOrigin = z.infer<typeof runStepOriginSchema>;
+/** ADR-031: error codes of `respond` steps the response-authority validator refused (non-terminal). */
+export const RESPONSE_AUTHORITY_ERROR_PREFIX = 'response_authority_';
+
 export const RUN_STEP_OUTCOMES = ['pending', 'observed', 'recorded', 'refused', 'invalid', 'model_failed'] as const;
 export const runStepOutcomeSchema = z.enum(RUN_STEP_OUTCOMES);
 export type RunStepOutcome = z.infer<typeof runStepOutcomeSchema>;
@@ -56,6 +68,7 @@ export const runStepSchema = z
     observationId: uuidSchema.nullable(),
     contextSnapshotId: uuidSchema.nullable().default(null),
     proposalId: uuidSchema.nullable().default(null),
+    origin: runStepOriginSchema.default('model'),
     usage: z.strictObject({ inputTokens: nonNegativeIntSchema, outputTokens: nonNegativeIntSchema }),
     correlationId: correlationIdSchema,
     createdAt: timestampSchema,
@@ -71,5 +84,6 @@ export const runStepSchema = z
     if ((step.proposalId !== null) !== proposesAction) issue('proposalId', 'proposalId is present exactly for accepted propose_action decisions');
     if ((step.observationId !== null) !== (step.outcome === 'observed')) issue('observationId', 'observationId is present exactly when observed');
     if ((step.completedAt === null) !== (step.outcome === 'pending')) issue('completedAt', 'only pending steps are incomplete');
+    if (step.origin === 'platform' && (step.decision?.type !== 'read_capability' || step.usage.inputTokens + step.usage.outputTokens !== 0)) issue('origin', 'platform steps are token-free READs');
   });
 export type RunStep = z.infer<typeof runStepSchema>;

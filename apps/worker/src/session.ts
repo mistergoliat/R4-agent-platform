@@ -308,7 +308,9 @@ export function contextCompileRequest(context: ExecutionContext, steps: readonly
       run: context.run,
       goal: context.goal,
       observations: context.observations,
-      responses: steps.flatMap((s) => (s.decision?.type === 'respond' ? [{ stepId: s.stepId, iteration: s.iteration, content: s.decision.content, recordedAt: s.createdAt }] : [])),
+      // ADR-031: a draft the authority validator refused was never said.
+      responses: steps.flatMap((s) => (s.decision?.type === 'respond' && s.outcome === 'recorded' ? [{ stepId: s.stepId, iteration: s.iteration, content: s.decision.content, recordedAt: s.createdAt }] : [])),
+      responseRejections: steps.flatMap((s) => (s.decision?.type === 'respond' && s.outcome === 'refused' && s.error ? [{ stepId: s.stepId, iteration: s.iteration, draft: s.decision.content, code: s.error.code, text: s.error.message, recordedAt: s.createdAt }] : [])),
       // Visible to the model: READ, plus (R4-D) write classes when the run may write at all.
       // Visible ≠ executable: reads are checked on the decision, writes by policy.
       capabilities: visibleCapabilities(context).map((c) => ({ capabilityId: c.capabilityId, version: c.version, description: c.description, inputSchema: c.inputSchema, riskClass: c.riskClass })),

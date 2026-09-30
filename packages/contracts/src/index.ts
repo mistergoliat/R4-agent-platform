@@ -16,3 +16,4 @@ export * from './context.js';
 export * from './memory.js';
 export * from './action.js';
 export * from './temporal.js';
+export * from './response-authority.js';

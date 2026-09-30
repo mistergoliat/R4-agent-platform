@@ -134,6 +134,11 @@ export const TELEMETRY_EVENTS = [
   'outbound.status.ignored',
   'outbound.resolved',
   'production.effect.blocked',
+  // ADR-031: pre-respond authority boundary.
+  'response.authority.checked',
+  'response.authority.revalidated',
+  'response.authority.rejected',
+  'response.authority.degraded',
 ] as const;
 export type TelemetryEventName = (typeof TELEMETRY_EVENTS)[number];
 

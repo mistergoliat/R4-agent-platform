@@ -1,4 +1,4 @@
-import type { AgentDecision, CompiledContext, CompletionResult, JsonObject, ProposeActionDecision, ReadCapabilityDecision, RunStep } from '@r4/contracts';
+import { MAX_AUTHORITY_CORRECTIONS, MAX_REVALIDATION_READS, RESPONSE_AUTHORITY_ERROR_PREFIX, type ResponseAuthorityValidator, type AgentDecision, type CompiledContext, type CompletionResult, type JsonObject, type ProposeActionDecision, type ReadCapabilityDecision, type RespondDecision, type RunStep } from '@r4/contracts';
 import type { ModelError, ModelGateway, ModelUsage } from '@r4/model-gateway';
 import { emitTelemetry, type StructuredLogger } from '@r4/observability';
 import { budgetTerminationCode, checkBeforeModelCall, checkBeforeRead, checkBeforeWrite, modelCallTimeout, type BudgetExhaustion } from './budget.js';
@@ -17,6 +17,8 @@ import {
 export interface AgentKernelOptions {
   readonly gateway: ModelGateway;
   readonly logger: StructuredLogger;
+  /** ADR-031: the pack's deterministic pre-respond authority validator (absent ⇒ responses are recorded as decided). */
+  readonly responseAuthority?: ResponseAuthorityValidator;
 }
 
 export interface KernelRunOptions {
@@ -57,10 +59,12 @@ const NO_USAGE: ModelUsage = { inputTokens: 0, outputTokens: 0 };
 export class AgentKernel {
   readonly #gateway: ModelGateway;
   readonly #logger: StructuredLogger;
+  readonly #authority: ResponseAuthorityValidator | undefined;
 
   constructor(options: AgentKernelOptions) {
     this.#gateway = options.gateway;
     this.#logger = options.logger;
+    this.#authority = options.responseAuthority;
   }
 
   /**
@@ -200,8 +204,8 @@ export class AgentKernel {
           continue;
         }
         case 'respond': {
-          const recorded = await this.#call(session, () => session.recordStep(step({ decision, outcome: 'recorded', error: null, usage })));
-          if (!recorded.ok) return recorded.outcome;
+          const responded = await this.#respond(session, context, decision, usage, snapshotId, telemetry);
+          if (responded) return responded;
           continue;
         }
         case 'complete':
@@ -212,6 +216,71 @@ export class AgentKernel {
           });
       }
     }
+  }
+
+  /**
+   * ADR-031. Records a `respond` only once the pack's authority validator
+   * allows it: expired evidence is revalidated with platform READs (the same
+   * draft is kept when the truth is unchanged); a contradicted draft is
+   * recorded `refused` with its feedback for exactly one model correction;
+   * after that, the validator's safe degradation is recorded instead.
+   * Returns an outcome only when the loop must stop.
+   */
+  async #respond(
+    session: KernelSession,
+    initial: ExecutionContext,
+    decision: RespondDecision,
+    usage: ModelUsage,
+    snapshotId: string,
+    telemetry: Record<string, unknown>,
+  ): Promise<KernelOutcome | null> {
+    let context = initial;
+    const record = (content: string, outcome: 'recorded' | 'refused', error: { code: string; message: string } | null) =>
+      this.#call(session, () =>
+        session.recordStep({ runId: context.run.runId, iteration: context.iteration, contextSnapshotId: snapshotId, decision: { type: 'respond', content }, outcome, error, usage }),
+      );
+    const validator = this.#authority;
+    if (!validator) {
+      const recorded = await record(decision.content, 'recorded', null);
+      return recorded.ok ? null : recorded.outcome;
+    }
+    const input = () => ({ content: decision.content, observations: context.observations });
+    let verdict = await validator.validate(input());
+    emitTelemetry(this.#logger, 'response.authority.checked', { ...telemetry, verdict: verdict.kind, claims: verdict.claims?.length ?? 0, reads: verdict.kind === 'revalidation_required' ? verdict.reads.length : 0 });
+    if (verdict.kind === 'revalidation_required') {
+      for (const read of verdict.reads.slice(0, MAX_REVALIDATION_READS)) {
+        if (checkBeforeRead(context.budget.limits, context.budget.usage)) break;
+        const readDecision: ReadCapabilityDecision = { type: 'read_capability', capabilityId: read.capabilityId, arguments: read.arguments };
+        const recorded = await this.#call(session, () =>
+          session.recordStep({ runId: context.run.runId, iteration: context.iteration, contextSnapshotId: null, decision: readDecision, outcome: 'pending', error: null, usage: NO_USAGE, origin: 'platform' }),
+        );
+        if (!recorded.ok) return recorded.outcome;
+        const read_ = await this.#executeRead(session, recorded.value, readDecision, { ...telemetry, origin: 'platform' }, false);
+        if (read_) return read_;
+        const reloaded = await this.#call(session, () => session.load());
+        if (!reloaded.ok) return reloaded.outcome;
+        context = reloaded.value.context;
+      }
+      verdict = await validator.validate(input());
+      emitTelemetry(this.#logger, 'response.authority.revalidated', { ...telemetry, iteration: context.iteration, verdict: verdict.kind, claims: verdict.claims?.length ?? 0 });
+      if (verdict.kind === 'revalidation_required') {
+        verdict = { kind: 'reject', code: 'response_authority_unverifiable', feedback: 'The evidence for facts stated in the draft could not be revalidated; do not state them as current.', ...(verdict.claims ? { claims: verdict.claims } : {}) };
+      }
+    }
+    if (verdict.kind === 'allow') {
+      const recorded = await record(decision.content, 'recorded', null);
+      return recorded.ok ? null : recorded.outcome;
+    }
+    const code = verdict.code.startsWith(RESPONSE_AUTHORITY_ERROR_PREFIX) ? verdict.code : `${RESPONSE_AUTHORITY_ERROR_PREFIX}rejected`;
+    if (context.responseAuthority.rejectedDrafts < MAX_AUTHORITY_CORRECTIONS) {
+      emitTelemetry(this.#logger, 'response.authority.rejected', { ...telemetry, iteration: context.iteration, code });
+      const refused = await record(decision.content, 'refused', { code, message: verdict.feedback });
+      return refused.ok ? null : refused.outcome;
+    }
+    const degraded = validator.degraded({ ...input(), verdict });
+    emitTelemetry(this.#logger, 'response.authority.degraded', { ...telemetry, iteration: context.iteration, code });
+    const recorded = await record(degraded, 'recorded', null);
+    return recorded.ok ? null : recorded.outcome;
   }
 
   /** Returns an outcome only when the loop must stop. */
