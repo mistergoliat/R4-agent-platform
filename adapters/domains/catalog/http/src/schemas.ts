@@ -63,7 +63,7 @@ function checkReason(value: { sellability: (typeof CATALOG_SELLABILITY)[number];
 }
 
 const priceSummary = z
-  .object({ kind: z.enum(['exact', 'from']), finalGross: money, regularGross: money, discounted: z.boolean() })
+  .object({ kind: z.enum(['exact', 'from']), basis: z.enum(['offerable', 'not_offerable']), finalGross: money, regularGross: money, discounted: z.boolean() })
   .superRefine((p, ctx) => {
     if (p.finalGross.amount > p.regularGross.amount) ctx.addIssue({ code: 'custom', path: ['finalGross'], message: 'final price above regular price' });
     if (p.discounted !== p.finalGross.amount < p.regularGross.amount) ctx.addIssue({ code: 'custom', path: ['discounted'], message: 'discounted disagrees with the prices' });
@@ -171,7 +171,12 @@ const pricing = z.discriminatedUnion('status', [
       quantity: z.int().positive(),
       regularGross: money,
       finalGross: money,
-      promotion: z.object({ discountType: z.enum(['amount', 'percentage']), discountValue: z.number().nonnegative(), validUntil: timestamp.nullable() }).nullable(),
+      promotion: z
+        .discriminatedUnion('type', [
+          z.object({ type: z.literal('percentage'), percentOff: z.number().gt(0).max(1), amountOffGross: z.null(), validUntil: timestamp.nullable() }),
+          z.object({ type: z.literal('amount'), percentOff: z.null(), amountOffGross: money, validUntil: timestamp.nullable() }),
+        ])
+        .nullable(),
       tax: z.object({ included: z.literal(true), rate: z.number().min(0).max(1), basis: text(64) }),
       engineVersion: text(64),
     })

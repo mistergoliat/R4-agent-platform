@@ -10,19 +10,19 @@
       "file": "search-success.json",
       "endpoint": "POST /v2/catalog/search",
       "httpStatus": 200,
-      "sha256": "45ecf768c768acfd11031b41be65f32fde1f8e68226a1777a38b2fbe9ba39305"
+      "sha256": "3a1c0b71dd1e96b87cd4c39fda6681218d73ac3bacfa1eaf080e09b01fa4d9d2"
     },
     {
       "file": "search-with-variants.json",
       "endpoint": "POST /v2/catalog/search",
       "httpStatus": 200,
-      "sha256": "d4d3cc3480ce89672a78e0edafb06ee007847e8fcd158ff60b783be3baaac942"
+      "sha256": "e5fd487c5f898c0d9423cd7410e7fbc8a56550319d3715a25d97180543ffd20b"
     },
     {
       "file": "search-zero-stock-visible.json",
       "endpoint": "POST /v2/catalog/search",
       "httpStatus": 200,
-      "sha256": "986a6c4c3637ce8035aa2e10c36a573e34ab54207f051e0e65a9e8faf22114b0"
+      "sha256": "638332980fbfcb3d3ee7549f928c5f65513bf2c76ecde7c0b348fec17dd27ba3"
     },
     {
       "file": "search-empty.json",
@@ -34,37 +34,37 @@
       "file": "search-truncated.json",
       "endpoint": "POST /v2/catalog/search",
       "httpStatus": 200,
-      "sha256": "1ad12c2a325049423e49f82ef01e165a544ea3d6d59be2411d9d8f9e1d882ec5"
+      "sha256": "2384bbd500f2af3b82991a929471c25dd1027d2ae7d5ce8a32aeb53c53fcbfe5"
     },
     {
       "file": "product-simple.json",
       "endpoint": "GET /v2/catalog/products/{productKey}/context",
       "httpStatus": 200,
-      "sha256": "a0b13dccca4fe08e0e6f215d690329cfadd4ed9c0e907288d26aef55ec046333"
+      "sha256": "9d61bee81b213f63637c8b683a508e8d0f729a12d6416d9f9e688b41855a18c4"
     },
     {
       "file": "product-with-fbt.json",
       "endpoint": "GET /v2/catalog/products/{productKey}/context",
       "httpStatus": 200,
-      "sha256": "f4519c9e6639037313e0d6575643da4ba7ae759d8acb0ba488ae349494d901c9"
+      "sha256": "f8b9158a1e9aac4b43cd018b27c8113c38c9a4287b2efc0e67598d11b8870148"
     },
     {
       "file": "product-with-variants.json",
       "endpoint": "GET /v2/catalog/products/{productKey}/context",
       "httpStatus": 200,
-      "sha256": "8080af2f8ad8a1189c276272ad6198f0e937c4675df776d784bae7942288d2bd"
+      "sha256": "39ac3f540cea80aac62ec0a9c24412668a398fec6e7e7f17575ec9c09c6a8664"
     },
     {
       "file": "product-inactive.json",
       "endpoint": "GET /v2/catalog/products/{productKey}/context",
       "httpStatus": 200,
-      "sha256": "dc4763741e9285aa7b673d767d7dd18f070fcb1387cb8c74f44447cf6a04f5aa"
+      "sha256": "ee1aaa96b231e7304b54972ccf5921e5203b1ba0b412c57d35b7891f7fd5913b"
     },
     {
       "file": "product-not-listed.json",
       "endpoint": "GET /v2/catalog/products/{productKey}/context",
       "httpStatus": 200,
-      "sha256": "b6cb1fef3a11ee3f1e8553f6372da9e8394e56d0ef5dd35d99bbab3b3e2c28e2"
+      "sha256": "27ac5218c73f62eeb44536fc31bfeb0fc04b2caf90d11d1ecd10f185da8e5a92"
     },
     {
       "file": "product-not-found.json",
@@ -76,13 +76,13 @@
       "file": "item-simple.json",
       "endpoint": "GET /v2/catalog/items/{itemKey}/context",
       "httpStatus": 200,
-      "sha256": "ead4de312426f5615d5c39885b37b7b8a9cbcec153ccee1474a07559b23f1852"
+      "sha256": "501054c32bd8158d0004f5ff6894f80aa109018c8b3fdd2eb65b33d18713498f"
     },
     {
       "file": "item-variant.json",
       "endpoint": "GET /v2/catalog/items/{itemKey}/context",
       "httpStatus": 200,
-      "sha256": "46d2d1a4f9d908992d57d4ee2aca1f22ee827f341fcd285c1c62418070c66fdc"
+      "sha256": "2399facedd372e3f87cf1e45333ee2fc34c2f7a1047cb1b2474302a3e13dd3f8"
     },
     {
       "file": "item-variant-required.json",
@@ -94,25 +94,25 @@
       "file": "item-promotion.json",
       "endpoint": "GET /v2/catalog/items/{itemKey}/context",
       "httpStatus": 200,
-      "sha256": "e22cedb72b607f060abfdb0d447364e4a14c701bc82f8a9ddf9973b2e1a5492c"
+      "sha256": "42be2cf3f2790983c9f140b9515cdcc57829ae15ab0812ec978e3db8b2eb9ef5"
     },
     {
       "file": "item-backorder.json",
       "endpoint": "GET /v2/catalog/items/{itemKey}/context",
       "httpStatus": 200,
-      "sha256": "ace3f7e10d2b6e79842046d640a6b28f548c9540593418544f96e70aae629ea0"
+      "sha256": "db9accf8b012864dd02107bd54eee748e6f740264984d4bd99651c38ab96619e"
     },
     {
       "file": "item-not-sellable.json",
       "endpoint": "GET /v2/catalog/items/{itemKey}/context",
       "httpStatus": 200,
-      "sha256": "e88eb6486b1f29694c441f19444e0cd1cfe3e646fe160e22bfe004955b19b3de"
+      "sha256": "6a19fcc3f2915a47a35fb80ebde37bc7e037776d88d12989284722e14cc79e7e"
     },
     {
       "file": "item-stock-unknown.json",
       "endpoint": "GET /v2/catalog/items/{itemKey}/context",
       "httpStatus": 200,
-      "sha256": "2a0975a0b55fc32e9f80abbafdb5d29185fd9b9f64bd72db31fe278a6bd21972"
+      "sha256": "01819f8620943b8302086b8904fa787767667c17ceca10aa03ad55b262c0d602"
     },
     {
       "file": "item-pricing-unavailable.json",

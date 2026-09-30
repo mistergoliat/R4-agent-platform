@@ -97,7 +97,7 @@ describe.skipIf(!BASE)('R4 Catalog adapter ↔ real catalog-service v2 (local, s
     // availableQuantity is net of reservations (quantity 4, physical 6, reserved 2).
     expect(await c.getItemContext({ itemKey: 'P10', quantity: 1 })).toMatchObject({ status: 'found', availability: { availableQuantity: 4 } });
     // An unlimited PrestaShop promotion (zero datetimes) is applied by the owner.
-    expect(await c.getItemContext({ itemKey: 'P12', quantity: 1 })).toMatchObject({ pricing: { regularGross: { amount: 119_000 }, finalGross: { amount: 107_100 }, promotion: { discountType: 'percentage', validUntil: null } } });
+    expect(await c.getItemContext({ itemKey: 'P12', quantity: 1 })).toMatchObject({ pricing: { regularGross: { amount: 119_000 }, finalGross: { amount: 107_100 }, promotion: { type: 'percentage', percentOff: 0.1, amountOffGross: null, validUntil: null } } });
     for (const key of ['P10-V7', 'P20-V99', 'P999']) expect(await c.getItemContext({ itemKey: key, quantity: 1 }), key).toEqual({ status: 'not_found', itemKey: key });
   });
 

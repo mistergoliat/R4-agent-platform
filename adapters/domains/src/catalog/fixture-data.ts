@@ -1,4 +1,4 @@
-import type { CatalogAttribute, CatalogCategory, CatalogProductStatus, CatalogSpecification } from './port.js';
+import type { CatalogAttribute, CatalogCategory, CatalogProductStatus, CatalogPromotion, CatalogSpecification } from './port.js';
 
 /**
  * Deterministic fixture catalog of home-gym equipment (prices in CLP, tax
@@ -45,7 +45,7 @@ export interface FixtureProductRecord {
   /** Products without variants carry price, stock and weight here. */
   readonly regularGross: number | null;
   readonly finalGross: number | null;
-  readonly promotion: { readonly discountType: 'amount' | 'percentage'; readonly discountValue: number; readonly validUntil: string | null } | null;
+  readonly promotion: CatalogPromotion | null;
   readonly availableQuantity: number | null;
   readonly weightKg: number | null;
   readonly variants: readonly FixtureVariantRecord[];

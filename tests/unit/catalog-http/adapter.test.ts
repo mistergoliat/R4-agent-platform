@@ -24,7 +24,8 @@ describe('HttpCatalogAdapter — success paths (transport only, owner fixtures)'
     const { catalog, requests, events } = adapter(() => json(200, catalogFixture('search-truncated.json')));
     const answer = await catalog.search({ query: 'barra', filters: { sellableOnly: false }, limit: 2 }, { correlationId: 'corr-1' });
     expect(requests).toEqual([{ url: 'http://127.0.0.1:4010/v2/catalog/search', method: 'POST', headers: { accept: 'application/json', 'x-api-key': TEST_CATALOG_CONFIG.apiKey, 'x-correlation-id': 'corr-1', 'content-type': 'application/json' }, body: JSON.stringify({ query: 'barra', filters: { sellableOnly: false }, limit: 2 }) }]);
-    expect(answer.results.map((r) => r.productKey)).toEqual(['P20', 'P70']);
+    // Exactly the owner's order (R4 never reranks), whatever the owner's ranking rule is.
+    expect(answer.results.map((r) => r.productKey)).toEqual((catalogFixture('search-truncated.json') as { results: Array<{ productKey: string }> }).results.map((r) => r.productKey));
     expect(answer.completeness).toEqual({ totalMatches: 6, truncated: true });
     expect(answer).not.toHaveProperty('schemaVersion');
     expect(events).toEqual([{ operation: 'search', outcome: 'ok', httpStatus: 200, durationMs: expect.any(Number) as number, errorCategory: null, errorCode: null, correlationId: 'corr-1' }]);
@@ -72,7 +73,7 @@ describe('HttpCatalogAdapter — success paths (transport only, owner fixtures)'
     const { catalog, requests } = adapter(() => json(200, catalogFixture('item-promotion.json')));
     const item = await catalog.getItemContext({ itemKey: 'P12', quantity: 2 });
     expect(requests[0]!.url).toBe('http://127.0.0.1:4010/v2/catalog/items/P12/context?quantity=2');
-    expect(item).toMatchObject({ status: 'found', itemKey: 'P12', ref: { productId: '12', variantId: null }, pricing: { quantity: 2, regularGross: { amount: 119_000 }, finalGross: { amount: 107_100 }, promotion: { discountType: 'percentage', discountValue: 0.1 }, engineVersion: 'catalog-commercial-v2.0.0' }, availability: { leadTime: null } });
+    expect(item).toMatchObject({ status: 'found', itemKey: 'P12', ref: { productId: '12', variantId: null }, pricing: { quantity: 2, regularGross: { amount: 119_000 }, finalGross: { amount: 107_100 }, promotion: { type: 'percentage', percentOff: 0.1, amountOffGross: null }, engineVersion: 'catalog-commercial-v2.1.0' }, availability: { leadTime: null } });
     expect(item.status === 'found' && item.pricing).not.toHaveProperty('lineFinalGross');
   });
 

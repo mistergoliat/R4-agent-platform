@@ -2,44 +2,6 @@
   "schemaVersion": 1,
   "results": [
     {
-      "productKey": "P51",
-      "ref": {
-        "productId": "51"
-      },
-      "name": "Disco a pedido",
-      "sku": "DSC-51",
-      "category": {
-        "id": "4",
-        "name": "Discos"
-      },
-      "variants": {
-        "count": 0,
-        "requiresSelection": false
-      },
-      "priceSummary": {
-        "kind": "exact",
-        "finalGross": {
-          "amount": 119000,
-          "currency": "CLP"
-        },
-        "regularGross": {
-          "amount": 119000,
-          "currency": "CLP"
-        },
-        "discounted": false
-      },
-      "availabilitySummary": {
-        "sellability": "backorder",
-        "reason": "backorder_allowed",
-        "sellableVariants": null
-      },
-      "match": {
-        "type": "name",
-        "matchedTokens": 1,
-        "totalTokens": 1
-      }
-    },
-    {
       "productKey": "P52",
       "ref": {
         "productId": "52"
@@ -56,6 +18,7 @@
       },
       "priceSummary": {
         "kind": "exact",
+        "basis": "not_offerable",
         "finalGross": {
           "amount": 119000,
           "currency": "CLP"
@@ -94,6 +57,7 @@
       },
       "priceSummary": {
         "kind": "exact",
+        "basis": "not_offerable",
         "finalGross": {
           "amount": 119000,
           "currency": "CLP"
@@ -107,6 +71,45 @@
       "availabilitySummary": {
         "sellability": "check_with_staff",
         "reason": "stock_unknown",
+        "sellableVariants": null
+      },
+      "match": {
+        "type": "name",
+        "matchedTokens": 1,
+        "totalTokens": 1
+      }
+    },
+    {
+      "productKey": "P51",
+      "ref": {
+        "productId": "51"
+      },
+      "name": "Disco a pedido",
+      "sku": "DSC-51",
+      "category": {
+        "id": "4",
+        "name": "Discos"
+      },
+      "variants": {
+        "count": 0,
+        "requiresSelection": false
+      },
+      "priceSummary": {
+        "kind": "exact",
+        "basis": "offerable",
+        "finalGross": {
+          "amount": 119000,
+          "currency": "CLP"
+        },
+        "regularGross": {
+          "amount": 119000,
+          "currency": "CLP"
+        },
+        "discounted": false
+      },
+      "availabilitySummary": {
+        "sellability": "backorder",
+        "reason": "backorder_allowed",
         "sellableVariants": null
       },
       "match": {

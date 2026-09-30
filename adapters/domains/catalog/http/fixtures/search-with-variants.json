@@ -18,12 +18,13 @@
       },
       "priceSummary": {
         "kind": "from",
+        "basis": "offerable",
         "finalGross": {
-          "amount": 119000,
+          "amount": 130900,
           "currency": "CLP"
         },
         "regularGross": {
-          "amount": 119000,
+          "amount": 130900,
           "currency": "CLP"
         },
         "discounted": false

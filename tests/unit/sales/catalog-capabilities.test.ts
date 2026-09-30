@@ -55,9 +55,9 @@ describe('catalog.search over the HTTP adapter', () => {
       query: 'disco',
       // In the owner's order (R4 never reranks).
       results: [
-        { productKey: 'P51', sku: 'DSC-51', availability: { sellability: 'backorder', reason: 'backorder_allowed' } },
-        { productKey: 'P52', availability: { sellability: 'not_sellable', reason: 'out_of_stock' } },
-        { productKey: 'P50', availability: { sellability: 'check_with_staff', reason: 'stock_unknown' } },
+        { productKey: 'P52', availability: { sellability: 'not_sellable', reason: 'out_of_stock' }, price: { basis: 'not_offerable' } },
+        { productKey: 'P50', availability: { sellability: 'check_with_staff', reason: 'stock_unknown' }, price: { basis: 'not_offerable' } },
+        { productKey: 'P51', sku: 'DSC-51', availability: { sellability: 'backorder', reason: 'backorder_allowed' }, price: { basis: 'offerable' } },
       ],
       completeness: { totalMatches: 3, truncated: false },
     });

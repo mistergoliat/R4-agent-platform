@@ -19,7 +19,7 @@ export const catalogKeySchema = z.string().regex(CATALOG_KEY_PATTERN, 'an opaque
 
 // ---- model-visible shapes (only what the agent needs; identity is always the owner's key) ----
 
-const priceView = z.strictObject({ kind: z.enum(['exact', 'from']), finalGross: moneySchema, regularGross: moneySchema, discounted: z.boolean() });
+const priceView = z.strictObject({ kind: z.enum(['exact', 'from']), basis: z.enum(['offerable', 'not_offerable']), finalGross: moneySchema, regularGross: moneySchema, discounted: z.boolean() });
 const availabilityView = z.strictObject({ sellability: z.enum(CATALOG_SELLABILITY), reason: z.string(), sellableVariants: z.int().nonnegative().nullable() });
 const categoryView = z.strictObject({ id: z.string(), name: z.string() });
 const freshnessView = z.strictObject({ asOf: z.string(), validUntil: z.string().nullable(), cacheAgeMs: z.int().nonnegative() });
@@ -108,7 +108,7 @@ export function catalogSearchView(answer: CatalogSearchAnswer, query: string): C
       sku: r.sku,
       category: r.category ? { id: r.category.id, name: r.category.name } : null,
       variants: { count: r.variants.count, requiresSelection: r.variants.requiresSelection },
-      price: r.priceSummary ? { kind: r.priceSummary.kind, finalGross: { ...r.priceSummary.finalGross }, regularGross: { ...r.priceSummary.regularGross }, discounted: r.priceSummary.discounted } : null,
+      price: r.priceSummary ? { kind: r.priceSummary.kind, basis: r.priceSummary.basis, finalGross: { ...r.priceSummary.finalGross }, regularGross: { ...r.priceSummary.regularGross }, discounted: r.priceSummary.discounted } : null,
       availability: { sellability: r.availabilitySummary.sellability, reason: r.availabilitySummary.reason, sellableVariants: r.availabilitySummary.sellableVariants },
       match: { type: r.match.type, matchedTokens: r.match.matchedTokens, totalTokens: r.match.totalTokens },
     })),
@@ -137,7 +137,7 @@ export function productContextView(context: CatalogProductContext): ProductConte
     },
     catalogText: { notice: CATALOG_TEXT_NOTICE, shortDescription: facts.shortDescription },
     derived: {
-      price: derived.priceSummary ? { kind: derived.priceSummary.kind, finalGross: { ...derived.priceSummary.finalGross }, regularGross: { ...derived.priceSummary.regularGross }, discounted: derived.priceSummary.discounted } : null,
+      price: derived.priceSummary ? { kind: derived.priceSummary.kind, basis: derived.priceSummary.basis, finalGross: { ...derived.priceSummary.finalGross }, regularGross: { ...derived.priceSummary.regularGross }, discounted: derived.priceSummary.discounted } : null,
       availability: { sellability: derived.availability.sellability, reason: derived.availability.reason, sellableVariants: derived.availability.sellableVariants },
       publicUrl: derived.publicUrl,
     },
@@ -182,7 +182,7 @@ export function catalogCapabilities(catalog: CatalogPort): [CapabilityRegistrati
       definition: readDefinition({
         capabilityId: CAPABILITY_IDS.catalogSearch,
         description:
-          'Searches the store catalog (owner: Catalog) by free text (name, SKU, words), optionally filtered by category id, maximum unit price (CLP) or sellable only. Returns products in the owner\'s order, each with its productKey (the identity to use; never the SKU), a price summary ("from" = variants differ; choose one), availability with its reason, and completeness: only an empty, non-truncated result means nothing matched, and the search is lexical (no typo or synonym tolerance). Freshness is the owner\'s.',
+          'Searches the store catalog (owner: Catalog) by free text (name, SKU, words), optionally filtered by category id, maximum unit price (CLP) or sellable only. Returns products in the owner\'s order, each with its productKey (the identity to use; never the SKU), a price summary ("from" = variants differ; choose one; basis "not_offerable" = nothing can be ordered now, a reference price, never an offer), availability with its reason, and completeness: only an empty, non-truncated result means nothing matched, and the search is lexical (no typo or synonym tolerance). Freshness is the owner\'s.',
         owner: 'catalog',
         requiredScopes: [SCOPES.catalogRead],
         freshnessTtlMs: CATALOG_FRESHNESS_TTL_MS,

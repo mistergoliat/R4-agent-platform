@@ -37,6 +37,7 @@
   "derived": {
     "priceSummary": {
       "kind": "exact",
+      "basis": "not_offerable",
       "finalGross": {
         "amount": 119000,
         "currency": "CLP"

@@ -61,7 +61,7 @@ export const SALES_PRODUCTION_V2_CATALOG_BINDING = Object.freeze({
     ownerDbQueryTimeoutMs: 'catalog-service DB_QUERY_TIMEOUT_MS (owner side)',
   },
   freshness: {
-    owner: 'freshness.validUntil = asOf + 15 s, earlier when an applied promotion ends earlier (catalog-service v2)',
+    owner: 'freshness.validUntil = asOf + 15 s, earlier at the first scheduled price change (promotion end or start; catalog-service v2, OD-3)',
     r4UpperBoundMs: CATALOG_FRESHNESS_TTL_MS,
     recorded: 'Observation.validUntil = min(observedAt + 5 min, owner validUntil) — ADR-030; expired evidence stays historical',
   },

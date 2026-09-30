@@ -2,44 +2,6 @@
   "schemaVersion": 1,
   "results": [
     {
-      "productKey": "P20",
-      "ref": {
-        "productId": "20"
-      },
-      "name": "Barra con opciones",
-      "sku": "BAR-20",
-      "category": {
-        "id": "3",
-        "name": "Barras"
-      },
-      "variants": {
-        "count": 2,
-        "requiresSelection": true
-      },
-      "priceSummary": {
-        "kind": "from",
-        "finalGross": {
-          "amount": 119000,
-          "currency": "CLP"
-        },
-        "regularGross": {
-          "amount": 119000,
-          "currency": "CLP"
-        },
-        "discounted": false
-      },
-      "availabilitySummary": {
-        "sellability": "sellable",
-        "reason": "in_stock",
-        "sellableVariants": 1
-      },
-      "match": {
-        "type": "name",
-        "matchedTokens": 1,
-        "totalTokens": 1
-      }
-    },
-    {
       "productKey": "P70",
       "ref": {
         "productId": "70"
@@ -56,6 +18,46 @@
       },
       "priceSummary": {
         "kind": "exact",
+        "basis": "offerable",
+        "finalGross": {
+          "amount": 119000,
+          "currency": "CLP"
+        },
+        "regularGross": {
+          "amount": 119000,
+          "currency": "CLP"
+        },
+        "discounted": false
+      },
+      "availabilitySummary": {
+        "sellability": "sellable",
+        "reason": "in_stock",
+        "sellableVariants": null
+      },
+      "match": {
+        "type": "name",
+        "matchedTokens": 1,
+        "totalTokens": 1
+      }
+    },
+    {
+      "productKey": "P72",
+      "ref": {
+        "productId": "72"
+      },
+      "name": "Barra curva",
+      "sku": "BAR-72",
+      "category": {
+        "id": "3",
+        "name": "Barras"
+      },
+      "variants": {
+        "count": 0,
+        "requiresSelection": false
+      },
+      "priceSummary": {
+        "kind": "exact",
+        "basis": "offerable",
         "finalGross": {
           "amount": 119000,
           "currency": "CLP"

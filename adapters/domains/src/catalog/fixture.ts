@@ -282,13 +282,19 @@ function availabilityOf(product: FixtureProductRecord): CatalogAvailabilitySumma
   return { ...best, sellableVariants: each.filter((s) => s.sellability === 'sellable').length };
 }
 
+const OFFERABLE: ReadonlySet<CatalogSellability> = new Set(['sellable', 'backorder']);
+
 function priceSummaryOf(product: FixtureProductRecord): CatalogPriceSummary | null {
   if (product.variants.length === 0) {
     if (product.regularGross === null) return null;
     const final = product.finalGross ?? product.regularGross;
-    return { kind: 'exact', finalGross: clp(final), regularGross: clp(product.regularGross), discounted: final < product.regularGross };
+    const basis = OFFERABLE.has(sellabilityOf(product, product.availableQuantity).sellability) ? 'offerable' : 'not_offerable';
+    return { kind: 'exact', basis, finalGross: clp(final), regularGross: clp(product.regularGross), discounted: final < product.regularGross };
   }
-  // The real owner's rule: the minimum over all priced variants (sellable or not).
-  const cheapest = [...product.variants].sort((a, b) => a.finalGross - b.finalGross || a.regularGross - b.regularGross)[0];
-  return cheapest ? { kind: 'from', finalGross: clp(cheapest.finalGross), regularGross: clp(cheapest.regularGross), discounted: cheapest.finalGross < cheapest.regularGross } : null;
+  // The real owner's rule (OD-1): the minimum over OFFERABLE variants (sellable or
+  // backorder); only when none is offerable, the minimum over all, marked not_offerable.
+  const offerable = product.variants.filter((v) => OFFERABLE.has(sellabilityOf(product, v.availableQuantity).sellability));
+  const basis = offerable.length > 0 ? 'offerable' : 'not_offerable';
+  const cheapest = [...(offerable.length > 0 ? offerable : product.variants)].sort((a, b) => a.finalGross - b.finalGross || a.regularGross - b.regularGross)[0];
+  return cheapest ? { kind: 'from', basis, finalGross: clp(cheapest.finalGross), regularGross: clp(cheapest.regularGross), discounted: cheapest.finalGross < cheapest.regularGross } : null;
 }

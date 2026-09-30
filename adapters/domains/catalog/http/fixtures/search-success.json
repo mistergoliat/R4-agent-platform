@@ -18,6 +18,7 @@
       },
       "priceSummary": {
         "kind": "exact",
+        "basis": "offerable",
         "finalGross": {
           "amount": 119000,
           "currency": "CLP"
@@ -36,7 +37,7 @@
       "match": {
         "type": "exact_reference",
         "matchedTokens": 0,
-        "totalTokens": 1
+        "totalTokens": 2
       }
     }
   ],

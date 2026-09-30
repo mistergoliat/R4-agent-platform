@@ -93,14 +93,20 @@ export interface CatalogCategory {
 /**
  * Product-level price summary, as the owner computes it: `exact` for a
  * product without variants; `from` = the owner's minimum final price over
- * the product's priced variants (the owner's rule, not R4's).
+ * the product's variants (the owner's rule, not R4's). `basis` (owner OD-1):
+ * `offerable` = only units orderable now set it; `not_offerable` = nothing is
+ * orderable now, the amount is a reference price, never an offer.
  */
 export interface CatalogPriceSummary {
   readonly kind: 'exact' | 'from';
+  readonly basis: 'offerable' | 'not_offerable';
   readonly finalGross: Money;
   readonly regularGross: Money;
   readonly discounted: boolean;
 }
+
+/** An owner promotion in normalized terms (OD-2): R4 never learns the source's tax basis. */
+export type CatalogPromotion = { readonly type: 'percentage'; readonly percentOff: number; readonly amountOffGross: null; readonly validUntil: string | null } | { readonly type: 'amount'; readonly percentOff: null; readonly amountOffGross: Money; readonly validUntil: string | null };
 
 export interface CatalogAvailabilitySummary {
   readonly sellability: CatalogSellability;
@@ -231,8 +237,11 @@ export type CatalogItemPricing =
       /** UNIT amounts for this quantity tier, tax included, as the owner computed them. R4 never multiplies. */
       readonly regularGross: Money;
       readonly finalGross: Money;
-      /** The owner's applied promotion, display-only (percentage value is a fraction). Never recomputed. */
-      readonly promotion: { readonly discountType: 'amount' | 'percentage'; readonly discountValue: number; readonly validUntil: string | null } | null;
+      /**
+       * The owner's applied promotion (OD-2), display-only, never recomputed:
+       * `percentOff` is a fraction; `amountOffGross` is tax-included. Present only when it lowers the price.
+       */
+      readonly promotion: CatalogPromotion | null;
       readonly tax: { readonly included: true; readonly rate: number; readonly basis: string };
       readonly engineVersion: string;
     }
