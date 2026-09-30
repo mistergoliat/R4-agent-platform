@@ -1,38 +1,48 @@
 {
   "schemaVersion": 1,
   "status": "found",
-  "product": {
-    "productId": "556",
-    "productKey": "P556"
+  "productKey": "P41",
+  "ref": {
+    "productId": "41"
   },
   "facts": {
-    "name": "Servicio de armado A-20",
-    "sku": "A-20",
-    "category": null,
-    "brand": null,
+    "name": "Barra oculta",
+    "sku": "HID-41",
     "shortDescription": null,
+    "category": {
+      "id": "3",
+      "name": "Barras"
+    },
+    "brand": null,
+    "weightKg": null,
     "specifications": [],
-    "lifecycle": {
-      "status": "active",
+    "status": {
+      "active": true,
       "listed": false,
       "orderable": true
     },
     "sellableItem": {
-      "productId": "556",
-      "variantId": null,
-      "itemKey": "P556"
+      "itemKey": "P41",
+      "ref": {
+        "productId": "41",
+        "variantId": null
+      }
     },
-    "variantOptions": []
+    "variantOptions": [],
+    "stock": {
+      "availableQuantity": 4,
+      "scope": "variant"
+    }
   },
   "derived": {
     "priceSummary": {
       "kind": "exact",
       "finalGross": {
-        "amount": 20000,
+        "amount": 119000,
         "currency": "CLP"
       },
       "regularGross": {
-        "amount": 20000,
+        "amount": 119000,
         "currency": "CLP"
       },
       "discounted": false
@@ -40,9 +50,10 @@
     "availability": {
       "sellability": "not_sellable",
       "reason": "not_listed",
-      "sellableVariants": null
+      "sellableVariants": null,
+      "leadTime": null
     },
-    "publicUrl": "https://www.example.test/p/556"
+    "publicUrl": "https://pesaschile.cl/categories/41-producto-41.html"
   },
   "inferred": {
     "frequentlyBoughtTogether": {
@@ -53,15 +64,15 @@
   "provenance": {
     "source": "prestashop",
     "service": "catalog-service",
-    "serviceBuildRef": "contract-fixture"
+    "serviceBuildRef": "catalog-service@fixtures",
+    "sourceUpdatedAt": null
   },
   "freshness": {
-    "asOf": "2026-09-29T15:00:00.000Z",
+    "asOf": "2026-09-29T12:00:00.000Z",
     "cache": {
       "hit": false,
       "ageMs": 0
     },
-    "validUntil": "2026-09-29T15:01:00.000Z",
-    "sourceUpdatedAt": "2026-09-20T10:00:00.000Z"
+    "validUntil": "2026-09-29T12:00:15.000Z"
   }
 }

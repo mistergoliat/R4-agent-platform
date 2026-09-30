@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   PlatformError,
   jsonValueSchema,
+  timestampSchema,
   trustedExecutionContextSchema,
   type CapabilityFailureCode,
   type CapabilityInvocationRequest,
@@ -42,7 +43,7 @@ const MAX_REQUESTED_ID_LENGTH = 256;
 const MAX_ERROR_MESSAGE_LENGTH = 2000;
 
 type Outcome =
-  | { kind: 'succeeded'; payload: JsonValue }
+  | { kind: 'succeeded'; payload: JsonValue; ownerValidUntil: string | null }
   | { kind: 'rejected'; code: CapabilityRejectionCode; message: string; details: JsonValue | null }
   | { kind: 'failed'; code: CapabilityFailureCode; message: string; details: JsonValue | null };
 
@@ -91,6 +92,13 @@ export class CapabilityInvoker {
     const durationMs = Math.round(performance.now() - started);
     const observedAt = this.#clock.now();
     const ttl = capability?.definition.freshnessTtlMs ?? null;
+    // ADR-030: the owner's declared window can only shorten R4's own bound.
+    const runtimeValidUntil = ttl !== null ? new Date(observedAt.getTime() + ttl).toISOString() : null;
+    const ownerValidUntil = outcome.kind === 'succeeded' ? outcome.ownerValidUntil : null;
+    const validUntil = outcome.kind === 'succeeded' ? earliest(runtimeValidUntil, ownerValidUntil) : null;
+    const freshnessProvenance = capability?.ownerValidUntil && outcome.kind === 'succeeded'
+      ? { freshness: { runtimeValidUntil, ownerValidUntil, bound: validUntil === null ? 'none' : validUntil === ownerValidUntil && validUntil !== runtimeValidUntil ? 'owner' : 'runtime' } }
+      : {};
 
     const observation: Observation = {
       observationId: this.#ids.next(),
@@ -107,13 +115,14 @@ export class CapabilityInvoker {
       payload: outcome.kind === 'succeeded' ? outcome.payload : null,
       error: outcome.kind === 'succeeded' ? null : { code: outcome.code, message: outcome.message, details: outcome.details },
       observedAt: observedAt.toISOString(),
-      validUntil: outcome.kind === 'succeeded' && ttl !== null ? new Date(observedAt.getTime() + ttl).toISOString() : null,
+      validUntil,
       provenance: {
         runtime: 'r4.capability-runtime',
         owner: capability?.definition.owner ?? null,
         riskClass: capability?.definition.riskClass ?? null,
         attempts: outcome.kind === 'rejected' ? 0 : 1,
         durationMs,
+        ...freshnessProvenance,
       },
       correlationId: execution.correlationId,
     };
@@ -189,8 +198,30 @@ export class CapabilityInvoker {
     if (!json.success) {
       return fail('invalid_capability_output', 'capability output is not JSON-serializable');
     }
-    return { kind: 'succeeded', payload: json.data };
+    // ADR-030: the owner's window is untrusted input too — a bound that is not an instant is never recorded.
+    let ownerValidUntil: string | null = null;
+    if (capability.ownerValidUntil) {
+      let declared: unknown;
+      try {
+        declared = capability.ownerValidUntil(output.data);
+      } catch {
+        return fail('invalid_capability_output', 'the owner freshness bound could not be read from the capability output');
+      }
+      if (declared !== null) {
+        const instant = timestampSchema.safeParse(declared);
+        if (!instant.success) return fail('invalid_capability_output', 'the owner freshness bound is not a timestamp');
+        ownerValidUntil = new Date(instant.data).toISOString();
+      }
+    }
+    return { kind: 'succeeded', payload: json.data, ownerValidUntil };
   }
+}
+
+/** The earlier of two optional instants (null = no bound). */
+function earliest(a: string | null, b: string | null): string | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return Date.parse(b) < Date.parse(a) ? b : a;
 }
 
 /**

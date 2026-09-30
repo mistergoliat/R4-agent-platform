@@ -2,14 +2,52 @@
   "schemaVersion": 1,
   "results": [
     {
-      "product": {
-        "productId": "545",
-        "productKey": "P545"
+      "productKey": "P20",
+      "ref": {
+        "productId": "20"
       },
-      "name": "Barra Olímpica Recta 20 kg",
-      "sku": "BORE20",
+      "name": "Barra con opciones",
+      "sku": "BAR-20",
       "category": {
-        "id": "12",
+        "id": "3",
+        "name": "Barras"
+      },
+      "variants": {
+        "count": 2,
+        "requiresSelection": true
+      },
+      "priceSummary": {
+        "kind": "from",
+        "finalGross": {
+          "amount": 119000,
+          "currency": "CLP"
+        },
+        "regularGross": {
+          "amount": 119000,
+          "currency": "CLP"
+        },
+        "discounted": false
+      },
+      "availabilitySummary": {
+        "sellability": "sellable",
+        "reason": "in_stock",
+        "sellableVariants": 1
+      },
+      "match": {
+        "type": "name",
+        "matchedTokens": 1,
+        "totalTokens": 1
+      }
+    },
+    {
+      "productKey": "P70",
+      "ref": {
+        "productId": "70"
+      },
+      "name": "Barra corta",
+      "sku": "BAR-70",
+      "category": {
+        "id": "3",
         "name": "Barras"
       },
       "variants": {
@@ -19,49 +57,11 @@
       "priceSummary": {
         "kind": "exact",
         "finalGross": {
-          "amount": 129990,
+          "amount": 119000,
           "currency": "CLP"
         },
         "regularGross": {
-          "amount": 129990,
-          "currency": "CLP"
-        },
-        "discounted": false
-      },
-      "availabilitySummary": {
-        "sellability": "not_sellable",
-        "reason": "out_of_stock",
-        "sellableVariants": null
-      },
-      "match": {
-        "type": "name",
-        "matchedTokens": 1,
-        "totalTokens": 1
-      }
-    },
-    {
-      "product": {
-        "productId": "1301",
-        "productKey": "P1301"
-      },
-      "name": "Kettlebell Competición",
-      "sku": "KBC",
-      "category": {
-        "id": "16",
-        "name": "Kettlebells"
-      },
-      "variants": {
-        "count": 3,
-        "requiresSelection": true
-      },
-      "priceSummary": {
-        "kind": "from",
-        "finalGross": {
-          "amount": 44990,
-          "currency": "CLP"
-        },
-        "regularGross": {
-          "amount": 44990,
+          "amount": 119000,
           "currency": "CLP"
         },
         "discounted": false
@@ -69,7 +69,7 @@
       "availabilitySummary": {
         "sellability": "sellable",
         "reason": "in_stock",
-        "sellableVariants": 2
+        "sellableVariants": null
       },
       "match": {
         "type": "name",
@@ -79,17 +79,16 @@
     }
   ],
   "completeness": {
-    "totalMatches": 359,
+    "totalMatches": 6,
     "truncated": true
   },
   "searchMode": "lexical",
   "freshness": {
-    "asOf": "2026-09-29T15:00:00.000Z",
+    "asOf": "2026-09-29T12:00:00.000Z",
     "cache": {
       "hit": false,
       "ageMs": 0
     },
-    "validUntil": "2026-09-29T15:01:00.000Z",
-    "sourceUpdatedAt": "2026-09-20T10:00:00.000Z"
+    "validUntil": "2026-09-29T12:00:15.000Z"
   }
 }

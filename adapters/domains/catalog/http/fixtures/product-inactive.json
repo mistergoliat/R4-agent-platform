@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "status": "found",
+  "productKey": "P40",
+  "ref": {
+    "productId": "40"
+  },
+  "facts": {
+    "name": "Producto descontinuado",
+    "sku": "OLD-40",
+    "shortDescription": null,
+    "category": null,
+    "brand": null,
+    "weightKg": null,
+    "specifications": [],
+    "status": {
+      "active": false,
+      "listed": true,
+      "orderable": true
+    },
+    "sellableItem": {
+      "itemKey": "P40",
+      "ref": {
+        "productId": "40",
+        "variantId": null
+      }
+    },
+    "variantOptions": [],
+    "stock": {
+      "availableQuantity": 0,
+      "scope": "variant"
+    }
+  },
+  "derived": {
+    "priceSummary": {
+      "kind": "exact",
+      "finalGross": {
+        "amount": 119000,
+        "currency": "CLP"
+      },
+      "regularGross": {
+        "amount": 119000,
+        "currency": "CLP"
+      },
+      "discounted": false
+    },
+    "availability": {
+      "sellability": "not_sellable",
+      "reason": "inactive",
+      "sellableVariants": null,
+      "leadTime": null
+    },
+    "publicUrl": "https://pesaschile.cl/categories/40-producto-40.html"
+  },
+  "inferred": {
+    "frequentlyBoughtTogether": {
+      "status": "unavailable",
+      "reason": "snapshot_unavailable"
+    }
+  },
+  "provenance": {
+    "source": "prestashop",
+    "service": "catalog-service",
+    "serviceBuildRef": "catalog-service@fixtures",
+    "sourceUpdatedAt": null
+  },
+  "freshness": {
+    "asOf": "2026-09-29T12:00:00.000Z",
+    "cache": {
+      "hit": false,
+      "ageMs": 0
+    },
+    "validUntil": "2026-09-29T12:00:15.000Z"
+  }
+}

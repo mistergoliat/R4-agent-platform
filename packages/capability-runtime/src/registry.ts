@@ -28,6 +28,14 @@ export interface CapabilityRegistration<I, O> {
   readonly input: z.ZodType<I>;
   readonly output: z.ZodType<O>;
   readonly handler: CapabilityHandler<I, O>;
+  /**
+   * (ADR-030) Owner-bounded freshness: the instant until which the
+   * capability's OWNER vouches for this (validated) output — e.g. a
+   * `freshness.validUntil` it sent — or null when it declares no window. The
+   * runtime records min(its own bound, this one): it can only shorten the
+   * observation's validity, never extend it.
+   */
+  readonly ownerValidUntil?: (output: O) => string | null;
 }
 
 export interface RegisteredCapability {
@@ -35,6 +43,8 @@ export interface RegisteredCapability {
   readonly input: z.ZodType;
   readonly output: z.ZodType;
   readonly handler: CapabilityHandler<unknown, unknown>;
+  /** (ADR-030) See `CapabilityRegistration.ownerValidUntil`. */
+  readonly ownerValidUntil?: (output: unknown) => string | null;
   /** (R4-D) Present only for writes registered with `registerWrite`: reachable only by the ActionExecutor. */
   readonly write?: RegisteredWriteHandlers;
 }
@@ -122,6 +132,7 @@ export class CapabilityRegistry {
       input: registration.input,
       output: registration.output,
       handler: registration.handler as CapabilityHandler<unknown, unknown>,
+      ...(registration.ownerValidUntil ? { ownerValidUntil: registration.ownerValidUntil as (output: unknown) => string | null } : {}),
     });
     return definition;
   }

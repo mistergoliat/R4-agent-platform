@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "status": "found",
+  "productKey": "P20",
+  "ref": {
+    "productId": "20"
+  },
+  "facts": {
+    "name": "Barra con opciones",
+    "sku": "BAR-20",
+    "shortDescription": "Variantes",
+    "category": {
+      "id": "3",
+      "name": "Barras"
+    },
+    "brand": null,
+    "weightKg": 20,
+    "specifications": [],
+    "status": {
+      "active": true,
+      "listed": true,
+      "orderable": true
+    },
+    "sellableItem": null,
+    "variantOptions": [
+      {
+        "itemKey": "P20-V7",
+        "ref": {
+          "productId": "20",
+          "variantId": "7"
+        },
+        "sku": "BAR-20-XL",
+        "attributes": [
+          {
+            "group": "Tamaño",
+            "value": "XL"
+          }
+        ],
+        "isDefault": true
+      },
+      {
+        "itemKey": "P20-V8",
+        "ref": {
+          "productId": "20",
+          "variantId": "8"
+        },
+        "sku": "BAR-20-L",
+        "attributes": [
+          {
+            "group": "Tamaño",
+            "value": "L"
+          }
+        ],
+        "isDefault": false
+      }
+    ],
+    "stock": {
+      "availableQuantity": 2,
+      "scope": "product_total"
+    }
+  },
+  "derived": {
+    "priceSummary": {
+      "kind": "from",
+      "finalGross": {
+        "amount": 119000,
+        "currency": "CLP"
+      },
+      "regularGross": {
+        "amount": 119000,
+        "currency": "CLP"
+      },
+      "discounted": false
+    },
+    "availability": {
+      "sellability": "sellable",
+      "reason": "in_stock",
+      "sellableVariants": 1,
+      "leadTime": null
+    },
+    "publicUrl": "https://pesaschile.cl/categories/20-barra-con-opciones.html"
+  },
+  "inferred": {
+    "frequentlyBoughtTogether": {
+      "status": "unavailable",
+      "reason": "snapshot_unavailable"
+    }
+  },
+  "provenance": {
+    "source": "prestashop",
+    "service": "catalog-service",
+    "serviceBuildRef": "catalog-service@fixtures",
+    "sourceUpdatedAt": null
+  },
+  "freshness": {
+    "asOf": "2026-09-29T12:00:00.000Z",
+    "cache": {
+      "hit": false,
+      "ageMs": 0
+    },
+    "validUntil": "2026-09-29T12:00:15.000Z"
+  }
+}

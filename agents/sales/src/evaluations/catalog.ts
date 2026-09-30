@@ -41,13 +41,13 @@ export interface CatalogEvaluationReport {
 
 // ---- the evaluation catalog: the fixture owner plus the owner states J1B must cover ----
 
-const ACTIVE = { status: 'active', listed: true, orderable: true } as const;
+const ACTIVE = { active: true, listed: true, orderable: true } as const;
 const base = (over: Partial<FixtureProductRecord> & Pick<FixtureProductRecord, 'productId' | 'productKey' | 'sku' | 'name'>): FixtureProductRecord => ({
   category: { id: '99', name: 'evaluacion' },
   brand: null,
   shortDescription: null,
   specifications: [],
-  lifecycle: ACTIVE,
+  status: ACTIVE,
   backorderAllowed: false,
   regularGross: 10_000,
   finalGross: 10_000,
@@ -62,7 +62,7 @@ const base = (over: Partial<FixtureProductRecord> & Pick<FixtureProductRecord, '
 
 export const CATALOG_EVALUATION_PRODUCTS: readonly FixtureProductRecord[] = [
   ...FIXTURE_PRODUCTS,
-  base({ productId: '901', productKey: 'SVC-ARMADO', sku: 'A-20', name: 'Servicio de armado A-20', lifecycle: { status: 'active', listed: false, orderable: true }, searchTerms: ['armado', 'servicio'] }),
+  base({ productId: '901', productKey: 'SVC-ARMADO', sku: 'A-20', name: 'Servicio de armado A-20', status: { active: true, listed: false, orderable: true }, searchTerms: ['armado', 'servicio'] }),
   base({ productId: '902', productKey: 'BAR-BACK', sku: 'SC-BK20', name: 'Barra hexagonal 25 kg', regularGross: 159_990, finalGross: 159_990, availableQuantity: 0, backorderAllowed: true, searchTerms: ['barra', 'hexagonal'] }),
   base({
     productId: '903', productKey: 'BENCH-TEXT', sku: 'IH-BT', name: 'Banco plano reforzado XL', regularGross: 99_990, finalGross: 99_990,
@@ -172,7 +172,7 @@ export const CATALOG_EVALUATION_CASES: readonly CatalogEvaluationCase[] = [
     async run() {
       const payload = (await searchObservation('IH-PR300P')).payload as { results: { productKey: string; availability: { sellability: string; reason: string }; match: { type: string } }[] };
       const first = payload.results[0];
-      return verdict({ 'found by exact SKU': first?.productKey === 'RACK-PR300' && first.match.type === 'exact_sku', 'reported as out of stock, not hidden': first?.availability.sellability === 'not_sellable' && first.availability.reason === 'out_of_stock' });
+      return verdict({ 'found by exact SKU': first?.productKey === 'RACK-PR300' && first.match.type === 'exact_reference', 'reported as out of stock, not hidden': first?.availability.sellability === 'not_sellable' && first.availability.reason === 'out_of_stock' });
     },
   },
   {
@@ -263,9 +263,9 @@ export const CATALOG_EVALUATION_CASES: readonly CatalogEvaluationCase[] = [
     async run() {
       const inactive = await contextObservation('CARDIO-ROW');
       const missing = await contextObservation('NOPE-404');
-      const inactivePayload = inactive.payload as { status: string; facts: { lifecycle: { status: string } } };
+      const inactivePayload = inactive.payload as { status: string; facts: { status: { active: boolean } } };
       return verdict({
-        'inactive is found with lifecycle inactive': inactivePayload.status === 'found' && inactivePayload.facts.lifecycle.status === 'inactive',
+        'inactive is found with status.active false': inactivePayload.status === 'found' && inactivePayload.facts.status.active === false,
         'unknown key is not_found': (missing.payload as { status: string }).status === 'not_found',
         '"does not exist" grounded only for the unknown key': supported(claim({ type: 'availability', entities: [{ name: 'NOPE-404', kind: 'product', ref: 'NOPE-404' }], attributes: { exists: false } }), [inactive, missing]) && !supported(claim({ type: 'availability', entities: [{ name: 'Remo magnético R-10', kind: 'product', ref: 'CARDIO-ROW' }], attributes: { exists: false } }), [inactive, missing]),
       });

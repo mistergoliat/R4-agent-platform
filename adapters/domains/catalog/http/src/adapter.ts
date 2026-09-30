@@ -87,19 +87,17 @@ export class HttpCatalogAdapter implements CatalogPort {
   async getProductContext(productKey: string, options?: CallOptions): Promise<CatalogProductContext> {
     requireKey(productKey, 'productKey');
     const parsed = await this.#call('getProductContext', 'GET', `/v2/catalog/products/${encodeURIComponent(productKey)}/context`, undefined, catalogProductContextResponseSchema, options);
-    const keyOf = parsed.status === 'found' ? parsed.product.productKey : parsed.productKey;
-    if (keyOf !== productKey) throw this.#violation('getProductContext', 'key_mismatch', 'the owner answered for a different productKey', options);
+    if (parsed.productKey !== productKey) throw this.#violation('getProductContext', 'key_mismatch', 'the owner answered for a different productKey', options);
     const { schemaVersion: _, ...context } = parsed;
     return context;
   }
 
   async getItemContext(request: CatalogItemContextRequest, options?: CallOptions): Promise<CatalogItemContext> {
     requireKey(request.itemKey, 'itemKey');
-    if (!Number.isInteger(request.quantity) || request.quantity < 1) throw new DomainError('validation', 'invalid_request', 'quantity must be a positive integer');
+    if (!Number.isInteger(request.quantity) || request.quantity < 1 || request.quantity > 99) throw new DomainError('validation', 'invalid_request', 'quantity must be an integer between 1 and 99');
     const path = `/v2/catalog/items/${encodeURIComponent(request.itemKey)}/context?quantity=${request.quantity}`;
     const parsed = await this.#call('getItemContext', 'GET', path, undefined, catalogItemContextResponseSchema, options);
-    const keyOf = parsed.status === 'found' ? parsed.item.itemKey : parsed.itemKey;
-    if (keyOf !== request.itemKey) throw this.#violation('getItemContext', 'key_mismatch', 'the owner answered for a different itemKey', options);
+    if (parsed.itemKey !== request.itemKey) throw this.#violation('getItemContext', 'key_mismatch', 'the owner answered for a different itemKey', options);
     if (parsed.status === 'found' && parsed.pricing.status === 'available' && parsed.pricing.quantity !== request.quantity) throw this.#violation('getItemContext', 'quantity_mismatch', 'the owner priced a different quantity', options);
     const { schemaVersion: _, ...context } = parsed;
     return context;

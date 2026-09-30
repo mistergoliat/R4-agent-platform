@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "unauthorized",
+    "message": "Invalid API key",
+    "correlationId": "fixture-correlation-id",
+    "retryable": false
+  }
+}

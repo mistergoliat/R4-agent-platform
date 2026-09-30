@@ -1,17 +1,39 @@
+import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { CatalogFetch } from '@r4-adapters/catalog-http';
 
-/** The (temporary) Catalog contract fixtures, as the owner would serve them. */
+/** The Catalog owner's published contract fixtures (unchanged copies, see the README there). */
 export const CATALOG_FIXTURES_DIR = fileURLToPath(new URL('../../adapters/domains/catalog/http/fixtures', import.meta.url));
 
-export function catalogFixture(path: string): Record<string, unknown> {
-  return JSON.parse(readFileSync(join(CATALOG_FIXTURES_DIR, path), 'utf8')) as Record<string, unknown>;
+export interface CatalogFixtureManifest {
+  readonly contract: string;
+  readonly schemaVersion: number;
+  readonly owner: string;
+  readonly fixtures: readonly { readonly file: string; readonly endpoint: string; readonly httpStatus: number; readonly sha256: string }[];
 }
 
-export function catalogFixtureNames(): string[] {
-  return ['search', 'product', 'item'].flatMap((dir) => readdirSync(join(CATALOG_FIXTURES_DIR, dir)).filter((f) => f.endsWith('.json')).map((f) => `${dir}/${f}`));
+export function catalogFixtureText(file: string): string {
+  return readFileSync(join(CATALOG_FIXTURES_DIR, file), 'utf8');
+}
+
+export function catalogFixture(file: string): Record<string, unknown> {
+  return JSON.parse(catalogFixtureText(file)) as Record<string, unknown>;
+}
+
+export function catalogFixtureManifest(): CatalogFixtureManifest {
+  return JSON.parse(catalogFixtureText('MANIFEST.json')) as CatalogFixtureManifest;
+}
+
+/** Every JSON file in the directory except the manifest and the sync record. */
+export function catalogFixtureFiles(): string[] {
+  return readdirSync(CATALOG_FIXTURES_DIR).filter((f) => f.endsWith('.json') && f !== 'MANIFEST.json' && f !== 'SOURCE.json').sort();
+}
+
+/** The owner's hash: sha256 of the canonical JSON (line-ending independent). */
+export function catalogFixtureHash(text: string): string {
+  return createHash('sha256').update(JSON.stringify(JSON.parse(text))).digest('hex');
 }
 
 export interface RecordedRequest {

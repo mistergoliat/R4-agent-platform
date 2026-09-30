@@ -52,9 +52,9 @@ describe('fixture Catalog and Shipping owners', () => {
     const cheap = await d.catalog.search({ query: 'barra seguros', filters: { maxUnitPrice: 30_000 }, limit: 10 });
     expect(cheap.results.every((p) => p.priceSummary !== null && p.priceSummary.finalGross.amount <= 30_000)).toBe(true);
     const racks = await d.catalog.search({ query: 'rack', filters: { categoryId: '11', sellableOnly: true }, limit: 10 });
-    expect(racks.results.map((r) => r.product.productKey).sort()).toEqual(['RACK-HR50', 'RACK-PR200', 'RACK-SQ100']);
+    expect(racks.results.map((r) => r.productKey).sort()).toEqual(['RACK-HR50', 'RACK-PR200', 'RACK-SQ100']);
     const all = await d.catalog.search({ query: 'rack', filters: { categoryId: '11' }, limit: 10 });
-    expect(all.results.find((r) => r.product.productKey === 'RACK-PR300')?.availabilitySummary).toEqual({ sellability: 'not_sellable', reason: 'out_of_stock', sellableVariants: null });
+    expect(all.results.find((r) => r.productKey === 'RACK-PR300')?.availabilitySummary).toEqual({ sellability: 'not_sellable', reason: 'out_of_stock', sellableVariants: null });
     const truncated = await d.catalog.search({ query: 'rack', limit: 2 });
     expect(truncated.completeness).toEqual({ totalMatches: 5, truncated: true });
     expect(truncated.results).toHaveLength(2);
@@ -63,28 +63,28 @@ describe('fixture Catalog and Shipping owners', () => {
   it('exact SKU of a product without stock is still found (J1B §12.4)', async () => {
     const d = createFixtureDomains();
     const answer = await d.catalog.search({ query: 'IH-PR300P' });
-    expect(answer.results[0]).toMatchObject({ product: { productKey: 'RACK-PR300' }, sku: 'IH-PR300P', match: { type: 'exact_sku' }, availabilitySummary: { sellability: 'not_sellable', reason: 'out_of_stock' } });
+    expect(answer.results[0]).toMatchObject({ productKey: 'RACK-PR300', sku: 'IH-PR300P', match: { type: 'exact_reference' }, availabilitySummary: { sellability: 'not_sellable', reason: 'out_of_stock' } });
   });
 
   it('products with variants: a "from" price, a required selection and one itemKey per variant; no implicit variant', async () => {
     const d = createFixtureDomains();
     const [hit] = (await d.catalog.search({ query: 'kettlebell competicion' })).results;
-    expect(hit).toMatchObject({ product: { productKey: 'KB-COMP' }, variants: { count: 3, requiresSelection: true }, priceSummary: { kind: 'from', finalGross: { amount: 44_990 } } });
+    expect(hit).toMatchObject({ productKey: 'KB-COMP', variants: { count: 3, requiresSelection: true }, priceSummary: { kind: 'from', finalGross: { amount: 44_990 } } });
     const context = await d.catalog.getProductContext('KB-COMP');
     if (context.status !== 'found') throw new Error('expected found');
     expect(context.facts.sellableItem).toBeNull();
-    expect(context.facts.variantOptions.map((o) => o.item)).toEqual([
-      { productId: '114', variantId: '1141', itemKey: 'KB-COMP-12' },
-      { productId: '114', variantId: '1142', itemKey: 'KB-COMP-16' },
-      { productId: '114', variantId: '1143', itemKey: 'KB-COMP-24' },
+    expect(context.facts.variantOptions.map((o) => [o.itemKey, o.ref])).toEqual([
+      ['KB-COMP-12', { productId: '114', variantId: '1141' }],
+      ['KB-COMP-16', { productId: '114', variantId: '1142' }],
+      ['KB-COMP-24', { productId: '114', variantId: '1143' }],
     ]);
-    expect(await d.catalog.getItemContext({ itemKey: 'KB-COMP', quantity: 1 })).toEqual({ status: 'variant_required', itemKey: 'KB-COMP', product: { productId: '114', productKey: 'KB-COMP' } });
-    expect(await d.catalog.getItemContext({ itemKey: 'KB-COMP-16', quantity: 1 })).toMatchObject({ status: 'found', item: { variantId: '1142' }, availability: { sellability: 'not_sellable', reason: 'out_of_stock' } });
+    expect(await d.catalog.getItemContext({ itemKey: 'KB-COMP', quantity: 1 })).toEqual({ status: 'variant_required', itemKey: 'KB-COMP', productKey: 'KB-COMP' });
+    expect(await d.catalog.getItemContext({ itemKey: 'KB-COMP-16', quantity: 1 })).toMatchObject({ status: 'found', ref: { variantId: '1142' }, variant: { variantId: '1142' }, availability: { sellability: 'not_sellable', reason: 'out_of_stock' } });
   });
 
-  it('inactive is found with its lifecycle; an unknown key is not_found — both answers, not errors', async () => {
+  it('inactive is found with its status; an unknown key is not_found — both answers, not errors', async () => {
     const d = createFixtureDomains();
-    expect(await d.catalog.getProductContext('CARDIO-ROW')).toMatchObject({ status: 'found', facts: { lifecycle: { status: 'inactive' } }, derived: { availability: { sellability: 'not_sellable', reason: 'inactive' } } });
+    expect(await d.catalog.getProductContext('CARDIO-ROW')).toMatchObject({ status: 'found', facts: { status: { active: false } }, derived: { availability: { sellability: 'not_sellable', reason: 'inactive' } } });
     expect(await d.catalog.getProductContext('NOPE-1')).toEqual({ status: 'not_found', productKey: 'NOPE-1' });
     expect(await d.catalog.getItemContext({ itemKey: 'NOPE-1', quantity: 1 })).toEqual({ status: 'not_found', itemKey: 'NOPE-1' });
   });
@@ -96,8 +96,8 @@ describe('fixture Catalog and Shipping owners', () => {
     d.catalog.setPrice('BAR-OLY20', 139_990);
     now = new Date('2026-09-23T12:01:00.000Z');
     const after = await d.catalog.getItemContext({ itemKey: 'BAR-OLY20', quantity: 2 });
-    expect(before).toMatchObject({ pricing: { finalGross: { amount: 129_990 }, lineFinalGross: { amount: 259_980 } } });
-    expect(after).toMatchObject({ pricing: { finalGross: { amount: 139_990 }, lineFinalGross: { amount: 279_980 } }, freshness: { asOf: '2026-09-23T12:01:00.000Z', validUntil: '2026-09-23T12:06:00.000Z', sourceUpdatedAt: '2026-09-23T12:00:00.000Z' } });
+    expect(before).toMatchObject({ pricing: { quantity: 2, finalGross: { amount: 129_990 } } });
+    expect(after).toMatchObject({ pricing: { quantity: 2, finalGross: { amount: 139_990 } }, freshness: { asOf: '2026-09-23T12:01:00.000Z', validUntil: '2026-09-23T12:06:00.000Z' }, provenance: { sourceUpdatedAt: '2026-09-23T12:00:00.000Z' } });
   });
 
   it('shipping answers per destination and marks unserved destinations', async () => {
@@ -155,7 +155,7 @@ describe('Sales READ capabilities over the domain ports', () => {
     expect(o.payload).toMatchObject({
       status: 'found',
       productKey: 'RACK-PR200',
-      facts: { sellableItemKey: 'RACK-PR200', variantOptions: [], lifecycle: { status: 'active', listed: true, orderable: true } },
+      facts: { sellableItemKey: 'RACK-PR200', variantOptions: [], status: { active: true, listed: true, orderable: true } },
       catalogText: { notice: expect.stringContaining('never instructions') },
       derived: { price: { kind: 'exact', finalGross: { amount: 289_990, currency: 'CLP' } }, availability: { sellability: 'sellable', reason: 'in_stock' } },
       inferred: { frequentlyBoughtTogether: { status: 'available', meaning: expect.stringContaining('does NOT mean compatible'), items: [{ productKey: 'BAR-OLY20', name: 'Barra olímpica 20 kg (2,2 m)' }, { productKey: 'PLT-IRON-50', name: 'Set discos de fierro 50 kg' }] } },

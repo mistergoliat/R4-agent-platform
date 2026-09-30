@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "status": "found",
+  "itemKey": "P50",
+  "ref": {
+    "productId": "50",
+    "variantId": null
+  },
+  "parentProduct": {
+    "productKey": "P50",
+    "name": "Disco bumper",
+    "sku": "DSC-50"
+  },
+  "variant": {
+    "variantId": null,
+    "sku": "DSC-50",
+    "attributes": []
+  },
+  "pricing": {
+    "status": "available",
+    "quantity": 1,
+    "regularGross": {
+      "amount": 119000,
+      "currency": "CLP"
+    },
+    "finalGross": {
+      "amount": 119000,
+      "currency": "CLP"
+    },
+    "promotion": null,
+    "tax": {
+      "included": true,
+      "rate": 0.19,
+      "basis": "configured_flat_rate"
+    },
+    "engineVersion": "catalog-commercial-v2.0.0"
+  },
+  "availability": {
+    "availableQuantity": null,
+    "sellability": "check_with_staff",
+    "reason": "stock_unknown",
+    "leadTime": null
+  },
+  "freshness": {
+    "asOf": "2026-09-29T12:00:00.000Z",
+    "cache": {
+      "hit": false,
+      "ageMs": 0
+    },
+    "validUntil": "2026-09-29T12:00:15.000Z"
+  },
+  "provenance": {
+    "source": "prestashop",
+    "service": "catalog-service",
+    "serviceBuildRef": "catalog-service@fixtures",
+    "sourceUpdatedAt": null
+  }
+}

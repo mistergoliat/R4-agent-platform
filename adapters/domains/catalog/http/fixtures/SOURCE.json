@@ -1,0 +1,10 @@
+{
+  "owner": "MS-pesaschile-catalog-service",
+  "contract": "catalog-commercial-v2",
+  "schemaVersion": 1,
+  "ownerCommit": "cbe4ac6b4166e91e7be6f716627c04f34aff1c7c",
+  "ownerContractFilesUncommitted": false,
+  "manifestSha256": "a5e04913946d47434bdc8d185a63704aab8a21520f44164d9081cf3180bfb7aa",
+  "fixtures": 24,
+  "syncedWith": "scripts/sync-catalog-fixtures.mjs"
+}

@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "status": "found",
+  "itemKey": "P51",
+  "ref": {
+    "productId": "51",
+    "variantId": null
+  },
+  "parentProduct": {
+    "productKey": "P51",
+    "name": "Disco a pedido",
+    "sku": "DSC-51"
+  },
+  "variant": {
+    "variantId": null,
+    "sku": "DSC-51",
+    "attributes": []
+  },
+  "pricing": {
+    "status": "available",
+    "quantity": 1,
+    "regularGross": {
+      "amount": 119000,
+      "currency": "CLP"
+    },
+    "finalGross": {
+      "amount": 119000,
+      "currency": "CLP"
+    },
+    "promotion": null,
+    "tax": {
+      "included": true,
+      "rate": 0.19,
+      "basis": "configured_flat_rate"
+    },
+    "engineVersion": "catalog-commercial-v2.0.0"
+  },
+  "availability": {
+    "availableQuantity": 0,
+    "sellability": "backorder",
+    "reason": "backorder_allowed",
+    "leadTime": null
+  },
+  "freshness": {
+    "asOf": "2026-09-29T12:00:00.000Z",
+    "cache": {
+      "hit": false,
+      "ageMs": 0
+    },
+    "validUntil": "2026-09-29T12:00:15.000Z"
+  },
+  "provenance": {
+    "source": "prestashop",
+    "service": "catalog-service",
+    "serviceBuildRef": "catalog-service@fixtures",
+    "sourceUpdatedAt": null
+  }
+}

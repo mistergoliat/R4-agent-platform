@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "results": [
+    {
+      "productKey": "P51",
+      "ref": {
+        "productId": "51"
+      },
+      "name": "Disco a pedido",
+      "sku": "DSC-51",
+      "category": {
+        "id": "4",
+        "name": "Discos"
+      },
+      "variants": {
+        "count": 0,
+        "requiresSelection": false
+      },
+      "priceSummary": {
+        "kind": "exact",
+        "finalGross": {
+          "amount": 119000,
+          "currency": "CLP"
+        },
+        "regularGross": {
+          "amount": 119000,
+          "currency": "CLP"
+        },
+        "discounted": false
+      },
+      "availabilitySummary": {
+        "sellability": "backorder",
+        "reason": "backorder_allowed",
+        "sellableVariants": null
+      },
+      "match": {
+        "type": "name",
+        "matchedTokens": 1,
+        "totalTokens": 1
+      }
+    },
+    {
+      "productKey": "P52",
+      "ref": {
+        "productId": "52"
+      },
+      "name": "Disco agotado",
+      "sku": "DSC-52",
+      "category": {
+        "id": "4",
+        "name": "Discos"
+      },
+      "variants": {
+        "count": 0,
+        "requiresSelection": false
+      },
+      "priceSummary": {
+        "kind": "exact",
+        "finalGross": {
+          "amount": 119000,
+          "currency": "CLP"
+        },
+        "regularGross": {
+          "amount": 119000,
+          "currency": "CLP"
+        },
+        "discounted": false
+      },
+      "availabilitySummary": {
+        "sellability": "not_sellable",
+        "reason": "out_of_stock",
+        "sellableVariants": null
+      },
+      "match": {
+        "type": "name",
+        "matchedTokens": 1,
+        "totalTokens": 1
+      }
+    },
+    {
+      "productKey": "P50",
+      "ref": {
+        "productId": "50"
+      },
+      "name": "Disco bumper",
+      "sku": "DSC-50",
+      "category": {
+        "id": "4",
+        "name": "Discos"
+      },
+      "variants": {
+        "count": 0,
+        "requiresSelection": false
+      },
+      "priceSummary": {
+        "kind": "exact",
+        "finalGross": {
+          "amount": 119000,
+          "currency": "CLP"
+        },
+        "regularGross": {
+          "amount": 119000,
+          "currency": "CLP"
+        },
+        "discounted": false
+      },
+      "availabilitySummary": {
+        "sellability": "check_with_staff",
+        "reason": "stock_unknown",
+        "sellableVariants": null
+      },
+      "match": {
+        "type": "name",
+        "matchedTokens": 1,
+        "totalTokens": 1
+      }
+    }
+  ],
+  "completeness": {
+    "totalMatches": 3,
+    "truncated": false
+  },
+  "searchMode": "lexical",
+  "freshness": {
+    "asOf": "2026-09-29T12:00:00.000Z",
+    "cache": {
+      "hit": false,
+      "ageMs": 0
+    },
+    "validUntil": "2026-09-29T12:00:15.000Z"
+  }
+}

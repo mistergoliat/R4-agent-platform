@@ -7,12 +7,11 @@
   },
   "searchMode": "lexical",
   "freshness": {
-    "asOf": "2026-09-29T15:00:00.000Z",
+    "asOf": "2026-09-29T12:00:00.000Z",
     "cache": {
       "hit": false,
       "ageMs": 0
     },
-    "validUntil": "2026-09-29T15:01:00.000Z",
-    "sourceUpdatedAt": "2026-09-20T10:00:00.000Z"
+    "validUntil": "2026-09-29T12:00:15.000Z"
   }
 }

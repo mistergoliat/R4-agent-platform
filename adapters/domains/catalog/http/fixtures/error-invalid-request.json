@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "invalid_request",
+    "message": "Invalid request",
+    "correlationId": "fixture-correlation-id"
+  }
+}

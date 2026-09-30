@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "catalog_source_unavailable",
+    "message": "Catalog source is unavailable",
+    "correlationId": "fixture-correlation-id",
+    "retryable": true
+  }
+}

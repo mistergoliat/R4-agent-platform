@@ -2,28 +2,28 @@
   "schemaVersion": 1,
   "results": [
     {
-      "product": {
-        "productId": "898",
-        "productKey": "P898"
+      "productKey": "P20",
+      "ref": {
+        "productId": "20"
       },
-      "name": "Banco Ajustable Pro 300",
-      "sku": "BAP300",
+      "name": "Barra con opciones",
+      "sku": "BAR-20",
       "category": {
-        "id": "41",
-        "name": "Bancos"
+        "id": "3",
+        "name": "Barras"
       },
       "variants": {
-        "count": 0,
-        "requiresSelection": false
+        "count": 2,
+        "requiresSelection": true
       },
       "priceSummary": {
-        "kind": "exact",
+        "kind": "from",
         "finalGross": {
-          "amount": 189990,
+          "amount": 119000,
           "currency": "CLP"
         },
         "regularGross": {
-          "amount": 189990,
+          "amount": 119000,
           "currency": "CLP"
         },
         "discounted": false
@@ -31,12 +31,12 @@
       "availabilitySummary": {
         "sellability": "sellable",
         "reason": "in_stock",
-        "sellableVariants": null
+        "sellableVariants": 1
       },
       "match": {
-        "type": "exact_name",
-        "matchedTokens": 4,
-        "totalTokens": 4
+        "type": "name",
+        "matchedTokens": 1,
+        "totalTokens": 1
       }
     }
   ],
@@ -46,12 +46,11 @@
   },
   "searchMode": "lexical",
   "freshness": {
-    "asOf": "2026-09-29T15:00:00.000Z",
+    "asOf": "2026-09-29T12:00:00.000Z",
     "cache": {
       "hit": false,
       "ageMs": 0
     },
-    "validUntil": "2026-09-29T15:01:00.000Z",
-    "sourceUpdatedAt": "2026-09-20T10:00:00.000Z"
+    "validUntil": "2026-09-29T12:00:15.000Z"
   }
 }

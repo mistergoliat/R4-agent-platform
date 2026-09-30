@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "status": "found",
+  "itemKey": "P12",
+  "ref": {
+    "productId": "12",
+    "variantId": null
+  },
+  "parentProduct": {
+    "productKey": "P12",
+    "name": "Barra técnica",
+    "sku": "BAR-12"
+  },
+  "variant": {
+    "variantId": null,
+    "sku": "BAR-12",
+    "attributes": []
+  },
+  "pricing": {
+    "status": "available",
+    "quantity": 2,
+    "regularGross": {
+      "amount": 119000,
+      "currency": "CLP"
+    },
+    "finalGross": {
+      "amount": 107100,
+      "currency": "CLP"
+    },
+    "promotion": {
+      "discountType": "percentage",
+      "discountValue": 0.1,
+      "validUntil": "2026-10-15T03:00:00.000Z"
+    },
+    "tax": {
+      "included": true,
+      "rate": 0.19,
+      "basis": "configured_flat_rate"
+    },
+    "engineVersion": "catalog-commercial-v2.0.0"
+  },
+  "availability": {
+    "availableQuantity": 4,
+    "sellability": "sellable",
+    "reason": "in_stock",
+    "leadTime": null
+  },
+  "freshness": {
+    "asOf": "2026-09-29T12:00:00.000Z",
+    "cache": {
+      "hit": false,
+      "ageMs": 0
+    },
+    "validUntil": "2026-09-29T12:00:15.000Z"
+  },
+  "provenance": {
+    "source": "prestashop",
+    "service": "catalog-service",
+    "serviceBuildRef": "catalog-service@fixtures",
+    "sourceUpdatedAt": null
+  }
+}

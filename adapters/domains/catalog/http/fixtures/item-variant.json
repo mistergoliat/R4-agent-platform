@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "status": "found",
+  "itemKey": "P20-V7",
+  "ref": {
+    "productId": "20",
+    "variantId": "7"
+  },
+  "parentProduct": {
+    "productKey": "P20",
+    "name": "Barra con opciones",
+    "sku": "BAR-20"
+  },
+  "variant": {
+    "variantId": "7",
+    "sku": "BAR-20-XL",
+    "attributes": [
+      {
+        "group": "Tamaño",
+        "value": "XL"
+      }
+    ]
+  },
+  "pricing": {
+    "status": "available",
+    "quantity": 1,
+    "regularGross": {
+      "amount": 130900,
+      "currency": "CLP"
+    },
+    "finalGross": {
+      "amount": 130900,
+      "currency": "CLP"
+    },
+    "promotion": null,
+    "tax": {
+      "included": true,
+      "rate": 0.19,
+      "basis": "configured_flat_rate"
+    },
+    "engineVersion": "catalog-commercial-v2.0.0"
+  },
+  "availability": {
+    "availableQuantity": 2,
+    "sellability": "sellable",
+    "reason": "in_stock",
+    "leadTime": null
+  },
+  "freshness": {
+    "asOf": "2026-09-29T12:00:00.000Z",
+    "cache": {
+      "hit": false,
+      "ageMs": 0
+    },
+    "validUntil": "2026-09-29T12:00:15.000Z"
+  },
+  "provenance": {
+    "source": "prestashop",
+    "service": "catalog-service",
+    "serviceBuildRef": "catalog-service@fixtures",
+    "sourceUpdatedAt": null
+  }
+}

@@ -24,7 +24,7 @@ import { CAPABILITY_IDS } from '../ids.js';
  *            empty search for those words, or a product context answering
  *            not_found for that key, grounds "we do not have it".
  *   spec     every stated attribute value appears in the product's observed
- *            facts (verbatim specifications, name, category, brand, lifecycle).
+ *            facts (verbatim specifications, name, category, brand, status flags).
  *   relation compatibility is NEVER grounded by catalog evidence: the owner
  *            publishes no curated compatibility. "Bought together" is
  *            grounded only as a relationship, from frequentlyBoughtTogether.
@@ -125,7 +125,7 @@ function index(evidence: readonly Observation[]): EvidenceIndex {
     } else if (capability === CAPABILITY_IDS.productContext) {
       if (payload.status === 'not_found' && typeof payload.productKey === 'string') idx.notFound.set(payload.productKey, o.observationId);
       if (payload.status !== 'found' || typeof payload.productKey !== 'string') continue;
-      const facts = payload.facts as { name?: unknown; category?: { name?: unknown } | null; brand?: unknown; lifecycle?: unknown; specifications?: unknown; sellableItemKey?: unknown; variantOptions?: { itemKey?: unknown; attributes?: unknown }[] };
+      const facts = payload.facts as { name?: unknown; category?: { name?: unknown } | null; brand?: unknown; status?: unknown; specifications?: unknown; sellableItemKey?: unknown; variantOptions?: { itemKey?: unknown; attributes?: unknown }[] };
       const derived = payload.derived as { price?: Price; availability?: { sellability?: unknown; reason?: unknown } };
       const entry = product(payload.productKey, facts.name, o.observationId);
       if (typeof facts.category?.name === 'string') entry.category = facts.category.name;
@@ -133,7 +133,7 @@ function index(evidence: readonly Observation[]): EvidenceIndex {
       price(entry, derived.price, o.observationId, ownerCurrentAtObservation(o));
       if (typeof derived.availability?.sellability === 'string' && typeof derived.availability.reason === 'string') entry.availability = { sellability: derived.availability.sellability, reason: derived.availability.reason };
       // Only authoritative facts ground a specification: never catalog-edited free text or inferred blocks.
-      for (const v of leafValues({ name: facts.name, category: facts.category, brand: facts.brand, lifecycle: facts.lifecycle, specifications: facts.specifications, variants: (facts.variantOptions ?? []).map((v) => v.attributes) })) entry.detailValues.add(v);
+      for (const v of leafValues({ name: facts.name, category: facts.category, brand: facts.brand, status: facts.status, specifications: facts.specifications, variants: (facts.variantOptions ?? []).map((v) => v.attributes) })) entry.detailValues.add(v);
       if (typeof facts.sellableItemKey === 'string') idx.aliases.set(facts.sellableItemKey, payload.productKey);
       for (const v of facts.variantOptions ?? []) if (typeof v.itemKey === 'string') idx.aliases.set(v.itemKey, payload.productKey);
       const fbt = (payload.inferred as { frequentlyBoughtTogether?: { status?: unknown; items?: { productKey?: unknown }[] } } | undefined)?.frequentlyBoughtTogether;

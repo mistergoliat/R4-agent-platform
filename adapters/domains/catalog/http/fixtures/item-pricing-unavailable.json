@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "status": "found",
+  "itemKey": "P60",
+  "ref": {
+    "productId": "60",
+    "variantId": null
+  },
+  "parentProduct": {
+    "productKey": "P60",
+    "name": "Accesorio sin precio",
+    "sku": "ACC-60"
+  },
+  "variant": {
+    "variantId": null,
+    "sku": "ACC-60",
+    "attributes": []
+  },
+  "pricing": {
+    "status": "unavailable",
+    "reason": "invalid_base_price"
+  },
+  "availability": {
+    "availableQuantity": 4,
+    "sellability": "sellable",
+    "reason": "in_stock",
+    "leadTime": null
+  },
+  "freshness": {
+    "asOf": "2026-09-29T12:00:00.000Z",
+    "cache": {
+      "hit": false,
+      "ageMs": 0
+    },
+    "validUntil": "2026-09-29T12:00:15.000Z"
+  },
+  "provenance": {
+    "source": "prestashop",
+    "service": "catalog-service",
+    "serviceBuildRef": "catalog-service@fixtures",
+    "sourceUpdatedAt": null
+  }
+}

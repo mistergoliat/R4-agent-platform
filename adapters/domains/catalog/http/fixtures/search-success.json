@@ -2,28 +2,28 @@
   "schemaVersion": 1,
   "results": [
     {
-      "product": {
-        "productId": "1301",
-        "productKey": "P1301"
+      "productKey": "P10",
+      "ref": {
+        "productId": "10"
       },
-      "name": "Kettlebell Competición",
-      "sku": "KBC",
+      "name": "Barra olímpica",
+      "sku": "BAR-10",
       "category": {
-        "id": "16",
-        "name": "Kettlebells"
+        "id": "3",
+        "name": "Barras"
       },
       "variants": {
-        "count": 3,
-        "requiresSelection": true
+        "count": 0,
+        "requiresSelection": false
       },
       "priceSummary": {
-        "kind": "from",
+        "kind": "exact",
         "finalGross": {
-          "amount": 44990,
+          "amount": 119000,
           "currency": "CLP"
         },
         "regularGross": {
-          "amount": 44990,
+          "amount": 119000,
           "currency": "CLP"
         },
         "discounted": false
@@ -31,11 +31,11 @@
       "availabilitySummary": {
         "sellability": "sellable",
         "reason": "in_stock",
-        "sellableVariants": 2
+        "sellableVariants": null
       },
       "match": {
-        "type": "name",
-        "matchedTokens": 1,
+        "type": "exact_reference",
+        "matchedTokens": 0,
         "totalTokens": 1
       }
     }
@@ -46,12 +46,11 @@
   },
   "searchMode": "lexical",
   "freshness": {
-    "asOf": "2026-09-29T15:00:00.000Z",
+    "asOf": "2026-09-29T12:00:00.000Z",
     "cache": {
       "hit": false,
       "ageMs": 0
     },
-    "validUntil": "2026-09-29T15:01:00.000Z",
-    "sourceUpdatedAt": "2026-09-20T10:00:00.000Z"
+    "validUntil": "2026-09-29T12:00:15.000Z"
   }
 }

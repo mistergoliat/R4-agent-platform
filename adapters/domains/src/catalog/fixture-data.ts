@@ -1,4 +1,4 @@
-import type { CatalogAttribute, CatalogCategory, CatalogLifecycle, CatalogSpecification } from './port.js';
+import type { CatalogAttribute, CatalogCategory, CatalogProductStatus, CatalogSpecification } from './port.js';
 
 /**
  * Deterministic fixture catalog of home-gym equipment (prices in CLP, tax
@@ -8,7 +8,7 @@ import type { CatalogAttribute, CatalogCategory, CatalogLifecycle, CatalogSpecif
  *
  * These are the OWNER's records (what a catalog-service would hold after its
  * own normalization): gross prices are stored, not computed; stock is the
- * owner's available quantity; lifecycle flags are the owner's. The fixture
+ * owner's available quantity; status flags are the owner's. The fixture
  * owner derives sellability from them the way the real owner would — R4
  * never does. Keys are opaque tokens chosen by this fixture owner; SKUs are
  * deliberately different strings so nothing can mistake one for the other.
@@ -39,13 +39,13 @@ export interface FixtureProductRecord {
   readonly brand: string | null;
   readonly shortDescription: string | null;
   readonly specifications: readonly CatalogSpecification[];
-  readonly lifecycle: CatalogLifecycle;
+  readonly status: CatalogProductStatus;
   /** Whether the owner's policy allows ordering without stock (PrestaShop out_of_stock); null = unknown. */
   readonly backorderAllowed: boolean | null;
   /** Products without variants carry price, stock and weight here. */
   readonly regularGross: number | null;
   readonly finalGross: number | null;
-  readonly promotion: { readonly kind: 'amount' | 'percentage'; readonly value: number; readonly validUntil: string | null } | null;
+  readonly promotion: { readonly discountType: 'amount' | 'percentage'; readonly discountValue: number; readonly validUntil: string | null } | null;
   readonly availableQuantity: number | null;
   readonly weightKg: number | null;
   readonly variants: readonly FixtureVariantRecord[];
@@ -67,14 +67,14 @@ const CATEGORIES = {
   cardio: { id: '19', name: 'cardio' },
 } as const satisfies Record<string, CatalogCategory>;
 
-const ACTIVE: CatalogLifecycle = { status: 'active', listed: true, orderable: true };
+const ACTIVE: CatalogProductStatus = { active: true, listed: true, orderable: true };
 const specs = (entries: Record<string, string>): CatalogSpecification[] => Object.entries(entries).map(([name, value]) => ({ name, value }));
 
-type Simple = Omit<FixtureProductRecord, 'variants' | 'promotion' | 'lifecycle' | 'backorderAllowed' | 'finalGross' | 'frequentlyBoughtTogether'> &
-  Partial<Pick<FixtureProductRecord, 'promotion' | 'lifecycle' | 'backorderAllowed' | 'finalGross' | 'frequentlyBoughtTogether'>>;
+type Simple = Omit<FixtureProductRecord, 'variants' | 'promotion' | 'status' | 'backorderAllowed' | 'finalGross' | 'frequentlyBoughtTogether'> &
+  Partial<Pick<FixtureProductRecord, 'promotion' | 'status' | 'backorderAllowed' | 'finalGross' | 'frequentlyBoughtTogether'>>;
 
 function simple(record: Simple): FixtureProductRecord {
-  return { lifecycle: ACTIVE, backorderAllowed: false, promotion: null, finalGross: record.regularGross, frequentlyBoughtTogether: [], variants: [], ...record };
+  return { status: ACTIVE, backorderAllowed: false, promotion: null, finalGross: record.regularGross, frequentlyBoughtTogether: [], variants: [], ...record };
 }
 
 export const FIXTURE_PRODUCTS: readonly FixtureProductRecord[] = [
@@ -176,7 +176,7 @@ export const FIXTURE_PRODUCTS: readonly FixtureProductRecord[] = [
     productId: '114', productKey: 'KB-COMP', sku: 'FL-KBC', name: 'Kettlebell de competición', category: CATEGORIES.kettlebells, brand: 'FlexLoad',
     shortDescription: 'Kettlebell de acero de tamaño único; el peso se elige por variante.',
     specifications: specs({ Material: 'acero', 'Diámetro de asa': '35 mm' }),
-    lifecycle: ACTIVE, backorderAllowed: false, regularGross: null, finalGross: null, promotion: null, availableQuantity: null, weightKg: null,
+    status: ACTIVE, backorderAllowed: false, regularGross: null, finalGross: null, promotion: null, availableQuantity: null, weightKg: null,
     variants: [
       { variantId: '1141', itemKey: 'KB-COMP-12', sku: 'FL-KBC-12', attributes: [{ group: 'Peso', value: '12 kg' }], regularGross: 44_990, finalGross: 44_990, availableQuantity: 9, weightKg: 12 },
       { variantId: '1142', itemKey: 'KB-COMP-16', sku: 'FL-KBC-16', attributes: [{ group: 'Peso', value: '16 kg' }], regularGross: 54_990, finalGross: 54_990, availableQuantity: 0, weightKg: 16 },
@@ -217,7 +217,7 @@ export const FIXTURE_PRODUCTS: readonly FixtureProductRecord[] = [
     productId: '119', productKey: 'CARDIO-ROW', sku: 'AF-R10', name: 'Remo magnético R-10', category: CATEGORIES.cardio, brand: 'AeroFit',
     shortDescription: 'Remo de resistencia magnética con 8 niveles.',
     specifications: specs({ Niveles: '8', Peso: '34 kg' }),
-    lifecycle: { status: 'inactive', listed: true, orderable: false },
+    status: { active: false, listed: true, orderable: false },
     regularGross: 399_990, availableQuantity: 0, weightKg: 34,
     searchTerms: ['remo', 'cardio', 'rower'],
   }),
