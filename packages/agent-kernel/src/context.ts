@@ -9,8 +9,8 @@ import type {
   RiskClass,
   RunStep,
 } from '@r4/contracts';
-import { RESPONSE_AUTHORITY_ERROR_PREFIX } from '@r4/contracts';
 import { resolveExecutionLimits, type ExecutionLimits, type ExecutionPolicy, type ExecutionUsage } from './budget.js';
+import { responseAuthorityState, type PriorInteractions, type ResponseAuthorityState } from './response-authority.js';
 
 /** What the kernel knows about a capability. Execution stays behind the session port. */
 export interface CapabilityDescriptor {
@@ -44,8 +44,8 @@ export interface ExecutionContext {
   readonly observations: readonly Observation[];
   /** `respond` outputs already recorded by this run, so the agent knows what it said (refused drafts were never said). */
   readonly responses: readonly { readonly iteration: number; readonly content: string }[];
-  /** ADR-031: drafts the response-authority validator refused since this run's last recorded response. */
-  readonly responseAuthority: { readonly rejectedDrafts: number };
+  /** ADR-031: this run's response-authority recovery state (run-scoped budget, pending deferred draft). */
+  readonly responseAuthority: ResponseAuthorityState;
   /**
    * Capabilities the agent's scopes grant, with their risk class. READ ones
    * are invoked (`read_capability`); since R4-D, write classes may only be
@@ -90,6 +90,12 @@ export interface ExecutionStateInput {
    * let expire or withdrew its approval request). Loaded, never executed, here.
    */
   readonly carriedAction?: { readonly step: RunStep; readonly decision: ProposeActionDecision } | null;
+  /**
+   * ADR-031 (R4-J1E-R2): the task's cross-run interaction records. A run woken
+   * from a platform revalidation wait continues the response-authority state
+   * (and resolves the deferred draft) of the run that deferred.
+   */
+  readonly priorInteractions?: PriorInteractions;
 }
 
 /** Pure: the same durable state always yields the same context. */
@@ -107,12 +113,6 @@ export function buildExecutionState(input: ExecutionStateInput): ExecutionState 
     writeActions: input.writeActions ?? 0,
   };
   const responses = steps.flatMap((s) => (s.decision?.type === 'respond' && s.outcome === 'recorded' ? [{ iteration: s.iteration, content: s.decision.content }] : []));
-  let rejectedDrafts = 0;
-  for (const s of steps) {
-    if (s.decision?.type !== 'respond') continue;
-    if (s.outcome === 'recorded') rejectedDrafts = 0;
-    else if (s.outcome === 'refused' && s.error?.code.startsWith(RESPONSE_AUTHORITY_ERROR_PREFIX)) rejectedDrafts += 1;
-  }
   const last = steps.at(-1);
   const pendingRead =
     last && last.outcome === 'pending' && last.decision?.type === 'read_capability' ? { step: last, decision: last.decision } : null;
@@ -128,7 +128,7 @@ export function buildExecutionState(input: ExecutionStateInput): ExecutionState 
       iteration: steps.length + 1,
       observations: input.observations,
       responses,
-      responseAuthority: { rejectedDrafts },
+      responseAuthority: responseAuthorityState(input.run.runId, steps, input.priorInteractions),
       capabilities: input.capabilities,
       budget: { limits: resolveExecutionLimits(input.policy, input.task.budget), usage },
     },

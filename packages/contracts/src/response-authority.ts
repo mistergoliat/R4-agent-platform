@@ -11,22 +11,41 @@ import type { Observation } from './observation.js';
  * the verdicts and enforces their bounds:
  *
  *   ALLOW                   record the draft as is
- *   REVALIDATION_REQUIRED   the draft relies on expired evidence: the kernel
- *                           issues these READs itself (durable, origin
- *                           `platform`, token-free), then validates the SAME
- *                           draft again — unchanged truth keeps the draft
+ *   REVALIDATION_REQUIRED   the draft relies on evidence that is expired or
+ *                           about to expire: the kernel issues these READs
+ *                           itself (durable, origin `platform`, token-free),
+ *                           then validates the SAME draft again — unchanged
+ *                           truth keeps the draft. With `notBefore` (evidence
+ *                           still inside the owner's validity window, so a
+ *                           refresh now would return that same window) the
+ *                           draft is deferred durably: recorded `refused`
+ *                           (`response_authority_deferred`, never sent) and
+ *                           the run waits (platform WAIT_UNTIL) until
+ *                           `notBefore`; the run woken from that wait issues
+ *                           the READs and validates the draft first, without
+ *                           a model call. A draft is deferred at most once.
  *   REJECT                  the draft contradicts evidence (or evidence could
  *                           not be revalidated): recorded `refused` with the
- *                           structured feedback, never sent; the model gets
- *                           exactly one correction cycle, after which the
- *                           validator's safe degradation is recorded instead
+ *                           structured feedback, never sent. Recovery budget
+ *                           per RUN (not per draft): one model correction
+ *                           cycle, then ONE safe degradation (recorded as a
+ *                           platform `respond`); a later invalid draft of the
+ *                           same run is refused without any further outbound.
+ *                           A run woken from a revalidation wait continues the
+ *                           budget of the run that deferred.
  *
  * This is authority enforcement, not quality evaluation (ADR-025 still
  * forbids generic guards, arbitrary retries and LLM judging in the loop).
  */
 export type ResponseAuthorityVerdict =
   | { readonly kind: 'allow'; readonly claims?: readonly JsonObject[] }
-  | { readonly kind: 'revalidation_required'; readonly reads: readonly { readonly capabilityId: string; readonly arguments: JsonObject }[]; readonly claims?: readonly JsonObject[] }
+  | {
+      readonly kind: 'revalidation_required';
+      readonly reads: readonly { readonly capabilityId: string; readonly arguments: JsonObject }[];
+      /** ISO instant before which the READs cannot yield a new owner validity window: defer until then (durably, never a sleep). */
+      readonly notBefore?: string;
+      readonly claims?: readonly JsonObject[];
+    }
   | { readonly kind: 'reject'; readonly code: string; readonly feedback: string; readonly claims?: readonly JsonObject[] };
 
 export interface ResponseAuthorityInput {
@@ -43,5 +62,9 @@ export interface ResponseAuthorityValidator {
 
 /** At most this many revalidation READs per draft (bounded, never a loop). */
 export const MAX_REVALIDATION_READS = 6;
-/** Correction cycles per outbound candidate: one model rewrite, then safe degradation. */
+/** Correction cycles per run: one model rewrite, then (once per run) the safe degradation. */
 export const MAX_AUTHORITY_CORRECTIONS = 1;
+/** A `respond` deferred until its evidence can be revalidated: refused (never sent) but not a rejection — it uses no correction. */
+export const RESPONSE_AUTHORITY_DEFERRED = 'response_authority_deferred';
+/** The invalid draft that the run's one safe degradation replaced. */
+export const RESPONSE_AUTHORITY_DEGRADED = 'response_authority_degraded';

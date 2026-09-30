@@ -99,7 +99,9 @@ export class DurableKernelSession implements KernelSession {
    * Observational: reads durable state only. (R4-E) A proposal of an earlier
    * run still to be resolved (human approval outcome) is returned as the
    * pending action; the kernel drives it through `executeAction` — the
-   * explicit governed phase — before any model call.
+   * explicit governed phase — before any model call. (ADR-031) Likewise a
+   * draft an earlier run deferred for revalidation is part of the state the
+   * kernel resolves before any model call.
    */
   load(): Promise<ExecutionState> {
     return translate(async () => {
@@ -119,6 +121,8 @@ export class DurableKernelSession implements KernelSession {
         now: this.#options.clock.now(),
         writeActions: durable.writeActions,
         carriedAction,
+        // ADR-031: a run woken from a revalidation wait resolves the draft (and continues the budget) of the run that deferred.
+        ...(durable.interactions ? { priorInteractions: { steps: durable.interactions.steps, waits: durable.interactions.waits } } : {}),
       });
     });
   }

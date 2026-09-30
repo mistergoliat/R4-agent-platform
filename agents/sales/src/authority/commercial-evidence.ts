@@ -1,5 +1,6 @@
 import { systemClock, type Clock, type JsonObject, type Observation, type ResponseAuthorityInput, type ResponseAuthorityValidator, type ResponseAuthorityVerdict } from '@r4/contracts';
 import { CAPABILITY_IDS } from '../ids.js';
+import { affirmsAvailability, negatesAvailability, shiftsSubject } from './availability-wording.js';
 
 /**
  * ADR-031 — Sales commercial evidence enforcement (pre-respond, deterministic).
@@ -15,18 +16,29 @@ import { CAPABILITY_IDS } from '../ids.js';
  *                     total (sum of stated Catalog prices, labelled referencial /
  *                     aproximado / ~), or the customer's own budget; anything else
  *                     is a commercial number without authority
- *   availability      the clause around a price of a product Catalog reports as
- *                     not sellable must say so; a clause must not call a sellable
- *                     product out of stock; a product Catalog reports as not
+ *   availability      consistency by PRODUCT BLOCK (R4-J1E-R2): a price of a
+ *                     product Catalog reports as not sellable must be qualified as
+ *                     not available within that product's local block — the
+ *                     sentence of the amount, or an adjacent sentence of the same
+ *                     paragraph that names no other product (at most two away,
+ *                     never across a line/bullet break or a change of subject) —
+ *                     and the amount's own sentence must not present it as
+ *                     available; a sellable product must not be called out of
+ *                     stock next to its price; a product Catalog reports as not
  *                     sellable must not be named as available
  *   variant           a "from" price (variants differ, one must be chosen) is only
  *                     stated as "desde / a partir de", never as a variant's price
- *   freshness         evidence must stay valid until send time (+ margin); expired
- *                     evidence is revalidated with a targeted product-context READ
+ *   freshness         evidence must stay valid until send time (+ margin). Expired
+ *                     evidence is revalidated now with a targeted product-context
+ *                     READ; evidence still inside the owner's window but too close
+ *                     to its end is revalidated only after that window has passed
+ *                     (`notBefore`): a refresh inside it returns the same cached
+ *                     window (Catalog owns validUntil; ADR-030)
  *
  * It never recomputes Catalog facts, applies no business rule (no tax,
  * discount, shipping or rounding) and does not parse language beyond these
- * anchors: unanchored wording is left to the agent (ADR-031 limits).
+ * anchors and the bounded wording list of `availability-wording.ts`:
+ * unanchored wording is left to the agent (ADR-031 limits).
  */
 
 export type CommercialClaimKind = 'product_identity' | 'unit_price' | 'regular_price' | 'promotion' | 'sellability' | 'availability' | 'variant' | 'estimated_total' | 'customer_amount';
@@ -55,13 +67,20 @@ interface ProductEvidence {
 
 /** Evidence must remain valid this long after the check (dispatch happens within it). */
 export const SEND_MARGIN_MS = 3_000;
+/**
+ * Technical margin after the owner's validUntil before refreshing, so the READ never lands on the
+ * last instant of the owner's cache window (clock skew). Small by design: it is not a latency budget.
+ */
+export const REVALIDATION_EPSILON_MS = 250;
+/** How many adjacent sentences a product's local block may extend on each side. */
+const BLOCK_REACH = 2;
 
-const NEGATIVE = /\b(sin stock|sin existencias|agotad[oa]s?|fuera de stock|no (?:esta|estan|se encuentra|se encuentran)? ?disponibles?|no disponibles?|no (?:es|son) pedibles?|no se puede[n]? (?:comprar|pedir)|no (?:hay|tenemos) stock|no (?:lo|la|los|las) tenemos|inactiv[oa]s?|no se vende)\b/u;
-const POSITIVE = /\b(disponibles?|con stock|en stock|(?:lo|la|los|las) tenemos|tenemos stock|hay stock)\b/u;
 const FROM = /\b(desde|a partir de)\b/u;
 const REFERENTIAL = /(referencial|aproximad[oa]|estimad[oa]|aprox\b|en total aprox|[~≈])/u;
 const BUDGET_BEFORE = /(presupuesto|budget|tus?|dispones de|te alcanza)\s*(de\s*)?[~≈]?\s*$/u;
 const AMOUNT = /([~≈]\s*)?\$\s?(\d{1,3}(?:\.\d{3})+|\d+)(?![\d.,]*\d)/gu;
+/** "sin" + up to two words: a mention of what the item does NOT have/is NOT. */
+const NEGATED_MENTION = /\bsin \p{L}+(?: \p{L}+)?/gu;
 const STOPWORDS = new Set(['par', 'set', 'para', 'con', 'the', 'serie', 'series', 'unidad', 'color']);
 
 export function normalizeText(text: string): string {
@@ -124,21 +143,32 @@ export function indexCatalogEvidence(observations: readonly Observation[]): Map<
 
 interface Clause {
   readonly text: string;
-  readonly start: number;
+  readonly norm: string;
+  /** A line or bullet break follows: a product's local block never crosses it. */
+  readonly breakAfter: boolean;
 }
 
 function clauses(text: string): Clause[] {
   const out: Clause[] = [];
   let start = 0;
+  const push = (end: number, hard: boolean) => {
+    const slice = text.slice(start, end);
+    start = end;
+    if (/^[\s•*_-]*$/u.test(slice)) {
+      // Blank (or bullet-only) pieces carry only their break.
+      const previous = out.at(-1);
+      if (previous && hard && !previous.breakAfter) out[out.length - 1] = { ...previous, breakAfter: true };
+      return;
+    }
+    out.push({ text: slice, norm: normalizeText(slice), breakAfter: hard });
+  };
   for (let i = 0; i < text.length; i += 1) {
     const c = text[i]!;
-    const boundary = c === '!' || c === '?' || c === ';' || c === '\n' || c === '•' || (c === '.' && (i + 1 >= text.length || /\s/u.test(text[i + 1]!)));
-    if (boundary) {
-      out.push({ text: text.slice(start, i + 1), start });
-      start = i + 1;
-    }
+    const hard = c === '\n' || c === '•';
+    const boundary = hard || c === '!' || c === '?' || c === ';' || (c === '.' && (i + 1 >= text.length || /\s/u.test(text[i + 1]!)));
+    if (boundary) push(i + 1, hard);
   }
-  if (start < text.length) out.push({ text: text.slice(start), start });
+  if (start < text.length) push(text.length, true);
   return out;
 }
 
@@ -174,6 +204,12 @@ function names(p: ProductEvidence, text: string): boolean {
   return overlap(p.nameTokens, text) >= Math.max(2, Math.ceil(p.nameTokens.length * 0.8));
 }
 
+/** Products named in a clause, the most specific only: naming "… 2da Selección" does not also name the plain product. */
+function namedIn(products: readonly ProductEvidence[], text: string): ProductEvidence[] {
+  const named = products.filter((p) => p.nameTokens.length > 0 && names(p, text));
+  return named.filter((p) => !named.some((q) => q !== p && q.nameTokens.length > p.nameTokens.length && p.nameTokens.every((t) => q.nameTokens.includes(t))));
+}
+
 function subsetSums(values: readonly number[], target: number): number[] | null {
   const n = Math.min(values.length, 12);
   for (let mask = 1; mask < 1 << n; mask += 1) {
@@ -184,6 +220,21 @@ function subsetSums(values: readonly number[], target: number): number[] | null 
 }
 
 const money = (n: number) => `$${n.toLocaleString('es-CL')}`;
+
+interface PricedAmount {
+  readonly amount: Amount;
+  /** Text between the neighbouring amounts of the clause (the amount's own scope). */
+  readonly window: string;
+  readonly before: string;
+  /** Products whose Catalog price is this amount, best name match first-class. */
+  readonly matched: readonly ProductEvidence[];
+}
+
+/** What each sentence is about: products it names or prices unambiguously (definite) or ambiguously (possible). */
+interface ClauseAnchors {
+  readonly definite: ReadonlySet<string>;
+  readonly possible: ReadonlySet<string>;
+}
 
 export class SalesCommercialEvidenceValidator implements ResponseAuthorityValidator {
   readonly #clock: Clock;
@@ -196,39 +247,78 @@ export class SalesCommercialEvidenceValidator implements ResponseAuthorityValida
     const evidence = indexCatalogEvidence(input.observations);
     const claims: CommercialClaim[] = [];
     const problems: string[] = [];
-    const stale = new Set<string>();
-    const fresh = (p: ProductEvidence) => {
-      if (p.validUntilMs - now < SEND_MARGIN_MS) stale.add(p.productKey);
-    };
+    const referenced = new Map<string, ProductEvidence>();
+    const fresh = (p: ProductEvidence) => referenced.set(p.productKey, p);
     const products = [...evidence.values()];
     const catalogAmounts: number[] = [];
     const pendingTotals: { amount: Amount; window: string }[] = [];
 
-    for (const clause of clauses(input.content)) {
-      const norm = normalizeText(clause.text);
+    const parts = clauses(input.content);
+    const priced = parts.map((clause) => {
       const amounts = amountsIn(clause.text);
-      amounts.forEach((amount, i) => {
+      return amounts.map((amount, i): PricedAmount => {
         const window = normalizeText(clause.text.slice(i === 0 ? 0 : amounts[i - 1]!.end, i + 1 < amounts.length ? amounts[i + 1]!.index : clause.text.length));
         const before = normalizeText(clause.text.slice(Math.max(0, amount.index - 40), amount.index));
         const candidates = products.filter((p) => p.finalGross === amount.value || p.regularGross === amount.value);
-        if (candidates.length === 0) {
+        // Disambiguation by name words ignores words stated as absent ("versión nueva, sin segunda selección").
+        const naming = window.replace(NEGATED_MENTION, ' ');
+        const best = Math.max(0, ...candidates.map((p) => overlap(p.nameTokens, naming)));
+        return { amount, window, before, matched: candidates.filter((p) => overlap(p.nameTokens, naming) === best) };
+      });
+    });
+    const anchors: ClauseAnchors[] = parts.map((clause, i) => {
+      const definite = new Set(namedIn(products, clause.norm).map((p) => p.productKey));
+      const possible = new Set<string>();
+      for (const { matched } of priced[i]!) {
+        if (matched.length === 1) definite.add(matched[0]!.productKey);
+        else for (const p of matched) possible.add(p.productKey);
+      }
+      return { definite, possible };
+    });
+
+    /**
+     * The product block of `p` priced in clause `origin`: the origin sentence (about `p` only) plus up to
+     * BLOCK_REACH adjacent sentences of the same paragraph that are about `p` or about nothing identified,
+     * stopping at a line/bullet break, at a sentence about another product, or at a change of subject.
+     */
+    const negatedInBlock = (p: ProductEvidence, origin: number): boolean => {
+      const own = anchors[origin]!;
+      if ([...own.definite].some((k) => k !== p.productKey)) return false;
+      for (const step of [-1, 1]) {
+        for (let k = 1, at = origin; k <= BLOCK_REACH; k += 1) {
+          const next = at + step;
+          if (next < 0 || next >= parts.length || parts[Math.min(at, next)]!.breakAfter) break;
+          at = next;
+          const { definite, possible } = anchors[at]!;
+          if ([...definite].some((key) => key !== p.productKey)) break;
+          if (possible.size > 0 && !possible.has(p.productKey)) break;
+          if (definite.size === 0 && possible.size === 0 && shiftsSubject(parts[at]!.norm, p.nameTokens)) break;
+          if (negatesAvailability(parts[at]!.norm)) return true;
+        }
+      }
+      return false;
+    };
+
+    parts.forEach((clause, c) => {
+      for (const { amount, window, before, matched } of priced[c]!) {
+        if (matched.length === 0) {
           if (BUDGET_BEFORE.test(before)) {
             claims.push({ kind: 'customer_amount', subjectRef: null, value: amount.value, authority: 'customer', evidenceRef: null });
-            return;
+            continue;
           }
           pendingTotals.push({ amount, window });
-          return;
+          continue;
         }
-        const best = Math.max(...candidates.map((p) => overlap(p.nameTokens, window)));
-        const matched = candidates.filter((p) => overlap(p.nameTokens, window) === best);
-        // Lenient on ambiguity: the amount is supported when one matching product is consistent with the clause.
+        // Lenient on ambiguity: the amount is supported when one matching product is consistent with its block.
         const failures: string[] = [];
         let supported: ProductEvidence | null = null;
         for (const p of matched) {
           const issues: string[] = [];
           const notSellable = p.sellability !== 'sellable' && p.sellability !== 'backorder';
-          if (notSellable && !NEGATIVE.test(window)) issues.push(`${money(amount.value)} refers to ${p.productKey} "${p.name}", which Catalog reports ${p.sellability}/${p.reason}: say it is currently not available (or omit it); never present it as available.`);
-          if (!notSellable && NEGATIVE.test(window)) issues.push(`${money(amount.value)} refers to ${p.productKey} "${p.name}", which Catalog reports ${p.sellability}/${p.reason}: do not call it out of stock or unavailable.`);
+          if (notSellable && (affirmsAvailability(window) || !(negatesAvailability(window) || negatedInBlock(p, c)))) {
+            issues.push(`${money(amount.value)} refers to ${p.productKey} "${p.name}", which Catalog reports ${p.sellability}/${p.reason}: say it is currently not available (or omit it); never present it as available.`);
+          }
+          if (!notSellable && negatesAvailability(window)) issues.push(`${money(amount.value)} refers to ${p.productKey} "${p.name}", which Catalog reports ${p.sellability}/${p.reason}: do not call it out of stock or unavailable.`);
           if (p.priceKind === 'from' && amount.value === p.finalGross && !FROM.test(window)) issues.push(`${money(amount.value)} is the "from" price of ${p.productKey} "${p.name}" (variants must be chosen): state it as "desde ${money(amount.value)}" and ask which variant; do not assume one.`);
           if (issues.length === 0) {
             supported = p;
@@ -243,19 +333,17 @@ export class SalesCommercialEvidenceValidator implements ResponseAuthorityValida
         claims.push({ kind: 'availability', subjectRef: p.productKey, value: `${p.sellability}/${p.reason}`, authority: 'catalog', evidenceRef: p.observationId });
         if (supported) catalogAmounts.push(amount.value);
         else problems.push(...new Set(failures));
-      });
+      }
       // Name-anchored availability: a product Catalog reports as not sellable must not be named as available.
-      if (POSITIVE.test(norm) && !NEGATIVE.test(norm)) {
-        for (const p of products) {
-          if (p.sellability === 'sellable' || p.sellability === 'backorder' || p.nameTokens.length === 0) continue;
-          if (names(p, norm)) {
-            fresh(p);
-            claims.push({ kind: 'availability', subjectRef: p.productKey, value: `${p.sellability}/${p.reason}`, authority: 'catalog', evidenceRef: p.observationId });
-            problems.push(`${p.productKey} "${p.name}" is ${p.sellability}/${p.reason} in Catalog: do not say it is available.`);
-          }
+      if (affirmsAvailability(clause.norm)) {
+        for (const p of namedIn(products, clause.norm)) {
+          if (p.sellability === 'sellable' || p.sellability === 'backorder') continue;
+          fresh(p);
+          claims.push({ kind: 'availability', subjectRef: p.productKey, value: `${p.sellability}/${p.reason}`, authority: 'catalog', evidenceRef: p.observationId });
+          problems.push(`${p.productKey} "${p.name}" is ${p.sellability}/${p.reason} in Catalog: do not say it is available.`);
         }
       }
-    }
+    });
 
     // Derived totals: sums of the Catalog prices stated anywhere in the reply, labelled as referential.
     for (const { amount, window } of pendingTotals) {
@@ -270,9 +358,8 @@ export class SalesCommercialEvidenceValidator implements ResponseAuthorityValida
     }
 
     const claimObjects = claims.map((c) => ({ ...c }) as unknown as JsonObject);
-    if (stale.size > 0) {
-      return { kind: 'revalidation_required', reads: [...stale].map((productKey) => ({ capabilityId: CAPABILITY_IDS.productContext, arguments: { productKey } })), claims: claimObjects };
-    }
+    const revalidation = revalidationOf([...referenced.values()], now);
+    if (revalidation) return { kind: 'revalidation_required', ...revalidation, claims: claimObjects };
     if (problems.length > 0) {
       const feedback = ['Your reply was NOT sent: it is not consistent with current Catalog evidence.', ...[...new Set(problems)].map((p) => `- ${p}`), 'Rewrite it stating prices and availability exactly as the current Catalog evidence says.'].join('\n');
       return { kind: 'reject', code: 'response_authority_contradiction', feedback: feedback.slice(0, 1900), claims: claimObjects };
@@ -283,4 +370,35 @@ export class SalesCommercialEvidenceValidator implements ResponseAuthorityValida
   degraded(): string {
     return 'Perdón, no pude confirmar el precio ni la disponibilidad actual en este momento. ¿Quieres que lo revise de nuevo?';
   }
+}
+
+/**
+ * Freshness of the evidence a draft relies on, against the owner's validity (ADR-030):
+ *
+ *   valid past send time (+ margin)   nothing to do
+ *   expired                           refresh now: the owner's cached window is over
+ *   still valid, but too close        refresh only once the owner's window has passed —
+ *                                     `notBefore` = its validUntil + ε — because a refresh
+ *                                     inside it returns the same cached asOf/validUntil
+ *
+ * Evidence the draft relies on that would itself be too close at `notBefore` is refreshed
+ * with it (its window must have passed as well), so one wake-up revalidates the whole draft.
+ */
+function revalidationOf(referenced: readonly ProductEvidence[], now: number): { reads: { capabilityId: string; arguments: JsonObject }[]; notBefore?: string } | null {
+  const due = new Map(referenced.filter((p) => p.validUntilMs - now < SEND_MARGIN_MS).map((p) => [p.productKey, p]));
+  if (due.size === 0) return null;
+  const live = [...due.values()].filter((p) => p.validUntilMs > now);
+  let horizon: number | null = null;
+  if (live.length > 0) {
+    horizon = Math.max(...live.map((p) => p.validUntilMs));
+    for (;;) {
+      const wake = horizon + REVALIDATION_EPSILON_MS;
+      const extra = referenced.filter((p) => !due.has(p.productKey) && p.validUntilMs - wake < SEND_MARGIN_MS);
+      if (extra.length === 0) break;
+      for (const p of extra) due.set(p.productKey, p);
+      horizon = Math.max(horizon, ...extra.map((p) => p.validUntilMs));
+    }
+  }
+  const reads = [...due.keys()].map((productKey) => ({ capabilityId: CAPABILITY_IDS.productContext, arguments: { productKey } }));
+  return horizon === null ? { reads } : { reads, notBefore: new Date(horizon + REVALIDATION_EPSILON_MS).toISOString() };
 }

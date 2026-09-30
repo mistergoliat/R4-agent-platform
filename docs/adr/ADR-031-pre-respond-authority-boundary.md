@@ -48,6 +48,59 @@ impide que llegue al cliente. Subir la ventana de Catalog está descartado: Cata
 5. **Contabilidad honesta.** Los steps `platform` no cuentan como llamadas al modelo (budgets, métrica
    `model_calls`); los borradores rechazados no aparecen como respuestas dichas.
 
+## Enmienda R4-J1E-R2 (2026-09-30)
+
+El segundo E2E (sales@2) mostró tres defectos de esta frontera, no de Catalog: refresco dentro de la
+ventana de caché del owner, consistencia de disponibilidad demasiado literal y más de una degradación
+por run. Se corrigen así:
+
+6. **Near-expiry ⇒ `notBefore`, nunca refresco inútil.** Evidencia vencida (`validUntil ≤ now`) se
+   revalida de inmediato (la ventana del owner terminó). Evidencia aún vigente pero con menos margen
+   que el de envío (3 s) NO se refresca ahora: Catalog devolvería la misma respuesta cacheada (mismo
+   `asOf`/`validUntil`). El validador devuelve `REVALIDATION_REQUIRED { reads, notBefore }` con
+   `notBefore = validUntil + ε` (ε técnico = 250 ms, sólo contra skew de reloj; no es presupuesto de
+   latencia). Si otra evidencia del mismo borrador quedaría a su vez dentro del margen al despertar,
+   se incluye en los READ y `notBefore` cubre también su ventana (un solo wake revalida el borrador).
+   El TTL de Catalog no cambia (ADR-030).
+7. **Espera durable, no sleep.** Con `notBefore`, el kernel registra el borrador `refused`
+   (`response_authority_deferred`: nunca enviado, no consume corrección) y un step `wait`
+   `WAIT_UNTIL notBefore` de `origin = 'platform'` por el Temporal Runtime (ADR-021): la run se
+   suspende, se libera el lease y el scheduler la despierta. Sin `setTimeout`, polling ni recursión.
+   La run nueva resuelve primero el borrador diferido, antes de cualquier llamada al modelo (como
+   `carriedAction` en R4-E): READ de plataforma → validar el MISMO borrador → si la verdad no cambió se
+   registra tal cual (`respond` de plataforma, sin tokens, contra el snapshot de su propia iteración);
+   si cambió materialmente se rechaza y entra al presupuesto de recuperación. Un borrador se difiere a
+   lo sumo una vez (si se despertó antes por input, se refresca de inmediato). Crash entre el borrador
+   diferido y su wait: al reanudar se registra sólo el wait. Un takeover humano o cancelación descarta
+   el borrador (nunca se envía después). Migración `0010_platform_step_decisions`: `origin = 'platform'`
+   admite `read_capability`, `respond` y `wait`, siempre sin tokens.
+8. **Presupuesto de recuperación por RUN, no por borrador.** Derivado sólo de steps durables
+   (`responseAuthorityState`): `corrections` (rechazos devueltos al modelo) y `degraded`. Una corrección
+   por run; luego UNA degradación segura (borrador inválido `refused`
+   `response_authority_degraded` + `respond` de plataforma con el texto del pack); cualquier borrador
+   inválido posterior de la misma run se registra `refused` sin ningún outbound adicional. Una respuesta
+   válida intermedia no reinicia el presupuesto. Una run despertada desde un wait de revalidación
+   continúa el presupuesto de la run que difirió; cualquier otra run nueva (p. ej. input del cliente)
+   empieza con presupuesto nuevo.
+9. **Consistencia por bloque de producto (Sales).** Un precio de un producto no vendible debe estar
+   calificado como no disponible dentro de su bloque local: la oración del monto o hasta dos oraciones
+   adyacentes del mismo párrafo que no identifiquen otro producto, sin cruzar salto de línea/viñeta ni
+   un cambio de sujeto ("otros/demás/resto", o una medida que el nombre del producto no tiene). La
+   oración del monto nunca puede afirmar disponibilidad. Para un producto vendible, la negación se sigue
+   evaluando sólo junto al monto. Nombres: si un nombre observado contiene a otro, cuenta sólo el más
+   específico; palabras enunciadas como ausentes ("sin segunda selección") no desambiguan.
+   "Desde" (precio de producto) sigue sin poder asignarse a una variante; totales derivados sin cambios.
+
+### Límites explícitos del parsing
+
+La negación de disponibilidad es una lista cerrada y acotada (`availability-wording.ts`: "sin stock",
+"no hay/haya stock", "no está disponible", "no es comprable", "agotado", …). No es un parser de lenguaje
+ni una ontología: lo no listado no se reconoce y el borrador se corrige una vez (dirección segura).
+Extenderla es agregar una frase con su test.
+
+ADR-031 sigue sin ser: quality guard genérico, verificador LLM, framework de reintentos arbitrarios ni
+workflow engine.
+
 ## Qué sigue prohibiendo ADR-025
 
 Guards genéricos de calidad, reintentos arbitrarios, workflows ocultos y cualquier juez LLM dentro

@@ -1,4 +1,20 @@
-import { MAX_AUTHORITY_CORRECTIONS, MAX_REVALIDATION_READS, RESPONSE_AUTHORITY_ERROR_PREFIX, type ResponseAuthorityValidator, type AgentDecision, type CompiledContext, type CompletionResult, type JsonObject, type ProposeActionDecision, type ReadCapabilityDecision, type RespondDecision, type RunStep } from '@r4/contracts';
+import {
+  MAX_AUTHORITY_CORRECTIONS,
+  MAX_REVALIDATION_READS,
+  RESPONSE_AUTHORITY_DEFERRED,
+  RESPONSE_AUTHORITY_DEGRADED,
+  RESPONSE_AUTHORITY_ERROR_PREFIX,
+  type AgentDecision,
+  type CompiledContext,
+  type CompletionResult,
+  type JsonObject,
+  type ProposeActionDecision,
+  type ReadCapabilityDecision,
+  type ResponseAuthorityValidator,
+  type ResponseAuthorityVerdict,
+  type RunStep,
+  type WaitDecision,
+} from '@r4/contracts';
 import type { ModelError, ModelGateway, ModelUsage } from '@r4/model-gateway';
 import { emitTelemetry, type StructuredLogger } from '@r4/observability';
 import { budgetTerminationCode, checkBeforeModelCall, checkBeforeRead, checkBeforeWrite, modelCallTimeout, type BudgetExhaustion } from './budget.js';
@@ -39,6 +55,55 @@ export type DecideOutcome =
   | { readonly kind: 'model_failure'; readonly error: ModelError };
 
 const NO_USAGE: ModelUsage = { inputTokens: 0, outputTokens: 0 };
+/** ADR-031: the stated reason of the platform wait that defers a draft (shown back to the agent as a wait episode). */
+const REVALIDATION_WAIT_REASON = 'Platform: the drafted reply waits until its owner evidence can be revalidated before it is sent.';
+const DEGRADATION_ALREADY_SENT = 'Not sent: this run already sent its safe fallback reply; do not state these facts as current.';
+
+/** A `respond` the kernel must authorize before it becomes durable. */
+interface ResponseDraft {
+  readonly content: string;
+  /** Usage of the model call that drafted it (none when the platform records an already durable draft). */
+  readonly usage: ModelUsage;
+  /** Snapshot of the drafting model call (of the current iteration); null for a durable (deferred) draft. */
+  readonly snapshotId: string | null;
+  /** The draft is already durable (deferred): recording it again is a platform step. */
+  readonly deferred: boolean;
+  /** Its revalidation wait already happened: it is never deferred again. */
+  readonly waited: boolean;
+}
+
+type SessionCall = <T>(fn: () => Promise<T>) => Promise<{ ok: true; value: T } | { ok: false; outcome: KernelOutcome }>;
+
+/**
+ * The ContextSnapshot of each iteration a platform step is recorded at
+ * (agent_run_steps_context_snapshot_fk admits only the step's own iteration):
+ * compiled once per iteration — the model never sees it, the audit does.
+ */
+class IterationSnapshots {
+  #known: { readonly iteration: number; readonly id: string | null } | null;
+  constructor(
+    private readonly session: KernelSession,
+    private readonly call: SessionCall,
+    known: { readonly iteration: number; readonly id: string | null } | null,
+  ) {
+    this.#known = known;
+  }
+
+  async of(context: ExecutionContext): Promise<{ ok: true; id: string | null } | { ok: false; outcome: KernelOutcome }> {
+    if (this.#known?.iteration === context.iteration) return { ok: true, id: this.#known.id };
+    const prepared = await this.call(() => this.session.prepareContext(context));
+    if (!prepared.ok) return prepared;
+    this.#known = { iteration: context.iteration, id: prepared.value.kind === 'ready' ? prepared.value.snapshotId : null };
+    return { ok: true, id: this.#known.id };
+  }
+
+  async record(context: ExecutionContext, step: Pick<StepRecord, 'decision' | 'outcome' | 'error' | 'usage' | 'origin'>): Promise<{ ok: true } | { ok: false; outcome: KernelOutcome }> {
+    const snapshot = await this.of(context);
+    if (!snapshot.ok) return snapshot;
+    const recorded = await this.call(() => this.session.recordStep({ runId: context.run.runId, iteration: context.iteration, contextSnapshotId: snapshot.id, ...step }));
+    return recorded.ok ? { ok: true } : recorded;
+  }
+}
 
 /**
  * Agent Kernel (R4-C1, context from R4-C2). Runs the loop
@@ -113,6 +178,19 @@ export class AgentKernel {
       if (pendingAction) {
         const action = await this.#executeAction(session, pendingAction.step, pendingAction.decision);
         if (action) return action;
+        continue;
+      }
+
+      // ADR-031: a durable draft not yet resolved — deferred until its owner evidence could be
+      // revalidated (possibly by an earlier run that waited), or a degradation interrupted by a
+      // crash — is resolved by the platform before the model is asked anything.
+      const pending = this.#authority ? context.responseAuthority.pending : null;
+      if (pending) {
+        const resolved =
+          pending.kind === 'deferred'
+            ? await this.#respond(session, context, { content: pending.content, usage: NO_USAGE, snapshotId: null, deferred: true, waited: pending.waited }, telemetry)
+            : await this.#degrade(session, context, pending.content, { kind: 'reject', code: pending.code, feedback: '' }, null, telemetry);
+        if (resolved) return resolved;
         continue;
       }
 
@@ -204,7 +282,7 @@ export class AgentKernel {
           continue;
         }
         case 'respond': {
-          const responded = await this.#respond(session, context, decision, usage, snapshotId, telemetry);
+          const responded = await this.#respond(session, context, { content: decision.content, usage, snapshotId, deferred: false, waited: false }, telemetry);
           if (responded) return responded;
           continue;
         }
@@ -220,38 +298,72 @@ export class AgentKernel {
 
   /**
    * ADR-031. Records a `respond` only once the pack's authority validator
-   * allows it: expired evidence is revalidated with platform READs (the same
-   * draft is kept when the truth is unchanged); a contradicted draft is
-   * recorded `refused` with its feedback for exactly one model correction;
-   * after that, the validator's safe degradation is recorded instead.
+   * allows it. Evidence that expired is revalidated with platform READs (the
+   * same draft is kept when the truth is unchanged). Evidence still inside the
+   * owner's validity window but too close to its end (`notBefore`) is not
+   * refreshed now — the owner would return that same window — the draft is
+   * deferred durably instead: recorded `refused` (deferred, never sent) and
+   * the run suspended on a platform WAIT_UNTIL; the run woken from it resolves
+   * the draft first (at most one deferral per draft). A contradicted draft is
+   * recorded `refused` with its feedback; the recovery budget is the RUN's:
+   * one correction cycle, then one safe degradation, then refusals only.
    * Returns an outcome only when the loop must stop.
    */
-  async #respond(
-    session: KernelSession,
-    initial: ExecutionContext,
-    decision: RespondDecision,
-    usage: ModelUsage,
-    snapshotId: string,
-    telemetry: Record<string, unknown>,
-  ): Promise<KernelOutcome | null> {
+  async #respond(session: KernelSession, initial: ExecutionContext, draft: ResponseDraft, telemetry: Record<string, unknown>): Promise<KernelOutcome | null> {
     let context = initial;
-    // The step is recorded against the snapshot of ITS iteration (durable FK): the model call's own
-    // snapshot, or — after platform revalidation READs moved the iteration — the snapshot compiled
-    // for the new iteration (same inputs plus the refreshed evidence the draft was validated against).
-    let recordSnapshotId: string | null = snapshotId;
-    const record = (content: string, outcome: 'recorded' | 'refused', error: { code: string; message: string } | null) =>
-      this.#call(session, () =>
-        session.recordStep({ runId: context.run.runId, iteration: context.iteration, contextSnapshotId: recordSnapshotId, decision: { type: 'respond', content }, outcome, error, usage }),
-      );
+    // Each step is recorded against the snapshot of ITS iteration (durable FK): the drafting model call's own
+    // snapshot, or — once platform steps moved the iteration, or for a durable (deferred) draft — the snapshot
+    // compiled for that iteration (same inputs plus the refreshed evidence the draft was validated against).
+    const snapshots = new IterationSnapshots(session, (fn) => this.#call(session, fn), draft.snapshotId === null ? null : { iteration: initial.iteration, id: draft.snapshotId });
+    const author = draft.deferred ? { origin: 'platform' as const, usage: NO_USAGE } : { origin: 'model' as const, usage: draft.usage };
+    const record = (outcome: 'recorded' | 'refused', error: { code: string; message: string } | null) =>
+      snapshots.record(context, { decision: { type: 'respond', content: draft.content }, outcome, error, ...author });
+    const reload = async (): Promise<KernelOutcome | null> => {
+      const reloaded = await this.#call(session, () => session.load());
+      if (!reloaded.ok) return reloaded.outcome;
+      context = reloaded.value.context;
+      return null;
+    };
     const validator = this.#authority;
     if (!validator) {
-      const recorded = await record(decision.content, 'recorded', null);
+      const recorded = await record('recorded', null);
       return recorded.ok ? null : recorded.outcome;
     }
-    const input = () => ({ content: decision.content, observations: context.observations });
+    const input = () => ({ content: draft.content, observations: context.observations });
     let verdict = await validator.validate(input());
-    emitTelemetry(this.#logger, 'response.authority.checked', { ...telemetry, verdict: verdict.kind, claims: verdict.claims?.length ?? 0, reads: verdict.kind === 'revalidation_required' ? verdict.reads.length : 0 });
+    const notBefore = verdict.kind === 'revalidation_required' ? (verdict.notBefore ?? null) : null;
+    emitTelemetry(this.#logger, 'response.authority.checked', {
+      ...telemetry,
+      iteration: context.iteration,
+      verdict: verdict.kind,
+      claims: verdict.claims?.length ?? 0,
+      reads: verdict.kind === 'revalidation_required' ? verdict.reads.length : 0,
+      notBefore,
+      deferred: draft.deferred,
+      waited: draft.waited,
+    });
     if (verdict.kind === 'revalidation_required') {
+      if (notBefore !== null && !draft.waited && session.executeTemporal) {
+        emitTelemetry(this.#logger, 'response.authority.deferred', { ...telemetry, iteration: context.iteration, notBefore, reads: verdict.reads.length });
+        if (!draft.deferred) {
+          const refused = await record('refused', {
+            code: RESPONSE_AUTHORITY_DEFERRED,
+            message: `Not sent yet: the evidence it states is revalidated with its owner at ${notBefore} (when a refresh can yield a new validity window); the platform records it then if it is still supported.`,
+          });
+          if (!refused.ok) return refused.outcome;
+          const stopped = await reload();
+          if (stopped) return stopped;
+        }
+        const wait: WaitDecision = { type: 'wait', condition: { kind: 'WAIT_UNTIL', until: notBefore }, reason: REVALIDATION_WAIT_REASON };
+        const snapshot = await snapshots.of(context);
+        if (!snapshot.ok) return snapshot.outcome;
+        const executeTemporal = session.executeTemporal.bind(session);
+        const changed = await this.#call(session, () =>
+          executeTemporal({ runId: context.run.runId, iteration: context.iteration, contextSnapshotId: snapshot.id, decision: wait, outcome: 'recorded', error: null, usage: NO_USAGE, origin: 'platform' }, wait),
+        );
+        if (!changed.ok) return changed.outcome;
+        return changed.value.kind === 'suspended' ? { kind: 'terminated', termination: changed.value.termination } : null;
+      }
       for (const read of verdict.reads.slice(0, MAX_REVALIDATION_READS)) {
         if (checkBeforeRead(context.budget.limits, context.budget.usage)) break;
         const readDecision: ReadCapabilityDecision = { type: 'read_capability', capabilityId: read.capabilityId, arguments: read.arguments };
@@ -261,34 +373,53 @@ export class AgentKernel {
         if (!recorded.ok) return recorded.outcome;
         const read_ = await this.#executeRead(session, recorded.value, readDecision, { ...telemetry, origin: 'platform' }, false);
         if (read_) return read_;
-        const reloaded = await this.#call(session, () => session.load());
-        if (!reloaded.ok) return reloaded.outcome;
-        context = reloaded.value.context;
-      }
-      if (context.iteration !== initial.iteration) {
-        const prepared = await this.#call(session, () => session.prepareContext(context));
-        if (!prepared.ok) return prepared.outcome;
-        recordSnapshotId = prepared.value.kind === 'ready' ? prepared.value.snapshotId : null;
+        const stopped = await reload();
+        if (stopped) return stopped;
       }
       verdict = await validator.validate(input());
-      emitTelemetry(this.#logger, 'response.authority.revalidated', { ...telemetry, iteration: context.iteration, draftSnapshotId: snapshotId, recordSnapshotId, verdict: verdict.kind, claims: verdict.claims?.length ?? 0 });
+      emitTelemetry(this.#logger, 'response.authority.revalidated', { ...telemetry, iteration: context.iteration, draftSnapshotId: draft.snapshotId, verdict: verdict.kind, claims: verdict.claims?.length ?? 0, deferred: draft.deferred });
       if (verdict.kind === 'revalidation_required') {
         verdict = { kind: 'reject', code: 'response_authority_unverifiable', feedback: 'The evidence for facts stated in the draft could not be revalidated; do not state them as current.', ...(verdict.claims ? { claims: verdict.claims } : {}) };
       }
     }
     if (verdict.kind === 'allow') {
-      const recorded = await record(decision.content, 'recorded', null);
+      const recorded = await record('recorded', null);
       return recorded.ok ? null : recorded.outcome;
     }
     const code = verdict.code.startsWith(RESPONSE_AUTHORITY_ERROR_PREFIX) ? verdict.code : `${RESPONSE_AUTHORITY_ERROR_PREFIX}rejected`;
-    if (context.responseAuthority.rejectedDrafts < MAX_AUTHORITY_CORRECTIONS) {
-      emitTelemetry(this.#logger, 'response.authority.rejected', { ...telemetry, iteration: context.iteration, code });
-      const refused = await record(decision.content, 'refused', { code, message: verdict.feedback });
+    const budget = initial.responseAuthority;
+    if (budget.degraded) {
+      // The run already sent its one safe degradation: this draft is refused, never replaced by another.
+      emitTelemetry(this.#logger, 'response.authority.suppressed', { ...telemetry, iteration: context.iteration, code });
+      const refused = await record('refused', { code, message: `${verdict.feedback}\n${DEGRADATION_ALREADY_SENT}` });
       return refused.ok ? null : refused.outcome;
     }
-    const degraded = validator.degraded({ ...input(), verdict });
-    emitTelemetry(this.#logger, 'response.authority.degraded', { ...telemetry, iteration: context.iteration, code });
-    const recorded = await record(degraded, 'recorded', null);
+    if (budget.corrections < MAX_AUTHORITY_CORRECTIONS) {
+      emitTelemetry(this.#logger, 'response.authority.rejected', { ...telemetry, iteration: context.iteration, code });
+      const refused = await record('refused', { code, message: verdict.feedback });
+      return refused.ok ? null : refused.outcome;
+    }
+    const refused = await record('refused', { code: RESPONSE_AUTHORITY_DEGRADED, message: verdict.feedback });
+    if (!refused.ok) return refused.outcome;
+    const stopped = await reload();
+    if (stopped) return stopped;
+    return this.#degrade(session, context, draft.content, verdict, snapshots, telemetry);
+  }
+
+  /** Records the run's one safe degradation (a platform `respond`, token-free) in place of `content`. */
+  async #degrade(
+    session: KernelSession,
+    context: ExecutionContext,
+    content: string,
+    verdict: ResponseAuthorityVerdict,
+    known: IterationSnapshots | null,
+    telemetry: Record<string, unknown>,
+  ): Promise<KernelOutcome | null> {
+    const validator = this.#authority!;
+    const snapshots = known ?? new IterationSnapshots(session, (fn) => this.#call(session, fn), null);
+    const degraded = validator.degraded({ content, observations: context.observations, verdict });
+    emitTelemetry(this.#logger, 'response.authority.degraded', { ...telemetry, iteration: context.iteration, code: verdict.kind === 'reject' ? verdict.code : null });
+    const recorded = await snapshots.record(context, { decision: { type: 'respond', content: degraded }, outcome: 'recorded', error: null, origin: 'platform', usage: NO_USAGE });
     return recorded.ok ? null : recorded.outcome;
   }
 

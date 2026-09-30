@@ -35,8 +35,10 @@ import {
  * step whose action outcome is unknown stays `pending`: nothing may follow it.
  *
  * ADR-031: `origin` says who decided the step. `model` (default) — one model
- * call. `platform` — a READ the kernel issued itself to revalidate the
- * evidence of a proposed response (no model call, no tokens); only READs.
+ * call. `platform` — no model call, no tokens: a READ the kernel issued to
+ * revalidate the evidence of a proposed response, the WAIT_UNTIL deferring a
+ * draft until that evidence can be refreshed, a deferred draft recorded (or
+ * refused) once revalidated, or the run's one safe degradation.
  * A `respond` the response-authority validator rejected is recorded
  * `refused` (non-terminal) with its structured feedback and is never sent.
  */
@@ -84,6 +86,7 @@ export const runStepSchema = z
     if ((step.proposalId !== null) !== proposesAction) issue('proposalId', 'proposalId is present exactly for accepted propose_action decisions');
     if ((step.observationId !== null) !== (step.outcome === 'observed')) issue('observationId', 'observationId is present exactly when observed');
     if ((step.completedAt === null) !== (step.outcome === 'pending')) issue('completedAt', 'only pending steps are incomplete');
-    if (step.origin === 'platform' && (step.decision?.type !== 'read_capability' || step.usage.inputTokens + step.usage.outputTokens !== 0)) issue('origin', 'platform steps are token-free READs');
+    const platformDecision = step.decision?.type === 'read_capability' || step.decision?.type === 'respond' || step.decision?.type === 'wait';
+    if (step.origin === 'platform' && (!platformDecision || step.usage.inputTokens + step.usage.outputTokens !== 0)) issue('origin', 'platform steps are token-free READs, responses or waits');
   });
 export type RunStep = z.infer<typeof runStepSchema>;
