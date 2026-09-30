@@ -66,12 +66,12 @@ async function definitionsDir(files: Record<string, string>): Promise<string> {
 const salesJson = () => readFile(join(SALES_AGENT_DIR, 'sales.agent.json'), 'utf8');
 
 describe('production:sales:bootstrap', () => {
-  it('empty registry → registers sales@1 (the real file, through the registry); repeat → unchanged', async () => {
+  it('empty registry → registers sales@2 (the real file, through the registry); repeat → unchanged', async () => {
     const { env, pool: p } = await migratedDatabase();
     expect(await definitions(p)).toEqual([]);
-    expect(await bootstrap(env)).toEqual({ code: 0, out: 'production Sales bootstrap:\nregistered: sales@1', err: '' });
-    expect(await definitions(p)).toEqual([{ agent_id: 'sales', version: 1, content_hash: definitionContentHash(loadSalesAgentDefinition()) }]);
-    expect(await bootstrap(env)).toEqual({ code: 0, out: 'production Sales bootstrap:\nunchanged: sales@1', err: '' });
+    expect(await bootstrap(env)).toEqual({ code: 0, out: 'production Sales bootstrap:\nregistered: sales@2', err: '' });
+    expect(await definitions(p)).toEqual([{ agent_id: 'sales', version: 2, content_hash: definitionContentHash(loadSalesAgentDefinition()) }]);
+    expect(await bootstrap(env)).toEqual({ code: 0, out: 'production Sales bootstrap:\nunchanged: sales@2', err: '' });
     expect(await definitions(p)).toHaveLength(1);
   });
 
@@ -83,7 +83,7 @@ describe('production:sales:bootstrap', () => {
     const dir = await definitionsDir({ 'sales.agent.json': JSON.stringify({ ...edited, description: `${String(edited.description)} (edited without a version bump)` }) });
     const result = await bootstrap(env, dir);
     expect(result).toMatchObject({ code: 1, out: '' });
-    expect(result.err).toMatch(/^error: agent_definition_version_immutable: agent definition sales@1 is already registered with different content/);
+    expect(result.err).toMatch(/^error: agent_definition_version_immutable: agent definition sales@2 is already registered with different content/);
     expect(await definitions(p)).toEqual(before);
   });
 
@@ -91,7 +91,7 @@ describe('production:sales:bootstrap', () => {
     const { env, pool: p } = await migratedDatabase();
     const other = { ...(JSON.parse(await salesJson()) as Record<string, unknown>), agentId: 'other-agent', displayName: 'Other' };
     const dir = await definitionsDir({ 'sales.agent.json': await salesJson(), 'other.agent.json': JSON.stringify(other) });
-    expect(await bootstrap(env, dir)).toMatchObject({ code: 0, out: 'production Sales bootstrap:\nregistered: sales@1' });
+    expect(await bootstrap(env, dir)).toMatchObject({ code: 0, out: 'production Sales bootstrap:\nregistered: sales@2' });
     expect((await definitions(p)).map((d) => d.agent_id)).toEqual(['sales']);
   });
 
@@ -175,10 +175,10 @@ describe('the production gap it closes (gateway + worker, no API)', () => {
     expect(await bed.rows('select count(*)::int as n from agent_tasks')).toEqual([{ n: 0 }]);
     expect(await bed.rows('select count(*)::int as n from inbound_events')).toEqual([{ n: 1 }]);
 
-    expect(await bootstrap(bed.env)).toMatchObject({ code: 0, out: 'production Sales bootstrap:\nregistered: sales@1' });
+    expect(await bootstrap(bed.env)).toMatchObject({ code: 0, out: 'production Sales bootstrap:\nregistered: sales@2' });
     await bed.gateway.ingress.resumeUnsettled(0);
     const taskId = await bed.taskOf(CUSTOMER);
-    expect(await bed.rows('select agent_id, agent_version from agent_tasks where task_id = $1', [taskId])).toEqual([{ agent_id: 'sales', agent_version: 1 }]);
+    expect(await bed.rows('select agent_id, agent_version from agent_tasks where task_id = $1', [taskId])).toEqual([{ agent_id: 'sales', agent_version: 2 }]);
     expect(await bed.rows('select count(*)::int as n from inbound_events')).toEqual([{ n: 1 }]);
   });
 });
