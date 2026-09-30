@@ -28,6 +28,10 @@ impide que llegue al cliente. Subir la ventana de Catalog está descartado: Cata
    - `revalidation_required` → el kernel emite los READ pedidos como steps durables de
      `origin = 'platform'` (sin llamada al modelo, sin tokens; migración `0009_run_step_origin`) y
      valida **el mismo borrador** otra vez: si la verdad no cambió, se conserva y se envía.
+   Tras los READ la iteración avanzó: el kernel compila y persiste el ContextSnapshot de la nueva
+     iteración (mismos inputs más la evidencia refrescada contra la que se validó el borrador) y registra
+     el step `respond` contra él (FK `(snapshot, run, iteration)`); el snapshot de la llamada al modelo que
+     redactó el borrador queda en `response.authority.revalidated.draftSnapshotId`.
    - `reject` → el borrador se registra `refused` (no terminal, código `response_authority_*`), nunca
      se envía y el modelo recibe el feedback estructurado (episodio `response.not_sent` en el contexto).
 3. **Límites (sin loops).** Hasta 6 READ de revalidación por borrador, dentro del budget de READ.

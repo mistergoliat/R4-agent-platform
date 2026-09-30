@@ -235,9 +235,13 @@ export class AgentKernel {
     telemetry: Record<string, unknown>,
   ): Promise<KernelOutcome | null> {
     let context = initial;
+    // The step is recorded against the snapshot of ITS iteration (durable FK): the model call's own
+    // snapshot, or — after platform revalidation READs moved the iteration — the snapshot compiled
+    // for the new iteration (same inputs plus the refreshed evidence the draft was validated against).
+    let recordSnapshotId: string | null = snapshotId;
     const record = (content: string, outcome: 'recorded' | 'refused', error: { code: string; message: string } | null) =>
       this.#call(session, () =>
-        session.recordStep({ runId: context.run.runId, iteration: context.iteration, contextSnapshotId: snapshotId, decision: { type: 'respond', content }, outcome, error, usage }),
+        session.recordStep({ runId: context.run.runId, iteration: context.iteration, contextSnapshotId: recordSnapshotId, decision: { type: 'respond', content }, outcome, error, usage }),
       );
     const validator = this.#authority;
     if (!validator) {
@@ -261,8 +265,13 @@ export class AgentKernel {
         if (!reloaded.ok) return reloaded.outcome;
         context = reloaded.value.context;
       }
+      if (context.iteration !== initial.iteration) {
+        const prepared = await this.#call(session, () => session.prepareContext(context));
+        if (!prepared.ok) return prepared.outcome;
+        recordSnapshotId = prepared.value.kind === 'ready' ? prepared.value.snapshotId : null;
+      }
       verdict = await validator.validate(input());
-      emitTelemetry(this.#logger, 'response.authority.revalidated', { ...telemetry, iteration: context.iteration, verdict: verdict.kind, claims: verdict.claims?.length ?? 0 });
+      emitTelemetry(this.#logger, 'response.authority.revalidated', { ...telemetry, iteration: context.iteration, draftSnapshotId: snapshotId, recordSnapshotId, verdict: verdict.kind, claims: verdict.claims?.length ?? 0 });
       if (verdict.kind === 'revalidation_required') {
         verdict = { kind: 'reject', code: 'response_authority_unverifiable', feedback: 'The evidence for facts stated in the draft could not be revalidated; do not state them as current.', ...(verdict.claims ? { claims: verdict.claims } : {}) };
       }

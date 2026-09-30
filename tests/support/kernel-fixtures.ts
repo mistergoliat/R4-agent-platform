@@ -244,6 +244,10 @@ export class MemorySession implements KernelSession {
 
   recordStep(record: StepRecord): Promise<RunStep> {
     this.#inject('recordStep');
+    // Mirrors agent_run_steps_context_snapshot_fk: a step references only a snapshot of its own iteration.
+    if (record.contextSnapshotId && !this.snapshots.some((s) => s.snapshotId === record.contextSnapshotId && s.iteration === record.iteration)) {
+      return Promise.reject(new Error('referenced record does not exist (agent_run_steps_context_snapshot_fk)'));
+    }
     const step = this.#toStep(record);
     this.steps.push(step);
     return Promise.resolve(step);
