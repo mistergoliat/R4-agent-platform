@@ -38,6 +38,16 @@ describe('R4-J1E-R2.2 respond is terminal for the turn', () => {
     expect(said(session)).toEqual(['hola, ¿en qué te ayudo?']);
   });
 
+  it('read → respond → FIN: the scripted decision after the response is never requested', async () => {
+    const { session, provider } = await run([read(READ_FACT.capabilityId, { factKey: 'alpha' }), respond('alpha'), complete('never asked')]);
+    expect(summary(session)).toEqual([
+      ['read_capability', 'observed', 'model', null],
+      ['respond', 'recorded', 'model', null],
+      ['wait', 'recorded', 'platform', null],
+    ]);
+    expect(provider.callCount).toBe(2);
+  });
+
   it('read → read → respond → FIN', async () => {
     const { session, provider } = await run([read(READ_FACT.capabilityId, { factKey: 'alpha' }), read(READ_FACT.capabilityId, { factKey: 'beta' }), respond('alpha y beta'), read(READ_FACT.capabilityId, { factKey: 'never' })]);
     expect(summary(session)).toEqual([

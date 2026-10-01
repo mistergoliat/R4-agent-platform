@@ -2,7 +2,7 @@ import { createPlatform, type Platform } from '@r4/api';
 import { createGatewayPlatform, type GatewayPlatform } from '@r4/channel-gateway';
 import type { TrustedHumanContext } from '@r4/contracts';
 import type { CatalogPort } from '@r4-adapters/domains';
-import { FakeModelProvider, type FakeModelStep } from '@r4/model-gateway';
+import { FakeModelProvider, type FakeModelStep, type ModelRequest } from '@r4/model-gateway';
 import { createSilentLogger } from '@r4/observability';
 import { PostgresProductionStore, type Pool } from '@r4/persistence-postgres';
 import { conversationKey, loadProductionConfig, type ProductionConfig, type ProductionSecrets } from '@r4/live-ops';
@@ -22,6 +22,9 @@ export const OPERATOR: TrustedHumanContext = { humanRef: 'operator-1', scopes: [
 export function keyOf(waId: string): string {
   return conversationKey(IDENTITY_KEY, 'whatsapp', CANARY_PHONE_ID, waId);
 }
+
+/** A scripted model answer, or a function run DURING that model call (e.g. to inject a concurrent inbound). */
+export type QueuedStep = FakeModelStep | ((request: ModelRequest) => FakeModelStep | Promise<FakeModelStep>);
 
 export interface TestbedOptions {
   /** wa_ids allowed into the canary cohort (default: none → everything held as rollout_excluded). */
@@ -61,12 +64,12 @@ export class LiveOpsTestbed {
   readonly model: FakeModelProvider;
   /** The production environment of this bed (for child processes). */
   env: Readonly<Record<string, string>>;
-  readonly #queue: FakeModelStep[];
+  readonly #queue: QueuedStep[];
   #workers: WorkerPlatform[] = [];
   readonly #catalog: (CatalogPort & { readonly bindingKind: string }) | undefined;
   #timestamp = Math.floor(Date.now() / 1000) - 600;
 
-  private constructor(fields: { db: TestDatabase; pool: Pool; api: Platform; gateway: GatewayPlatform; provider: FakeWhatsAppProvider; production: { config: ProductionConfig; secrets: ProductionSecrets }; model: FakeModelProvider; queue: FakeModelStep[]; env: Record<string, string>; catalog?: CatalogPort & { readonly bindingKind: string } }) {
+  private constructor(fields: { db: TestDatabase; pool: Pool; api: Platform; gateway: GatewayPlatform; provider: FakeWhatsAppProvider; production: { config: ProductionConfig; secrets: ProductionSecrets }; model: FakeModelProvider; queue: QueuedStep[]; env: Record<string, string>; catalog?: CatalogPort & { readonly bindingKind: string } }) {
     this.db = fields.db;
     this.pool = fields.pool;
     this.api = fields.api;
@@ -108,8 +111,12 @@ export class LiveOpsTestbed {
     const logger = createSilentLogger();
     const api = await createPlatform({ databaseUrl: db.url, host: '127.0.0.1', port: 0, logLevel: 'silent', agentDefinitionsDir: options.agentDefinitionsDir ?? SALES_AGENT_DIR, dbPoolMax: 4 }, { logger, humanContext: () => OPERATOR });
     const gateway = await startGateway(db.url, pool, production, env);
-    const queue: FakeModelStep[] = [];
-    const model = new FakeModelProvider((_request, index) => queue.shift() ?? { type: 'provider_error', message: `no scripted step for model call ${index + 1}` });
+    const queue: QueuedStep[] = [];
+    const model = new FakeModelProvider((request, index) => {
+      const next = queue.shift();
+      if (next === undefined) return { type: 'provider_error', message: `no scripted step for model call ${index + 1}` };
+      return typeof next === 'function' ? next(request) : next;
+    });
     const bed = new LiveOpsTestbed({ db, pool, api, gateway, provider, production, model, queue, env: { ...env, R4_DATABASE_URL: db.url }, ...(options.catalog ? { catalog: options.catalog } : {}) });
     if (options.autonomy) await bed.setAutonomy(true);
     return bed;
@@ -130,7 +137,7 @@ export class LiveOpsTestbed {
   }
 
   /** Queues the stand-in model's next decisions, one per model call. */
-  next(...steps: FakeModelStep[]): void {
+  next(...steps: QueuedStep[]): void {
     this.#queue.push(...steps);
   }
 

@@ -139,6 +139,51 @@ describe('R4-J1E-R2.2 pure agent execution (production compositions)', () => {
     expect(runs[1]!.run_id).not.toBe(runs[0]!.run_id);
   });
 
+  it('input horizon: input B arriving while reply A is drafted is not lost — A is recorded and materialized once, the turn-closing wait sees B, the task wakes, a NEW run answers B with B in context', async () => {
+    const INPUT_B = '¿Y la versión nueva cuánto pesa?';
+    const REPLY_A = 'La de 2da Selección está sin stock; la versión nueva está a $13.990.';
+    const REPLY_B = 'La versión nueva pesa 2 kg.';
+    bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER], autonomy: true, env: { R4_PROD_POLICY_PROFILE: 'sales-production@2' }, catalog: Object.assign(new FixtureCatalog({ products: OXFORD_CATALOG }), { bindingKind: 'real' }) });
+    const seenByB: unknown[] = [];
+    bed.next(
+      search,
+      // Input B becomes durable while the model call that drafts reply A is in flight (run A still running).
+      async () => {
+        await bed!.customer(CUSTOMER, 'wamid.in.B', INPUT_B);
+        return say(REPLY_A);
+      },
+      (request) => (seenByB.push(request.context), say(REPLY_B)),
+    );
+    await bed.customer(CUSTOMER, 'wamid.in.A', QUESTION);
+    const taskId = await bed.taskOf(CUSTOMER);
+    const worker = await bed.worker('worker-1');
+
+    expect((await worker.worker.runOnce()).kind).not.toBe('idle'); // run A
+    // The turn-closing wait was satisfied at once by the unseen input B: the task is runnable, not stranded.
+    expect((await bed.rows<{ status: string }>('select status from agent_tasks where task_id = $1', [taskId]))[0]!.status).toBe('running');
+    expect(await bed.rows('select kind, status, resolution from task_waits where task_id = $1', [taskId])).toEqual([{ kind: 'WAIT_FOR_INPUT', status: 'completed', resolution: 'input' }]);
+    expect(await bed.rows("select event_type from temporal_events where task_id = $1 and event_type = 'task.woken'", [taskId])).toHaveLength(1);
+
+    expect((await worker.worker.runOnce()).kind).not.toBe('idle'); // run B
+    const t = await trajectory(taskId);
+    expect(t.runs.map((r) => [r.status, r.termination_reason])).toEqual([['suspended', 'waiting'], ['suspended', 'waiting']]);
+    const runA = t.steps.filter((s) => s.run_id === t.runs[0]!.run_id);
+    const runB = t.steps.filter((s) => s.run_id === t.runs[1]!.run_id);
+    expect(shape(runA)).toEqual([['read_capability', 'observed', 'model', 'catalog.search'], ['respond', 'recorded', 'model', null], ['wait', 'recorded', 'platform', null]]);
+    expect(shape(runB)).toEqual([['respond', 'recorded', 'model', null], ['wait', 'recorded', 'platform', null]]);
+    expect(JSON.stringify(seenByB[0])).toContain(INPUT_B); // B reached the new run's context: no input lost
+    expect(bed.pendingSteps).toBe(0);
+
+    // Each recorded reply has exactly one outbound; nothing is duplicated. Reply A follows the existing
+    // stale-reply delivery policy (R4-I): a newer input existed before dispatch, so it is superseded, never resent.
+    await bed.deliver();
+    await bed.deliver();
+    const outbound = await bed.rows<{ response_step_id: string; status: string; cancel_reason: string | null }>('select response_step_id, status, cancel_reason from outbound_messages where task_id = $1 order by created_at', [taskId]);
+    expect(new Set(outbound.map((o) => o.response_step_id)).size).toBe(outbound.length);
+    expect(outbound.map((o) => [o.status, o.cancel_reason])).toEqual([['cancelled', 'superseded_by_newer_input'], ['accepted', null]]);
+    expect(bed.provider.sends.map((s) => s.text)).toEqual([REPLY_B]);
+  });
+
   it('read → read → respond → FIN over Catalog', async () => {
     const { taskId } = await turn(search, productContext, say(OXFORD_REPLY), search);
     const t = await trajectory(taskId);

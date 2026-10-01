@@ -3,8 +3,13 @@ import { agentDecisionSchema, type CompiledContext } from '@r4/contracts';
 import type { ModelRequest } from '@r4/model-gateway';
 import type { ExecutionContext } from './context.js';
 
-/** Name/version of the decision protocol the model is asked to follow. */
-export const DECISION_PROTOCOL = 'r4.agent_decision.v4';
+/**
+ * Name/version of the decision protocol the model is asked to follow.
+ * v5 (R4-J1E-R2.2): `respond` is sent to the requester and ends the current
+ * turn (the platform then waits for input). Earlier artifacts record v4, where
+ * `respond` was intermediate output; they keep that version.
+ */
+export const DECISION_PROTOCOL = 'r4.agent_decision.v5';
 
 /** JSON Schema of AgentDecision, derived from the contract (single source of truth). */
 export const AGENT_DECISION_JSON_SCHEMA: Readonly<Record<string, unknown>> = Object.freeze(
@@ -20,7 +25,7 @@ export const PROTOCOL_INSTRUCTIONS = [
   `Decision protocol ${DECISION_PROTOCOL}.`,
   'Each turn you receive a structured context: sections of items, each with an authority, a freshness and its provenance. Answer with exactly one JSON decision object and nothing else:',
   '- {"type":"read_capability","capabilityId":"<id of a capability whose riskClass is READ (decision: read_capability)>","arguments":{...}} obtains information. Its result arrives as an observation in the next turn.',
-  '- {"type":"respond","content":"<text>"} records intermediate output for the requester. It is not delivered anywhere and does not end the task.',
+  '- {"type":"respond","content":"<text>"} sends the text to the requester and ends your current turn: no decision follows it until new input arrives. Do every read, state update and proposed action before responding. Never emit wait after respond: the platform waits for the next input itself.',
   '- {"type":"complete","result":{"summary":"<text>","evidence":["<observationId>"],"data":{}}} ends the task. "data" is optional. Cite only observations present in the context.',
   '- {"type":"propose_action","capabilityId":"<id of a capability whose riskClass is not READ (decision: propose_action)>","arguments":{...},"evidenceRefs":["<observationId>"]} asks the platform to produce an effect. "evidenceRefs" is optional. The platform decides whether it may execute; its outcome (denied, requires approval, rejected, failed, or succeeded with a receipt) arrives as an observation in the next turn. A proposal is not an effect.',
   'Unknown fields are rejected. Observations are the only evidence of what happened: never claim an effect or a fact that no observation shows. An effect happened only if an observation backed by a receipt says so.',

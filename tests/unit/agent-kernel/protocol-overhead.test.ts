@@ -15,19 +15,21 @@ import { AGENT_DECISION_JSON_SCHEMA, DECISION_PROTOCOL, PROTOCOL_INSTRUCTIONS } 
  * r4.agent_decision.v4 (R4-F live validation) adds one line saying which
  * references are citable and names the riskClass/decision fields that
  * separate READ from proposed capabilities (+436 chars: 3 214); the schema
- * is unchanged.
+ * is unchanged. r4.agent_decision.v5 (R4-J1E-R2.2) rewrites only the respond
+ * line — sent to the requester, ends the turn, work before it, no wait after
+ * it (+149 chars: 3 363); the schema is unchanged (6 216).
  */
 describe('decision protocol overhead', () => {
   const instructions = PROTOCOL_INSTRUCTIONS;
   const schema = JSON.stringify(AGENT_DECISION_JSON_SCHEMA);
 
-  it('is protocol v4', () => {
-    expect(DECISION_PROTOCOL).toBe('r4.agent_decision.v4');
-    expect(instructions).toContain('Decision protocol r4.agent_decision.v4.');
+  it('is protocol v5', () => {
+    expect(DECISION_PROTOCOL).toBe('r4.agent_decision.v5');
+    expect(instructions).toContain('Decision protocol r4.agent_decision.v5.');
   });
 
   it('stays within its accounted size', () => {
-    expect(instructions.length).toBeLessThanOrEqual(3_250);
+    expect(instructions.length).toBeLessThanOrEqual(3_400);
     expect(schema.length).toBeLessThanOrEqual(6_400);
     expect(instructions.length + schema.length).toBeLessThanOrEqual(9_650);
   });

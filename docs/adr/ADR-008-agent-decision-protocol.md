@@ -119,7 +119,13 @@ no cambió. Instrucciones: 2 778 → 3 214 caracteres
 - Añadir una decisión exige: tipo en el contrato, validación semántica,
   manejo en el kernel, ruta de persistencia y tests; nunca un bypass.
 
-## Enmienda R4-J1E-R2.2 (2026-10-01) — `respond` es terminal para el turno
+## Enmienda R4-J1E-R2.2 (2026-10-01) — `respond` es terminal para el turno (protocolo `r4.agent_decision.v5`)
+
+El protocolo sube a **`r4.agent_decision.v5`** porque cambia la semántica observable de `respond`.
+La instrucción al modelo dice que `respond` envía el texto al requester y termina el turno actual,
+que toda lectura, actualización de estado o acción propuesta va antes de responder, y que no se emite
+`wait` después de `respond` porque la plataforma espera el siguiente input. Los artefactos históricos
+conservan `v4` (donde `respond` era salida intermedia) y no se reinterpretan como v5.
 
 Un `respond` válido por protocolo se registra tal como el agente lo decidió (sin juez semántico
 síncrono; ADR-031 superseded) y **cierra el turno**: el kernel registra un `WAIT_FOR_INPUT` de

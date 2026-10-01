@@ -99,9 +99,9 @@ export class DurableKernelSession implements KernelSession {
    * Observational: reads durable state only. (R4-E) A proposal of an earlier
    * run still to be resolved (human approval outcome) is returned as the
    * pending action; the kernel drives it through `executeAction` — the
-   * explicit governed phase — before any model call. (ADR-031) Likewise a
-   * draft an earlier run deferred for revalidation is part of the state the
-   * kernel resolves before any model call.
+   * explicit governed phase — before any model call. (R4-J1E-R2.2) A run whose
+   * last step is a recorded `respond` loads as a turn to close: the kernel
+   * records the platform WAIT_FOR_INPUT before anything else.
    */
   load(): Promise<ExecutionState> {
     return translate(async () => {
