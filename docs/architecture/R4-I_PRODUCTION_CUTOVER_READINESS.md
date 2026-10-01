@@ -109,6 +109,7 @@ la revocación del token es más fuerte que cualquier parche.
 | `/ready` del gateway | DB + migraciones + controles legibles — readiness del **canal**; no depende de workers | Correcto (no false-green); `/health` es liveness |
 | `/ready/r4` del gateway | `/ready` **y** ≥ 1 worker de producción fresco, compatible y `ready` (`worker_presence`, reloj de BD) | Agregado de la plataforma (§9) |
 | Worker | `production:sales:worker`; exige modelo `R4_MODEL_*` y red; publica presencia durable renovada por el progreso de su bucle | Sin HTTP; su readiness se observa en `/ready/r4` (§9) |
+| Scheduler (R4-J1E-R2.1) | `start:scheduler` (apps/scheduler, ADR-022); exige esquema al día y `R4_RECONCILIATION_*` sin default; único consumidor de schedules (WAIT_UNTIL, expiraciones, reintentos, despacho de reconciliación) | Proceso obligatorio; sin presencia durable ni readiness propia (gap diferido) |
 | Kill switch | `autonomy_controls`, creado deshabilitado por migración; lectura fallida = deshabilitado | Legible y administrable desde el host productivo con `production:sales:control` (§8); B-3 resuelto offline |
 | Rollout | `R4_PROD_ROLLOUT_PERCENT` 0–100 + allow/deny por hash | 100 % admitido por código |
 | Secretos en logs | pino `redact` (authorization, cookie, `*.token`, `*.secret`, …); gateway sin request logging | Correcto |

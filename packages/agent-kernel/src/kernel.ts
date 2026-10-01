@@ -4,6 +4,7 @@ import {
   RESPONSE_AUTHORITY_DEFERRED,
   RESPONSE_AUTHORITY_DEGRADED,
   RESPONSE_AUTHORITY_ERROR_PREFIX,
+  RESPONSE_AUTHORITY_SUPPRESSED,
   type AgentDecision,
   type CompiledContext,
   type CompletionResult,
@@ -58,6 +59,9 @@ const NO_USAGE: ModelUsage = { inputTokens: 0, outputTokens: 0 };
 /** ADR-031: the stated reason of the platform wait that defers a draft (shown back to the agent as a wait episode). */
 const REVALIDATION_WAIT_REASON = 'Platform: the drafted reply waits until its owner evidence can be revalidated before it is sent.';
 const DEGRADATION_ALREADY_SENT = 'Not sent: this run already sent its safe fallback reply; do not state these facts as current.';
+const RESPONSE_AUTHORITY_UNVERIFIABLE = 'response_authority_unverifiable';
+const UNVERIFIABLE_FEEDBACK = 'The evidence for facts stated in the draft could not be revalidated; do not state them as current.';
+const SUPPRESSED_FEEDBACK = 'Not sent: after the safe fallback reply, this run states no further facts that need the owner\'s authority.';
 
 /** A `respond` the kernel must authorize before it becomes durable. */
 interface ResponseDraft {
@@ -306,7 +310,10 @@ export class AgentKernel {
    * the run suspended on a platform WAIT_UNTIL; the run woken from it resolves
    * the draft first (at most one deferral per draft). A contradicted draft is
    * recorded `refused` with its feedback; the recovery budget is the RUN's:
-   * one correction cycle, then one safe degradation, then refusals only.
+   * one correction cycle, then one safe degradation, then refusals only. The
+   * safe degradation exhausts response-authority recovery for authoritative
+   * claims for the remainder of the run (R4-J1E-R2.1): no deferral, wait or
+   * revalidation, and a draft with claims is refused even if allowed.
    * Returns an outcome only when the loop must stop.
    */
   async #respond(session: KernelSession, initial: ExecutionContext, draft: ResponseDraft, telemetry: Record<string, unknown>): Promise<KernelOutcome | null> {
@@ -342,7 +349,16 @@ export class AgentKernel {
       deferred: draft.deferred,
       waited: draft.waited,
     });
-    if (verdict.kind === 'revalidation_required') {
+    const budget = initial.responseAuthority;
+    // R4-J1E-R2.1: the run already sent its one safe degradation, which exhausts response-authority recovery for
+    // authoritative claims for the rest of the run. Revalidating would open a new recovery (deferral, wait, platform
+    // READs), and a draft stating claims is refused even when the validator allows it. Both are refused below like
+    // any later invalid draft. A draft with no authority claims keeps the normal semantics.
+    if (budget.degraded && verdict.kind === 'revalidation_required') {
+      verdict = { kind: 'reject', code: RESPONSE_AUTHORITY_UNVERIFIABLE, feedback: UNVERIFIABLE_FEEDBACK, ...(verdict.claims ? { claims: verdict.claims } : {}) };
+    } else if (budget.degraded && verdict.kind === 'allow' && (verdict.claims?.length ?? 0) > 0) {
+      verdict = { kind: 'reject', code: RESPONSE_AUTHORITY_SUPPRESSED, feedback: SUPPRESSED_FEEDBACK, claims: verdict.claims! };
+    } else if (verdict.kind === 'revalidation_required') {
       if (notBefore !== null && !draft.waited && session.executeTemporal) {
         emitTelemetry(this.#logger, 'response.authority.deferred', { ...telemetry, iteration: context.iteration, notBefore, reads: verdict.reads.length });
         if (!draft.deferred) {
@@ -379,7 +395,7 @@ export class AgentKernel {
       verdict = await validator.validate(input());
       emitTelemetry(this.#logger, 'response.authority.revalidated', { ...telemetry, iteration: context.iteration, draftSnapshotId: draft.snapshotId, verdict: verdict.kind, claims: verdict.claims?.length ?? 0, deferred: draft.deferred });
       if (verdict.kind === 'revalidation_required') {
-        verdict = { kind: 'reject', code: 'response_authority_unverifiable', feedback: 'The evidence for facts stated in the draft could not be revalidated; do not state them as current.', ...(verdict.claims ? { claims: verdict.claims } : {}) };
+        verdict = { kind: 'reject', code: RESPONSE_AUTHORITY_UNVERIFIABLE, feedback: UNVERIFIABLE_FEEDBACK, ...(verdict.claims ? { claims: verdict.claims } : {}) };
       }
     }
     if (verdict.kind === 'allow') {
@@ -387,7 +403,6 @@ export class AgentKernel {
       return recorded.ok ? null : recorded.outcome;
     }
     const code = verdict.code.startsWith(RESPONSE_AUTHORITY_ERROR_PREFIX) ? verdict.code : `${RESPONSE_AUTHORITY_ERROR_PREFIX}rejected`;
-    const budget = initial.responseAuthority;
     if (budget.degraded) {
       // The run already sent its one safe degradation: this draft is refused, never replaced by another.
       emitTelemetry(this.#logger, 'response.authority.suppressed', { ...telemetry, iteration: context.iteration, code });

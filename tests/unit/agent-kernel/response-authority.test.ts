@@ -301,6 +301,89 @@ describe('R4-J1E-R2 run-scoped recovery budget', () => {
     ]);
   });
 
+  describe('R4-J1E-R2.1 a degraded run opens no new recovery', () => {
+    const rejectBad = (then: (input: ResponseAuthorityInput) => ResponseAuthorityVerdict) =>
+      new ScriptedValidator((input) => (input.content.startsWith('bad') ? { kind: 'reject', code: 'response_authority_contradiction', feedback: 'wrong' } : then(input)));
+    const expired = (): ResponseAuthorityVerdict => ({ kind: 'revalidation_required', reads: [{ capabilityId: READ_FACT.capabilityId, arguments: { factKey: 'p1' } }] });
+
+    it('reject → correction → reject → degradation → near-expiry draft: no deferral, no wait, no platform READ, no second outbound', async () => {
+      const validator = rejectBad(() => ({ kind: 'revalidation_required', notBefore: NOT_BEFORE, reads: [{ capabilityId: READ_FACT.capabilityId, arguments: { factKey: 'p1' } }] }));
+      const { outcome, session } = await run([respond('bad 1'), respond('bad 2'), respond('precio $84.990'), complete('done')], validator, { temporal: true });
+      expect(summary(session)).toEqual([
+        ['respond', 'refused', 'model', 'response_authority_contradiction'],
+        ['respond', 'refused', 'model', 'response_authority_degraded'],
+        ['respond', 'recorded', 'platform', null],
+        ['respond', 'refused', 'model', 'response_authority_unverifiable'],
+        ['complete', 'recorded', 'model', null],
+      ]);
+      expect(session.waits).toHaveLength(0);
+      expect(session.reads).toHaveLength(0);
+      expect(said(session)).toEqual(['safe degraded reply']);
+      expect(session.steps[3]!.error?.message).toContain('already sent its safe fallback reply');
+      expect(outcome).toMatchObject({ kind: 'terminated', termination: { reason: 'completed' } });
+    });
+
+    it('expired evidence after the degradation is not refreshed either (no platform READ)', async () => {
+      const { session } = await run([respond('bad 1'), respond('bad 2'), respond('precio $84.990'), complete('done')], rejectBad(expired), { temporal: true });
+      expect(session.reads).toHaveLength(0);
+      expect(summary(session)[3]).toEqual(['respond', 'refused', 'model', 'response_authority_unverifiable']);
+      expect(said(session)).toEqual(['safe degraded reply']);
+    });
+
+    it('1. degraded + validator ALLOW + claims > 0: suppressed, no READ, no wait, no correction, 0 additional outbound', async () => {
+      const validator = rejectBad(() => ({ kind: 'allow', claims: [{ kind: 'unit_price', subjectRef: 'p1', value: 84990 }] }));
+      const { session, provider } = await run([respond('bad 1'), respond('bad 2'), respond('precio $84.990'), complete('done')], validator, { temporal: true });
+      expect(summary(session)).toEqual([
+        ['respond', 'refused', 'model', 'response_authority_contradiction'],
+        ['respond', 'refused', 'model', 'response_authority_degraded'],
+        ['respond', 'recorded', 'platform', null],
+        ['respond', 'refused', 'model', 'response_authority_suppressed'],
+        ['complete', 'recorded', 'model', null],
+      ]);
+      expect(said(session)).toEqual(['safe degraded reply']);
+      expect(session.reads).toHaveLength(0);
+      expect(session.waits).toHaveLength(0);
+      expect(session.steps[3]!.error?.message).toContain('already sent its safe fallback reply');
+      expect(validator.seen).toHaveLength(3); // checked once, never revalidated
+      expect(provider.requests).toHaveLength(4); // no extra model call: the refusal is not a correction cycle
+    });
+
+    it('2. degraded + validator ALLOW + claims = 0: a conversational reply keeps the normal semantics (recorded)', async () => {
+      const { session } = await run([respond('bad 1'), respond('bad 2'), respond('¿Quieres que lo revise más tarde?'), complete('done')], rejectBad(() => ({ kind: 'allow', claims: [] })), { temporal: true });
+      expect(said(session)).toEqual(['safe degraded reply', '¿Quieres que lo revise más tarde?']);
+      expect(summary(session).filter(([, , , code]) => code === 'response_authority_degraded')).toHaveLength(1);
+    });
+
+    it('a claim-free ALLOW without a claims list is conversational too (recorded)', async () => {
+      const { session } = await run([respond('bad 1'), respond('bad 2'), respond('ok'), complete('done')], rejectBad(() => ({ kind: 'allow' })), { temporal: true });
+      expect(said(session)).toEqual(['safe degraded reply', 'ok']);
+    });
+
+    it('before any degradation, ALLOW with claims is recorded as always', async () => {
+      const { session } = await run([respond('precio $84.990'), complete('done')], new ScriptedValidator(() => ({ kind: 'allow', claims: [{ kind: 'unit_price', value: 84990 }] })));
+      expect(said(session)).toEqual(['precio $84.990']);
+    });
+
+    it('legacy durable state (degraded, then deferred before R4-J1E-R2.1): the woken run refuses the deferred draft without any READ or outbound', async () => {
+      const first = await run([respond('bad 1'), respond('bad 2')], rejectBad(() => ({ kind: 'allow' })), { temporal: true });
+      expect(said(first.session)).toEqual(['safe degraded reply']);
+      // What 80f63ff persisted for the production task: the degraded run deferred a new draft and waited.
+      const base = first.session.steps[1]!;
+      first.session.steps.push(
+        { ...base, stepId: crypto.randomUUID(), iteration: base.iteration + 2, decision: { type: 'respond', content: 'precio $84.990' }, outcome: 'refused', error: { code: 'response_authority_deferred', message: 'deferred' } },
+        { ...base, stepId: crypto.randomUUID(), iteration: base.iteration + 2, decision: { type: 'wait', condition: { kind: 'WAIT_UNTIL', until: NOT_BEFORE }, reason: 'revalidation' }, outcome: 'recorded', error: null, origin: 'platform' },
+      );
+      const { session, provider } = await wake(first.session, [complete('done')], nearExpiry());
+      expect(summary(session)).toEqual([
+        ['respond', 'refused', 'platform', 'response_authority_unverifiable'],
+        ['complete', 'recorded', 'model', null],
+      ]);
+      expect(session.reads).toHaveLength(0);
+      expect(said(session)).toEqual([]);
+      expect(provider.requests).toHaveLength(1);
+    });
+  });
+
   it('a degradation interrupted after its refused draft is completed on restart (exactly one degradation)', async () => {
     const logger = createSilentLogger();
     const session = new MemorySession();

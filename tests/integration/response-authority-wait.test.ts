@@ -6,7 +6,7 @@ import { createMigratedTestDatabase, type TestDatabase } from '../support/databa
 import { createActionTask, startActionPlatform } from '../support/actions.js';
 import { startTestWorker, stepsOf, type TestWorker } from '../support/worker.js';
 import { complete, respond, sequence } from '../support/decisions.js';
-import { drain, setTemporalOffset, testScheduler, waitRows } from '../support/temporal.js';
+import { drain, freezeTemporalClock, setTemporalOffset, testScheduler, waitRows } from '../support/temporal.js';
 import { GET_TEST_FACT_ID } from '../fixtures/capabilities/get-test-fact.js';
 
 /**
@@ -39,9 +39,11 @@ async function worker(options: Omit<Parameters<typeof startTestWorker>[1], 'work
 
 /** Domain-free validator: evidence is "near expiry" until the platform refreshed it with a READ. */
 class NearExpiryValidator implements ResponseAuthorityValidator {
-  readonly notBefore = new Date(Date.now() + 1_000).toISOString();
   checks = 0;
-  constructor(private readonly afterRefresh: (input: ResponseAuthorityInput) => ResponseAuthorityVerdict = () => ({ kind: 'allow' })) {}
+  constructor(
+    private readonly afterRefresh: (input: ResponseAuthorityInput) => ResponseAuthorityVerdict = () => ({ kind: 'allow' }),
+    readonly notBefore: string = new Date(Date.now() + 1_000).toISOString(),
+  ) {}
   validate(input: ResponseAuthorityInput): ResponseAuthorityVerdict {
     this.checks += 1;
     const refreshed = input.observations.some((o) => o.outcome === 'succeeded' && o.source.kind === 'capability' && o.source.capabilityId === GET_TEST_FACT_ID);
@@ -58,7 +60,11 @@ const shape = (steps: Awaited<ReturnType<typeof stepsOf>>) => steps.map((s) => [
 describe('R4-J1E-R2 durable revalidation wait (PostgreSQL, scheduler, worker restart)', () => {
   it('M. defers without an owner READ, survives the worker process, wakes on the durable timer, then sends the same draft', async () => {
     const taskId = await createActionTask(platform);
-    const validator = new NearExpiryValidator();
+    // Temporal time is frozen at T0 and notBefore is T0 + 1 s on that clock: only this test moves it — never
+    // wall-clock time or CI speed.
+    const t0 = await freezeTemporalClock(platform.pool);
+    const notBefore = new Date(t0.getTime() + 1_000).toISOString();
+    const validator = new NearExpiryValidator(undefined, notBefore);
     const first = await worker({ script: sequence([respond('the price is 84.990')]), responseAuthority: validator });
     await first.platform.worker.runOnce();
 
@@ -81,13 +87,15 @@ describe('R4-J1E-R2 durable revalidation wait (PostgreSQL, scheduler, worker res
     workers.splice(workers.indexOf(first), 1);
 
     const { scheduler } = testScheduler(platform.pool);
-    expect(await drain(scheduler)).toBe(0); // not before notBefore
-    await setTemporalOffset(platform.pool, 5_000);
+    expect(await drain(scheduler)).toBe(0); // r4_now() is still T0 < notBefore, however long the steps above took
+    await freezeTemporalClock(platform.pool, new Date(Date.parse(notBefore) - 1));
+    expect(await drain(scheduler)).toBe(0); // 1 ms before notBefore: still not due
+    await freezeTemporalClock(platform.pool, new Date(t0.getTime() + 5_000));
     expect(await drain(scheduler)).toBe(1);
     expect(await waitRows(platform.pool, taskId)).toEqual([{ kind: 'WAIT_UNTIL', status: 'completed', resolution: 'timer' }]);
 
     const seen: ModelRequest[] = [];
-    const second = await worker({ script: sequence([(r) => (seen.push(r), complete('done'))]), responseAuthority: new NearExpiryValidator() });
+    const second = await worker({ script: sequence([(r) => (seen.push(r), complete('done'))]), responseAuthority: new NearExpiryValidator(undefined, notBefore) });
     await second.platform.worker.runOnce();
 
     const done = await platform.tasks.getTask(taskId);

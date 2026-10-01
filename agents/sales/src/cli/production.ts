@@ -22,6 +22,7 @@ import { adminDatabaseUrl } from '../harness/database.js';
 import { configuredModelProvider } from '../model.js';
 import { composeSalesGateway, composeSalesProductionWorker, selectedSalesProductionProfile } from '../production/composition.js';
 import { SALES_DOMAINS, SALES_PRODUCTION_PROFILE } from '../production/profile.js';
+import { SALES_PRODUCTION_PROCESSES, schedulerConfigurationStatus } from '../production/topology.js';
 import { flag, loadLocalEnv, option, print } from './common.js';
 import { VALIDATION_SCENARIOS, VALIDATION_SECRETS, validationIdentity, type ScenarioResult } from './production-validation.js';
 
@@ -46,6 +47,11 @@ import { VALIDATION_SCENARIOS, VALIDATION_SECRETS, validationIdentity, type Scen
  *   --gateway         run the channel gateway process (deployment entry point)
  *   --worker          run the production worker process (deployment entry point)
  *   --identity-key W  print the conversation key (keyed hash) of wa_id W for the allowlist
+ *
+ * The third production process, the scheduler, is the generic one
+ * (`npm run start:scheduler`, apps/scheduler): see SALES_PRODUCTION_PROCESSES.
+ * `--plan` reports whether its configuration is usable and which schedules
+ * are already due (it would fire them as soon as it starts).
  *
  * Never enables autonomy, never widens the rollout: those are operator acts.
  */
@@ -114,12 +120,24 @@ async function plan(production: ReturnType<typeof loadProductionConfig>): Promis
   const recipient = process.env.R4_PROD_SMOKE_RECIPIENT;
   const recipientKey = recipient && process.env.R4_WHATSAPP_PHONE_NUMBER_ID ? conversationKey(production.secrets.identityHashKey, 'whatsapp', process.env.R4_WHATSAPP_PHONE_NUMBER_ID, recipient) : null;
   let killSwitch: unknown = 'unknown (R4_DATABASE_URL not set)';
+  let dueSchedules: unknown = 'unknown (R4_DATABASE_URL not set)';
   if (process.env.R4_DATABASE_URL) {
     const pool = createPool({ connectionString: process.env.R4_DATABASE_URL, logger: createLogger({ service: 'plan', level: 'silent' }), applicationName: 'production-plan', max: 1 });
     try {
       killSwitch = (await new PostgresProductionStore(pool).readControls()).state;
     } catch (error) {
       killSwitch = `unreadable (${error instanceof Error ? error.message : String(error)}) — treated as DISABLED`;
+    }
+    try {
+      // Read-only: what a scheduler starting now would claim at once (the claim predicate of claimDueSchedule).
+      const due = await pool.query<{ schedule_id: string; task_id: string; kind: string; status: string; due_at: Date }>(
+        `select schedule_id, task_id, kind, status, due_at from schedules
+          where due_at <= r4_now() and (status = 'pending' or (status = 'claimed' and lease_expires_at <= r4_now()))
+          order by due_at, schedule_id`,
+      );
+      dueSchedules = due.rows.map((r) => ({ scheduleId: r.schedule_id, taskId: r.task_id, kind: r.kind, status: r.status, dueAt: r.due_at.toISOString() }));
+    } catch (error) {
+      dueSchedules = `unreadable (${error instanceof Error ? error.message : String(error)})`;
     } finally {
       await pool.end();
     }
@@ -137,6 +155,8 @@ async function plan(production: ReturnType<typeof loadProductionConfig>): Promis
     recipient: recipientKey ? { conversationKey: `${recipientKey.slice(0, 12)}…`, eligibility: rolloutEligibility(production.config.rollout, recipientKey) } : 'R4_PROD_SMOKE_RECIPIENT not set',
     rollout: { percent: production.config.rollout.percent, allowlisted: production.config.rollout.allowlist.length, denylisted: production.config.rollout.denylist.length, fingerprint: rolloutFingerprint(production.config.rollout) },
     killSwitch,
+    processes: SALES_PRODUCTION_PROCESSES.map((p) => ({ name: p.name, command: `npm run ${p.script}`, owns: p.owns })),
+    scheduler: { configuration: schedulerConfigurationStatus(process.env), dueSchedules },
     domainBindings: report.domains,
     capabilities: report.capabilities,
     writes: report.writes,
