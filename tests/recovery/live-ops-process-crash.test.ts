@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { LiveOpsTestbed, say, waitInput } from '../support/live-ops.js';
+import { LiveOpsTestbed, say } from '../support/live-ops.js';
 
 /**
  * R4-I under real process death (SIGKILL). Requires `npm run build`: the
@@ -65,7 +65,7 @@ const killed = (proc: ChildProcess) => new Promise<void>((resolve) => (proc.exit
 describe('delivery process SIGKILL during the provider call', () => {
   it('the in-flight message becomes UNKNOWN after lease expiry and is never re-sent', async () => {
     bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER], autonomy: true, leaseMs: 1500, providerTimeoutMs: 1000 });
-    bed.next(say('mensaje en vuelo al morir'), waitInput());
+    bed.next(say('mensaje en vuelo al morir'));
     await bed.customer(CUSTOMER, 'wamid.in.1', 'Hola');
     await bed.runAgent();
     bed.provider.script({ kind: 'hang', ms: 120_000 });
@@ -87,7 +87,7 @@ describe('delivery process SIGKILL during the provider call', () => {
 });
 
 describe('worker SIGKILL after an accepted respond, before delivery', () => {
-  it('exactly one durable message, delivered once; the run takeover adds no second response', async () => {
+  it('exactly one durable message, delivered once; the response ended the turn, so no model call and no second response follow (R4-J1E-R2.2)', async () => {
     bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER], autonomy: true });
     await bed.customer(CUSTOMER, 'wamid.in.1', 'Hola');
     const worker = start(WORKER_CHILD, {
@@ -97,23 +97,29 @@ describe('worker SIGKILL after an accepted respond, before delivery', () => {
       R4_EXEC_MODEL_CALL_TIMEOUT_MS: '600000', R4_EXEC_MAX_WRITE_ACTIONS: '10', R4_LOG_LEVEL: 'silent',
     });
     child = worker.process;
-    await until(() => worker.lines.some((l) => l.event === 'child.model.second_call'));
+    // The response is durable and the turn closed (platform WAIT_FOR_INPUT): the run is suspended.
+    let taskId = '';
+    await until(async () => {
+      taskId = (await bed!.taskOf(CUSTOMER).catch(() => null)) ?? '';
+      if (!taskId) return false;
+      const runs = await bed!.rows<{ status: string }>('select status from agent_runs where task_id = $1', [taskId]);
+      return runs[0]?.status === 'suspended';
+    });
     expect(await bed.gateway.delivery.materialize()).toHaveLength(1);
-    const taskId = await bed.taskOf(CUSTOMER);
     expect(await bed.store.outboundForTask(taskId)).toHaveLength(1);
     worker.process.kill('SIGKILL');
     await killed(worker.process);
+    expect(worker.lines.some((l) => l.event === 'child.model.second_call')).toBe(false);
 
-    // Another worker takes over THE SAME run after the lease expires; it continues from the durable step log.
+    // Another worker after the lease would have expired: nothing is runnable (the task waits for input).
     await new Promise((r) => setTimeout(r, 1700));
-    bed.next(waitInput());
-    await bed.runAgent();
+    expect(await bed.runAgent()).toEqual([]);
     await bed.gateway.delivery.materialize();
     await bed.deliver();
     await bed.deliver();
     expect(bed.provider.sends.map((s) => s.text)).toEqual(['respuesta aceptada antes del crash']);
     const runs = await bed.rows<{ status: string; recoveries: number }>('select status, recoveries from agent_runs where task_id = $1', [taskId]);
-    expect(runs).toEqual([{ status: 'suspended', recoveries: 1 }]);
+    expect(runs).toEqual([{ status: 'suspended', recoveries: 0 }]);
     expect(await bed.rows(`select count(*)::int as n from agent_run_steps where task_id = $1 and decision_type = 'respond'`, [taskId])).toEqual([{ n: 1 }]);
     expect(await bed.store.outboundForTask(taskId)).toHaveLength(1);
     expect(bed.provider.sends).toHaveLength(1);

@@ -34,19 +34,18 @@ import {
  * `propose_action`, assigned by the platform when the step is recorded. A
  * step whose action outcome is unknown stays `pending`: nothing may follow it.
  *
- * ADR-031: `origin` says who decided the step. `model` (default) — one model
- * call. `platform` — no model call, no tokens: a READ the kernel issued to
- * revalidate the evidence of a proposed response, the WAIT_UNTIL deferring a
- * draft until that evidence can be refreshed, a deferred draft recorded (or
- * refused) once revalidated, or the run's one safe degradation.
- * A `respond` the response-authority validator rejected is recorded
- * `refused` (non-terminal) with its structured feedback and is never sent.
+ * `origin` says who decided the step. `model` (default) — one model call.
+ * `platform` — no model call, no tokens. Since R4-J1E-R2.2 the only platform
+ * step is the WAIT_FOR_INPUT that closes a turn after a recorded `respond`
+ * (ADR-008 amendment). Durable history written by R4-J1E-R2 (ADR-031,
+ * superseded) may also hold platform revalidation READs, deferred or
+ * degraded responses and their WAIT_UNTIL, and `respond` steps recorded
+ * `refused` with `response_authority_*` codes: they remain readable, and
+ * nothing produces them any more.
  */
 export const RUN_STEP_ORIGINS = ['model', 'platform'] as const;
 export const runStepOriginSchema = z.enum(RUN_STEP_ORIGINS);
 export type RunStepOrigin = z.infer<typeof runStepOriginSchema>;
-/** ADR-031: error codes of `respond` steps the response-authority validator refused (non-terminal). */
-export const RESPONSE_AUTHORITY_ERROR_PREFIX = 'response_authority_';
 
 export const RUN_STEP_OUTCOMES = ['pending', 'observed', 'recorded', 'refused', 'invalid', 'model_failed'] as const;
 export const runStepOutcomeSchema = z.enum(RUN_STEP_OUTCOMES);

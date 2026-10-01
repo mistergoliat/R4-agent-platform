@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { PostgresTrajectoryReader } from '@r4/evaluator';
 import { PostgresSalesStore } from '@r4-sales/agent';
 import { SCRIPTED_MODEL_PROFILE, evaluateSalesSubject, salesWorkspaceProjection } from '@r4-sales/agent/evaluations';
-import { LiveOpsTestbed, OPERATOR, invalid, say, waitInput } from '../support/live-ops.js';
+import { LiveOpsTestbed, OPERATOR, say } from '../support/live-ops.js';
 
 /**
  * R4-I reference paths (offline, real PostgreSQL, real runtime, local fake
@@ -35,7 +35,7 @@ afterEach(async () => {
 describe('reference path: provider inbound → Task → respond → durable outbound → accepted → delivered → evaluation', () => {
   it('runs end to end with every state durable and correlated', async () => {
     bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER], autonomy: true });
-    bed.next(say('¡Hola! Soy el asistente de ventas. ¿Qué estás buscando?'), waitInput());
+    bed.next(say('¡Hola! Soy el asistente de ventas. ¿Qué estás buscando?'));
 
     expect(await bed.customer(CUSTOMER, 'wamid.in.1', 'Hola, quiero una bicicleta estática')).toMatchObject({ status: 200, body: { ingested: 1 } });
     const taskId = await bed.taskOf(CUSTOMER);
@@ -43,7 +43,7 @@ describe('reference path: provider inbound → Task → respond → durable outb
     expect(bed.model.callCount).toBe(0);
 
     await bed.runAgent();
-    expect(bed.model.callCount).toBe(2);
+    expect(bed.model.callCount).toBe(1); // R4-J1E-R2.2: the reply ends the turn (no model call for a wait)
     // respond ≠ delivered: before the delivery owner acts, nothing is sent.
     expect(bed.provider.sends).toHaveLength(0);
     const pass = await bed.deliver();
@@ -82,25 +82,36 @@ describe('reference path: provider inbound → Task → respond → durable outb
     expect(run.result.outcome.governance.status).toBe('no_violations');
 
     const metrics = await bed.store.metrics();
-    expect(metrics).toMatchObject({ inbound_received: 1, task_created: 1, outbound_created: 1, outbound_dispatch_attempted: 1, outbound_accepted: 1, outbound_delivered: 1, outbound_read: 1, outbound_unknown: 0, model_calls: 2 });
+    expect(metrics).toMatchObject({ inbound_received: 1, task_created: 1, outbound_created: 1, outbound_dispatch_attempted: 1, outbound_accepted: 1, outbound_delivered: 1, outbound_read: 1, outbound_unknown: 0, model_calls: 1 });
   });
 });
 
+/**
+ * A second agent response on the SAME inbound frontier (no new customer input). Since R4-J1E-R2.2 a
+ * reply ends its turn, so a run can no longer fail after replying and replay it on recovery; the real
+ * path left is a human takeover released without new input: the resumed run answers the same input again.
+ */
+async function replayOnSameFrontier(taskId: string, text: string): Promise<void> {
+  const handoff = await bed!.api.temporal.takeOver(taskId, { responseKey: `take-${text}`, note: 'Reviso y devuelvo.' }, OPERATOR);
+  await bed!.api.temporal.respondHuman(handoff.requestId, { responseKey: `release-${text}`, outcome: 'release', content: 'Devuelvo la conversación al agente.' }, OPERATOR);
+  bed!.next(say(text));
+  await bed!.runAgent();
+}
+
 describe('causal outbound deduplication', () => {
-  it('suppresses an ADR-028 recovery replay for the same inbound frontier', async () => {
+  it('suppresses a replayed response for the same inbound frontier', async () => {
     bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER], autonomy: true });
-    bed.next(say('Perfecto.'), invalid(), say('Perfecto.'), waitInput());
+    bed.next(say('Perfecto.'));
     await bed.customer(CUSTOMER, 'wamid.in.1', '¿Puedo pagar con transferencia?');
     const taskId = await bed.taskOf(CUSTOMER);
     await bed.runAgent();
+    await bed.deliver();
+    await replayOnSameFrontier(taskId, 'Perfecto.');
 
-    const [failedRun] = await bed.rows<{ termination_reason: string | null }>(`select termination_reason from agent_runs where task_id = $1 and status = 'failed'`, [taskId]);
-    expect(failedRun?.termination_reason).toBe('invalid_decision');
     const steps = await bed.rows<{ step_id: string; context_snapshot_id: string | null }>(`select step_id, context_snapshot_id from agent_run_steps where task_id = $1 and decision_type = 'respond' and outcome = 'recorded'`, [taskId]);
     expect(steps).toHaveLength(2);
     expect(steps.every((s) => s.context_snapshot_id !== null)).toBe(true);
 
-    expect(await bed.gateway.delivery.materialize(1)).toHaveLength(1);
     const duplicate = await bed.gateway.delivery.materialize();
     expect(duplicate).toHaveLength(1);
     expect(duplicate[0]).toMatchObject({ status: 'cancelled', cancelReason: 'duplicate_content' });
@@ -111,7 +122,7 @@ describe('causal outbound deduplication', () => {
 
   it('allows identical text on a later customer turn in the same Task', async () => {
     bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER], autonomy: true });
-    bed.next(say('Sí, claro.'), waitInput());
+    bed.next(say('Sí, claro.'));
     await bed.customer(CUSTOMER, 'wamid.in.1', '¿Puedo pagar con transferencia?');
     const taskId = await bed.taskOf(CUSTOMER);
     await bed.runAgent();
@@ -119,7 +130,7 @@ describe('causal outbound deduplication', () => {
     const first = (await bed.store.outboundForTask(taskId))[0]!;
     await bed.status([{ id: first.providerMessageId!, status: 'delivered', recipientId: CUSTOMER }]);
 
-    bed.next(say('Sí, claro.'), waitInput());
+    bed.next(say('Sí, claro.'));
     await bed.customer(CUSTOMER, 'wamid.in.2', '¿También puedo transferir esta otra cotización?');
     await bed.runAgent();
     await bed.deliver();
@@ -131,7 +142,7 @@ describe('causal outbound deduplication', () => {
 
   it('allows identical text in different Tasks', async () => {
     bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER, OTHER_CUSTOMER], autonomy: true });
-    bed.next(say('Perfecto.'), waitInput(), say('Perfecto.'), waitInput());
+    bed.next(say('Perfecto.'), say('Perfecto.'));
     await bed.customer(CUSTOMER, 'wamid.a.1', 'Hola');
     await bed.customer(OTHER_CUSTOMER, 'wamid.b.1', 'Hola');
     await bed.runAgent();
@@ -147,7 +158,7 @@ describe('causal outbound deduplication', () => {
 
   it.each(['accepted', 'delivered', 'read', 'unknown', 'failed'] as const)('keeps a prior %s outbound as causal evidence', async (status) => {
     bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER], autonomy: true, providerTimeoutMs: 250 });
-    bed.next(say('Mismo episodio.'), invalid(), say('Mismo episodio.'), waitInput());
+    bed.next(say('Mismo episodio.'));
     await bed.customer(CUSTOMER, `wamid.${status}.1`, 'Mismo input');
     const taskId = await bed.taskOf(CUSTOMER);
     await bed.runAgent();
@@ -167,6 +178,7 @@ describe('causal outbound deduplication', () => {
 
     const durable = (await bed.store.outbound(first.outboundId))!;
     expect(durable.status).toBe(status);
+    await replayOnSameFrontier(taskId, 'Mismo episodio.');
     const second = await bed.gateway.delivery.materialize();
     expect(second).toHaveLength(1);
     expect(second[0]).toMatchObject({ status: 'cancelled', cancelReason: 'duplicate_content' });
@@ -178,7 +190,7 @@ describe('causal outbound deduplication', () => {
 describe('handoff + inbound: human ownership persists input and blocks autonomy until release', () => {
   it('input durable and visible, no cognition or delivery while human-owned, autonomy resumes after release', async () => {
     bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER], autonomy: true });
-    bed.next(say('Perfecto.'), waitInput());
+    bed.next(say('Perfecto.'));
     await bed.customer(CUSTOMER, 'wamid.in.1', 'Hola');
     const taskId = await bed.taskOf(CUSTOMER);
     await bed.runAgent();
@@ -200,12 +212,12 @@ describe('handoff + inbound: human ownership persists input and blocks autonomy 
     expect(bed.provider.sends.map((s) => s.text)).toEqual(['Perfecto.', 'Perfecto.']);
 
     await bed.api.temporal.respondHuman(handoff.requestId, { responseKey: 'release-1', outcome: 'release', content: 'Devuelvo la conversación al agente.' }, OPERATOR);
-    bed.next(say('Retomo yo. ¿Seguimos con la bicicleta?'), waitInput());
+    bed.next(say('Retomo yo. ¿Seguimos con la bicicleta?'));
     await bed.runAgent();
     await bed.deliver();
     expect(bed.provider.sends.at(-1)!.text).toBe('Retomo yo. ¿Seguimos con la bicicleta?');
     // The resumed run saw what happened while humans owned the conversation.
-    const context = JSON.stringify(bed.model.requests.at(-2)!.context);
+    const context = JSON.stringify(bed.model.requests.at(-1)!.context);
     expect(context).toContain('Quiero hablar con alguien');
   });
 });
@@ -229,7 +241,7 @@ describe('kill switch', () => {
 
   it('engaged mid-conversation: pending agent output is held (not sent, not lost); new cognition is refused', async () => {
     bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER], autonomy: true });
-    bed.next(say('Respuesta que no debe salir con el switch activo.'), waitInput());
+    bed.next(say('Respuesta que no debe salir con el switch activo.'));
     await bed.customer(CUSTOMER, 'wamid.in.1', 'Hola');
     await bed.runAgent();
     await bed.api.production.setControl({ scope: 'global', autonomyEnabled: false, reason: 'incident drill' }, OPERATOR);
@@ -255,7 +267,7 @@ describe('kill switch', () => {
 
   it('serializes inbound, operator takeover and an outbound claim on the Task row', async () => {
     bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER], autonomy: true });
-    bed.next(say('Pendiente.'), waitInput());
+    bed.next(say('Pendiente.'));
     await bed.customer(CUSTOMER, 'wamid.in.1', 'Hola');
     await bed.runAgent();
     await bed.gateway.delivery.materialize();

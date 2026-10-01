@@ -10,7 +10,7 @@ import { actionCapabilities, createActionTask, ledgerOf, startActionPlatform, WR
 import { captureLogs } from '../support/logs.js';
 import { expireLease, startTestWorker, waitFor, type TestWorker, type TestWorkerOptions } from '../support/worker.js';
 import { compiledOf, complete, contextOf, propose, read, respond, sequence, type ScriptEntry } from '../support/decisions.js';
-import { HUMAN, PARTICIPANT, consult, drain, input, testScheduler, waitInput } from '../support/temporal.js';
+import { HUMAN, PARTICIPANT, consult, drain, input, testScheduler } from '../support/temporal.js';
 import { GET_TEST_FACT_ID } from '../fixtures/capabilities/get-test-fact.js';
 import { ensureTestLedger, handlerCalls, SET_TEST_RECORD_ID } from '../fixtures/capabilities/test-ledger.js';
 
@@ -50,7 +50,7 @@ const TRAILING_PROSE: FakeModelStep = { type: 'text', content: '{"type":"respond
 const RETRYABLE: FakeModelStep = { type: 'provider_error', kind: 'rate_limited', retryable: true, message: 'HTTP 429' };
 const NON_RETRYABLE: FakeModelStep = { type: 'provider_error', retryable: false, message: 'HTTP 401' };
 const definition: EvaluationDefinition = { id: 'test.generic', version: 1, taxonomy: FindingTaxonomy.generic(), evaluators: genericDeterministicEvaluators(), privacy: { redactKeys: [] }, semanticTimeoutMs: 1000 };
-const answer = (text = 'Here is what I found.'): ScriptEntry[] => [respond(text), waitInput()];
+const answer = (text = 'Here is what I found.'): ScriptEntry[] => [respond(text)];
 
 const task = async (taskId: string) => (await platform.tasks.getTask(taskId)).task;
 const runs = async (taskId: string) => Promise.all((await platform.tasks.getTask(taskId)).runs.map((r) => platform.tasks.getRun(r.runId)));
@@ -109,7 +109,7 @@ describe('recoverable run failure → same task, new run, fresh context', () => 
     expect(r2).toMatchObject({ status: 'failed', termination: { reason: 'model_failure', code: 'timeout', details: { retryable: true, runFailureRecovery: { outcome: 'continued', consecutiveFailures: 2 } } } });
     expect(r3).toMatchObject({ status: 'suspended' });
     expect(await task(taskId)).toMatchObject({ status: 'waiting' });
-    expect(w.provider.callCount).toBe(4);
+    expect(w.provider.callCount).toBe(3); // two failed calls + the reply, which ends the turn (R4-J1E-R2.2)
   });
 
   it('a task that never had a precise customer goal recovers; recovery creates, changes and closes no goal', async () => {
@@ -222,7 +222,7 @@ describe('races between the failed run and the recovery claim', () => {
   it('new customer input between the runs is accepted and appears in the recovery run’s fresh context', async () => {
     const taskId = await createActionTask(platform);
     const seen: ModelRequest[] = [];
-    const w = await worker({ script: sequence([TRAILING_PROSE, (r) => (seen.push(r), respond('Got both messages.')), waitInput()]) });
+    const w = await worker({ script: sequence([TRAILING_PROSE, (r) => (seen.push(r), respond('Got both messages.'))]) });
     await w.platform.worker.runOnce();
     const accepted = await platform.temporal.submitInput(taskId, input('between-1', 'Also: it must fit in 3 by 3 metres.'), PARTICIPANT, 'between');
     expect(accepted).toMatchObject({ replayed: false });
@@ -398,7 +398,7 @@ describe('what never triggers recovery', () => {
 
     // budget_exhausted is not a recoverable failure (unchanged since C1): the task fails, no recovery run.
     const other = await createActionTask(platform, { budget: { maxModelCalls: 1 } });
-    const w2 = await worker({ script: sequence([respond('one'), respond('two')]) });
+    const w2 = await worker({ script: sequence([read(GET_TEST_FACT_ID, { factKey: 'one' }), read(GET_TEST_FACT_ID, { factKey: 'two' })]) });
     await w2.platform.worker.runOnce();
     expect(await w2.platform.worker.runOnce()).toEqual({ kind: 'idle' });
     const [exhausted] = await runs(other);

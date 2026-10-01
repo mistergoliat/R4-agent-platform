@@ -49,7 +49,8 @@ describe('BenchmarkRun', () => {
   it('a single protocol failure shows in the pooled adherence rate and in its own repetition', async () => {
     const b = await bench();
     const a = b.aggregate.byScenario.A!;
-    expect(a.protocolAdherence).toMatchObject({ numerator: 7, denominator: 8 });
+    // Only model decisions count: the platform's turn-closing waits (R4-J1E-R2.2) are not protocol attempts.
+    expect(a.protocolAdherence).toMatchObject({ numerator: 5, denominator: 6 });
     expect(a.technicalCompletion).toMatchObject({ numerator: 2, denominator: 3 });
     expect(a.findingsByCode.trailing_non_protocol_output).toEqual({ occurrences: 1, runsAffected: 1 });
     expect(b.results.find((r) => r.scenarioId === 'A' && r.repetition === 2)!.outcome).toMatchObject({ technicalStatus: 'failed', technicallyValid: false });

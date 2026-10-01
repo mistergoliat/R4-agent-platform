@@ -64,8 +64,6 @@ export interface ExecutionFacts {
   readonly observations: readonly Observation[];
   /** `respond` outputs recorded by this run, in order. */
   readonly responses: readonly { readonly stepId: string; readonly iteration: number; readonly content: string; readonly recordedAt: string }[];
-  /** ADR-031: drafts of this run the response-authority validator refused (never sent), with the structured feedback. */
-  readonly responseRejections?: readonly { readonly stepId: string; readonly iteration: number; readonly draft: string; readonly code: string; readonly text: string; readonly recordedAt: string }[];
   readonly capabilities: readonly VisibleCapability[];
   readonly constraints: ExecutionConstraints;
 }

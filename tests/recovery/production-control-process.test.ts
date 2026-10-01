@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { PRODUCTION_CONTROL_ACTOR } from '@r4/live-ops';
-import { LiveOpsTestbed, say, waitInput } from '../support/live-ops.js';
+import { LiveOpsTestbed, say } from '../support/live-ops.js';
 
 /**
  * R4-I D-5/D-6 through the real built command (`production:sales:control`),
@@ -55,7 +55,7 @@ describe('production control across process restarts', () => {
     expect(run('holds', 'release', '--task', taskId, '--reason', 'resume after drill').code).toBe(1);
 
     // The deployment's worker resumes it normally.
-    bed.next(say('Hola, ¿en qué te ayudo?'), waitInput());
+    bed.next(say('Hola, ¿en qué te ayudo?'));
     await bed.runAgent();
     await bed.deliver();
     expect(bed.provider.sends.map((s) => s.text)).toEqual(['Hola, ¿en qué te ayudo?']);

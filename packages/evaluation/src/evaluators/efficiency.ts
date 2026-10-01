@@ -17,7 +17,8 @@ export class EfficiencyEvaluator implements Evaluator {
   evaluate(subject: Readonly<EvaluationSubject>): EvaluationFragment {
     const steps = stepsOf(subject);
     const turns = subject.turns.length;
-    const modelCalls = steps.length;
+    // Platform steps (the turn-closing wait, R4-J1E-R2.2) call no model.
+    const modelCalls = steps.filter((s) => s.origin !== 'platform').length;
     const input = subject.runs.reduce((s, r) => s + r.usage.inputTokens, 0);
     const output = subject.runs.reduce((s, r) => s + r.usage.outputTokens, 0);
     const reasoningCounts = (subject.modelCalls ?? []).map((c) => c.reasoningTokens).filter((n): n is number => n !== null);

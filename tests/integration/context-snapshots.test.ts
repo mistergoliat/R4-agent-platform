@@ -18,7 +18,7 @@ import { DurableKernelSession, type WorkerCycle } from '@r4/worker';
 import type { Platform } from '@r4/api';
 import { GET_TEST_FACT_ID } from '../fixtures/capabilities/get-test-fact.js';
 import { createMigratedTestDatabase, openPool, type TestDatabase } from '../support/database.js';
-import { compiledOf, complete, completeFromObservations, read, respond, sequence } from '../support/decisions.js';
+import { compiledOf, complete, completeFromObservations, read, sequence } from '../support/decisions.js';
 import { captureLogs } from '../support/logs.js';
 import { startTestPlatform, validTaskBody } from '../support/platform.js';
 import { TEST_CONTEXT_POLICY, TEST_POLICY, expireLease, startTestWorker, stepsOf, testCapabilities, waitFor, type TestWorker, type TestWorkerOptions } from '../support/worker.js';
@@ -350,8 +350,8 @@ describe('memory boundaries end to end', () => {
       content: { category: 'open_question', text: 'is the fact still current?' },
     });
 
-    // Worker 1 records a respond, then stops (process "restart") before finishing.
-    const w1 = await startTestWorker(db.url, { workerId: 'worker-1', script: sequence([respond('noted'), { type: 'timeout' }]), policy: { modelCallTimeoutMs: 20_000 } });
+    // Worker 1 reads, then stops (process "restart") mid-run. (A reply would end the turn: R4-J1E-R2.2.)
+    const w1 = await startTestWorker(db.url, { workerId: 'worker-1', script: sequence([read(GET_TEST_FACT_ID, { factKey: 'alpha' }), { type: 'timeout' }]), policy: { modelCallTimeoutMs: 20_000 } });
     try {
       w1.platform.worker.start();
       await waitFor(() => w1.provider.callCount === 2);
@@ -364,10 +364,9 @@ describe('memory boundaries end to end', () => {
     const cycle = await runUntilExecuted(w2);
     expect(cycle).toMatchObject({ claim: 'resumed', outcome: { kind: 'terminated', termination: { reason: 'completed' } } });
     const context = compiledOf(w2.provider.requests[0]!);
-    expect(context.sections.conversation.map((i) => [i.itemId, i.authority, i.sourceId])).toEqual([
-      [`memory:${turn.entryId}`, 'CONVERSATIONAL', 'platform.memory'],
-      [expect.stringMatching(/^response:/), 'CONVERSATIONAL', 'platform.run'],
-    ]);
+    expect(context.sections.conversation.map((i) => [i.itemId, i.authority, i.sourceId])).toEqual([[`memory:${turn.entryId}`, 'CONVERSATIONAL', 'platform.memory']]);
+    // What worker 1 observed before the restart is evidence of the resumed run.
+    expect(context.sections.observations.length).toBe(1);
     expect(context.sections.workingMemory.map((i) => [i.itemId, i.authority])).toEqual([[`memory:${note.entryId}`, 'COGNITIVE']]);
     expect(context.sections.authoritativeState).toEqual([]);
   });
@@ -405,7 +404,8 @@ describe('compaction end to end', () => {
     for (let i = 0; i < 120; i += 1) await remember(taskId, `turn ${i}: ${'filler words '.repeat(10)}`, new Date(start + i * 1_000).toISOString());
 
     const w = await worker({
-      script: sequence([respond('working on it'), complete('done')]),
+      // Two model calls in one run (a reply would end the turn, R4-J1E-R2.2): iteration 2 must reuse the summary.
+      script: sequence([read(GET_TEST_FACT_ID, { factKey: 'alpha' }), complete('done')]),
       compactor: new DeterministicCompactor(),
       context: { budget: { mode: 'fixed', maxEstimatedTokens: 6_000 }, conversation: { recentTurns: 10, compaction: { enabled: true, chunkTurns: 10 } } },
     });

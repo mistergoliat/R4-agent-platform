@@ -36,7 +36,7 @@ function run(env: Record<string, string | undefined>) {
 }
 
 describe('production:sales:bootstrap as a process', () => {
-  it('registers sales@2 once, reports unchanged on repeat, and refuses a non-production environment', async () => {
+  it('registers sales@3 once, reports unchanged on repeat, and refuses a non-production environment', async () => {
     db = await createMigratedTestDatabase();
     pool = openPool(db.url);
     await migrateSales(pool);
@@ -45,8 +45,8 @@ describe('production:sales:bootstrap as a process', () => {
     expect(run({ ...env, R4_EXECUTION_MODE: undefined })).toMatchObject({ code: 1, stdout: '' });
     expect((await pool.query('select count(*)::int as n from agent_definitions')).rows).toEqual([{ n: 0 }]);
 
-    expect(run(env)).toEqual({ code: 0, stdout: 'production Sales bootstrap:\nregistered: sales@2\n', stderr: '' });
-    expect(run(env)).toEqual({ code: 0, stdout: 'production Sales bootstrap:\nunchanged: sales@2\n', stderr: '' });
-    expect((await pool.query('select agent_id, version from agent_definitions')).rows).toEqual([{ agent_id: 'sales', version: 2 }]);
+    expect(run(env)).toEqual({ code: 0, stdout: 'production Sales bootstrap:\nregistered: sales@3\n', stderr: '' });
+    expect(run(env)).toEqual({ code: 0, stdout: 'production Sales bootstrap:\nunchanged: sales@3\n', stderr: '' });
+    expect((await pool.query('select agent_id, version from agent_definitions')).rows).toEqual([{ agent_id: 'sales', version: 3 }]);
   });
 });

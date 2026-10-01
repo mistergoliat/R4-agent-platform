@@ -29,7 +29,6 @@ import { PostgresSalesStore } from '../workspace/store.js';
 import { SALES_DOMAINS, SALES_PRODUCTION_ACTION_POLICY } from './profile.js';
 import { SALES_PRODUCTION_PROFILES, salesProductionProfile } from './profile-v2.js';
 import { catalogCapabilities } from '../capabilities/catalog.js';
-import { SalesCommercialEvidenceValidator } from '../authority/commercial-evidence.js';
 
 /** Who opens production Sales conversations: the channel ingress (a platform service, never the model). */
 export const SALES_CHANNEL_INGRESS: Principal = { kind: 'service', ref: 'sales-channel-ingress' };
@@ -127,8 +126,6 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
       actionPolicy: SALES_PRODUCTION_ACTION_POLICY,
       admission: controls,
       presence: { executionMode: 'production', runtimeProfile: profileLabel(profile) },
-      // ADR-031: with Catalog REAL, commercial claims are checked against current Catalog evidence before any reply becomes outbound.
-      ...(catalogReal ? { responseAuthority: new SalesCommercialEvidenceValidator({ clock }) } : {}),
     },
   };
 }

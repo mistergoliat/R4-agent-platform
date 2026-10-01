@@ -638,6 +638,8 @@ canal (sin credenciales del número canary en este entorno) — ver §4.
 | Outbox durable y catálogo público de eventos | Sin consumidor aún; evita infraestructura prematura | Eventos de telemetría con nombres estables |
 | Artifact | Depende del modelo de tasks/ownership (Constitución §18) | — |
 | Budgets de costo | Ownership de pricing/moneda sin decidir | `budgetSchema` extensible |
+| Aviso antes de consult/handoff en el mismo turno (R4-J1E-R2.2) | `respond` es terminal para el turno (ADR-008); una solución es decisión de producto aparte, nunca un `respond` intermedio | `request_consultation` / `request_handoff`; ADR-031 "Diferido" |
+| `respond` + `complete` en el mismo turno (R4-J1E-R2.2) | Hoy se completa en un turno sin respuesta o la task queda esperando input; sin `respond` intermedio | decisión `complete`; ADR-031 "Diferido" |
 | Capability registry persistente / marketplace | No hay necesidad demostrada | Registry en memoria desde código |
 | Deshabilitar/retirar versiones de agentes | No hay caso de uso | Nueva versión |
 | Worker con varias tasks concurrentes | Un worker = una task; paralelismo con más workers | `Worker.runOnce` |

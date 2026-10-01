@@ -10,7 +10,6 @@ import {
   runFailureDisposition,
   runFailureRecoveryOf,
   runStatusForTermination,
-  RESPONSE_AUTHORITY_ERROR_PREFIX,
   runStepSchema,
   type RunStepOrigin,
   type JsonValue,
@@ -139,8 +138,14 @@ export interface RecordStepCommand {
   readonly usage: { readonly inputTokens: number; readonly outputTokens: number };
   /** R4-C2: the snapshot of (run, iteration) the model call was made with. */
   readonly contextSnapshotId?: string | null;
-  /** ADR-031: `platform` for a token-free READ the kernel issued to revalidate a response (default `model`). */
+  /** `platform` for a token-free step the kernel records itself (the turn-closing WAIT_FOR_INPUT); default `model`. */
   readonly origin?: RunStepOrigin;
+  /**
+   * (R4-J1E-R2.2) Turn-closing wait only: the snapshot of the model call that
+   * drafted the response. Not persisted on the step; the Temporal Runtime
+   * wakes the task at once for input that snapshot did not contain.
+   */
+  readonly inputHorizonSnapshotId?: string | null;
 }
 
 /**
@@ -424,9 +429,7 @@ export class ExecutionRuntime {
    * this task.
    */
   async recordStep(token: LeaseToken, command: RecordStepCommand): Promise<RunStep> {
-    // ADR-031: a response the authority validator rejected is recorded refused and the run continues.
-    const authorityRefusal = command.outcome === 'refused' && command.decision?.type === 'respond' && (command.error?.code ?? '').startsWith(RESPONSE_AUTHORITY_ERROR_PREFIX);
-    if (command.outcome !== 'pending' && command.outcome !== 'recorded' && !authorityRefusal) {
+    if (command.outcome !== 'pending' && command.outcome !== 'recorded') {
       throw new PlatformError('validation', 'terminal_step_requires_finish', `a "${command.outcome}" step ends the run: record it with finishExecution`);
     }
     if (command.decision?.type === 'complete') {

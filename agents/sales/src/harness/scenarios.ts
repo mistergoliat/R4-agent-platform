@@ -19,7 +19,6 @@ import {
   respond,
   setQuantity,
   update,
-  waitForCustomer,
   type ContextView,
   type ScriptedStep,
 } from './scripted.js';
@@ -76,7 +75,6 @@ export const SCENARIOS: readonly SalesScenario[] = [
           read(CAPABILITY_IDS.catalogSearch, { query: 'barra olimpica', limit: 5 }),
           read(CAPABILITY_IDS.productContext, { productKey: 'BAR-OLY20' }),
           respond((v) => `La ${v.product('BAR-OLY20').name} pesa ${v.product('BAR-OLY20').specification('Peso')} y hoy cuesta ${clp(priceOf(v, 'BAR-OLY20'))}.`),
-          waitForCustomer(),
         ],
       },
     ],
@@ -94,7 +92,6 @@ export const SCENARIOS: readonly SalesScenario[] = [
           update([fact('budget', { amount: 800_000, currency: 'CLP' }), fact('objective', 'home gym')]),
           read(CAPABILITY_IDS.catalogSearch, { query: 'racks', filters: { maxUnitPrice: 800_000, sellableOnly: true }, limit: 10 }),
           respond('¡Buena idea! Para proponerte algo que calce: ¿cuánto espacio tienes (largo, ancho y alto) y qué tipo de entrenamiento quieres hacer?'),
-          waitForCustomer('need available space and training type'),
         ],
       },
       {
@@ -107,7 +104,6 @@ export const SCENARIOS: readonly SalesScenario[] = [
           read(CAPABILITY_IDS.catalogSearch, { query: 'barras', filters: { sellableOnly: true }, limit: 10 }),
           update([add('RACK-PR200'), add('BAR-OLY20'), add('PLT-IRON-50'), add('BENCH-FID')]),
           respond((v) => `Te propongo: Power Rack PR-200, barra olímpica 20 kg, discos de fierro 50 kg y banco ajustable. Total ${clp(sumOf(v, ['RACK-PR200', 'BAR-OLY20', 'PLT-IRON-50', 'BENCH-FID']))}, dentro de tu presupuesto. ¿Te sirve?`),
-          waitForCustomer(),
         ],
       },
     ],
@@ -131,7 +127,6 @@ export const SCENARIOS: readonly SalesScenario[] = [
           createGoal('Armar un gimnasio en casa dentro de $800.000'),
           update([fact('budget', { amount: 800_000, currency: 'CLP' })]),
           respond('Perfecto. Para armarte una propuesta, ¿cuánto espacio tienes disponible?'),
-          waitForCustomer('need available space'),
         ],
       },
       {
@@ -139,12 +134,11 @@ export const SCENARIOS: readonly SalesScenario[] = [
         agent: [
           read(CAPABILITY_IDS.productContext, { productKey: 'BAR-OLY20' }),
           respond((v) => `La barra olímpica pesa ${v.product('BAR-OLY20').specification('Peso')}. Volviendo a tu gimnasio: ¿cuánto espacio tienes?`),
-          waitForCustomer('still need available space'),
         ],
       },
       {
         customer: 'Unos 2,5 x 3 metros.',
-        agent: [update([fact('available_space', { widthCm: 250, depthCm: 300 })]), respond('Con ese espacio cabe bien un rack. ¿Qué tipo de entrenamiento te interesa?'), waitForCustomer()],
+        agent: [update([fact('available_space', { widthCm: 250, depthCm: 300 })]), respond('Con ese espacio cabe bien un rack. ¿Qué tipo de entrenamiento te interesa?')],
       },
     ],
     invariants: [...always, { kind: 'goal_kept', matches: HOME_GYM.source }, { kind: 'current_goal_matches', matches: HOME_GYM.source }, { kind: 'no_goal_abandoned' }, { kind: 'fact_equals', key: BUDGET, value: { amount: 800_000, currency: 'CLP' } }],
@@ -156,11 +150,11 @@ export const SCENARIOS: readonly SalesScenario[] = [
     turns: [
       {
         customer: 'Quiero equipar un gimnasio en casa, mi presupuesto es de 800 lucas.',
-        agent: [createGoal('Equipar un gimnasio en casa dentro del presupuesto del cliente'), update([fact('budget', { amount: 800_000, currency: 'CLP' })]), respond('Anotado: $800.000. ¿Qué espacio tienes?'), waitForCustomer()],
+        agent: [createGoal('Equipar un gimnasio en casa dentro del presupuesto del cliente'), update([fact('budget', { amount: 800_000, currency: 'CLP' })]), respond('Anotado: $800.000. ¿Qué espacio tienes?')],
       },
       {
         customer: 'En realidad puedo llegar a 1,1 millones.',
-        agent: [update([fact('budget', { amount: 1_100_000, currency: 'CLP' }, 'customer')]), respond('Perfecto, trabajamos con $1.100.000. ¿Qué espacio tienes?'), waitForCustomer()],
+        agent: [update([fact('budget', { amount: 1_100_000, currency: 'CLP' }, 'customer')]), respond('Perfecto, trabajamos con $1.100.000. ¿Qué espacio tienes?')],
       },
     ],
     invariants: [...always, { kind: 'fact_history', key: BUDGET, values: [{ amount: 800_000, currency: 'CLP' }, { amount: 1_100_000, currency: 'CLP' }] }, { kind: 'fact_equals', key: BUDGET, value: { amount: 1_100_000, currency: 'CLP' } }],
@@ -171,7 +165,7 @@ export const SCENARIOS: readonly SalesScenario[] = [
     turns: [
       {
         customer: 'Agrega el rack PR-200 y la barra olímpica de 20 kg.',
-        agent: [read(CAPABILITY_IDS.catalogSearch, { query: 'rack barra', limit: 10 }), update([add('RACK-PR200'), add('BAR-OLY20')]), respond('Listo, agregué el rack PR-200 y la barra de 20 kg.'), waitForCustomer()],
+        agent: [read(CAPABILITY_IDS.catalogSearch, { query: 'rack barra', limit: 10 }), update([add('RACK-PR200'), add('BAR-OLY20')]), respond('Listo, agregué el rack PR-200 y la barra de 20 kg.')],
       },
       {
         customer: 'Suma también la barra "Titan X" que vi en Instagram.',
@@ -181,12 +175,11 @@ export const SCENARIOS: readonly SalesScenario[] = [
           // Adding an already selected item is rejected instead of replacing the selection.
           update([add('BAR-OLY20')]),
           respond('No encuentro la "Titan X" en nuestro catálogo, y la barra de 20 kg ya está en tu selección.'),
-          waitForCustomer(),
         ],
       },
       {
         customer: 'Mejor saca el rack y deja 2 barras.',
-        agent: [update([remove('RACK-PR200'), setQuantity('BAR-OLY20', 2)]), respond('Hecho: quité el rack y dejé 2 barras olímpicas.'), waitForCustomer()],
+        agent: [update([remove('RACK-PR200'), setQuantity('BAR-OLY20', 2)]), respond('Hecho: quité el rack y dejé 2 barras olímpicas.')],
       },
     ],
     invariants: [
@@ -207,7 +200,6 @@ export const SCENARIOS: readonly SalesScenario[] = [
           update([add('BAR-OLY20'), add('PLT-IRON-50'), destination('Ñuñoa')]),
           read(CAPABILITY_IDS.shippingQuote, { destination: { commune: 'Ñuñoa' }, items: [{ productId: 'BAR-OLY20', quantity: 1 }, { productId: 'PLT-IRON-50', quantity: 1 }] }),
           respond((v) => `El despacho estándar a Ñuñoa sale ${clp((v.latest(CAPABILITY_IDS.shippingQuote).payload as { options: { amount: { amount: number } }[] }).options[0]!.amount.amount)}.`),
-          waitForCustomer(),
         ],
       },
       {
@@ -216,7 +208,6 @@ export const SCENARIOS: readonly SalesScenario[] = [
           update([destination('Viña del Mar')]),
           read(CAPABILITY_IDS.shippingQuote, { destination: { commune: 'Viña del Mar' }, items: [{ productId: 'BAR-OLY20', quantity: 1 }, { productId: 'PLT-IRON-50', quantity: 1 }] }),
           respond((v) => `A Viña del Mar el despacho estándar sale ${clp((v.latest(CAPABILITY_IDS.shippingQuote).payload as { options: { amount: { amount: number } }[] }).options[0]!.amount.amount)}; el valor anterior era para Ñuñoa.`),
-          waitForCustomer(),
         ],
       },
     ],
@@ -229,7 +220,7 @@ export const SCENARIOS: readonly SalesScenario[] = [
     turns: [
       {
         customer: 'Me interesa la barra olímpica de 20 kg.',
-        agent: [read(CAPABILITY_IDS.productContext, { productKey: 'BAR-OLY20' }), update([add('BAR-OLY20')]), respond((v) => `La barra de 20 kg cuesta ${clp(priceOf(v, 'BAR-OLY20'))} y hay stock.`), waitForCustomer()],
+        agent: [read(CAPABILITY_IDS.productContext, { productKey: 'BAR-OLY20' }), update([add('BAR-OLY20')]), respond((v) => `La barra de 20 kg cuesta ${clp(priceOf(v, 'BAR-OLY20'))} y hay stock.`)],
       },
       { control: 'twenty minutes pass (beyond the catalog freshness window) and the owner changes the price', run: (h) => {
         h.clock.offsetMs += 20 * 60_000;
@@ -244,7 +235,6 @@ export const SCENARIOS: readonly SalesScenario[] = [
           update([destination('Ñuñoa')]),
           proposeQuote(customerOnFile),
           respond((v) => `Listo: cotización ${observedQuote(v).quoteNumber} por ${clp(observedQuote(v).total.amount)}. Ojo: el precio de la barra se actualizó a ${clp(priceOf(v, 'BAR-OLY20'))}.`),
-          waitForCustomer(),
         ],
       },
     ],
@@ -257,7 +247,7 @@ export const SCENARIOS: readonly SalesScenario[] = [
     turns: [
       {
         customer: 'Hola, busco mancuernas ajustables.',
-        agent: [read(CAPABILITY_IDS.customerContext), read(CAPABILITY_IDS.catalogSearch, { query: 'mancuernas ajustables', limit: 5 }), respond((v) => `Tenemos las ${v.product('DB-ADJ-24').name} a ${clp(priceOf(v, 'DB-ADJ-24'))}.`), waitForCustomer()],
+        agent: [read(CAPABILITY_IDS.customerContext), read(CAPABILITY_IDS.catalogSearch, { query: 'mancuernas ajustables', limit: 5 }), respond((v) => `Tenemos las ${v.product('DB-ADJ-24').name} a ${clp(priceOf(v, 'DB-ADJ-24'))}.`)],
       },
       {
         customer: 'Me gustan. Cotízame un par con despacho a Providencia, soy Pedro Soto.',
@@ -266,12 +256,11 @@ export const SCENARIOS: readonly SalesScenario[] = [
           // Missing contact: capability validation refuses the mutation; nothing is issued.
           proposeQuote({ name: 'Pedro Soto' }),
           respond('Para emitir la cotización solo me falta un email o teléfono de contacto.'),
-          waitForCustomer('need a contact for the quote'),
         ],
       },
       {
         customer: 'pedro.soto@example.test',
-        agent: [proposeQuote({ name: 'Pedro Soto', email: 'pedro.soto@example.test' }), respond((v) => `Cotización ${observedQuote(v).quoteNumber} emitida por ${clp(observedQuote(v).total.amount)}.`), waitForCustomer()],
+        agent: [proposeQuote({ name: 'Pedro Soto', email: 'pedro.soto@example.test' }), respond((v) => `Cotización ${observedQuote(v).quoteNumber} emitida por ${clp(observedQuote(v).total.amount)}.`)],
       },
     ],
     invariants: [...always, { kind: 'capability_used', capabilityId: CAPABILITY_IDS.catalogSearch }, { kind: 'write_rejected_then_recovered', capabilityId: CAPABILITY_IDS.quoteCreate, code: 'write_validation_failure' }, { kind: 'quotes_issued', equals: 1 }],
@@ -282,12 +271,12 @@ export const SCENARIOS: readonly SalesScenario[] = [
     turns: [
       {
         customer: 'Quiero armar un gym en la casa para entrenar con mi pareja.',
-        agent: [createGoal('Armar un gimnasio en casa para dos personas'), update([fact('users', 2)]), respond('¡Buenísimo! ¿Qué presupuesto tienen en mente?'), waitForCustomer('need the budget')],
+        agent: [createGoal('Armar un gimnasio en casa para dos personas'), update([fact('users', 2)]), respond('¡Buenísimo! ¿Qué presupuesto tienen en mente?')],
       },
       { control: 'the worker process is replaced (only PostgreSQL survives)', run: (h) => h.restartWorker() },
       {
         customer: 'Unos 600 mil.',
-        agent: [update([fact('budget', { amount: 600_000, currency: 'CLP' })]), respond('Perfecto, con $600.000 para dos personas podemos armar algo sólido. ¿Qué espacio tienen?'), waitForCustomer()],
+        agent: [update([fact('budget', { amount: 600_000, currency: 'CLP' })]), respond('Perfecto, con $600.000 para dos personas podemos armar algo sólido. ¿Qué espacio tienen?')],
       },
     ],
     invariants: [...always, { kind: 'waited_and_resumed' }, { kind: 'goal_kept', matches: HOME_GYM.source }, { kind: 'fact_equals', key: 'users', value: 2 }, { kind: 'fact_equals', key: BUDGET, value: { amount: 600_000, currency: 'CLP' } }, { kind: 'prior_response_in_context' }],
@@ -298,12 +287,10 @@ export const SCENARIOS: readonly SalesScenario[] = [
     turns: [
       {
         customer: '¿Ustedes instalan el power rack en la casa? ¿Tiene costo?',
-        agent: [
-          respond('Déjame confirmarlo con el equipo y te respondo.'),
-          consult('¿Ofrecemos instalación a domicilio del Power Rack PR-200 en la Región Metropolitana? ¿Cuál es el costo y el plazo?'),
-        ],
+        // R4-J1E-R2.2: a reply ends the turn, so the consultation comes first; the answer follows once the operator replies.
+        agent: [consult('¿Ofrecemos instalación a domicilio del Power Rack PR-200 en la Región Metropolitana? ¿Cuál es el costo y el plazo?')],
       },
-      { operator: 'Sí: instalación en la RM por $35.000, se coordina con 48 horas de anticipación.', agent: [respond('Sí instalamos en la RM: cuesta $35.000 y se coordina con 48 horas de anticipación.'), waitForCustomer()] },
+      { operator: 'Sí: instalación en la RM por $35.000, se coordina con 48 horas de anticipación.', agent: [respond('Sí instalamos en la RM: cuesta $35.000 y se coordina con 48 horas de anticipación.')] },
     ],
     invariants: [{ kind: 'no_unbacked_quote_claim' }, { kind: 'root_goal_active' }, { kind: 'consultation_answered_and_resumed' }, { kind: 'capability_not_used', capabilityId: CAPABILITY_IDS.quoteCreate }],
   },
@@ -323,12 +310,11 @@ export const SCENARIOS: readonly SalesScenario[] = [
           read(CAPABILITY_IDS.shippingQuote, { destination: { commune: 'Ñuñoa' }, items: [{ productId: 'RACK-PR200', quantity: 1 }, { productId: 'BAR-OLY20', quantity: 1 }, { productId: 'PLT-IRON-50', quantity: 1 }] }),
           proposeQuote(customerOnFile),
           respond((v) => `Listo, Camila: cotización ${observedQuote(v).quoteNumber} por ${clp(observedQuote(v).total.amount)} con despacho a Ñuñoa.`),
-          waitForCustomer(),
         ],
       },
       {
         customer: '¿Hasta cuándo es válida?',
-        agent: [respond((v) => `La cotización ${observedQuote(v).quoteNumber} es válida hasta el ${observedQuote(v).validUntil.slice(0, 10)}.`), waitForCustomer()],
+        agent: [respond((v) => `La cotización ${observedQuote(v).quoteNumber} es válida hasta el ${observedQuote(v).validUntil.slice(0, 10)}.`)],
       },
     ],
     invariants: [...always, { kind: 'quotes_issued', equals: 1 }, { kind: 'quote_cites_evidence' }, { kind: 'one_receipt_per_execution' }, { kind: 'capability_used', capabilityId: CAPABILITY_IDS.shippingQuote }],
@@ -349,12 +335,11 @@ export const SCENARIOS: readonly SalesScenario[] = [
           // Without a destination the Quote capability refuses (receipt-backed rejection, nothing issued).
           proposeQuote(customerOnFile),
           respond('¿A qué comuna te la despachamos?'),
-          waitForCustomer('need the delivery destination'),
         ],
       },
       {
         customer: 'A Maipú.',
-        agent: [update([destination('Maipú')]), proposeQuote(customerOnFile), respond((v) => `Cotización ${observedQuote(v).quoteNumber}: ${clp(observedQuote(v).total.amount)} con despacho a Maipú.`), waitForCustomer()],
+        agent: [update([destination('Maipú')]), proposeQuote(customerOnFile), respond((v) => `Cotización ${observedQuote(v).quoteNumber}: ${clp(observedQuote(v).total.amount)} con despacho a Maipú.`)],
       },
     ],
     invariants: [
@@ -383,7 +368,6 @@ export const SCENARIOS: readonly SalesScenario[] = [
           proposeQuote(customerOnFile),
           // Only after the platform reconciled the command by its execution key does the agent see the quote.
           respond((v) => `Cotización ${observedQuote(v).quoteNumber} emitida por ${clp(observedQuote(v).total.amount)}.`),
-          waitForCustomer(),
         ],
       },
     ],
@@ -401,7 +385,6 @@ export const SCENARIOS: readonly SalesScenario[] = [
           update([fact('budget', { amount: 800_000, currency: 'CLP' }), fact('available_space', { widthCm: 200, depthCm: 200 }), fact('training', 'fuerza')]),
           read(CAPABILITY_IDS.catalogSearch, { query: 'racks', filters: { sellableOnly: true }, limit: 10 }),
           respond((v) => `Para 2 x 2 m te recomiendo el soporte de sentadilla SQ-100 (${clp(priceOf(v, 'RACK-SQ100'))}), que ocupa 120 x 110 cm. ¿Lo complementamos con barra y discos?`),
-          waitForCustomer(),
         ],
       },
       {
@@ -411,7 +394,6 @@ export const SCENARIOS: readonly SalesScenario[] = [
           read(CAPABILITY_IDS.catalogSearch, { query: 'barras', filters: { sellableOnly: true }, limit: 10 }),
           update([add('RACK-SQ100'), add('BAR-OLY20'), add('PLT-BUMP-100')]),
           respond((v) => `Con tu presupuesto y espacio: SQ-100 + barra de 20 kg + discos bumper de 100 kg = ${clp(sumOf(v, ['RACK-SQ100', 'BAR-OLY20', 'PLT-BUMP-100']))}.`),
-          waitForCustomer(),
         ],
       },
     ],
@@ -428,10 +410,9 @@ export const SCENARIOS: readonly SalesScenario[] = [
           read(CAPABILITY_IDS.productContext, { productKey: 'RACK-PR300' }),
           read(CAPABILITY_IDS.productContext, { productKey: 'RACK-PR200' }),
           respond((v) => `El PR-300 Pro está sin stock. Una alternativa disponible es el ${v.product('RACK-PR200').name} a ${clp(priceOf(v, 'RACK-PR200'))}.`),
-          waitForCustomer(),
         ],
       },
-      { customer: 'Ok, el PR-200 entonces.', agent: [update([add('RACK-PR200')]), respond('Listo, el PR-200 quedó en tu selección.'), waitForCustomer()] },
+      { customer: 'Ok, el PR-200 entonces.', agent: [update([add('RACK-PR200')]), respond('Listo, el PR-200 quedó en tu selección.')] },
     ],
     invariants: [...always, { kind: 'selection_equals', items: [{ productId: 'RACK-PR200', quantity: 1 }] }, { kind: 'capability_used', capabilityId: CAPABILITY_IDS.productContext, min: 2 }],
   },
@@ -442,10 +423,10 @@ export const SCENARIOS: readonly SalesScenario[] = [
       { control: 'the Catalog owner goes down', run: (h) => h.domains.catalog.availability.set({ mode: 'down' }) },
       {
         customer: '¿Tienen barras olímpicas?',
-        agent: [read(CAPABILITY_IDS.catalogSearch, { query: 'barra olimpica', limit: 5 }), respond('Ahora no puedo consultar el catálogo; en cuanto vuelva te confirmo disponibilidad y precio.'), waitForCustomer()],
+        agent: [read(CAPABILITY_IDS.catalogSearch, { query: 'barra olimpica', limit: 5 }), respond('Ahora no puedo consultar el catálogo; en cuanto vuelva te confirmo disponibilidad y precio.')],
       },
       { control: 'the Catalog owner is back', run: (h) => h.domains.catalog.availability.set({ mode: 'up' }) },
-      { customer: '¿Y ahora?', agent: [read(CAPABILITY_IDS.catalogSearch, { query: 'barra olimpica', limit: 5 }), respond((v) => `Sí: la barra olímpica de 20 kg está a ${clp(priceOf(v, 'BAR-OLY20'))}.`), waitForCustomer()] },
+      { customer: '¿Y ahora?', agent: [read(CAPABILITY_IDS.catalogSearch, { query: 'barra olimpica', limit: 5 }), respond((v) => `Sí: la barra olímpica de 20 kg está a ${clp(priceOf(v, 'BAR-OLY20'))}.`)] },
     ],
     invariants: [...always, { kind: 'failure_observed', capabilityId: CAPABILITY_IDS.catalogSearch, category: 'temporarily_unavailable' }],
   },
@@ -465,7 +446,6 @@ export const SCENARIOS: readonly SalesScenario[] = [
           update([add('BENCH-FID'), destination('La Florida')]),
           proposeQuote(customerOnFile),
           respond((v) => `Cotización ${observedQuote(v).quoteNumber} emitida por ${clp(observedQuote(v).total.amount)}.`),
-          waitForCustomer(),
         ],
       },
     ],
@@ -492,12 +472,11 @@ export const CENTRAL_SCENARIO: SalesScenario = {
         read(CAPABILITY_IDS.catalogSearch, { query: 'rack barra discos banco', filters: { maxUnitPrice: 800_000, sellableOnly: true }, limit: 10 }),
         createGoal('Entender el espacio disponible y el tipo de entrenamiento', gymGoal),
         respond('¡Vamos! Para que todo calce: ¿cuánto espacio tienes (largo, ancho, alto) y qué te gustaría entrenar?'),
-        waitForCustomer('need space and training type'),
       ],
     },
     {
       customer: 'Antes, ¿cuánto pesa la barra olímpica?',
-      agent: [read(CAPABILITY_IDS.productContext, { productKey: 'BAR-OLY20' }), respond((v) => `La barra olímpica pesa ${v.product('BAR-OLY20').specification('Peso')}. Y para tu gimnasio: ¿qué espacio tienes y qué quieres entrenar?`), waitForCustomer('still need space and training type')],
+      agent: [read(CAPABILITY_IDS.productContext, { productKey: 'BAR-OLY20' }), respond((v) => `La barra olímpica pesa ${v.product('BAR-OLY20').specification('Peso')}. Y para tu gimnasio: ¿qué espacio tienes y qué quieres entrenar?`)],
     },
     { control: 'the worker process is replaced and 30 minutes pass (catalog evidence expires)', run: async (h) => {
       await h.restartWorker();
@@ -515,7 +494,6 @@ export const CENTRAL_SCENARIO: SalesScenario = {
         read(CAPABILITY_IDS.catalogSearch, { query: 'bancos', filters: { sellableOnly: true }, limit: 10 }),
         update([add('RACK-PR200'), add('BAR-OLY20'), add('PLT-IRON-50'), add('BENCH-FID')]),
         respond((v) => `Propuesta: Power Rack PR-200 (mide 120 x 140 x 215 cm, cabe), barra olímpica 20 kg, discos de fierro 50 kg y banco ajustable: ${clp(sumOf(v, ['RACK-PR200', 'BAR-OLY20', 'PLT-IRON-50', 'BENCH-FID']))}.`),
-        waitForCustomer(),
       ],
     },
     {
@@ -524,7 +502,6 @@ export const CENTRAL_SCENARIO: SalesScenario = {
         update([fact('budget', { amount: 1_100_000, currency: 'CLP' }), replace('PLT-IRON-50', 'PLT-BUMP-100')]),
         read(CAPABILITY_IDS.productContext, { productKey: 'PLT-BUMP-100' }),
         respond((v) => `Sí: los bumper protegen el piso y suman más carga. Con el cambio quedas en ${clp(sumOf(v, ['RACK-PR200', 'BAR-OLY20', 'PLT-BUMP-100', 'BENCH-FID']))}, dentro de $1.100.000.`),
-        waitForCustomer(),
       ],
     },
     {
@@ -535,7 +512,6 @@ export const CENTRAL_SCENARIO: SalesScenario = {
         read(CAPABILITY_IDS.shippingQuote, (v) => ({ destination: { commune: 'Ñuñoa' }, items: v.workspace.selection.map((s) => ({ productId: s.productId, quantity: s.quantity })) })),
         proposeQuote(customerOnFile),
         respond((v) => `Listo: cotización ${observedQuote(v).quoteNumber} por ${clp(observedQuote(v).total.amount)} (despacho a Ñuñoa incluido), válida hasta el ${observedQuote(v).validUntil.slice(0, 10)}.`),
-        waitForCustomer(),
       ],
     },
   ],

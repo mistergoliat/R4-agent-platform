@@ -4,7 +4,7 @@ import { AutonomyControls, PRODUCTION_CONTROL_ACTOR } from '@r4/live-ops';
 import { PostgresProductionStore } from '@r4/persistence-postgres';
 import { runProductionControl } from '@r4-sales/agent/production';
 import { createMigratedTestDatabase, openPool } from '../support/database.js';
-import { LiveOpsTestbed, OPERATOR, keyOf, say, waitInput } from '../support/live-ops.js';
+import { LiveOpsTestbed, OPERATOR, keyOf, say } from '../support/live-ops.js';
 
 /**
  * R4-I D-5/D-6 and task retirement: production administration (`production:sales:control`).
@@ -248,7 +248,7 @@ describe('D-6 holds list', () => {
 
   it('an unrelated blocked task (operator takeover) does not appear', async () => {
     bed = await LiveOpsTestbed.start({ allowlist: [A], autonomy: true });
-    bed.next(say('Hola'), waitInput());
+    bed.next(say('Hola'));
     await bed.customer(A, 'wamid.a.1', 'Hola');
     await bed.runAgent();
     const taskId = await bed.taskOf(A);
@@ -290,7 +290,7 @@ describe('D-6 holds release', () => {
     expect(inspected.events.map((e) => e.type)).toContain('task.woken');
 
     // The normal worker owns execution.
-    bed.next(say('¡Hola! Disculpa la espera.'), waitInput());
+    bed.next(say('¡Hola! Disculpa la espera.'));
     expect(await bed.runAgent()).not.toEqual([]);
     await bed.deliver();
     expect(bed.provider.sends.map((s) => s.text)).toEqual(['¡Hola! Disculpa la espera.']);
@@ -351,7 +351,7 @@ describe('D-6 holds release', () => {
 
   it('new inputs while held stay durable; after on + explicit release the next run compiles a fresh context with all of them', async () => {
     bed = await LiveOpsTestbed.start({ allowlist: [A], autonomy: true });
-    bed.next(say('Hola, ¿qué bicicleta buscas?'), waitInput());
+    bed.next(say('Hola, ¿qué bicicleta buscas?'));
     await bed.customer(A, 'wamid.a.1', 'Hola');
     await bed.runAgent();
     await bed.deliver();
@@ -370,7 +370,7 @@ describe('D-6 holds release', () => {
     expect((await ctl('holds', 'release', '--task', taskId, '--reason', 'resume after incident')).code).toBe(0);
     expect(bed.model.callCount).toBe(calls);
 
-    bed.next(say('Perfecto: montaña, talla M.'), waitInput());
+    bed.next(say('Perfecto: montaña, talla M.'));
     await bed.runAgent();
     const context = JSON.stringify(bed.model.requests[calls]!.context);
     expect(context).toContain('input A: una de montaña');
@@ -384,7 +384,7 @@ describe('D-6 holds release', () => {
 
   it('a stale pending agent response is never sent after release: stale-response protection stays authoritative', async () => {
     bed = await LiveOpsTestbed.start({ allowlist: [A], autonomy: true });
-    bed.next(say('respuesta vieja'), waitInput());
+    bed.next(say('respuesta vieja'));
     await bed.customer(A, 'wamid.a.1', 'Hola');
     await bed.runAgent();
     await bed.gateway.delivery.materialize();
@@ -400,7 +400,7 @@ describe('D-6 holds release', () => {
     await bed.deliver();
     expect(bed.provider.sends).toHaveLength(0);
     expect((await bed.store.outboundForTask(taskId))[0]).toMatchObject({ status: 'cancelled', cancelReason: 'superseded_by_newer_input' });
-    bed.next(say('respuesta nueva'), waitInput());
+    bed.next(say('respuesta nueva'));
     await bed.runAgent();
     await bed.deliver();
     expect(bed.provider.sends.map((s) => s.text)).toEqual(['respuesta nueva']);
@@ -408,7 +408,7 @@ describe('D-6 holds release', () => {
 
   it('an unknown delivery is preserved: releasing the hold never retries it blindly', async () => {
     bed = await LiveOpsTestbed.start({ allowlist: [A], autonomy: true, providerTimeoutMs: 200 });
-    bed.next(say('mensaje con timeout'), waitInput());
+    bed.next(say('mensaje con timeout'));
     await bed.customer(A, 'wamid.a.1', 'Hola');
     await bed.runAgent();
     bed.provider.script({ kind: 'hang', ms: 600 });
@@ -430,7 +430,7 @@ describe('D-6 holds release', () => {
 
   it('serializes an administrative release, a new inbound, an outbound claim and a worker claim on the Task row', async () => {
     bed = await LiveOpsTestbed.start({ allowlist: [A], autonomy: true });
-    bed.next(say('respuesta vieja'), waitInput());
+    bed.next(say('respuesta vieja'));
     await bed.customer(A, 'wamid.a.1', 'Hola');
     await bed.runAgent();
     await bed.gateway.delivery.materialize();
@@ -468,7 +468,7 @@ describe('D-6 holds release', () => {
     expect(bed.model.callCount).toBe(calls);
     expect((await bed.rows<{ n: number }>('select count(*)::int as n from task_inputs where task_id = $1', [taskId]))[0]!.n).toBe(3);
     expect((await humansOf(taskId)).map((h) => h.status)).toEqual(['cancelled']);
-    bed.next(say('respuesta nueva'), waitInput());
+    bed.next(say('respuesta nueva'));
     await bed.runAgent();
     const context = JSON.stringify(bed.model.requests[calls]!.context);
     expect(context).toContain('input X');
@@ -657,7 +657,7 @@ describe('tasks cancel (retire one task so rollout is re-evaluated on the next i
     expect(await bed.store.taskState(newTask)).toMatchObject({ humanOwned: false });
     expect(['pending', 'running']).toContain((await bed.api.tasks.getTask(newTask)).task.status);
     expect((await bed.api.tasks.getTask(oldTask)).task.status).toBe('cancelled');
-    bed.next(say('¡Hola! ¿En qué te ayudo?'), waitInput());
+    bed.next(say('¡Hola! ¿En qué te ayudo?'));
     expect(await bed.runAgent()).not.toEqual([]);
     await bed.deliver();
     expect(bed.provider.sends.map((s) => s.text)).toEqual(['¡Hola! ¿En qué te ayudo?']);

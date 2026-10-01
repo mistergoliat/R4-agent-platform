@@ -116,7 +116,7 @@ describe('shadow E2E across real processes', () => {
     expect((await workerA.exited).signal).toBe('SIGKILL');
 
     await say(taskId, 2, turn2!);
-    const workerB = start(WORKER, { ...WORKER_ENV, R4_WORKER_ID: 'shadow-worker-b', R4_SHADOW_SCRIPT_FROM: '6' });
+    const workerB = start(WORKER, { ...WORKER_ENV, R4_WORKER_ID: 'shadow-worker-b', R4_SHADOW_SCRIPT_FROM: '5' });
     await waitFor(async () => (await api.tasks.getTask(taskId)).task.status === 'waiting' && (await responses(taskId)).length === 2, 60_000, 100).catch((error: unknown) => {
       throw new Error(`turn 2 never completed; worker B: ${workerB.stderr().slice(0, 2000)}`, { cause: error });
     });

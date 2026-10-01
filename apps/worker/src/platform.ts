@@ -1,5 +1,5 @@
 import type { Logger } from 'pino';
-import { PlatformError, systemClock, uuidV7Generator, type Clock, type IdGenerator, type ResponseAuthorityValidator } from '@r4/contracts';
+import { PlatformError, systemClock, uuidV7Generator, type Clock, type IdGenerator } from '@r4/contracts';
 import { AgentKernel } from '@r4/agent-kernel';
 import { AgentRegistry } from '@r4/agent-registry';
 import { ActionExecutor, type CapabilityRegistry } from '@r4/capability-runtime';
@@ -55,11 +55,6 @@ export interface WorkerBindings {
    * readiness. Only a composition that proved its mode declares it.
    */
   readonly presence?: WorkerPresenceBinding;
-  /**
-   * ADR-031: the pack's deterministic pre-respond authority validator. Absent ⇒
-   * responses are recorded as the model decided them (unchanged behaviour).
-   */
-  readonly responseAuthority?: ResponseAuthorityValidator;
 }
 
 export interface WorkerPresenceBinding {
@@ -112,7 +107,7 @@ export async function createWorkerPlatform(config: WorkerConfig, bindings: Worke
     const temporal = new TemporalRuntime({ store, execution, ids, logger });
     // The only authority over effects: policy is evaluated inside the runtime's fenced transactions.
     const actions = new ActionRuntime({ store, authorizer: new ActionPolicyEngine(bindings.actionPolicy ?? DEFAULT_ACTION_POLICY), temporal, ids, clock, logger });
-    const kernel = new AgentKernel({ gateway: new DefaultModelGateway({ provider: bindings.modelProvider, logger }), logger, ...(bindings.responseAuthority ? { responseAuthority: bindings.responseAuthority } : {}) });
+    const kernel = new AgentKernel({ gateway: new DefaultModelGateway({ provider: bindings.modelProvider, logger }), logger });
     const context = new ContextCompiler({
       sources: [...platformContextSources(), new MemoryContextSource(new PostgresMemoryStore(pool)), ...(bindings.contextSources ?? [])],
       policy: config.context,

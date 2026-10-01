@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { AgentKernel, KernelInterrupt, type KernelOutcome } from '@r4/agent-kernel';
 import { DefaultModelGateway, FakeModelProvider, type FakeModelScript } from '@r4/model-gateway';
 import { createSilentLogger } from '@r4/observability';
-import { complete, completeFromObservations, contextOf, read, respond, sequence } from '../../support/decisions.js';
+import { compiledOf, complete, completeFromObservations, contextOf, read, respond, sequence } from '../../support/decisions.js';
 import { MemorySession, READ_FACT, WRITE_THING, type MemorySessionOptions } from '../../support/kernel-fixtures.js';
 import { captureLogs } from '../../support/logs.js';
 
@@ -40,11 +40,16 @@ describe('kernel loop: READ → observation → next iteration → COMPLETE', ()
     expect(contextOf(provider.requests[0]!).capabilities.map((c) => c.capabilityId)).toEqual([READ_FACT.capabilityId]);
   });
 
-  it('records respond and keeps looping, showing the agent its own responses', async () => {
+  it('records respond and ends the turn: no further model call in the run (R4-J1E-R2.2)', async () => {
     const { outcome, session, provider } = await runWith([respond('interim note'), complete('done')]);
-    expect(terminated(outcome)?.reason).toBe('completed');
-    expect(session.steps.map((s) => s.outcome)).toEqual(['recorded', 'recorded']);
-    expect(contextOf(provider.requests[1]!).responses).toEqual([{ iteration: 1, content: 'interim note' }]);
+    expect(terminated(outcome)?.reason).toBe('waiting');
+    expect(session.steps.map((s) => [s.decision?.type, s.outcome, s.origin])).toEqual([['respond', 'recorded', 'model'], ['wait', 'recorded', 'platform']]);
+    expect(provider.callCount).toBe(1);
+  });
+
+  it('shows the agent what it observed so far in the run', async () => {
+    const { provider } = await runWith([read(READ_FACT.capabilityId, { factKey: 'alpha' }), complete('done')]);
+    expect(contextOf(provider.requests[1]!).observations).toHaveLength(1);
   });
 
   it('feeds failed capability outcomes back as evidence instead of ending the run', async () => {
@@ -97,13 +102,13 @@ describe('kernel budgets', () => {
   });
 
   it('stops at maxIterations before calling the model again', async () => {
-    const { outcome, provider } = await runWith(() => respond('again'), { policy: { maxIterations: 4 } });
+    const { outcome, provider } = await runWith(readForever, { policy: { maxIterations: 4, maxReadCapabilityCalls: 1000 } });
     expect(terminated(outcome)).toMatchObject({ reason: 'budget_exhausted', code: 'max_iterations' });
     expect(provider.callCount).toBe(4);
   });
 
   it('honors a tighter task budget', async () => {
-    const { outcome, provider } = await runWith(() => respond('again'), { task: { ...new MemorySession().task, budget: { maxModelCalls: 2 } } });
+    const { outcome, provider } = await runWith(readForever, { policy: { maxReadCapabilityCalls: 1000 }, task: { ...new MemorySession().task, budget: { maxModelCalls: 2 } } });
     expect(terminated(outcome)).toMatchObject({ reason: 'budget_exhausted', code: 'max_model_calls' });
     expect(provider.callCount).toBe(2);
   });
@@ -113,18 +118,19 @@ describe('kernel budgets', () => {
     const { outcome } = await runWith(
       () => {
         now += 40_000;
-        return respond('slow');
+        return read(READ_FACT.capabilityId, { factKey: 'slow' });
       },
-      { now: () => new Date(now) },
+      { now: () => new Date(now), policy: { maxReadCapabilityCalls: 1000 } },
     );
     expect(terminated(outcome)).toMatchObject({ reason: 'budget_exhausted', code: 'max_run_duration_ms' });
   });
 
-  // R4-C2: every iteration now compiles (and snapshots) a context over a
-  // conversation that grows to 400 turns — quadratic work by design of this
-  // stress test, well above real policies (maxIterations defaults to 50).
+  // Every iteration compiles (and snapshots) a context. The loop continues on a decision that adds no
+  // context of its own (re-focusing the root goal), so 400 iterations test the loop, not the compiler.
+  // (A reply would end the turn since R4-J1E-R2.2; well above real policies: maxIterations defaults to 50.)
   it('is iterative: hundreds of iterations do not grow the stack', { timeout: 30_000 }, async () => {
-    const { outcome, provider } = await runWith(() => respond('tick'), { policy: { maxIterations: 400, maxModelCalls: 400 } });
+    const refocus: FakeModelScript = (request) => ({ type: 'structured', data: { type: 'manage_goal', change: { operation: 'focus', goalId: (compiledOf(request).sections.goals[0]!.content as { goalId: string }).goalId } } });
+    const { outcome, provider } = await runWith(refocus, { policy: { maxIterations: 400, maxModelCalls: 400 } });
     expect(terminated(outcome)?.code).toBe('max_iterations');
     expect(provider.callCount).toBe(400);
   });
@@ -158,6 +164,7 @@ describe('kernel recovery and interruption', () => {
         return o;
       },
       executeAction: (s, d) => session.executeAction(s, d),
+      executeTemporal: (s, d) => session.executeTemporal(s, d),
       finish: (e) => session.finish(e),
     });
     expect(out1).toEqual({ kind: 'interrupted', cause: 'lease_lost' });

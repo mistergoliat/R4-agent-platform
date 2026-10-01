@@ -1,17 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { systemClock, uuidV7Generator, type Principal } from '@r4/contracts';
-import { AgentKernel, type KernelOutcome } from '@r4/agent-kernel';
+import { AgentKernel, KernelInterrupt, type KernelOutcome, type KernelSession } from '@r4/agent-kernel';
 import { AgentRegistry } from '@r4/agent-registry';
 import type { CapabilityRegistry } from '@r4/capability-runtime';
 import { DefaultModelGateway, FakeModelProvider, type FakeModelScript } from '@r4/model-gateway';
 import { createSilentLogger } from '@r4/observability';
 import { PostgresAgentDefinitionStore, PostgresExecutionStore, PostgresObservationStore, PostgresTaskRuntimeStore, type Pool } from '@r4/persistence-postgres';
-import { ExecutionRuntime } from '@r4/task-runtime';
+import { ExecutionRuntime, TemporalRuntime } from '@r4/task-runtime';
 import { DurableKernelSession, type WorkerCycle } from '@r4/worker';
 import type { Platform } from '@r4/api';
 import { GET_TEST_FACT_ID } from '../fixtures/capabilities/get-test-fact.js';
 import { createMigratedTestDatabase, openPool, type TestDatabase } from '../support/database.js';
-import { completeFromObservations, contextOf, read, readThenComplete, sequence } from '../support/decisions.js';
+import { completeFromObservations, contextOf, read, readThenComplete, respond, sequence } from '../support/decisions.js';
 import { captureLogs } from '../support/logs.js';
 import { startTestPlatform, validTaskBody } from '../support/platform.js';
 import { TEST_POLICY, expireLease, leaseRow, observationsOf, startTestWorker, stepsOf, testCapabilities, waitFor, type TestWorker, type TestWorkerOptions } from '../support/worker.js';
@@ -256,5 +256,53 @@ describe('duplicate workers', () => {
     expect(invocations.rows[0]).toEqual({ n: 12, d: 12 });
     // More than one worker actually participated.
     expect(new Set([...claimedBy.values()].flat()).size).toBeGreaterThan(1);
+  });
+});
+
+describe('R4-J1E-R2.2 crash between a durable response and its turn-closing wait', () => {
+  it('the next owner of the run records only the wait: no model call, no second response, one recorded reply', async () => {
+    const taskId = await createTask();
+    // Worker A: real execution and temporal runtimes; it dies right after the response became durable.
+    const pool: Pool = openPool(db.url);
+    cleanups.push(() => pool.end());
+    const logger = createSilentLogger();
+    const ids = uuidV7Generator();
+    const store = new PostgresExecutionStore(pool);
+    const execution = new ExecutionRuntime({ store, ids, clock: systemClock, logger, maxRunRecoveries: 3 });
+    const temporal = new TemporalRuntime({ store, execution, ids, logger });
+    const claim = await execution.claimNext({ workerId: 'worker-a', leaseDurationMs: 60_000 });
+    if (!claim || claim.kind === 'abandoned') throw new Error('worker A could not claim');
+    const durable = new DurableKernelSession({
+      lease: claim.lease, execution, temporal,
+      agents: new AgentRegistry({ store: new PostgresAgentDefinitionStore(pool), clock: systemClock, logger }),
+      capabilities: testCapabilities(), observations: new PostgresObservationStore(pool), policy: TEST_POLICY, ids, clock: systemClock, logger,
+    });
+    const dying: KernelSession = {
+      load: () => durable.load(),
+      prepareContext: (c) => durable.prepareContext(c),
+      recordStep: (s) => durable.recordStep(s),
+      executeRead: (s, d) => durable.executeRead(s, d),
+      executeAction: (s, d) => durable.executeAction(s, d),
+      finish: (e) => durable.finish(e),
+      // The process dies before the turn-closing wait is written.
+      executeTemporal: () => Promise.reject(new KernelInterrupt('unavailable')),
+    };
+    const kernelA = new AgentKernel({ gateway: new DefaultModelGateway({ provider: new FakeModelProvider([respond('the fact is R4')]), logger }), logger });
+    expect(await kernelA.run(dying)).toEqual({ kind: 'interrupted', cause: 'unavailable' });
+    const [run] = (await platform.tasks.getTask(taskId)).runs;
+    expect((await stepsOf(platform.pool, run!.runId)).map((s) => [s.decision?.type, s.outcome, s.origin])).toEqual([['respond', 'recorded', 'model']]);
+
+    // A's lease runs out; worker B takes over the SAME run and only closes the turn.
+    await expireLease(platform.pool, taskId);
+    const b = await worker({ workerId: 'worker-b', script: [respond('a second reply must never be asked for')] });
+    await runUntilExecuted(b);
+    expect(b.provider.callCount).toBe(0);
+    const view = await platform.tasks.getTask(taskId);
+    expect(view.task.status).toBe('waiting');
+    expect(view.runs.map((r) => [r.runId, r.status])).toEqual([[run!.runId, 'suspended']]);
+    expect((await stepsOf(platform.pool, run!.runId)).map((s) => [s.decision?.type, s.outcome, s.origin])).toEqual([
+      ['respond', 'recorded', 'model'],
+      ['wait', 'recorded', 'platform'],
+    ]);
   });
 });

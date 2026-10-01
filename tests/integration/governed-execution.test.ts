@@ -484,16 +484,17 @@ describe('metrics foundation', () => {
 });
 
 describe('respond and read still work next to actions', () => {
-  it('interleaves read, respond and propose in one run', async () => {
+  it('reads and governed actions precede the response in one run; the response ends the turn (R4-J1E-R2.2)', async () => {
     const taskId = await createActionTask(platform);
     const w = await worker({
-      script: sequence([read(GET_TEST_FACT_ID, { factKey: 'alpha' }), respond('about to write'), propose(SET_TEST_RECORD_ID, { recordKey: 'mixed', value: 'x' }), completeCiting('done')]),
+      script: sequence([read(GET_TEST_FACT_ID, { factKey: 'alpha' }), propose(SET_TEST_RECORD_ID, { recordKey: 'mixed', value: 'x' }), respond('written'), completeCiting('never asked')]),
       capabilities: actionCapabilities(platform.pool),
       policy: WRITES,
     });
-    expect((await runToEnd(w)).outcome).toMatchObject({ termination: { reason: 'completed' } });
+    expect((await runToEnd(w)).outcome).toMatchObject({ termination: { reason: 'waiting' } });
     const observations = await observationsOf(platform.pool, taskId);
     expect(observations.map((o) => o.source.kind)).toEqual(['capability', 'action']);
-    expect(contextOf(w.provider.requests[3]!).observations).toHaveLength(2);
+    expect(contextOf(w.provider.requests[2]!).observations).toHaveLength(2);
+    expect(w.provider.callCount).toBe(3);
   });
 });

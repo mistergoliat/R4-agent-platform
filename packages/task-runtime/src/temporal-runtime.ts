@@ -284,8 +284,10 @@ export class TemporalRuntime implements RunFailureHandoff {
       await uow.releaseLease(token);
       const wait = await this.#openWait(uow, task, run.runId, kind, referenceId, dueAt, now, events);
       if (dueAt) await this.scheduleWithin(uow, task, 'wake', wait.waitId, dueAt, now, events);
-      // Input that arrived while the model was deciding must not be stranded behind a stale wait.
-      if ((kind === 'WAIT_FOR_INPUT' || kind === 'WAIT_UNTIL') && (await p.hasUnseenInput(task.taskId, command.contextSnapshotId ?? null))) {
+      // Input that arrived while the model was deciding must not be stranded behind a stale wait. The
+      // turn-closing wait (R4-J1E-R2.2) is judged against the snapshot of the call that drafted the response.
+      const horizon = command.inputHorizonSnapshotId !== undefined ? command.inputHorizonSnapshotId : (command.contextSnapshotId ?? null);
+      if ((kind === 'WAIT_FOR_INPUT' || kind === 'WAIT_UNTIL') && (await p.hasUnseenInput(task.taskId, horizon))) {
         const woken = await this.wakeWithin(uow, task, wait, 'input', now, events);
         if (woken.status === 'running') await this.cancelSchedulesWithin(uow, woken, now, events, wait.waitId);
       }

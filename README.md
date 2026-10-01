@@ -298,8 +298,10 @@ R4_RECONCILIATION_… npm run start:scheduler                         # 7. sched
 ```
 
 El scheduler es el proceso genérico de R4-E (ver "Scheduler (R4-E)"): sin él,
-una respuesta diferida por la autoridad de respuesta (ADR-031 §7) deja la task
-en `waiting` para siempre. Arranca sólo con la política de reconciliación
+un WAIT_UNTIL del agente, una expiración humana, un reintento o una
+reconciliación vencida no se resuelven nunca (la task queda en `waiting`).
+Desde R4-J1E-R2.2 un `respond` válido se envía tal cual y cierra el turno
+(ADR-008, ADR-031 superseded): no hay juez síncrono de respuestas. Arranca sólo con la política de reconciliación
 explícita (`R4_RECONCILIATION_*`, sin default). Antes de arrancarlo por primera
 vez, `production:sales:plan` muestra los schedules ya vencidos que dispararía
 de inmediato; runbook: `docs/architecture/R4-J1E-R2.1_PRODUCTION_COMPOSITION.md`.

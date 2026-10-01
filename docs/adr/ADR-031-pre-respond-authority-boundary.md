@@ -1,10 +1,117 @@
 # ADR-031 — Frontera de autoridad previa a `respond` (enmienda acotada de ADR-025)
 
-- **Estado:** Aceptado (R4-J1E, autorizado explícitamente por el dueño del producto)
+- **Estado:** **SUPERSEDED por R4-J1E-R2.2 (2026-10-01)**: la frontera ya no existe en el camino de `respond`. Las secciones 1–11 se conservan como historia de la decisión.
 - **Fecha:** 2026-09-30
 - **Autoridad superior:** Constitución ("model output is untrusted"; la verdad durable pertenece a su owner); PRD §7; ADR-002, ADR-005, ADR-008, ADR-009, ADR-030
 - **Enmienda:** ADR-025 §1, sólo en lo que aquí se define
 - **Relacionado:** `docs/architecture/R4-J1D_PRODUCTION_CATALOG_CLOSURE.md` (primer E2E de WhatsApp)
+
+## Decisión vigente — R4-J1E-R2.2: Restore Pure Agent Execution (2026-10-01)
+
+**Response Authority deja de ser un enforcement obligatorio previo al envío.** Un `respond`
+válido por protocolo se persiste y se envía tal como el agente lo decidió, y cierra el turno.
+La evaluación de calidad y grounding de las respuestas conversacionales es **post-hoc**. La
+autoridad sobre **acciones** (side effects) sigue siendo síncrona y determinista.
+
+### Por qué se introdujo
+
+El primer E2E de WhatsApp (ver Contexto, abajo) mostró respuestas incompatibles con la evidencia
+del owner que llegaban al cliente, y ADR-025 sólo permitía detectarlas después. Se decidió impedirlas
+antes del envío con un validador determinista del pack, y R4-J1E-R2 / R2.1 lo endurecieron.
+
+### Evidencia de Oxford
+
+Catalog respondió correctamente:
+
+- `P2340`: Colchoneta Oxford Negro/Rojo 100x50x5cm - 2da Selección, `finalGross = 6296`, `price.kind = exact`,
+  `price.basis = not_offerable`, `sellability = not_sellable`, `reason = out_of_stock`.
+- `P872`: la versión nueva, `finalGross = 13990`, `offerable`, `sellable`, `in_stock`.
+
+El agente respondió correctamente: P2340 cuesta $6.296, está sin stock y no se puede pedir, y la
+versión nueva está disponible a $13.990. El validador rechazó la respuesta como si presentara P2340
+como disponible (`response_authority_contradiction`). Eso disparó corrección, otro rechazo, la
+degradación segura enviada al cliente, nuevas llamadas al modelo y nuevas búsquedas de Catalog, hasta
+≈ 170 k tokens de entrada. **El harness introdujo el error; el agente no.**
+
+**Diagnóstico confirmado.** El borrador exacto de producción, reproducido contra el código R4-J1E-R2.1
+con los mismos datos de Catalog, se rechaza con `response_authority_contradiction`: "$6.296 refers to
+P2340 … never present it as available". La negación ("hoy aparece sin stock") está en la misma oración,
+pero después del siguiente monto ($13.990), fuera de la "ventana" del $6.296. Ese monto coincide con el
+precio de P872, así que el "bloque de producto" trató la oración como si hablara de otro producto y no
+buscó la negación. El borrador exacto es ahora una regresión permanente
+(`tests/integration/pure-agent-execution.test.ts`).
+
+### Por qué produjo un falso positivo
+
+El validador infería significado comercial desde la superficie del texto: montos anclados, nombres de
+producto por solapamiento de palabras, una lista cerrada de frases de (no) disponibilidad y "bloques"
+de oraciones. Cualquier redacción honesta que cayera fuera de esas reglas se leía mal, y cada
+enmienda (R2 §9, R2.1) agregaba reglas sin poder cerrar el espacio del lenguaje. Un juez semántico
+síncrono convierte cada falso positivo en un fallo de la conversación en curso.
+
+### Por qué mezclar evaluación semántica con control del runtime viola la separación de R4
+
+**PLATFORM CORRECTNESS ≠ AGENT QUALITY ≠ BUSINESS OUTCOME.** Execution ejecuta, Governance gobierna
+acciones, Evaluation observa post-hoc y el Reviewer propone cambios después. La frontera de ADR-031
+fusionaba Evaluation con Execution: un juicio de calidad decidía el control flow (corrección,
+degradación, espera, reintentos). Eso es exactamente el guard en el loop que ADR-025 prohíbe, aun
+siendo determinista, y además ocultaba el error real del agente detrás de la reacción del harness.
+
+### Decisión
+
+1. **Sin juez síncrono en el camino de `respond`.** `AgentDecision.respond` válido → persistido
+   (`recorded`) → outbound → el turno se asienta. No hay validador, veredictos, corrección semántica,
+   degradación segura, supresión ni WAIT_UNTIL por autoridad de respuesta. No se reemplaza por reglas
+   equivalentes: ni regex, heurística, clasificador, juez LLM, templates ni guards de redacción.
+2. **`respond` es terminal para el turno** (ADR-008, enmienda R4-J1E-R2.2): tras el `respond`
+   registrado, la plataforma registra un `WAIT_FOR_INPUT` de `origin = 'platform'` (sin tokens) por
+   el Temporal Runtime. No hay otra llamada al modelo, READ ni segundo outbound para ese input.
+3. **Sigue igual:** la autoridad sobre acciones (ActionProposal, Policy Engine ALLOW/DENY/REQUIRE_APPROVAL,
+   execution keys, idempotencia, receipts, reconciliación, TrustedHumanContext, kill switch) y la
+   seguridad del runtime (schema del output estructurado, budgets, leases, fencing, cancelación,
+   recuperación de runs ADR-028, scheduler, protección de outbound duplicado).
+4. **Observabilidad, no bloqueo.** La trayectoria durable (Task, Runs, ContextSnapshots, decisiones,
+   READs y observations, outbound, tokens, latencias, fallos) es la entrada futura de
+   Evaluation/Reviewer. R2.2 no construye el Reviewer, ni scoring, ni juez LLM, ni auto-optimización.
+
+### Qué se eliminó y qué se conserva
+
+| Pieza | Clasificación |
+|---|---|
+| `ResponseAuthorityValidator`, veredictos y constantes (`@r4/contracts`), `responseAuthorityState` y las ramas del kernel (revalidación, diferimiento, corrección, degradación, supresión), `WorkerBindings.responseAuthority`, telemetría `response.authority.*`, episodio `response.not_sent`, aceptación de `respond` `refused` en `recordStep` | **A. eliminado** |
+| `SalesCommercialEvidenceValidator` y `availability-wording.ts` (Sales) | **A. eliminado** del código. **C.** La idea (reconstruir claims anclados a observations) pasa al backlog de Quality/Learning como posible insumo de una evaluación post-hoc. Sus reglas produjeron el falso positivo de Oxford: no se conservan como base. Historia en git, commit `3b3cd8d`. |
+| Migraciones `0009_run_step_origin` y `0010_platform_step_decisions` | **Se conservan** (congeladas). `origin = 'platform'` es ahora sólo el `wait` que cierra el turno. Los steps históricos de R2 (`response_authority_*`) siguen siendo legibles y nada los produce. |
+| Scheduler en producción (R2.1, ADR-029 §16) | **Se conserva**: lo necesitan los WAIT_UNTIL del agente, las expiraciones, los reintentos y la reconciliación. |
+
+### Nota de despliegue
+
+R4-J1E-R2.2 publica la definición **sales@3** (sólo la viñeta de protocolo de "Interaction"; el registry
+rechaza cambiar el contenido de sales@2). Antes de los procesos, `production:sales:bootstrap` debe
+registrar `sales@3`. Las conversaciones nuevas resuelven sales@3; las tareas abiertas siguen fijadas a
+la versión con la que se crearon (su texto anterior es inocuo, porque la plataforma cierra el turno igual).
+
+### Diferido (sin implementar; `respond` sigue siendo terminal)
+
+- **Avisar/acusar recibo antes de `request_consultation` o `request_handoff`.** Hoy un `respond` cierra
+  el turno, así que el agente no puede decir "déjame confirmarlo" y luego consultar o derivar en el
+  mismo turno: consulta o deriva sin aviso. Cualquier solución futura (p. ej. un aviso de plataforma o
+  un campo en la decisión humana) es una decisión de producto aparte. No se reintroduce un `respond`
+  intermedio.
+- **`respond` + `complete`.** Cerrar la tarea en el mismo turno que la última respuesta no existe: hoy
+  se completa en un turno sin respuesta o la tarea queda esperando input. También es una decisión
+  aparte, sin `respond` intermedio.
+
+### Consecuencias
+
+- Una respuesta factualmente incorrecta del agente llega al cliente si es válida por protocolo. Queda
+  auditable (observation del owner + decisión + snapshot + outbound) y su detección es de Evaluation/Reviewer.
+- El runaway de Oxford (corrección → degradación → nuevos turnos del modelo) desaparece porque desaparece el loop.
+- Las instrucciones de Sales se actualizaron al protocolo (sales@3): un `respond` termina el turno y la
+  plataforma espera el próximo mensaje; sin cambios comerciales, de tono ni de estrategia.
+
+---
+
+## Historia de la decisión (SUPERSEDED por R4-J1E-R2.2)
 
 ## Contexto
 

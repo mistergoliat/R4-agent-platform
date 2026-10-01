@@ -139,17 +139,18 @@ describe('C1 trajectory: pending → claim → READ → Observation → COMPLETE
     expect(await leaseRow(platform.pool, taskId)).toMatchObject({ lease_owner: null, lease_generation: 1 });
   });
 
-  it('records respond as run output and continues the loop', async () => {
+  it('records respond as run output and ends the turn: a platform WAIT_FOR_INPUT suspends the run (R4-J1E-R2.2)', async () => {
     const taskId = await createTask();
-    const w = await worker({ script: [respond('looking it up'), complete('done')] });
+    const w = await worker({ script: [respond('looking it up'), complete('never asked')] });
     const cycle = executed(await w.platform.worker.runOnce());
-    expect(cycle.outcome).toEqual({ kind: 'terminated', termination: expect.objectContaining({ reason: 'completed' }) });
+    expect(cycle.outcome).toEqual({ kind: 'terminated', termination: expect.objectContaining({ reason: 'waiting' }) });
     const run = await runOnly(taskId);
-    expect((await stepsOf(platform.pool, run.runId)).map((s) => [s.decision?.type, s.outcome])).toEqual([
-      ['respond', 'recorded'],
-      ['complete', 'recorded'],
+    expect((await stepsOf(platform.pool, run.runId)).map((s) => [s.decision?.type, s.outcome, s.origin])).toEqual([
+      ['respond', 'recorded', 'model'],
+      ['wait', 'recorded', 'platform'],
     ]);
-    expect(contextOf(w.provider.requests[1]!).responses).toEqual([{ iteration: 1, content: 'looking it up' }]);
+    expect(w.provider.callCount).toBe(1);
+    expect((await platform.tasks.getTask(taskId)).task.status).toBe('waiting');
   });
 });
 
@@ -252,13 +253,14 @@ describe('budgets', () => {
   it('stops a token-heavy loop at the token ceiling (max_tokens), independently of the READ ceiling', async () => {
     const taskId = await createTask();
     // 9 100 tokens per call against the agent's 20 000 ceiling: two calls fit, the third crosses it.
-    const w = await worker({ script: () => ({ ...respond('still thinking'), usage: { inputTokens: 9_000, outputTokens: 100 } }), policy: { maxReadCapabilityCalls: 50 } });
+    // Endless READs (a reply would end the turn, R4-J1E-R2.2); the READ ceiling is out of the way.
+    const w = await worker({ script: () => ({ ...read(GET_TEST_FACT_ID, { factKey: 'platform.name' }), usage: { inputTokens: 9_000, outputTokens: 100 } }), policy: { maxReadCapabilityCalls: 50 } });
     executed(await w.platform.worker.runOnce());
     const run = await runOnly(taskId);
     expect(run).toMatchObject({
       status: 'failed',
       termination: { reason: 'budget_exhausted', failureClass: 'budget', code: 'max_tokens', details: { dimension: 'maxTokens', limit: 20_000, used: 27_300 } },
-      usage: { modelCalls: 3, capabilityCalls: 0, inputTokens: 27_000, outputTokens: 300 },
+      usage: { modelCalls: 3, capabilityCalls: 3, inputTokens: 27_000, outputTokens: 300 },
     });
     expect(w.provider.callCount).toBe(3);
     expect((await platform.tasks.getTask(taskId)).task).toMatchObject({ status: 'failed', statusReason: 'budget_exhausted' });
@@ -266,7 +268,7 @@ describe('budgets', () => {
 
   it('applies the task budget when tighter than the policy', async () => {
     const taskId = await createTask({ budget: { maxModelCalls: 2 } });
-    const w = await worker({ script: () => respond('still thinking') });
+    const w = await worker({ script: () => read(GET_TEST_FACT_ID, { factKey: 'platform.name' }) });
     executed(await w.platform.worker.runOnce());
     expect((await runOnly(taskId)).termination).toMatchObject({ reason: 'budget_exhausted', code: 'max_model_calls' });
     expect(w.provider.callCount).toBe(2);

@@ -8,9 +8,10 @@ import { SALES_PRODUCTION_PROCESSES, schedulerConfigurationStatus } from '@r4-sa
  * R4-J1E-R2.1 — production composition correction. A Sales production
  * deployment runs THREE independent processes: channel gateway, worker and
  * scheduler. The scheduler is not optional: it is the only consumer of
- * durable schedules, and the response authority defers drafts on a platform
- * WAIT_UNTIL that only a schedule firing wakes (ADR-031 §7). These checks
- * fail if the production topology, its entry points or its runbook drop it.
+ * durable schedules, and the agent protocol admits WAIT_UNTIL (plus human
+ * request expiries, retry release and reconciliation dispatch), which only a
+ * schedule firing resolves. These checks fail if the production topology,
+ * its entry points or its runbook drop it.
  */
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const text = (path: string) => readFileSync(join(ROOT, path), 'utf8');
@@ -39,11 +40,12 @@ describe('R4-J1E-R2.1 production topology: gateway + worker + scheduler', () => 
     expect(main).toMatch(/platform\.scheduler\.start\(\)/);
   });
 
-  it('the scheduler is required: it is the only consumer of durable schedules, and the response authority creates them', () => {
+  it('the scheduler is required: it is the only consumer of durable schedules, and agent waits create them', () => {
     const consumers = runtimeSources.filter((p) => /\.claimSchedule\(/.test(text(p)));
     expect(consumers).toEqual(['apps/scheduler/src/scheduler.ts']);
-    // The deferral path (ADR-031 §7) persists a platform WAIT_UNTIL, i.e. a schedule a scheduler must fire.
-    expect(text('packages/agent-kernel/src/kernel.ts')).toMatch(/condition: \{ kind: 'WAIT_UNTIL', until: notBefore \}/);
+    // A WAIT_UNTIL the agent decides persists a wake schedule, which only a scheduler fires.
+    expect(text('packages/contracts/src/temporal.ts')).toMatch(/'WAIT_UNTIL'/);
+    expect(text('packages/task-runtime/src/temporal-runtime.ts')).toMatch(/if \(dueAt\) await this\.scheduleWithin\(uow, task, 'wake'/);
     // ... and the worker can never wake a waiting task itself: it claims only pending/running tasks.
     expect(text('packages/persistence-postgres/src/execution-store.ts')).toMatch(/where status in \('pending', 'running'\)/);
   });

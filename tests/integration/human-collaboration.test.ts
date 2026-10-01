@@ -213,7 +213,8 @@ describe('approval', () => {
 describe('handoff', () => {
   it('agent-requested: the human owns the task, the agent cannot act as owner, release resumes it with the human period in context', async () => {
     const taskId = await createActionTask(platform);
-    const w = await worker({ script: sequence([respond('Escalating to a human.'), handoff('The requester needs human judgment on the constraint.')]) });
+    // R4-J1E-R2.2: a reply would end the turn, so the agent hands off without one.
+    const w = await worker({ script: sequence([handoff('The requester needs human judgment on the constraint.')]) });
     await w.platform.worker.runOnce();
     const request = (await platform.temporal.inspect(taskId)).humans[0]!;
     expect((await platform.tasks.getTask(taskId)).task).toMatchObject({ status: 'blocked', statusReason: 'human_handoff' });
@@ -223,7 +224,7 @@ describe('handoff', () => {
     // During human ownership: input is durable, yet no autonomous claim and no model call.
     await platform.temporal.submitInput(taskId, input('human-period', 'Participant clarified the constraint to the operator.'), PARTICIPANT, 'human-period');
     expect(await w.platform.worker.runOnce()).toEqual({ kind: 'idle' });
-    expect(w.provider.callCount).toBe(2);
+    expect(w.provider.callCount).toBe(1);
     await expect(platform.pool.query("update agent_tasks set status = 'running' where task_id = $1", [taskId])).rejects.toMatchObject({ code: '55000' });
     await expect(platform.temporal.respondHuman(request.requestId, { responseKey: 'wrong', outcome: 'release', content: 'Return.' }, OTHER_HUMAN)).rejects.toMatchObject({ code: 'human_owner_mismatch' });
 
@@ -232,7 +233,7 @@ describe('handoff', () => {
     const next = await worker({ script: sequence([(r) => (seen.push(r), complete('resumed'))]) });
     await next.platform.worker.runOnce();
     const conversation = JSON.stringify(items(seen[0]!, 'conversation'));
-    for (const said of ['Escalating to a human.', 'The requester needs human judgment on the constraint.', 'I own this now.', 'Participant clarified the constraint to the operator.', 'Constraint clarified; continue autonomously.']) {
+    for (const said of ['The requester needs human judgment on the constraint.', 'I own this now.', 'Participant clarified the constraint to the operator.', 'Constraint clarified; continue autonomously.']) {
       expect(conversation).toContain(said);
     }
     expect(items(seen[0]!, 'episodicMemory').map((i) => i.content)).toContainEqual(expect.objectContaining({ event: 'task.wait', kind: 'WAIT_FOR_HUMAN', resolution: 'human' }));

@@ -16,7 +16,6 @@ import {
   respond,
   scriptedAgent,
   update,
-  waitForCustomer,
   workspaceUpdateInputSchema,
   type ScriptedStep,
 } from '@r4-sales/agent';
@@ -104,7 +103,6 @@ describe('Sales conversation on R4 (governed quote, owners, recovery)', () => {
       update([add('KB-16', 2), destination('Maipú')]),
       proposeQuote(customerOnFile),
       respond((v) => `Cotización ${observedQuote(v).quoteNumber}.`),
-      waitForCustomer(),
     ]);
     const taskId = await h.openConversation({ customerRef: 'cust-demo-001' });
     await h.say(taskId, 'Cotízame 2 kettlebells de 16 kg a Maipú.');
@@ -128,7 +126,7 @@ describe('Sales conversation on R4 (governed quote, owners, recovery)', () => {
 
   it('denies a quote proposal that cites no evidence; nothing reaches the Quote owner', async () => {
     const bare: ScriptedStep = (v) => ({ type: 'propose_action', capabilityId: CAPABILITY_IDS.quoteCreate, arguments: { workspaceVersion: v.workspace.workspaceVersion, customer: { name: 'Ana Test', email: 'ana@example.test' } } });
-    const { h } = await harness([update([add('KB-16'), destination('Maipú')]), bare, respond('Necesito revisar el catálogo antes de cotizar.'), waitForCustomer()]);
+    const { h } = await harness([update([add('KB-16'), destination('Maipú')]), bare, respond('Necesito revisar el catálogo antes de cotizar.')]);
     const taskId = await h.openConversation();
     await h.say(taskId, 'Cotiza una kettlebell a Maipú.');
     const state = await h.inspect(taskId);
@@ -143,7 +141,6 @@ describe('Sales conversation on R4 (governed quote, owners, recovery)', () => {
       update([add('KB-16'), destination('Maipú')]),
       proposeQuote({ name: 'Ana Test', email: 'ana@example.test' }),
       respond('No pude emitir la cotización: el servicio no está disponible.'),
-      waitForCustomer(),
     ]);
     h.domains.quotes.availability.set({ mode: 'down' });
     const taskId = await h.openConversation();
@@ -162,7 +159,6 @@ describe('Sales conversation on R4 (governed quote, owners, recovery)', () => {
       proposeQuote({ name: 'Ana Test', email: 'ana@example.test' }),
       // Only reached after reconciliation, in a new run.
       respond((v) => `Cotización ${observedQuote(v).quoteNumber} emitida.`),
-      waitForCustomer(),
     ]);
     h.domains.quotes.faults.afterIssue = () => 'connection_lost';
     let lookupsDown = true;
@@ -193,7 +189,7 @@ describe('Sales conversation on R4 (governed quote, owners, recovery)', () => {
 
   it('a worker that dies after the quote was issued leaves one logical quote and one effective receipt', async () => {
     const { h } = await harness(
-      [read(CAPABILITY_IDS.productContext, { productKey: 'KB-16' }), update([add('KB-16'), destination('Maipú')]), proposeQuote({ name: 'Ana Test', email: 'ana@example.test' }), respond((v) => `Cotización ${observedQuote(v).quoteNumber}.`), waitForCustomer()],
+      [read(CAPABILITY_IDS.productContext, { productKey: 'KB-16' }), update([add('KB-16'), destination('Maipú')]), proposeQuote({ name: 'Ana Test', email: 'ana@example.test' }), respond((v) => `Cotización ${observedQuote(v).quoteNumber}.`)],
       { leaseDurationMs: 1_500, heartbeatIntervalMs: 300 },
     );
     let hang = true;
@@ -212,12 +208,12 @@ describe('Sales conversation on R4 (governed quote, owners, recovery)', () => {
   });
 
   it('the Sales workspace survives a worker restart and reaches the next run as AUTHORITATIVE state', async () => {
-    const { h, provider } = await harness([update([fact('budget', { amount: 500_000, currency: 'CLP' })]), respond('Anotado.'), waitForCustomer(), respond('Sigo con tu presupuesto.'), waitForCustomer()]);
+    const { h, provider } = await harness([update([fact('budget', { amount: 500_000, currency: 'CLP' })]), respond('Anotado.'), respond('Sigo con tu presupuesto.')]);
     const taskId = await h.openConversation();
     await h.say(taskId, 'Tengo 500 mil.');
     await h.restartWorker();
     await h.say(taskId, '¿Qué me recomiendas?');
-    const lastContext = provider.requests.at(-2)!.context!;
+    const lastContext = provider.requests.at(-1)!.context!;
     expect(lastContext.sections.authoritativeState).toEqual([expect.objectContaining({ itemId: `sales_workspace:${taskId}`, sourceId: 'sales.workspace', authority: 'AUTHORITATIVE', content: expect.objectContaining({ workspaceVersion: 1, facts: { budget: { value: { amount: 500_000, currency: 'CLP' }, statedBy: 'customer', sinceVersion: 1 } } }) })]);
     // The earlier run's question and the new customer message are both in that context (cross-run continuity).
     const turns = lastContext.sections.conversation.map((i) => (i.content as { text: string }).text);
@@ -225,7 +221,7 @@ describe('Sales conversation on R4 (governed quote, owners, recovery)', () => {
   });
 
   it('an unauthenticated requester cannot get a quote issued (identity below the capability requirement)', async () => {
-    const { h } = await harness([read(CAPABILITY_IDS.productContext, { productKey: 'KB-16' }), update([add('KB-16'), destination('Maipú')]), proposeQuote({ name: 'Ana Test', email: 'ana@example.test' }), respond('No puedo emitirla desde este canal.'), waitForCustomer()]);
+    const { h } = await harness([read(CAPABILITY_IDS.productContext, { productKey: 'KB-16' }), update([add('KB-16'), destination('Maipú')]), proposeQuote({ name: 'Ana Test', email: 'ana@example.test' }), respond('No puedo emitirla desde este canal.')]);
     const { view } = await h.api.tasks.createTask({ request: { taskType: 'sales.conversation', agentId: 'sales', goal: { description: 'anonymous channel' } }, requestedBy: { kind: 'unauthenticated', ref: 'anonymous' }, correlationId: 'anon' });
     await h.store.bindConversation({ taskId: view.task.taskId, customerRef: null, channelRef: 'anon' });
     await h.say(view.task.taskId, 'Cotiza una kettlebell.');
@@ -253,7 +249,8 @@ describe('first real ModelProvider adapter inside the Sales runtime', () => {
     await h.say(taskId, 'Hola');
     const state = await h.inspect(taskId);
     expect(state.task.status).toBe('waiting');
-    expect(state.runs[0]!.steps.map((s) => [s.decision?.type, s.usage])).toEqual([['respond', { inputTokens: 50, outputTokens: 5 }], ['wait', { inputTokens: 50, outputTokens: 5 }]]);
+    // The reply ends the turn: the platform's wait calls no model and spends no tokens (R4-J1E-R2.2).
+    expect(state.runs[0]!.steps.map((s) => [s.decision?.type, s.origin, s.usage])).toEqual([['respond', 'model', { inputTokens: 50, outputTokens: 5 }], ['wait', 'platform', { inputTokens: 0, outputTokens: 0 }]]);
     expect(seen.every((h) => h === `Bearer ${KEY}`)).toBe(true);
     expect(h.telemetry.find((e) => e.event === 'model.call.completed')).toMatchObject({ providerId: 'openai-compatible.it', modelId: 'm-1', inputTokens: 50 });
     // Nothing durable or logged contains the key or the header.

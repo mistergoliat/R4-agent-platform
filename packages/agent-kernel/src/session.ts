@@ -19,8 +19,12 @@ import type { ExecutionContext, ExecutionState } from './context.js';
  * (fenced) write — or refuse it.
  */
 export interface KernelSession {
-  /** E decisions are persisted atomically with their runtime consequence. */
-  executeTemporal?(step: StepRecord, decision: TemporalDecision): Promise<{ kind: 'continued' } | { kind: 'suspended'; termination: KernelTermination }>;
+  /**
+   * E decisions are persisted atomically with their runtime consequence.
+   * Required (R4-J1E-R2.2): a recorded `respond` ends the turn with a platform
+   * WAIT_FOR_INPUT, so every session must be able to suspend its run.
+   */
+  executeTemporal(step: StepRecord, decision: TemporalDecision): Promise<{ kind: 'continued' } | { kind: 'suspended'; termination: KernelTermination }>;
   /** Rebuilds the execution state from durable storage after verifying ownership. */
   load(): Promise<ExecutionState>;
   /**
@@ -78,8 +82,14 @@ export interface StepRecord {
   readonly usage: { readonly inputTokens: number; readonly outputTokens: number };
   /** The ContextSnapshot the step's model call was made with (always set by the kernel). */
   readonly contextSnapshotId?: string | null;
-  /** ADR-031: `platform` for a token-free READ the kernel issued to revalidate a response (default `model`). */
+  /** `platform` for a token-free step the kernel records itself (the turn-closing WAIT_FOR_INPUT); default `model`. */
   readonly origin?: 'model' | 'platform';
+  /**
+   * (R4-J1E-R2.2) For the turn-closing wait: the snapshot of the model call
+   * that drafted the response. Input it did not contain wakes the task again
+   * at once (the wait itself is a new iteration and carries no snapshot).
+   */
+  readonly inputHorizonSnapshotId?: string | null;
 }
 
 export interface KernelTermination {

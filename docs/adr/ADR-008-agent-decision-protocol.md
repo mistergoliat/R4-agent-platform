@@ -25,7 +25,8 @@ type AgentDecision =
 - **read_capability** lleva sólo id y argumentos. Identidad, scopes,
   `invocationId`, versión y ejecución los resuelve la plataforma.
 - **respond** es salida intermedia registrada en el run (step `recorded`); en C1
-  no se entrega a ningún canal y **no termina** el run.
+  no se entrega a ningún canal y **no termina** el run. *Enmendado por R4-J1E-R2.2
+  (ver abajo): `respond` es terminal para el turno.*
 - **complete** termina la task con un resultado estructurado. No puede fabricar
   efectos: el resultado se guarda como dato y nada más; `evidence` debe citar
   observations existentes de la task.
@@ -118,6 +119,26 @@ no cambió. Instrucciones: 2 778 → 3 214 caracteres
 - Añadir una decisión exige: tipo en el contrato, validación semántica,
   manejo en el kernel, ruta de persistencia y tests; nunca un bypass.
 
+## Enmienda R4-J1E-R2.2 (2026-10-01) — `respond` es terminal para el turno
+
+Un `respond` válido por protocolo se registra tal como el agente lo decidió (sin juez semántico
+síncrono; ADR-031 superseded) y **cierra el turno**: el kernel registra un `WAIT_FOR_INPUT` de
+`origin = 'platform'` (sin llamada al modelo y sin tokens; admitido por la migración 0010) por el
+Temporal Runtime, que suspende la run y libera el lease. El próximo input despierta la task en una
+run **nueva**. Para ese input no hay otra llamada al modelo, ni otro READ, ni un segundo `respond`:
+`read → read → respond → fin` y `respond → fin`. El cierre es durable: si el worker cae entre el
+`respond` y su wait, la run reanudada registra sólo el wait. Un input que la llamada que redactó la
+respuesta no vio (`inputHorizonSnapshotId`) despierta la task de inmediato: nunca queda varado.
+
+Consecuencias. Aplica a toda tarea (Core universal), y `KernelSession.executeTemporal` es obligatorio.
+`complete` en la misma run después de un `respond` deja de existir: una tarea se completa con una
+decisión `complete` en una run sin respuesta, o permanece abierta esperando input. La validez del
+protocolo (schema estricto, `invalid_decision`, recuperación de ADR-028) no cambia.
+
+**Diferido, sin implementar** (y sin volver a un `respond` intermedio): avisar/acusar recibo antes
+de `request_consultation` o `request_handoff` en el mismo turno, y `respond` + `complete` en el mismo
+turno. Ver ADR-031, "Diferido".
+
 ## Verificación
 
 `tests/unit/contracts/decision-and-execution-contracts.test.ts`,
@@ -125,6 +146,7 @@ no cambió. Instrucciones: 2 778 → 3 214 caracteres
 `tests/unit/agent-kernel/protocol-overhead.test.ts`,
 `tests/unit/context-compiler/capability-presentation.test.ts`,
 `tests/unit/agent-kernel/kernel.test.ts` (mapeo de terminación),
+`tests/unit/agent-kernel/turn-boundary.test.ts` y `tests/integration/pure-agent-execution.test.ts` (R4-J1E-R2.2),
 `tests/integration/worker-kernel.test.ts` (todos los fallos contra PostgreSQL),
 `tests/contract/execution-kernel-boundaries.test.ts`,
 `tests/contract/provider-neutrality.test.ts`.

@@ -6,10 +6,9 @@ import { loadSchedulerConfig } from '@r4/scheduler';
  * PostgreSQL (ADR-022, ADR-029 §16); none embeds another.
  *
  * The scheduler is required, not optional: it is the only consumer of durable
- * schedules (`TemporalRuntime.claimSchedule`). Without it a WAIT_UNTIL — e.g.
- * the platform wait of a response deferred until its owner evidence can be
- * revalidated (ADR-031 §7) — is never woken, expiries never expire and
- * reconciliation is never dispatched. Its entry point is the generic one
+ * schedules (`TemporalRuntime.claimSchedule`). Without it an agent's
+ * WAIT_UNTIL is never woken, human request expiries never expire, retries are
+ * never released and reconciliation is never dispatched. Its entry point is the generic one
  * (`apps/scheduler`): time is not Sales-specific.
  *
  * `script` is the root package script that starts the process.
@@ -22,7 +21,7 @@ export interface ProductionProcess {
 
 export const SALES_PRODUCTION_PROCESSES: readonly ProductionProcess[] = Object.freeze([
   Object.freeze({ name: 'r4-channel-gateway', script: 'production:sales:gateway', owns: 'provider webhooks (canonical inbound, binding, task input) and outbound dispatch; the only process that talks to the channel provider' }),
-  Object.freeze({ name: 'r4-sales-worker', script: 'production:sales:worker', owns: 'task claims, kernel, model, capabilities (Catalog), response authority, dispatched reconciliation' }),
+  Object.freeze({ name: 'r4-sales-worker', script: 'production:sales:worker', owns: 'task claims, kernel, model, capabilities (Catalog), dispatched reconciliation' }),
   Object.freeze({ name: 'r4-scheduler', script: 'start:scheduler', owns: 'time only: claims due schedules and fires them (WAIT_UNTIL wake, expiries, retry release, reconciliation dispatch); no model, no capabilities' }),
 ]);
 
