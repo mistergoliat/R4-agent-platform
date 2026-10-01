@@ -1,6 +1,7 @@
 import { createPlatform, type Platform } from '@r4/api';
 import { createGatewayPlatform, type GatewayPlatform } from '@r4/channel-gateway';
 import type { TrustedHumanContext } from '@r4/contracts';
+import type { CatalogPort } from '@r4-adapters/domains';
 import { FakeModelProvider, type FakeModelStep } from '@r4/model-gateway';
 import { createSilentLogger } from '@r4/observability';
 import { PostgresProductionStore, type Pool } from '@r4/persistence-postgres';
@@ -37,6 +38,8 @@ export interface TestbedOptions {
    * directory reproduces a production deployment (gateway + worker, no API): nothing registered.
    */
   readonly agentDefinitionsDir?: string;
+  /** The Catalog binding of a profile that makes Catalog REAL (sales-production@2): a local stand-in of catalog-service. */
+  readonly catalog?: CatalogPort & { readonly bindingKind: string };
 }
 
 /**
@@ -60,9 +63,10 @@ export class LiveOpsTestbed {
   env: Readonly<Record<string, string>>;
   readonly #queue: FakeModelStep[];
   #workers: WorkerPlatform[] = [];
+  readonly #catalog: (CatalogPort & { readonly bindingKind: string }) | undefined;
   #timestamp = Math.floor(Date.now() / 1000) - 600;
 
-  private constructor(fields: { db: TestDatabase; pool: Pool; api: Platform; gateway: GatewayPlatform; provider: FakeWhatsAppProvider; production: { config: ProductionConfig; secrets: ProductionSecrets }; model: FakeModelProvider; queue: FakeModelStep[]; env: Record<string, string> }) {
+  private constructor(fields: { db: TestDatabase; pool: Pool; api: Platform; gateway: GatewayPlatform; provider: FakeWhatsAppProvider; production: { config: ProductionConfig; secrets: ProductionSecrets }; model: FakeModelProvider; queue: FakeModelStep[]; env: Record<string, string>; catalog?: CatalogPort & { readonly bindingKind: string } }) {
     this.db = fields.db;
     this.pool = fields.pool;
     this.api = fields.api;
@@ -73,6 +77,7 @@ export class LiveOpsTestbed {
     this.model = fields.model;
     this.#queue = fields.queue;
     this.env = fields.env;
+    this.#catalog = fields.catalog;
   }
 
   static async start(options: TestbedOptions = {}): Promise<LiveOpsTestbed> {
@@ -105,7 +110,7 @@ export class LiveOpsTestbed {
     const gateway = await startGateway(db.url, pool, production, env);
     const queue: FakeModelStep[] = [];
     const model = new FakeModelProvider((_request, index) => queue.shift() ?? { type: 'provider_error', message: `no scripted step for model call ${index + 1}` });
-    const bed = new LiveOpsTestbed({ db, pool, api, gateway, provider, production, model, queue, env: { ...env, R4_DATABASE_URL: db.url } });
+    const bed = new LiveOpsTestbed({ db, pool, api, gateway, provider, production, model, queue, env: { ...env, R4_DATABASE_URL: db.url }, ...(options.catalog ? { catalog: options.catalog } : {}) });
     if (options.autonomy) await bed.setAutonomy(true);
     return bed;
   }
@@ -139,7 +144,7 @@ export class LiveOpsTestbed {
 
   /** The real production worker composition; `overrides` only for worker-readiness scenarios (timing, declared presence, admission). */
   async worker(workerId = 'worker-1', overrides: WorkerOverridesForTest = {}): Promise<WorkerPlatform> {
-    const composition = composeSalesProductionWorker({ pool: this.pool, store: this.store, production: this.production, modelProvider: this.model, logger: createSilentLogger() });
+    const composition = composeSalesProductionWorker({ pool: this.pool, store: this.store, production: this.production, modelProvider: this.model, logger: createSilentLogger(), ...(this.#catalog ? { catalog: this.#catalog } : {}) });
     const bindings = {
       ...composition.bindings,
       ...(overrides.presence ? { presence: overrides.presence } : {}),

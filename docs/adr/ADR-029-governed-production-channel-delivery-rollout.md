@@ -148,6 +148,20 @@ adjuntos se vacían; inbound no elegible se descarta; payload crudo guardado).
     arranca sin perfil, adapters del tipo declarado, esquema al día y
     controles legibles.
 
+    **Corrección de composición productiva (R4-J1E-R2.1, 2026-10-01).** Una
+    producción Sales corre **tres** procesos independientes que sólo comparten
+    PostgreSQL: `r4-channel-gateway` (`npm run production:sales:gateway`),
+    `r4-sales-worker` (`npm run production:sales:worker`) y `r4-scheduler`
+    (`npm run start:scheduler`, el proceso de ADR-022 sin cambios). El
+    scheduler es obligatorio: es el único consumidor de schedules durables, y
+    desde ADR-031 §7 la autoridad de respuesta difiere borradores en un
+    WAIT_UNTIL de plataforma que sólo él despierta. La primera versión de esta
+    decisión omitía el scheduler porque producción aún no creaba timers; eso
+    dejó tareas en `waiting` indefinidamente. No se rediseña el runtime
+    temporal (ADR-021/022): sólo se corrige la topología declarada
+    (`SALES_PRODUCTION_PROCESSES`, informada por `production:sales:plan`).
+    Runbook: `docs/architecture/R4-J1E-R2.1_PRODUCTION_COMPOSITION.md`.
+
 17. **Autoridad del canal.** El número productivo existente permanece bajo
     CRM-Customer-360. Para el número canary que recibe directamente R4, R4
     conserva el estado operacional requerido para ejecutar su Task: inbound

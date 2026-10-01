@@ -284,17 +284,25 @@ hilos con CRM.
 La autonomía nace **deshabilitada** (kill switch en la migración 0007) y el
 rollout en **0 %**.
 
-Orden canónico de un despliegue productivo (gateway + worker, sin `apps/api`):
+Orden canónico de un despliegue productivo (gateway + worker + scheduler, sin `apps/api`):
 
 ```bash
 npm run build
 npm run db:migrate                                                  # 1. esquema Core
 npm run sales:migrate                                               # 2. esquema del pack Sales
 R4_EXECUTION_MODE=production … npm run production:sales:bootstrap  # 3. registra sales@N vía Agent Registry (idempotente: "unchanged" si ya está)
-R4_EXECUTION_MODE=production … npm run production:sales:plan       # 4. qué correría — no envía nada
+R4_EXECUTION_MODE=production … npm run production:sales:plan       # 4. qué correría — no envía nada; incluye procesos, configuración del scheduler y schedules ya vencidos
 R4_EXECUTION_MODE=production … npm run production:sales:gateway    # 5. proceso de canal
 R4_EXECUTION_MODE=production … npm run production:sales:worker     # 6. worker de producción
+R4_RECONCILIATION_… npm run start:scheduler                         # 7. scheduler (obligatorio, R4-J1E-R2.1): despierta los WAIT_UNTIL
 ```
+
+El scheduler es el proceso genérico de R4-E (ver "Scheduler (R4-E)"): sin él,
+una respuesta diferida por la autoridad de respuesta (ADR-031 §7) deja la task
+en `waiting` para siempre. Arranca sólo con la política de reconciliación
+explícita (`R4_RECONCILIATION_*`, sin default). Antes de arrancarlo por primera
+vez, `production:sales:plan` muestra los schedules ya vencidos que dispararía
+de inmediato; runbook: `docs/architecture/R4-J1E-R2.1_PRODUCTION_COMPOSITION.md`.
 
 Ni el gateway ni el worker registran definiciones al arrancar (a propósito):
 sin el paso 3, el primer inbound falla con `agent_not_found` (queda durable y

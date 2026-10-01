@@ -91,6 +91,33 @@ por run. Se corrigen así:
    específico; palabras enunciadas como ausentes ("sin segunda selección") no desambiguan.
    "Desde" (precio de producto) sigue sin poder asignarse a una variante; totales derivados sin cambios.
 
+## Enmienda R4-J1E-R2.1 (2026-10-01) — corrección de composición productiva
+
+El E2E productivo de J1E-R2 (sales@2, `80f63ff`) mostró dos defectos; ninguno cambia las reglas de
+evidencia de Sales:
+
+10. **El scheduler es parte de la producción.** El WAIT_UNTIL de §7 sólo lo despierta un schedule
+    disparado por `apps/scheduler`, que producción no corría (ADR-029 §16 listaba gateway + worker):
+    la task quedaba en `waiting` sin wake. Producción corre ahora tres procesos (ADR-029 §16, enmienda
+    R4-J1E-R2.1). No cambia ADR-021/022.
+11. **Una run degradada no abre otra recuperación.** §8 se aplicaba sólo a `reject`: tras la degradación,
+    un borrador nuevo con evidencia casi vencida o vencida devolvía `REVALIDATION_REQUIRED` y el kernel lo
+    difería (WAIT_UNTIL) o lo revalidaba con READs de plataforma antes de mirar el presupuesto. Ahora el
+    presupuesto precede: con `degraded` (estado durable de la run, sin estado nuevo), `REVALIDATION_REQUIRED`
+    no difiere, no espera ni emite READs; el borrador se registra `refused`
+    (`response_authority_unverifiable`) por el mismo camino que cualquier borrador inválido posterior
+    (`response.authority.suppressed`), sin outbound. Un borrador diferido antes de la degradación sigue su
+    ciclo normal. Un borrador diferido después de una degradación (sólo posible con datos durables
+    escritos por `80f63ff`) se rechaza al despertar, sin READ ni outbound.
+
+    **Safe degradation exhausts response-authority recovery for authoritative claims for the remainder
+    of that Run.** Tras la degradación, todo borrador cuyo veredicto trae uno o más claims de autoridad
+    se registra `refused` (`response_authority_suppressed`) aunque el validador devuelva `ALLOW`: sin
+    outbound, sin corrección, sin READ, sin `REVALIDATION_REQUIRED` efectivo y sin WAIT_UNTIL. Un
+    borrador sin claims de autoridad conserva la semántica normal (continuidad conversacional, cierre o
+    espera de la run). El kernel sólo cuenta los claims que el pack declara en el veredicto: no conoce
+    Catalog ni reglas Sales, y no hay estado durable nuevo (`degraded` ya es derivado de los steps).
+
 ### Límites explícitos del parsing
 
 La negación de disponibilidad es una lista cerrada y acotada (`availability-wording.ts`: "sin stock",

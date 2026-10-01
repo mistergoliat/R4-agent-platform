@@ -58,6 +58,40 @@ export async function setTemporalOffset(pool: Pool, offsetMs: number): Promise<v
   await pool.query(`create or replace function r4_now() returns timestamptz language sql volatile as $$ select clock_timestamp() + interval '${Math.trunc(offsetMs)} milliseconds' $$`);
 }
 
+// Test-only ordering guard.
+//
+// Some persisted execution steps still receive created_at from the real
+// database clock while temporal records use r4_now(). Freezing r4_now()
+// at the current instant can therefore reorder durable steps.
+//
+// Keep the controlled temporal clock ahead of the real test DB clock so
+// created_at ordering remains equivalent to production, where both clocks
+// advance together.
+//
+// This is test-harness compensation, not production timing semantics.
+/**
+ * How far ahead of the database clock a frozen temporal clock starts by
+ * default. Temporal writes (`r4_now()`) and C1 writes (`clock_timestamp()`,
+ * process clock) of one task are ordered together by `created_at` (e.g. a
+ * run's steps); in production both are one clock. Starting ahead by more than
+ * any test may run (test timeouts are at most 5 minutes) keeps every temporal
+ * write after the real-clock writes it follows. It is not a margin of the
+ * temporal semantics under test: due/not due is decided on the frozen clock only.
+ */
+export const FROZEN_TEMPORAL_LEAD_MS = 3_600_000;
+
+/**
+ * Frozen temporal time for a disposable test database: redefines `r4_now()`
+ * as the constant `at` (default: the database clock + FROZEN_TEMPORAL_LEAD_MS),
+ * so temporal state moves only when the test moves it — never with wall-clock
+ * time or CI speed. Returns the frozen instant.
+ */
+export async function freezeTemporalClock(pool: Pool, at?: Date): Promise<Date> {
+  const instant = at ?? new Date((await pool.query<{ now: Date }>('select clock_timestamp() as now')).rows[0]!.now.getTime() + FROZEN_TEMPORAL_LEAD_MS);
+  await pool.query(`create or replace function r4_now() returns timestamptz language sql volatile as $$ select '${instant.toISOString()}'::timestamptz $$`);
+  return instant;
+}
+
 /** A process clock shifted by a mutable offset (paired with `setTemporalOffset` for C2 freshness). */
 export function shiftedClock(): Clock & { offsetMs: number } {
   const clock = { offsetMs: 0, now: () => new Date(Date.now() + clock.offsetMs) };

@@ -31,6 +31,15 @@ import type { Observation } from './observation.js';
  *                           cycle, then ONE safe degradation (recorded as a
  *                           platform `respond`); a later invalid draft of the
  *                           same run is refused without any further outbound.
+ *                           Safe degradation exhausts response-authority
+ *                           recovery for authoritative claims for the
+ *                           remainder of that Run (R4-J1E-R2.1): once degraded,
+ *                           a draft with one or more claims is refused
+ *                           (`response_authority_suppressed`) even when the
+ *                           validator ALLOWs it, and REVALIDATION_REQUIRED opens
+ *                           no new recovery (no deferral, wait or platform
+ *                           READ). A draft with no claims keeps the normal
+ *                           semantics (conversational continuity).
  *                           A run woken from a revalidation wait continues the
  *                           budget of the run that deferred.
  *
@@ -68,3 +77,5 @@ export const MAX_AUTHORITY_CORRECTIONS = 1;
 export const RESPONSE_AUTHORITY_DEFERRED = 'response_authority_deferred';
 /** The invalid draft that the run's one safe degradation replaced. */
 export const RESPONSE_AUTHORITY_DEGRADED = 'response_authority_degraded';
+/** A draft with authority claims after the run's safe degradation: refused even if allowed (R4-J1E-R2.1). */
+export const RESPONSE_AUTHORITY_SUPPRESSED = 'response_authority_suppressed';
