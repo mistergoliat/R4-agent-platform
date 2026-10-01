@@ -10,11 +10,16 @@ import { waitDecisionSchema, consultationDecisionSchema, handoffDecisionSchema, 
  * - read_capability: ask for one registered READ capability. Only the id and
  *   the arguments; identity, scopes, invocation id and execution belong to
  *   the platform.
- * - respond: textual output, recorded on the run and never terminal. It means
- *   "R4 accepted this response" — never that anyone received it. (R4-I) Outside
- *   Core, one delivery owner may turn an accepted response into a durable
- *   outbound message with its own lifecycle; the decision itself carries no
- *   channel, recipient or delivery state.
+ * - respond: the text sent to the requester; it ENDS the current turn
+ *   (R4-J1E-R2.2, protocol v5). It is recorded exactly as decided — no
+ *   validator, correction or degradation stands between it and outbound — and
+ *   the platform then closes the turn with its own WAIT_FOR_INPUT: no further
+ *   decision (no model call, read, action or second reply) follows it until
+ *   new input arrives, so any read, state update or proposed action belongs
+ *   before it. Recorded means sent for delivery, not received: (R4-I) outside
+ *   Core one delivery owner turns it into a durable outbound message whose
+ *   delivery state is separate; the decision itself carries no channel,
+ *   recipient or delivery state.
  * - complete: declare the task finished with a structured result. It cannot
  *   cause side effects: the result is stored as data and nothing else.
  *

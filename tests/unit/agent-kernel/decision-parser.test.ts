@@ -82,7 +82,7 @@ describe('decision parser: ModelResult → parse → schema → semantics', () =
  * id of the customer's own conversation turn (`memory:<entryId>`) — an id
  * it could see in the context, but not an observation. The platform was
  * right to reject it; the protocol did not say what is citable. The fix is
- * in the protocol text (r4.agent_decision.v4), never in the validator.
+ * in the protocol text (since r4.agent_decision.v4), never in the validator.
  */
 describe('evidence references (live regression: conversation turn cited as evidence)', () => {
   const conversationTurnRecordId = uuidv7();

@@ -75,21 +75,20 @@ describe('upgrade from the R4-C1 schema', () => {
     expect(steps).toEqual([expect.objectContaining({ iteration: 1, outcome: 'recorded', contextSnapshotId: null })]);
   });
 
-  it('lets a C2 worker continue the C1 run: new steps are tied to snapshots, the old one stays as it was', async () => {
+  it('lets a current worker continue the C1 run: its last respond ends the turn (R4-J1E-R2.2), the old step stays as it was', async () => {
     await expireLease(pool, taskId);
-    const w = await startTestWorker(db.url, { workerId: 'c2-worker', script: [complete('continued after upgrade')] });
+    const w = await startTestWorker(db.url, { workerId: 'c2-worker', script: [complete('never asked: the C1 reply already ended the turn')] });
     try {
       const cycle = await waitFor(async () => {
         const c = await w.platform.worker.runOnce();
         return c.kind === 'executed' ? c : null;
       });
-      expect(cycle).toMatchObject({ runId, claim: 'resumed', outcome: { kind: 'terminated', termination: { reason: 'completed' } } });
+      expect(cycle).toMatchObject({ runId, claim: 'resumed', outcome: { kind: 'terminated', termination: { reason: 'waiting' } } });
       const steps = await stepsOf(pool, runId);
-      const [snapshot] = await new PostgresContextSnapshotStore(pool).listForRun(runId);
-      expect(steps.map((s) => [s.iteration, s.contextSnapshotId])).toEqual([[1, null], [2, snapshot!.snapshotId]]);
-      expect(snapshot).toMatchObject({ iteration: 2, attempt: 1 });
-      // The C1 respond output is part of the continued context, as what the agent said.
-      expect(snapshot!.compiledContext.sections.conversation).toEqual([expect.objectContaining({ authority: 'CONVERSATIONAL', content: expect.objectContaining({ text: 'c1 step', iteration: 1 }) })]);
+      // The C1 step is untouched; the platform closed the turn (token-free wait, no model call, no snapshot).
+      expect(steps.map((s) => [s.iteration, s.decision?.type, s.origin, s.contextSnapshotId])).toEqual([[1, 'respond', 'model', null], [2, 'wait', 'platform', null]]);
+      expect(w.provider.callCount).toBe(0);
+      expect(await new PostgresContextSnapshotStore(pool).listForRun(runId)).toEqual([]);
       const execution = new ExecutionRuntime({ store: new PostgresExecutionStore(pool), ids: uuidV7Generator(), clock: systemClock, logger: createSilentLogger(), maxRunRecoveries: 3 });
       expect(await execution.claimNext({ workerId: 'nobody', leaseDurationMs: 1_000 })).toBeNull();
     } finally {

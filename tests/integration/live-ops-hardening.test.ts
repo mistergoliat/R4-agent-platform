@@ -3,7 +3,7 @@ import { createSilentLogger } from '@r4/observability';
 import { OutboundDeliveryRuntime } from '@r4/live-ops';
 import { WhatsAppOutboundAdapter, loadWhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
 import { notification, signNotification } from '@r4-adapters/whatsapp-cloud/testing';
-import { ACCESS_TOKEN, APP_SECRET, CANARY_PHONE_ID, IDENTITY_KEY, LiveOpsTestbed, OPERATOR, VERIFY_TOKEN, keyOf, say, waitInput } from '../support/live-ops.js';
+import { ACCESS_TOKEN, APP_SECRET, CANARY_PHONE_ID, IDENTITY_KEY, LiveOpsTestbed, OPERATOR, VERIFY_TOKEN, keyOf, say } from '../support/live-ops.js';
 
 const CUSTOMER = '56911112222';
 let bed: LiveOpsTestbed | null = null;
@@ -15,7 +15,7 @@ afterEach(async () => {
 /** A bed with one conversation whose agent response is materialized but not yet dispatched. */
 async function withPendingResponse(text = 'Hola, ¿en qué te ayudo?', options: Parameters<typeof LiveOpsTestbed.start>[0] = {}) {
   bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER], autonomy: true, ...options });
-  bed.next(say(text), waitInput());
+  bed.next(say(text));
   await bed.customer(CUSTOMER, 'wamid.in.1', 'Hola');
   await bed.runAgent();
   await bed.gateway.delivery.materialize();
@@ -117,7 +117,7 @@ describe('outbound identity, dispatch and unknown outcomes', () => {
   it('two dispatchers racing over the same messages submit each exactly once (row locks + fencing)', async () => {
     bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER, '56922223333', '56933334444'], autonomy: true });
     for (const [i, who] of [CUSTOMER, '56922223333', '56933334444'].entries()) {
-      bed.next(say(`respuesta ${i}`), waitInput());
+      bed.next(say(`respuesta ${i}`));
       await bed.customer(who, `wamid.r${i}`, 'hola');
       await bed.runAgent();
     }
@@ -160,7 +160,7 @@ describe('outbound identity, dispatch and unknown outcomes', () => {
     const attempts = await bed!.store.attempts((await bed!.store.outboundForTask(taskId))[0]!.outboundId);
     expect(attempts.map((a) => [a.outcome, a.errorClass])).toEqual([['not_sent', 'rate_limited'], ['accepted', null]]);
 
-    bed!.next(say('segundo'), waitInput(), say('tercero'), waitInput());
+    bed!.next(say('segundo'), say('tercero'));
     await bed!.customer(CUSTOMER, 'wamid.in.2', 'y?');
     await bed!.runAgent();
     bed!.provider.script({ kind: 'status', status: 503 });
@@ -221,12 +221,12 @@ describe('provider callbacks', () => {
 describe('stale reply protection and operator supersession (ported CRM semantics)', () => {
   it('a newer customer input supersedes a pending response; the next cognition sees it was not sent', async () => {
     const { taskId } = await withPendingResponse('respuesta que ya no aplica');
-    bed!.next(say('respuesta a lo nuevo'), waitInput());
+    bed!.next(say('respuesta a lo nuevo'));
     await bed!.customer(CUSTOMER, 'wamid.in.2', 'mejor otra cosa');
     await bed!.deliver();
     expect((await bed!.store.outboundForTask(taskId))[0]).toMatchObject({ status: 'cancelled', cancelReason: 'superseded_by_newer_input' });
     await bed!.runAgent();
-    const context = bed!.model.requests.at(-2)!.context!;
+    const context = bed!.model.requests.at(-1)!.context!;
     expect(context.sections.episodicMemory.filter((i) => i.sourceId === 'production.delivery').map((i) => (i.content as { reason: string }).reason)).toEqual(['superseded_by_newer_input']);
     await bed!.deliver();
     expect(bed!.provider.sends.map((s) => s.text)).toEqual(['respuesta a lo nuevo']);

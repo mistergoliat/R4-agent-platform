@@ -2,7 +2,7 @@ import { WORKLOAD_CASE_SCHEMA_VERSION, parseWorkloadCase, type WorkloadCase, typ
 import { CAPABILITY_IDS } from '../ids.js';
 import type { Invariant } from '../harness/invariants.js';
 import { CENTRAL_SCENARIO, scenarioById, type SalesScenario } from '../harness/scenarios.js';
-import { add, clp, customerOnFile, destination, fact, observedQuote, proposeQuote, read, respond, update, waitForCustomer, type ScriptedStep } from '../harness/scripted.js';
+import { add, clp, customerOnFile, destination, fact, observedQuote, proposeQuote, read, respond, update, type ScriptedStep } from '../harness/scripted.js';
 
 /**
  * Sales shadow workload corpus (R4-H), version 1.
@@ -97,7 +97,7 @@ const build = (spec: CaseSpec): { workload: WorkloadCase; script: readonly Scrip
 
 // --- offline stand-in trajectories -------------------------------------------------
 
-const answer = (text: string | Parameters<typeof respond>[0]): ScriptedStep[] => [respond(text), waitForCustomer()];
+const answer = (text: string | Parameters<typeof respond>[0]): ScriptedStep[] => [respond(text)];
 const generic = (turns: number): ScriptedStep[] => Array.from({ length: turns }, () => answer('Entiendo. Cuéntame un poco más para ayudarte con una propuesta que calce.')).flat();
 const quoteReply = (v: Parameters<ScriptedStep>[0]) => `Listo: cotización ${observedQuote(v).quoteNumber} por ${clp(observedQuote(v).total.amount)}, despacho incluido.`;
 

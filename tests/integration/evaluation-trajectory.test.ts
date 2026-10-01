@@ -8,6 +8,7 @@ import { createMigratedTestDatabase, type TestDatabase } from '../support/databa
 import { completeFromObservations, contextOf, read, respond, sequence } from '../support/decisions.js';
 import { startTestPlatform, validTaskBody } from '../support/platform.js';
 import { startTestWorker, testCapabilities, type TestWorker } from '../support/worker.js';
+import { PARTICIPANT, input } from '../support/temporal.js';
 
 /**
  * R4-G: the canonical trajectory is rebuilt from durable R4 state only, with
@@ -50,7 +51,10 @@ async function tableCounts(): Promise<Record<string, number>> {
 
 describe('canonical trajectory from durable state', () => {
   it('builds an EvaluationSubject from a finished task and evaluates it deterministically', async () => {
+    // R4-J1E-R2.2: the reply ends the turn; the next input opens the run that completes the task.
     const taskId = await runTask(sequence([(req) => read(GET_TEST_FACT_ID, { factKey: String(contextOf(req).task.input.factKey) }), respond('The fact is R4.'), completeFromObservations('The platform name is R4')]));
+    await platform.temporal.submitInput(taskId, input('thanks', 'Thanks, that is all.'), PARTICIPANT, 'evaluation-it');
+    await workers[0]!.platform.worker.runOnce();
     const before = await tableCounts();
     const subject = await new PostgresTrajectoryReader(platform.pool).subject(taskId);
     expect(await tableCounts()).toEqual(before);
@@ -59,9 +63,10 @@ describe('canonical trajectory from durable state', () => {
     expect(subject.source).toEqual({ kind: 'durable', ref: `task:${taskId}` });
     expect(subject.task).toMatchObject({ taskId, status: 'completed' });
     expect(subject.agent.contentHash).toMatch(/^[0-9a-f]{64}$/);
-    expect(subject.runs).toHaveLength(1);
-    expect(subject.runs[0]!.steps.map((s) => s.decision?.type)).toEqual(['read_capability', 'respond', 'complete']);
-    expect(subject.runs[0]!.contexts.length).toBeGreaterThanOrEqual(3);
+    expect(subject.runs).toHaveLength(2);
+    expect(subject.runs[0]!.steps.map((s) => [s.decision?.type, s.origin])).toEqual([['read_capability', 'model'], ['respond', 'model'], ['wait', 'platform']]);
+    expect(subject.runs[1]!.steps.map((s) => s.decision?.type)).toEqual(['complete']);
+    expect(subject.runs.reduce((n, r) => n + r.contexts.length, 0)).toBeGreaterThanOrEqual(3);
     expect(subject.responses).toHaveLength(1);
     // The response could see the observation produced before it.
     expect(subject.responses[0]!.evidenceInContext).toEqual([subject.observations[0]!.observationId]);
@@ -74,7 +79,9 @@ describe('canonical trajectory from durable state', () => {
     expect(run.subject.source.kind).toBe('durable');
     expect(run.result.findings).toEqual([]);
     expect(run.result.outcome.technical).toMatchObject({ status: 'completed', valid: true });
+    // Only model decisions count: the platform turn-closing wait is not a protocol attempt.
     expect(run.result.metrics['r4.protocol_adherence.protocolAdherence']).toMatchObject({ numerator: 3, denominator: 3 });
+    expect(run.result.metrics['r4.efficiency.modelCalls']?.value).toBe(3);
     expect(run.result.metrics['r4.efficiency.capabilityReads']?.value).toBe(1);
     expect(run.result.metrics['r4.context_composition.contextSnapshots']?.value).toBeGreaterThanOrEqual(3);
     expect(Object.keys(evaluationArtifacts(run, { subject }))).toContain('manifest.json');

@@ -10,7 +10,6 @@ import type {
   RunStep,
 } from '@r4/contracts';
 import { resolveExecutionLimits, type ExecutionLimits, type ExecutionPolicy, type ExecutionUsage } from './budget.js';
-import { responseAuthorityState, type PriorInteractions, type ResponseAuthorityState } from './response-authority.js';
 
 /** What the kernel knows about a capability. Execution stays behind the session port. */
 export interface CapabilityDescriptor {
@@ -42,10 +41,8 @@ export interface ExecutionContext {
   /** The iteration about to execute (1-based). */
   readonly iteration: number;
   readonly observations: readonly Observation[];
-  /** `respond` outputs already recorded by this run, so the agent knows what it said (refused drafts were never said). */
+  /** `respond` outputs already recorded by this run, so the agent knows what it said. */
   readonly responses: readonly { readonly iteration: number; readonly content: string }[];
-  /** ADR-031: this run's response-authority recovery state (run-scoped budget, pending deferred draft). */
-  readonly responseAuthority: ResponseAuthorityState;
   /**
    * Capabilities the agent's scopes grant, with their risk class. READ ones
    * are invoked (`read_capability`); since R4-D, write classes may only be
@@ -70,6 +67,12 @@ export interface ExecutionState {
    * from its durable ledger before the model is asked anything.
    */
   readonly pendingAction: { readonly step: RunStep; readonly decision: ProposeActionDecision } | null;
+  /**
+   * (R4-J1E-R2.2) The run's last step is a recorded `respond`: the turn is
+   * over. The platform closes it (WAIT_FOR_INPUT) before anything else —
+   * also after a crash between the response and its wait. Never a model call.
+   */
+  readonly turnResponse: { readonly step: RunStep } | null;
 }
 
 export interface ExecutionStateInput {
@@ -90,18 +93,12 @@ export interface ExecutionStateInput {
    * let expire or withdrew its approval request). Loaded, never executed, here.
    */
   readonly carriedAction?: { readonly step: RunStep; readonly decision: ProposeActionDecision } | null;
-  /**
-   * ADR-031 (R4-J1E-R2): the task's cross-run interaction records. A run woken
-   * from a platform revalidation wait continues the response-authority state
-   * (and resolves the deferred draft) of the run that deferred.
-   */
-  readonly priorInteractions?: PriorInteractions;
 }
 
 /** Pure: the same durable state always yields the same context. */
 export function buildExecutionState(input: ExecutionStateInput): ExecutionState {
   const { steps } = input;
-  // ADR-031: platform steps (response revalidation READs) call no model.
+  // Platform steps (the turn-closing wait; R4-J1E-R2 history) call no model.
   const modelSteps = steps.filter((s) => s.origin !== 'platform');
   const usage: ExecutionUsage = {
     iterations: modelSteps.length,
@@ -118,6 +115,7 @@ export function buildExecutionState(input: ExecutionStateInput): ExecutionState 
     last && last.outcome === 'pending' && last.decision?.type === 'read_capability' ? { step: last, decision: last.decision } : null;
   const pendingAction =
     last && last.outcome === 'pending' && last.decision?.type === 'propose_action' ? { step: last, decision: last.decision } : (input.carriedAction ?? null);
+  const turnResponse = last && last.outcome === 'recorded' && last.decision?.type === 'respond' ? { step: last } : null;
 
   return {
     context: {
@@ -128,12 +126,12 @@ export function buildExecutionState(input: ExecutionStateInput): ExecutionState 
       iteration: steps.length + 1,
       observations: input.observations,
       responses,
-      responseAuthority: responseAuthorityState(input.run.runId, steps, input.priorInteractions),
       capabilities: input.capabilities,
       budget: { limits: resolveExecutionLimits(input.policy, input.task.budget), usage },
     },
     pendingRead,
     pendingAction,
+    turnResponse,
   };
 }
 

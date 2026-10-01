@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { LiveOpsTestbed, say, waitInput } from '../support/live-ops.js';
-import { OwnerWindowCatalog } from '../support/owner-window-catalog.js';
+import { LiveOpsTestbed, say } from '../support/live-ops.js';
+import { freezeTemporalClock } from '../support/temporal.js';
 
 /**
  * R4-J1E-R2.1 — the production scheduler is the real OS process started by
@@ -14,17 +14,17 @@ import { OwnerWindowCatalog } from '../support/owner-window-catalog.js';
  *
  *   1. without the reconciliation policy the process refuses to start,
  *      naming what is missing (no silent default);
- *   2. a scheduler process SIGKILLed before the deferred response's timer is
- *      due holds no claim; a new scheduler process claims the durable timer
- *      and wakes the task exactly once; the woken run revalidates and the
- *      same draft goes out once.
+ *   2. a scheduler process SIGKILLed before the agent's WAIT_UNTIL is due
+ *      holds no claim; a new scheduler process claims the durable timer and
+ *      wakes the task exactly once; the woken run replies once (temporal time
+ *      frozen: "not yet due" never depends on CI speed).
  *
  * Requires `npm run build`. The children run in an empty directory, so the
  * repository's local `.env` (which `main.ts` loads from the cwd) is never read.
  */
 const SCHEDULER_MAIN = fileURLToPath(new URL('../../apps/scheduler/dist/main.js', import.meta.url));
 const CUSTOMER = '56933334444';
-const PRICE_REPLY = 'El Power Rack PR-200 está a $289.990.';
+const REPLY = 'Hola de nuevo: ¿pudiste revisar las medidas de tu espacio?';
 const POLICY = { R4_RECONCILIATION_MAX_ATTEMPTS: '3', R4_RECONCILIATION_INITIAL_BACKOFF_MS: '0', R4_RECONCILIATION_MAX_BACKOFF_MS: '0', R4_RECONCILIATION_DEADLINE_MS: '86400000' };
 
 let bed: LiveOpsTestbed | null = null;
@@ -77,23 +77,23 @@ describe('R4-J1E-R2.1 production scheduler process (real entry point)', () => {
     expect(child.output()).not.toContain('unused@'); // the connection string is never echoed
   });
 
-  it('2. SIGKILL before dueAt → a new scheduler process claims the durable timer → one wake → same draft sent once', async () => {
-    const catalog = new OwnerWindowCatalog(2_900);
-    bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER], autonomy: true, env: { R4_PROD_POLICY_PROFILE: 'sales-production@2' }, catalog });
+  it('2. SIGKILL before dueAt → a new scheduler process claims the durable timer → one wake → one reply', async () => {
+    bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER], autonomy: true });
     const env = { R4_DATABASE_URL: bed.db.url, R4_SCHEDULER_POLL_MS: '25', ...POLICY };
     const a = scheduler({ ...env, R4_SCHEDULER_ID: 'scheduler-process-a' });
     await until(() => a.output().includes('service.started'), 'scheduler A to start');
 
     const worker = await bed.worker('worker-1');
-    bed.next({ type: 'structured', data: { type: 'read_capability', capabilityId: 'catalog.search', arguments: { query: 'power rack' } } }, say(PRICE_REPLY), waitInput());
-    await bed.customer(CUSTOMER, 'wamid.in.1', '¿Cuánto cuesta el power rack?');
+    await bed.customer(CUSTOMER, 'wamid.in.1', 'Lo veo y te aviso.');
+    const t0 = await freezeTemporalClock(bed.pool);
+    bed.next({ type: 'structured', data: { type: 'wait', condition: { kind: 'WAIT_UNTIL', until: new Date(t0.getTime() + 1_000).toISOString() }, reason: 'follow up later' } }, say(REPLY));
     await worker.worker.runOnce();
     const taskId = await bed.taskOf(CUSTOMER);
-    a.process.kill('SIGKILL'); // dies while the timer is not yet due
+    a.process.kill('SIGKILL'); // dies while the timer is not due (frozen clock)
     expect((await a.exited).signal).toBe('SIGKILL');
     expect(await bed.rows('select kind, status, owner from schedules where task_id = $1', [taskId])).toEqual([{ kind: 'wake', status: 'pending', owner: null }]);
 
-    catalog.windowMs = 15_000;
+    await freezeTemporalClock(bed.pool, new Date(t0.getTime() + 1_001));
     scheduler({ ...env, R4_SCHEDULER_ID: 'scheduler-process-b' });
     await until(async () => (await bed!.rows<{ status: string }>('select status from agent_tasks where task_id = $1', [taskId]))[0]!.status === 'running', 'scheduler B to wake the task');
     const events = await bed.rows<{ event_type: string; actor_ref: string | null }>(
@@ -107,9 +107,8 @@ describe('R4-J1E-R2.1 production scheduler process (real entry point)', () => {
     ]);
 
     await worker.worker.runOnce();
-    expect(catalog.calls.map((c) => c.operation)).toEqual(['search', 'product_context']);
     await bed.deliver();
     await bed.deliver();
-    expect(bed.provider.sends.map((s) => s.text)).toEqual([PRICE_REPLY]);
+    expect(bed.provider.sends.map((s) => s.text)).toEqual([REPLY]);
   });
 });

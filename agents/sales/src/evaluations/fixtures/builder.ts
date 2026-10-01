@@ -53,6 +53,9 @@ export interface FixtureOptions {
   readonly latencyMs?: number;
 }
 
+/** The reason the kernel records on its turn-closing wait (R4-J1E-R2.2), mirrored by fixtures. */
+const TURN_WAIT_REASON = 'Platform: the reply was sent; the turn is over until the next input.';
+
 export class SalesFixture {
   readonly id: string;
   readonly #seed: string;
@@ -223,6 +226,19 @@ export class SalesFixture {
     return step;
   }
 
+  /** A token-free step the platform records itself (no model call, no context snapshot). */
+  #platformStep(decision: AgentDecision): RunStep {
+    if (!this.#current || this.#current.run.status !== 'running') throw new Error(`fixture ${this.id}: no running run (start one with turn())`);
+    const at = this.#now();
+    const step: RunStep = {
+      stepId: this.#id(), runId: this.#current.run.runId, taskId: this.task.taskId, iteration: this.#current.steps.length + 1, leaseGeneration: 1, decision, outcome: 'recorded',
+      error: null, invocationId: null, observationId: null, contextSnapshotId: null, proposalId: null, origin: 'platform',
+      usage: { inputTokens: 0, outputTokens: 0 }, correlationId: this.task.correlationId, createdAt: at, completedAt: at,
+    };
+    this.#current.steps.push(step);
+    return step;
+  }
+
   // --- decisions -----------------------------------------------------------------
 
   /** A READ capability and its observation. Returns the observation id. */
@@ -342,9 +358,16 @@ export class SalesFixture {
     return this;
   }
 
-  /** End of the turn: WAIT_FOR_INPUT (a legitimate stop; the task waits, the run is suspended). */
+  /**
+   * End of the turn: WAIT_FOR_INPUT (a legitimate stop; the task waits, the run is suspended).
+   * Right after a recorded `respond` it is the platform's turn-closing wait (R4-J1E-R2.2): origin
+   * `platform`, no model call, no tokens, no snapshot — exactly what the kernel records. Anywhere
+   * else it is a wait the agent decided.
+   */
   wait(reason?: string): this {
-    this.#step({ type: 'wait', condition: { kind: 'WAIT_FOR_INPUT' }, ...(reason ? { reason } : {}) }, 'recorded');
+    const last = this.#current?.steps.at(-1);
+    if (last?.decision?.type === 'respond' && last.outcome === 'recorded') this.#platformStep({ type: 'wait', condition: { kind: 'WAIT_FOR_INPUT' }, reason: TURN_WAIT_REASON });
+    else this.#step({ type: 'wait', condition: { kind: 'WAIT_FOR_INPUT' }, ...(reason ? { reason } : {}) }, 'recorded');
     const at = this.#now(0);
     this.#waits.push({ waitId: this.#id(), taskId: this.task.taskId, runId: this.#current!.run.runId, kind: 'WAIT_FOR_INPUT', status: 'waiting', resolution: null, referenceId: null, dueAt: null, createdAt: at, completedAt: null, correlationId: this.task.correlationId });
     this.#end('waiting', 'wait_for_input', 'task suspended by a structured agent decision', 'waiting');

@@ -70,7 +70,7 @@ function fakeExecutor(options: { productionIn?: string; failIn?: string; callsPe
   const executed: string[] = [];
   return {
     executed,
-    describe: () => ({ agent: { agentId: 'sales', version: 1, contentHash: null }, protocolVersion: 'r4.agent_decision.v4', modelProfile: SCRIPTED_MODEL_PROFILE, liveModel: options.live ?? false, suiteMode: 'controlled-shadow', bindings: SALES_SHADOW_BINDINGS, outbound: SALES_SHADOW_OUTBOUND, externalWriteCapabilities: SALES_EXTERNAL_WRITE_CAPABILITIES }),
+    describe: () => ({ agent: { agentId: 'sales', version: 1, contentHash: null }, protocolVersion: 'r4.agent_decision.v5', modelProfile: SCRIPTED_MODEL_PROFILE, liveModel: options.live ?? false, suiteMode: 'controlled-shadow', bindings: SALES_SHADOW_BINDINGS, outbound: SALES_SHADOW_OUTBOUND, externalWriteCapabilities: SALES_EXTERNAL_WRITE_CAPABILITIES }),
     execute: (w, context): Promise<WorkloadExecution> => {
       executed.push(`${w.id}.r${context.repetition}`);
       if (options.failIn === w.id) return Promise.reject(new Error('database unreachable'));

@@ -64,7 +64,7 @@ export const taskSource: ContextSource = new MappingSource(PLATFORM_SOURCE_IDS.t
  * and the agent's own recorded `respond` outputs (CONVERSATIONAL: what the
  * agent said, not what is true).
  */
-export const runSource: ContextSource = new MappingSource(PLATFORM_SOURCE_IDS.run, ({ scope, execution: { run, agent, constraints, responses, responseRejections } }) => [
+export const runSource: ContextSource = new MappingSource(PLATFORM_SOURCE_IDS.run, ({ scope, execution: { run, agent, constraints, responses } }) => [
   {
     itemId: `execution:${run.runId}`,
     kind: 'execution_constraints',
@@ -84,18 +84,6 @@ export const runSource: ContextSource = new MappingSource(PLATFORM_SOURCE_IDS.ru
     provenance: { recordType: 'agent_run_step', recordId: response.stepId },
     createdAt: response.recordedAt,
     observedAt: response.recordedAt,
-    taskId: run.taskId,
-  })),
-  // ADR-031: a draft of this run the response-authority validator refused was not sent; its feedback lets the agent correct it.
-  ...(responseRejections ?? []).map((rejection): ContextContributionInput => ({
-    itemId: `response_rejection:${rejection.stepId}`,
-    kind: 'episode',
-    authority: 'OBSERVED',
-    temporality: 'point_in_time',
-    content: { event: 'response.not_sent', draft: rejection.draft, code: rejection.code, text: rejection.text, iteration: rejection.iteration },
-    provenance: { recordType: 'agent_run_step', recordId: rejection.stepId },
-    createdAt: rejection.recordedAt,
-    observedAt: rejection.recordedAt,
     taskId: run.taskId,
   })),
 ]);

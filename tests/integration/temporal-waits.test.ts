@@ -44,8 +44,7 @@ describe('goal continuity across a durable wait', () => {
     const first = await worker({
       script: sequence([
         manageGoal({ operation: 'create', parentGoalId: original.rootGoalId, description: 'Obtain the missing dimension', successCriteria: [], makeCurrent: true }),
-        respond('Which dimension should the deliverable use?'),
-        waitInput('I need the dimension before continuing'),
+        respond('Which dimension should the deliverable use?'), // ends the turn: the platform waits for input (R4-J1E-R2.2)
       ]),
     });
     await first.platform.worker.runOnce();
@@ -75,8 +74,8 @@ describe('goal continuity across a durable wait', () => {
     expect(question).toBeGreaterThanOrEqual(0);
     expect(answer).toBeGreaterThan(question);
     expect(conversation[question]).toMatchObject({ authority: 'CONVERSATIONAL', content: { actor: { role: 'agent' }, earlierRun: true } });
-    // The wait between the runs, with the agent's stated reason and how it ended.
-    expect(items(request, 'episodicMemory').map((i) => i.content)).toContainEqual(expect.objectContaining({ event: 'task.wait', kind: 'WAIT_FOR_INPUT', resolution: 'input', statedReason: 'I need the dimension before continuing' }));
+    // The wait between the runs (the platform's turn-closing wait), with its stated reason and how it ended.
+    expect(items(request, 'episodicMemory').map((i) => i.content)).toContainEqual(expect.objectContaining({ event: 'task.wait', kind: 'WAIT_FOR_INPUT', resolution: 'input', statedReason: expect.stringMatching(/^Platform: the reply was sent/) }));
 
     const done = await platform.tasks.getTask(taskId);
     expect(done.runs).toHaveLength(2);

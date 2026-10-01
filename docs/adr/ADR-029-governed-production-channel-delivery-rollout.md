@@ -153,9 +153,11 @@ adjuntos se vacían; inbound no elegible se descarta; payload crudo guardado).
     PostgreSQL: `r4-channel-gateway` (`npm run production:sales:gateway`),
     `r4-sales-worker` (`npm run production:sales:worker`) y `r4-scheduler`
     (`npm run start:scheduler`, el proceso de ADR-022 sin cambios). El
-    scheduler es obligatorio: es el único consumidor de schedules durables, y
-    desde ADR-031 §7 la autoridad de respuesta difiere borradores en un
-    WAIT_UNTIL de plataforma que sólo él despierta. La primera versión de esta
+    scheduler es obligatorio: es el único consumidor de schedules durables
+    (WAIT_UNTIL del agente, expiraciones humanas, liberación de reintentos y
+    despacho de reconciliación). El motivo inmediato fue el WAIT_UNTIL de
+    plataforma de ADR-031 §7, retirado por R4-J1E-R2.2; la obligación del
+    scheduler no depende de él. La primera versión de esta
     decisión omitía el scheduler porque producción aún no creaba timers; eso
     dejó tareas en `waiting` indefinidamente. No se rediseña el runtime
     temporal (ADR-021/022): sólo se corrige la topología declarada

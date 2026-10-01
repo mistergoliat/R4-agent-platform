@@ -1102,7 +1102,7 @@ turno del cliente ─► input canónico (POST /v1/tasks/:id/inputs; el harness 
         ├─ propose_action quote.create ─► SALES_ACTION_POLICY (evidencia + identidad)
         │     ─► comando (executionKey) ─► Quote owner (idempotency key = executionKey)
         │     ─► receipt ─► Observation ─► el agente informa número y total desde ella
-        └─ respond ─► wait WAIT_FOR_INPUT (fin del turno; nunca "entregado")
+        └─ respond ─► outbound ─► WAIT_FOR_INPUT de plataforma (R4-J1E-R2.2: la respuesta se envía y cierra el turno)
 ```
 
 ### 15.1 Componentes

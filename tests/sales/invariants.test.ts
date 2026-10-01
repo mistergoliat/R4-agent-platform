@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { fact, factValueMatches, migrateSales, respond, runScenario, update, waitForCustomer, type SalesScenario } from '@r4-sales/agent';
+import { fact, factValueMatches, migrateSales, respond, runScenario, update, type SalesScenario } from '@r4-sales/agent';
 import { createMigratedTestDatabase, openPool, type TestDatabase } from '../support/database.js';
 
 /** The invariants must catch the failures they name, or passing scenarios would prove nothing. */
@@ -24,8 +24,8 @@ const LYING: SalesScenario = {
   id: 'NEG1',
   title: 'false quote claim, repeated question, lost selection',
   turns: [
-    { customer: 'Tengo 800 mil.', agent: [update([fact('budget', { amount: 800_000, currency: 'CLP' })]), respond('¡Listo! Tu cotización COT-100001 fue creada.'), waitForCustomer()] },
-    { customer: 'Ok', agent: [respond('¿Cuál es tu presupuesto?'), waitForCustomer()] },
+    { customer: 'Tengo 800 mil.', agent: [update([fact('budget', { amount: 800_000, currency: 'CLP' })]), respond('¡Listo! Tu cotización COT-100001 fue creada.')] },
+    { customer: 'Ok', agent: [respond('¿Cuál es tu presupuesto?')] },
   ],
   invariants: [
     { kind: 'no_unbacked_quote_claim' },
@@ -64,7 +64,7 @@ describe('budget invariants follow the fact, not one key spelling (live regressi
   const scenario = (operations: Parameters<typeof update>[0], invariants: SalesScenario['invariants']): SalesScenario => ({
     id: 'NEG-BUDGET',
     title: 'budget recorded under a key the agent chose',
-    turns: [{ customer: 'Tengo $800.000 y quiero armar un gym para la casa.', agent: [update(operations), respond('Anotado.'), waitForCustomer()] }],
+    turns: [{ customer: 'Tengo $800.000 y quiero armar un gym para la casa.', agent: [update(operations), respond('Anotado.')] }],
     invariants,
   });
 

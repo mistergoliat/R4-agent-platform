@@ -1,10 +1,11 @@
 // Child process for tests/recovery/live-ops-process-crash.test.ts.
 // The real production worker composition (built @r4/worker + the Sales
 // production composition) with a scripted stand-in model: the first call
-// responds (an accepted `respond` step becomes durable), the second call
-// announces itself on stdout and never returns — the parent SIGKILLs the
-// process there, after the response was accepted and before anything was
-// delivered. Test-only.
+// responds (an accepted `respond` step becomes durable and, R4-J1E-R2.2,
+// ends the turn). A second call must never happen; if it did, it would
+// announce itself on stdout (the parent asserts it does not). The parent
+// SIGKILLs the process after the response was accepted and before anything
+// was delivered. Test-only.
 import { setInterval } from 'node:timers';
 import { FakeModelProvider } from '@r4/model-gateway';
 import { loadProductionConfig } from '@r4/live-ops';

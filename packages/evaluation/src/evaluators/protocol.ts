@@ -35,7 +35,8 @@ export class ProtocolAdherenceEvaluator implements Evaluator {
   };
 
   evaluate(subject: Readonly<EvaluationSubject>): EvaluationFragment {
-    const steps = stepsOf(subject);
+    // Only model decisions are protocol attempts: platform steps (the turn-closing wait, R4-J1E-R2.2) call no model.
+    const steps = stepsOf(subject).filter((s) => s.origin !== 'platform');
     const calls = alignCalls(subject, steps);
     const findings: FindingDraft[] = [];
     const failureTypes: Record<string, number> = {};

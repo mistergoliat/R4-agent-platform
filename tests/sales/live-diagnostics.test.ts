@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { FakeModelProvider } from '@r4/model-gateway';
-import { CAPABILITY_IDS, RecordingModelProvider, fact, migrateSales, respond, runScenario, scriptedAgent, shapeOf, traceDecisions, traceGovernance, update, waitForCustomer, type ScriptedStep, type SalesScenario } from '@r4-sales/agent';
+import { CAPABILITY_IDS, RecordingModelProvider, fact, migrateSales, respond, runScenario, scriptedAgent, shapeOf, traceDecisions, traceGovernance, update, type ScriptedStep, type SalesScenario } from '@r4-sales/agent';
 import { createMigratedTestDatabase, openPool, type TestDatabase } from '../support/database.js';
 
 /**
@@ -76,7 +76,7 @@ describe('live harness diagnostics (unknown_evidence replay)', () => {
 
 describe('live harness governance trace', () => {
   it('joins each governed write from proposal to receipt', async () => {
-    const recorder = new RecordingModelProvider(new FakeModelProvider(scriptedAgent([update([fact('presupuesto_clp', 800_000)]), respond('Anotado.'), waitForCustomer()])));
+    const recorder = new RecordingModelProvider(new FakeModelProvider(scriptedAgent([update([fact('presupuesto_clp', 800_000)]), respond('Anotado.')])));
     const run = await runScenario({ id: 'LIVE-GOV', title: 'one governed write', turns: [{ customer: 'Tengo 800 mil.', agent: [] }], invariants: [] }, { databaseUrl: db.url, mode: 'live', modelProvider: recorder });
     const [write, ...rest] = traceGovernance(run.state);
     expect(rest).toHaveLength(0);

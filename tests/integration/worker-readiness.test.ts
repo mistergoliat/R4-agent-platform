@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { WorkerAdmission, WorkerPlatform } from '@r4/worker';
 import { PostgresWorkerPresenceStore } from '@r4/persistence-postgres';
-import { ACCESS_TOKEN, APP_SECRET, IDENTITY_KEY, LiveOpsTestbed, VERIFY_TOKEN, say, waitInput } from '../support/live-ops.js';
+import { ACCESS_TOKEN, APP_SECRET, IDENTITY_KEY, LiveOpsTestbed, VERIFY_TOKEN, say } from '../support/live-ops.js';
 import { waitFor } from '../support/worker.js';
 
 /**
@@ -254,7 +254,7 @@ describe('ingress during an execution outage', () => {
     expect(await get('/ready/r4')).toMatchObject({ code: 503, body: { checks: { execution: { status: 'no_worker' } } } });
     expect(bed.model.callCount).toBe(0);
 
-    bed.next(say('Sí, te ayudo con el stock.'), waitInput());
+    bed.next(say('Sí, te ayudo con el stock.'));
     await started('A', FAST);
     await waitFor(async () => {
       await bed!.gateway.delivery.materialize();
@@ -269,7 +269,7 @@ describe('readiness has no customer effect and exposes no secret', () => {
   it('repeated /ready and /ready/r4 create no task, run, decision, proposal, outbound or send — and do not dispatch pending outbound', async () => {
     bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER], autonomy: true });
     await bed.customer(CUSTOMER, 'wamid.fx.1', 'Hola');
-    bed.next(say('respuesta pendiente de entrega'), waitInput());
+    bed.next(say('respuesta pendiente de entrega'));
     await bed.runAgent();
     expect(await bed.gateway.delivery.materialize()).toHaveLength(1);
     // Autonomy stays ON: the pending response IS sendable, so any delivery pass triggered by a probe would show.

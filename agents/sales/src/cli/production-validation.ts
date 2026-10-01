@@ -54,7 +54,6 @@ interface Bed {
 }
 
 const say = (content: string): FakeModelStep => ({ type: 'structured', data: { type: 'respond', content } });
-const waitInput = (): FakeModelStep => ({ type: 'structured', data: { type: 'wait', condition: { kind: 'WAIT_FOR_INPUT' }, reason: 'waiting for the contact' } });
 const invalid = (): FakeModelStep => ({ type: 'structured', data: { type: 'respond' } });
 
 async function bed(adminUrl: string, options: { allow: readonly string[]; autonomy: boolean; providerTimeoutMs?: number }): Promise<Bed> {
@@ -135,7 +134,7 @@ export const VALIDATION_SCENARIOS: readonly { id: string; title: string; run: (a
     async run(adminUrl) {
       const b = await bed(adminUrl, { allow: [CONTACT], autonomy: true });
       try {
-        b.queue.push(say('¡Hola! ¿Qué estás buscando?'), waitInput());
+        b.queue.push(say('¡Hola! ¿Qué estás buscando?'));
         const status = await inbound(b, CONTACT, 'wamid.v.p01.1', 'Hola, busco una trotadora');
         const taskId = await taskOf(b, CONTACT);
         await runAgent(b);
@@ -165,12 +164,12 @@ export const VALIDATION_SCENARIOS: readonly { id: string; title: string; run: (a
     async run(adminUrl) {
       const b = await bed(adminUrl, { allow: [CONTACT], autonomy: true });
       try {
-        b.queue.push(say('Tenemos trotadoras desde $299.990.'), waitInput());
+        b.queue.push(say('Tenemos trotadoras desde $299.990.'));
         await inbound(b, CONTACT, 'wamid.v.p02.1', 'Hola');
         const taskId = await taskOf(b, CONTACT);
         await runAgent(b);
         await b.gateway.delivery.tick();
-        b.queue.push(invalid(), say('Te cuento las opciones de pago.'), waitInput());
+        b.queue.push(invalid(), say('Te cuento las opciones de pago.'));
         await inbound(b, CONTACT, 'wamid.v.p02.2', '¿Aceptan tarjeta?');
         await runAgent(b);
         await b.gateway.delivery.tick();
@@ -241,7 +240,7 @@ export const VALIDATION_SCENARIOS: readonly { id: string; title: string; run: (a
     async run(adminUrl) {
       const b = await bed(adminUrl, { allow: [CONTACT], autonomy: true, providerTimeoutMs: 200 });
       try {
-        b.queue.push(say('Mensaje con resultado incierto.'), waitInput());
+        b.queue.push(say('Mensaje con resultado incierto.'));
         await inbound(b, CONTACT, 'wamid.v.p05.1', 'Hola');
         const taskId = await taskOf(b, CONTACT);
         await runAgent(b);
