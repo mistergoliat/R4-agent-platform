@@ -75,6 +75,30 @@ otros adapters sin cambiar el Sales Agent.
 - Sin reintentos de modelo (C1): un timeout o una decisión inválida terminan
   la run con una razón clasificada.
 
+## Enmienda R4-J1E-R2.3 — límite de salida gestionado por el proveedor
+
+Evidencia de producción (DeepSeek `deepseek-flash`, thinking habilitado,
+`max_tokens=8192`): el cuarto turno agotó `completion_tokens=8192` con
+`finish_reason=length` y terminó en `invalid_structured_output`; la run de
+recuperación repitió la misma condición. En thinking mode el razonamiento
+consume el mismo `max_tokens` que el JSON, así que un techo de aplicación
+restringía al agente sin representar un límite físico.
+
+- `R4_MODEL_MAX_OUTPUT_TOKENS` deja de tener default. Ausente o vacío ⇒
+  `outputLimitMode = provider_managed`: no se envía `max_tokens` ni
+  `max_completion_tokens`; el proveedor/modelo es dueño del techo de salida.
+  Un número ⇒ `fixed`: comportamiento previo (se envía y se reserva).
+- Envelope (punto 5): en `fixed` sigue siendo input estimado + salida
+  reservada > ventana; en `provider_managed` sólo input estimado > ventana.
+  No se inventa reserva de salida.
+- Un límite explícito por request (`limits.maxOutputTokens`, p. ej. el juez
+  del evaluador) se sigue enviando; en `fixed` sólo puede bajar el techo.
+- `describeModelConfig` agrega `outputLimitMode` (aditivo) y reporta
+  `maxOutputTokens: null`; el plan de producción lo muestra tal cual.
+- Perfil DeepSeek de producción: `R4_MODEL_CONTEXT_WINDOW_TOKENS=1000000`,
+  `R4_MODEL_MAX_OUTPUT_TOKENS` sin definir; proveedor, modelo, thinking,
+  `response_format`, temperatura y timeout sin cambios.
+
 ## Verificación
 
 `tests/unit/sales/openai-compatible-provider.test.ts` (fetch falso: render,

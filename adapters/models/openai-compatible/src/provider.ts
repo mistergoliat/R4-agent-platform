@@ -36,7 +36,9 @@ const MAX_ERROR_TEXT = 300;
  *
  * - Physical envelope: a request whose estimated input plus reserved output
  *   exceeds `contextWindowTokens` is refused explicitly
- *   (`model_envelope_exceeded`), never truncated.
+ *   (`model_envelope_exceeded`), never truncated. With a provider-managed
+ *   output limit nothing is reserved: only the input is checked, and no
+ *   `max_tokens` is sent.
  * - Errors are classified: 429 → rate_limited; 408/504 and the adapter's own
  *   deadline → timeout; 5xx and transport failures → provider_error
  *   (retryable); other 4xx → provider_error (not retryable); an answer that
@@ -61,12 +63,14 @@ export class OpenAICompatibleModelProvider implements ModelProvider {
   async invoke(request: ModelRequest, signal: AbortSignal): Promise<ProviderResponse> {
     const config = this.#config;
     const messages = renderMessages(request);
-    const maxTokens = Math.min(request.limits.maxOutputTokens ?? config.maxOutputTokens, config.maxOutputTokens);
+    const maxTokens = outputCeiling(request.limits.maxOutputTokens, config.maxOutputTokens);
     const estimated = estimateTokens(messages);
-    if (estimated + maxTokens > config.contextWindowTokens) {
+    if (estimated + (maxTokens ?? 0) > config.contextWindowTokens) {
       throw new ModelProviderError(
         'provider_error',
-        `model_envelope_exceeded: estimated ${estimated} input tokens + ${maxTokens} reserved output exceed the ${config.contextWindowTokens}-token window of profile ${config.profile}`,
+        maxTokens === null
+          ? `model_envelope_exceeded: estimated ${estimated} input tokens exceed the ${config.contextWindowTokens}-token window of profile ${config.profile}`
+          : `model_envelope_exceeded: estimated ${estimated} input tokens + ${maxTokens} reserved output exceed the ${config.contextWindowTokens}-token window of profile ${config.profile}`,
         false,
       );
     }
@@ -75,7 +79,7 @@ export class OpenAICompatibleModelProvider implements ModelProvider {
       ...config.extraBody,
       model: config.model,
       messages,
-      max_tokens: maxTokens,
+      ...(maxTokens === null ? {} : { max_tokens: maxTokens }),
       stream: false,
       ...(config.temperature === null ? {} : { temperature: config.temperature }),
       ...(config.responseFormat === 'json_object' && request.outputContract.kind === 'json' ? { response_format: { type: 'json_object' } } : {}),
@@ -149,6 +153,17 @@ function safeText(text: string, config: OpenAICompatibleConfig): string {
   if (config.apiKey) out = out.split(config.apiKey).join('[redacted]');
   out = out.replace(/Bearer\s+\S+/gi, 'Bearer [redacted]').replace(/sk-[A-Za-z0-9_-]{8,}/g, '[redacted]');
   return out.length > MAX_ERROR_TEXT ? `${out.slice(0, MAX_ERROR_TEXT - 1)}…` : out;
+}
+
+/**
+ * The output ceiling sent as `max_tokens` (R4-J1E-R2.3), or null to send none.
+ * FIXED profile: the request may only lower it. PROVIDER_MANAGED profile: only
+ * a caller's explicit per-request limit is sent; otherwise the provider/model
+ * owns the ceiling and no default is substituted.
+ */
+function outputCeiling(requested: number | undefined, configured: number | null): number | null {
+  if (configured === null) return requested ?? null;
+  return Math.min(requested ?? configured, configured);
 }
 
 function finishReasonOf(reason: string | null): ModelFinishReason {
