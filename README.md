@@ -202,7 +202,7 @@ Modelo (configuración de despliegue; la AgentDefinition no tiene proveedor ni s
 | `R4_MODEL_NAME` | — | Modelo lógico del endpoint |
 | `R4_MODEL_PROFILE` | `default` | Nombre de perfil en telemetría (`openai-compatible.<profile>`) |
 | `R4_MODEL_CONTEXT_WINDOW_TOKENS` | — | Envelope físico: lo que no cabe se rechaza (`model_envelope_exceeded`), nunca se trunca |
-| `R4_MODEL_MAX_OUTPUT_TOKENS` | `2048` | Salida reservada |
+| `R4_MODEL_MAX_OUTPUT_TOKENS` | — | Ausente/vacío = `provider_managed`: no se envía `max_tokens` y el envelope sólo verifica el input. Número = `fixed`: se envía como `max_tokens` y se reserva en el envelope (R4-J1E-R2.3) |
 | `R4_MODEL_TIMEOUT_MS` | `120000` | Deadline de transporte del adapter |
 | `R4_MODEL_RESPONSE_FORMAT` | `json_object` | `json_object` \| `none` |
 | `R4_MODEL_TEMPERATURE` | — | Opcional |

@@ -137,7 +137,7 @@ export function toModelCallRecord(c: RecordedModelCall): ModelCallRecord {
 }
 
 /** The model under test as a profile: configuration identity only, never the key. */
-export function modelProfileFromDescription(description: { profile: string; host: string; model: string; contextWindowTokens: number; maxOutputTokens: number; responseFormat: string; temperature: number | null; extraBody: Readonly<Record<string, unknown>> }, role: ModelProfile['role'] = 'under_test'): ModelProfile {
+export function modelProfileFromDescription(description: { profile: string; host: string; model: string; contextWindowTokens: number; maxOutputTokens: number | null; responseFormat: string; temperature: number | null; extraBody: Readonly<Record<string, unknown>> }, role: ModelProfile['role'] = 'under_test'): ModelProfile {
   return { role, provider: 'openai_compatible', profile: description.profile, host: description.host, model: description.model, maxOutputTokens: description.maxOutputTokens, contextWindowTokens: description.contextWindowTokens, temperature: description.temperature, responseFormat: description.responseFormat, extras: structuredClone(description.extraBody) as ModelProfile['extras'] };
 }
 

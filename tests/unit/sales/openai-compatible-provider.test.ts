@@ -51,7 +51,7 @@ describe('OpenAI-compatible configuration (deployment, not AgentDefinition)', ()
 
   it('loads an explicit profile and never echoes values when invalid', () => {
     const env = { R4_MODEL_PROVIDER: 'openai_compatible', R4_MODEL_BASE_URL: 'http://127.0.0.1:8000/v1/', R4_MODEL_NAME: 'local-70b', R4_MODEL_CONTEXT_WINDOW_TOKENS: '32768', R4_MODEL_PROFILE: 'local' };
-    expect(loadOpenAICompatibleConfig(env)).toMatchObject({ profile: 'local', baseUrl: 'http://127.0.0.1:8000/v1', apiKey: null, model: 'local-70b', contextWindowTokens: 32_768, maxOutputTokens: 2_048, responseFormat: 'json_object', extraBody: {} });
+    expect(loadOpenAICompatibleConfig(env)).toMatchObject({ profile: 'local', baseUrl: 'http://127.0.0.1:8000/v1', apiKey: null, model: 'local-70b', contextWindowTokens: 32_768, maxOutputTokens: null, responseFormat: 'json_object', extraBody: {} });
     expect(() => loadOpenAICompatibleConfig({ ...env, R4_MODEL_BASE_URL: 'ftp://nope', R4_MODEL_API_KEY: KEY })).toThrow(/R4_MODEL_BASE_URL/);
     try {
       loadOpenAICompatibleConfig({ ...env, R4_MODEL_CONTEXT_WINDOW_TOKENS: 'x', R4_MODEL_API_KEY: KEY });
@@ -93,6 +93,92 @@ describe('OpenAI-compatible extra request fields (R4_MODEL_EXTRA_BODY)', () => {
     const { fetch, calls } = fakeFetch(() => ({ status: 200, body: completion('{"type":"respond","content":"hola"}') }));
     await new DefaultModelGateway({ provider: new OpenAICompatibleModelProvider(CONFIG, { fetch }), logger: createSilentLogger() }).generate(request());
     expect(Object.keys(JSON.parse(calls[0]!.init.body) as object).sort()).toEqual(['max_tokens', 'messages', 'model', 'response_format', 'stream', 'temperature']);
+  });
+});
+
+describe('OpenAI-compatible output limit (R4-J1E-R2.3: fixed vs provider-managed)', () => {
+  const env = { R4_MODEL_PROVIDER: 'openai_compatible', R4_MODEL_BASE_URL: 'https://llm.example.test', R4_MODEL_NAME: 'reasoning-model', R4_MODEL_CONTEXT_WINDOW_TOKENS: '64000' };
+  const MANAGED: OpenAICompatibleConfig = { ...CONFIG, maxOutputTokens: null };
+  const send = async (config: OpenAICompatibleConfig, req: ModelRequest = request()) => {
+    const { fetch, calls } = fakeFetch(() => ({ status: 200, body: completion('{"type":"respond","content":"hola"}') }));
+    const result = await new DefaultModelGateway({ provider: new OpenAICompatibleModelProvider(config, { fetch }), logger: createSilentLogger() }).generate(req);
+    return { result, calls, body: calls[0] ? (JSON.parse(calls[0].init.body) as Record<string, unknown>) : null };
+  };
+
+  it('treats an absent or empty R4_MODEL_MAX_OUTPUT_TOKENS as provider-managed, with no numeric default', () => {
+    for (const config of [loadOpenAICompatibleConfig(env), loadOpenAICompatibleConfig({ ...env, R4_MODEL_MAX_OUTPUT_TOKENS: '' })]) {
+      expect(config?.maxOutputTokens).toBeNull();
+      expect(describeModelConfig(config!)).toMatchObject({ maxOutputTokens: null, outputLimitMode: 'provider_managed' });
+    }
+  });
+
+  it('keeps an explicit R4_MODEL_MAX_OUTPUT_TOKENS as a fixed ceiling, still validated against the window', () => {
+    const config = loadOpenAICompatibleConfig({ ...env, R4_MODEL_MAX_OUTPUT_TOKENS: '8192' });
+    expect(describeModelConfig(config!)).toMatchObject({ maxOutputTokens: 8_192, outputLimitMode: 'fixed' });
+    expect(() => loadOpenAICompatibleConfig({ ...env, R4_MODEL_MAX_OUTPUT_TOKENS: '64000' })).toThrow(/R4_MODEL_MAX_OUTPUT_TOKENS/);
+    expect(() => loadOpenAICompatibleConfig({ ...env, R4_MODEL_MAX_OUTPUT_TOKENS: '10' })).toThrow(/R4_MODEL_MAX_OUTPUT_TOKENS/);
+  });
+
+  it('A. provider-managed: the request carries no max_tokens nor max_completion_tokens, and is otherwise unchanged', async () => {
+    const managed = await send(MANAGED);
+    const fixed = await send(CONFIG);
+    expect(managed.result.ok).toBe(true);
+    expect(managed.body).not.toHaveProperty('max_tokens');
+    expect(managed.body).not.toHaveProperty('max_completion_tokens');
+    const { max_tokens: _omitted, ...rest } = fixed.body!;
+    expect(managed.body).toEqual(rest);
+  });
+
+  it('B. fixed: the request carries the configured max_tokens', async () => {
+    expect((await send(CONFIG)).body).toMatchObject({ max_tokens: 1_000 });
+    // A request may only lower a fixed ceiling.
+    expect((await send(CONFIG, request({ limits: { timeoutMs: 10_000, maxOutputTokens: 300 } }))).body).toMatchObject({ max_tokens: 300 });
+    expect((await send(CONFIG, request({ limits: { timeoutMs: 10_000, maxOutputTokens: 5_000 } }))).body).toMatchObject({ max_tokens: 1_000 });
+  });
+
+  it("sends a caller's explicit per-request limit under a provider-managed profile (no default substituted otherwise)", async () => {
+    expect((await send(MANAGED, request({ limits: { timeoutMs: 10_000, maxOutputTokens: 300 } }))).body).toMatchObject({ max_tokens: 300 });
+  });
+
+  it('C. provider-managed envelope: a prompt under the window passes without an artificial output allowance', async () => {
+    const prompt = request({ messages: [{ role: 'system', content: 'x'.repeat(3_000) }] });
+    const estimated = estimateTokens(renderMessages(prompt));
+    // The same prompt is refused by a fixed profile (prompt + reserved output > window) and accepted when provider-managed.
+    const window = estimated + 10;
+    expect((await send({ ...CONFIG, contextWindowTokens: window }, prompt)).result).toMatchObject({ ok: false, error: { kind: 'provider_error' } });
+    const managed = await send({ ...MANAGED, contextWindowTokens: window }, prompt);
+    expect(managed.result.ok).toBe(true);
+    expect(managed.body).not.toHaveProperty('max_tokens');
+  });
+
+  it('D. provider-managed envelope: a prompt over the window is still refused before any call', async () => {
+    const prompt = request({ messages: [{ role: 'system', content: 'x'.repeat(3_000) }] });
+    const estimated = estimateTokens(renderMessages(prompt));
+    const { result, calls } = await send({ ...MANAGED, contextWindowTokens: estimated - 1 }, prompt);
+    expect(result).toMatchObject({ ok: false, error: { kind: 'provider_error', retryable: false } });
+    if (!result.ok) expect(result.error.message).toMatch(/^model_envelope_exceeded: estimated \d+ input tokens exceed/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('E. DeepSeek production profile: 1M-token envelope, provider-managed output, thinking and json_object unchanged', async () => {
+    // The production worker's R4_MODEL_* (pm2 env on the host), with R4_MODEL_MAX_OUTPUT_TOKENS unset.
+    const production = {
+      R4_MODEL_PROVIDER: 'openai_compatible',
+      R4_MODEL_BASE_URL: 'https://api.deepseek.com',
+      R4_MODEL_API_KEY: KEY,
+      R4_MODEL_NAME: 'deepseek-flash',
+      R4_MODEL_PROFILE: 'deepseek-v4-flash',
+      R4_MODEL_CONTEXT_WINDOW_TOKENS: '1000000',
+      R4_MODEL_RESPONSE_FORMAT: 'json_object',
+      R4_MODEL_EXTRA_BODY: '{"thinking":{"type":"enabled"}}',
+    };
+    const config = loadOpenAICompatibleConfig(production)!;
+    expect(config.contextWindowTokens).toBe(1_000_000);
+    expect(config.maxOutputTokens).toBeNull();
+    expect(describeModelConfig(config)).toMatchObject({ model: 'deepseek-flash', contextWindowTokens: 1_000_000, maxOutputTokens: null, outputLimitMode: 'provider_managed', responseFormat: 'json_object', extraBody: { thinking: { type: 'enabled' } } });
+    const { body } = await send(config);
+    expect(body).toMatchObject({ model: 'deepseek-flash', thinking: { type: 'enabled' }, response_format: { type: 'json_object' }, stream: false });
+    expect(Object.keys(body!).sort()).toEqual(['messages', 'model', 'response_format', 'stream', 'thinking']);
   });
 });
 

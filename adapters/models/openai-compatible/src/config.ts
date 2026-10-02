@@ -20,7 +20,12 @@ export interface OpenAICompatibleConfig {
   /** Transport deadline of one call (the gateway also enforces the request's own timeout). */
   readonly timeoutMs: number;
   readonly contextWindowTokens: number;
-  readonly maxOutputTokens: number;
+  /**
+   * Output ceiling (R4-J1E-R2.3). A number is FIXED: sent as `max_tokens` and
+   * reserved in the envelope check. Null is PROVIDER_MANAGED: no output
+   * ceiling is sent and none is reserved; the provider/model owns it.
+   */
+  readonly maxOutputTokens: number | null;
   /** `json_object` asks the server for a JSON document; `none` relies on the instructions only. */
   readonly responseFormat: 'json_object' | 'none';
   readonly temperature: number | null;
@@ -60,7 +65,8 @@ const envSchema = z.object({
   R4_MODEL_NAME: z.string().min(1).max(200),
   R4_MODEL_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(600_000).default(120_000),
   R4_MODEL_CONTEXT_WINDOW_TOKENS: z.coerce.number().int().min(1_024),
-  R4_MODEL_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(64).default(2_048),
+  // Absent (or empty) = provider-managed: no numeric default is substituted (R4-J1E-R2.3).
+  R4_MODEL_MAX_OUTPUT_TOKENS: z.preprocess((v) => (v === '' ? undefined : v), z.coerce.number().int().min(64).optional()),
   R4_MODEL_RESPONSE_FORMAT: z.enum(['json_object', 'none']).default('json_object'),
   R4_MODEL_TEMPERATURE: z.coerce.number().min(0).max(2).optional(),
   R4_MODEL_EXTRA_BODY: extraBodySchema.optional(),
@@ -79,7 +85,7 @@ export function loadOpenAICompatibleConfig(env: NodeJS.ProcessEnv): OpenAICompat
     throw new Error(`invalid model provider configuration: ${parsed.error.issues.map((i) => i.path.join('.')).join(', ')}`);
   }
   const c = parsed.data;
-  if (c.R4_MODEL_MAX_OUTPUT_TOKENS >= c.R4_MODEL_CONTEXT_WINDOW_TOKENS) {
+  if (c.R4_MODEL_MAX_OUTPUT_TOKENS !== undefined && c.R4_MODEL_MAX_OUTPUT_TOKENS >= c.R4_MODEL_CONTEXT_WINDOW_TOKENS) {
     throw new Error('invalid model provider configuration: R4_MODEL_MAX_OUTPUT_TOKENS must be smaller than R4_MODEL_CONTEXT_WINDOW_TOKENS');
   }
   return {
@@ -89,15 +95,22 @@ export function loadOpenAICompatibleConfig(env: NodeJS.ProcessEnv): OpenAICompat
     model: c.R4_MODEL_NAME,
     timeoutMs: c.R4_MODEL_TIMEOUT_MS,
     contextWindowTokens: c.R4_MODEL_CONTEXT_WINDOW_TOKENS,
-    maxOutputTokens: c.R4_MODEL_MAX_OUTPUT_TOKENS,
+    maxOutputTokens: c.R4_MODEL_MAX_OUTPUT_TOKENS ?? null,
     responseFormat: c.R4_MODEL_RESPONSE_FORMAT,
     temperature: c.R4_MODEL_TEMPERATURE ?? null,
     extraBody: c.R4_MODEL_EXTRA_BODY ?? {},
   };
 }
 
+/** FIXED: R4 sends and reserves `maxOutputTokens`. PROVIDER_MANAGED: the provider owns the output ceiling. */
+export type OutputLimitMode = 'fixed' | 'provider_managed';
+
+export function outputLimitModeOf(config: Pick<OpenAICompatibleConfig, 'maxOutputTokens'>): OutputLimitMode {
+  return config.maxOutputTokens === null ? 'provider_managed' : 'fixed';
+}
+
 /** What may be printed or stored about a configuration: no key, no credentials in the URL. */
-export function describeModelConfig(config: OpenAICompatibleConfig): { profile: string; host: string; model: string; contextWindowTokens: number; maxOutputTokens: number; responseFormat: string; temperature: number | null; extraBody: Readonly<Record<string, unknown>>; authenticated: boolean } {
+export function describeModelConfig(config: OpenAICompatibleConfig): { profile: string; host: string; model: string; contextWindowTokens: number; maxOutputTokens: number | null; outputLimitMode: OutputLimitMode; responseFormat: string; temperature: number | null; extraBody: Readonly<Record<string, unknown>>; authenticated: boolean } {
   const url = new URL(config.baseUrl);
-  return { profile: config.profile, host: url.host, model: config.model, contextWindowTokens: config.contextWindowTokens, maxOutputTokens: config.maxOutputTokens, responseFormat: config.responseFormat, temperature: config.temperature, extraBody: config.extraBody, authenticated: config.apiKey !== null };
+  return { profile: config.profile, host: url.host, model: config.model, contextWindowTokens: config.contextWindowTokens, maxOutputTokens: config.maxOutputTokens, outputLimitMode: outputLimitModeOf(config), responseFormat: config.responseFormat, temperature: config.temperature, extraBody: config.extraBody, authenticated: config.apiKey !== null };
 }
