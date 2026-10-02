@@ -13,8 +13,9 @@ import { CATALOG_KEY_PATTERN, CATALOG_SELLABILITY, CATALOG_SELLABILITY_REASONS, 
  *   rejected before parsing (contract_violation).
  * - Objects are NOT strict: an unknown additional field is tolerated and
  *   dropped (additive evolution by the owner never breaks R4). Owner fields
- *   R4 does not use (weight, stock totals, the default-variant flag, product-level leadTime)
- *   are dropped the same way.
+ *   R4 does not use (stock totals, the default-variant flag, product-level leadTime)
+ *   are dropped the same way. The product-level `facts.weightKg` IS used
+ *   (R4-J2B: the Shipping order basis aggregates it).
  * - Every field R4 uses is REQUIRED and typed: a missing or mistyped known
  *   field is rejected — no defaults, no coercion.
  * - The contract's invariants are checked (identity shape, sellability/reason
@@ -135,6 +136,7 @@ const productFound = z
       shortDescription: z.string().max(600).nullable(),
       specifications: z.array(specification).max(40),
       status: productStatus,
+      weightKg: z.number().nonnegative().nullable(),
       sellableItem: sellableItem.nullable(),
       variantOptions: z.array(z.object({ itemKey: catalogKeySchema, ref: itemIds, sku: skuText.nullable(), attributes: z.array(attribute).max(10) })).max(100),
     }),

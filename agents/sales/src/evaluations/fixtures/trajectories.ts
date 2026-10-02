@@ -182,7 +182,8 @@ function central(options: { id: string; groundedCategories: boolean; unbackedQuo
   f.turn('Perfecto. El despacho es a Ñuñoa. Cotízalo por favor.');
   f.customerContext();
   f.update([{ op: 'set_delivery_destination', commune: 'Ñuñoa' }]);
-  f.shippingQuote('Ñuñoa', 42_390, 67_820);
+  // Owner NET 35.622 / 56.992 → customer gross 42.390 / 67.820 (the amount the quote states).
+  f.shippingQuote('Ñuñoa', 35_622, 56_992);
   if (options.unbackedQuoteClaim) {
     f.respond('¡Listo! Emití la cotización COT-100001 por $932.350 con despacho estándar a Ñuñoa.');
   } else {

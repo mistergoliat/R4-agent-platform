@@ -1,4 +1,4 @@
-import { FixtureCatalog } from '@r4-adapters/domains';
+import { FixtureCatalog, offerPriceOf } from '@r4-adapters/domains';
 import {
   RUN_FAILURE_RECOVERY_KEY,
   failureClassOf,
@@ -273,9 +273,29 @@ export class SalesFixture {
     return this.read(CAPABILITY_IDS.customerContext, {}, this.#options.customerRef ? { identity: 'provisional', customer: { displayName: 'Camila Rojas', contact: { email: 'camila.rojas@example.test', phone: '+56900000001' }, preferredCommune: 'Ñuñoa', previousPurchases: [{ productId: 'KB-16', purchasedAt: '2026-03-14T15:00:00.000Z' }] } } : { identity: 'unavailable', reason: 'anonymous' }, { validForMs: null });
   }
 
-  shippingQuote(commune: string, standardAmount: number, expressAmount: number): string {
+  /** An order-basis shipping observation. Amounts are the owner's NET; the customer gross is derived under the real VAT policy. */
+  shippingQuote(commune: string, courierNet: number, expressNet: number): string {
     const items = selectionOf(this.#workspace.state);
-    return this.read(CAPABILITY_IDS.shippingQuote, { destination: { commune }, items }, { destination: { commune, region: 'RM' }, requestedItems: items, serviceable: true, options: [{ serviceLevel: 'standard', amount: { amount: standardAmount, currency: 'CLP' }, etaBusinessDays: { min: 1, max: 3 } }, { serviceLevel: 'express', amount: { amount: expressAmount, currency: 'CLP' }, etaBusinessDays: { min: 1, max: 1 } }], totalWeightKg: 100, quotedAt: this.#now(0) }, { validForMs: 15 * 60_000 });
+    const offers = [
+      { carrierName: 'Fixture Courier', serviceType: 'NORMAL', price: offerPriceOf(courierNet), estimatedDelivery: '1 a 3 días hábiles', ownerPosition: 0 },
+      { carrierName: 'Fixture Express', serviceType: 'EXPRESS', price: offerPriceOf(expressNet), estimatedDelivery: null, ownerPosition: 1 },
+    ];
+    return this.read(
+      CAPABILITY_IDS.shippingQuote,
+      { destination: { commune }, basis: 'order', items },
+      {
+        destination: { communeId: 'fx-003', communeName: commune, regionName: 'Metropolitana de Santiago' },
+        basis: { type: 'order', weightKg: 100, declaredValue: { amount: 0, currency: 'CLP', taxIncluded: true }, dimensionsCm: { height: 1, width: 1, depth: 1, source: 'production_convention' } },
+        requestedItems: items,
+        serviceable: true,
+        offers,
+        referenceLowestGross: null,
+        asOf: this.#now(0),
+        ownerValidUntil: null,
+        provenance: { owner: 'fixture-shipping', endpoint: 'in-memory', ownerContractVersion: 'fixture-1' },
+      },
+      { validForMs: 15 * 60_000 },
+    );
   }
 
   /** A governed write through the full ledger: proposal → ALLOW → command → attempt → receipt → observation. */

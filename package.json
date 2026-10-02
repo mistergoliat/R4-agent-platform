@@ -12,6 +12,7 @@
     "apps/*",
     "adapters/domains",
     "adapters/domains/catalog/http",
+    "adapters/domains/shipping/http",
     "adapters/models/*",
     "adapters/channels/*",
     "agents/sales"

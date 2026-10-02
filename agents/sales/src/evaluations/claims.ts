@@ -139,7 +139,11 @@ function index(evidence: readonly Observation[]): EvidenceIndex {
       const fbt = (payload.inferred as { frequentlyBoughtTogether?: { status?: unknown; items?: { productKey?: unknown }[] } } | undefined)?.frequentlyBoughtTogether;
       if (fbt?.status === 'available') for (const item of fbt.items ?? []) if (typeof item.productKey === 'string') entry.boughtTogether.add(item.productKey);
     } else if (capability === CAPABILITY_IDS.shippingQuote) {
-      for (const option of (payload.options as { amount?: { amount?: unknown } }[] | undefined) ?? []) addAmount(option.amount?.amount, o.observationId);
+      for (const offer of (payload.offers as { price?: { customerGross?: { amount?: unknown }; ownerNet?: { amount?: unknown } } }[] | undefined) ?? []) {
+        addAmount(offer.price?.customerGross?.amount, o.observationId);
+        addAmount(offer.price?.ownerNet?.amount, o.observationId);
+      }
+      addAmount((payload.referenceLowestGross as { amount?: unknown } | null | undefined)?.amount, o.observationId);
     } else if (capability === CAPABILITY_IDS.quoteCreate) {
       // A durable action observation carries the receipt envelope ({receiptId, status, …, result}); the owner's quote is `result`.
       // (R4-H fix: the fixture builder wrote the bare result, so only fixtures were ever indexed.)

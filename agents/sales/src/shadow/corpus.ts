@@ -188,7 +188,7 @@ const SPECS: readonly CaseSpec[] = [
       read(CAPABILITY_IDS.customerContext),
       read(CAPABILITY_IDS.catalogSearch, { query: 'barra discos fierro', limit: 10 }),
       update([add('BAR-OLY20'), add('PLT-IRON-50'), destination('Ñuñoa')]),
-      read(CAPABILITY_IDS.shippingQuote, { destination: { commune: 'Ñuñoa' }, items: [{ productId: 'BAR-OLY20', quantity: 1 }, { productId: 'PLT-IRON-50', quantity: 1 }] }),
+      read(CAPABILITY_IDS.shippingQuote, { destination: { commune: 'Ñuñoa' }, basis: 'order', items: [{ productId: 'BAR-OLY20', quantity: 1 }, { productId: 'PLT-IRON-50', quantity: 1 }] }),
       proposeQuote(customerOnFile),
       ...answer(quoteReply),
       ...answer((v) => `Sí, la cotización ${observedQuote(v).quoteNumber} ya incluye el despacho a Ñuñoa.`),

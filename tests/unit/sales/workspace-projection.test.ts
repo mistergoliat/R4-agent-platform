@@ -41,9 +41,9 @@ const workspace: Workspace = {
 describe('Sales workspace projection (what the agent sees as current Sales state)', () => {
   it('marks shipping evidence for another destination or selection as not applicable', () => {
     const items = [{ productId: 'BAR-OLY20', quantity: 1 }];
-    const old = observation('shipping.quote', { destination: { commune: 'Ñuñoa', region: 'Metropolitana' }, requestedItems: items }, '2026-09-23T11:50:00.000Z', '2026-09-23T12:20:00.000Z');
-    const other = observation('shipping.quote', { destination: { commune: 'Viña del Mar', region: 'Valparaíso' }, requestedItems: [{ productId: 'BAR-OLY20', quantity: 2 }] }, '2026-09-23T11:55:00.000Z', '2026-09-23T12:25:00.000Z');
-    const current = observation('shipping.quote', { destination: { commune: 'Vina del Mar', region: 'Valparaíso' }, requestedItems: items }, '2026-09-23T11:58:00.000Z', '2026-09-23T12:28:00.000Z');
+    const old = observation('shipping.quote', { destination: { communeId: '99', communeName: 'Ñuñoa', regionName: 'Metropolitana de Santiago' }, requestedItems: items }, '2026-09-23T11:50:00.000Z', '2026-09-23T12:20:00.000Z');
+    const other = observation('shipping.quote', { destination: { communeId: '1', communeName: 'Viña del Mar', regionName: 'Valparaíso' }, requestedItems: [{ productId: 'BAR-OLY20', quantity: 2 }] }, '2026-09-23T11:55:00.000Z', '2026-09-23T12:25:00.000Z');
+    const current = observation('shipping.quote', { destination: { communeId: '1', communeName: 'Vina del Mar', regionName: 'Valparaíso' }, requestedItems: items }, '2026-09-23T11:58:00.000Z', '2026-09-23T12:28:00.000Z');
     const view = projectWorkspace({ workspace, binding: null, quotes: [], transitions: [], observations: [old, other, current], now: NOW });
     expect(view.shippingEvidence).toEqual([
       { observationId: old.observationId, destination: 'Ñuñoa', forCurrentDestination: false, forCurrentSelection: true, current: true },

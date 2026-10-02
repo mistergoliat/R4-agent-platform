@@ -1,55 +1,62 @@
 import { AvailabilitySwitch } from '../shared/availability.js';
-import { DomainError, normalizeText, type CallOptions } from '../shared/errors.js';
-import type { ShippingOption, ShippingQuote, ShippingQuoteRequest, ShippingService } from './port.js';
+import { DomainError, type CallOptions } from '../shared/errors.js';
+import { normalizeCommuneName, offerPriceOf, quotedBasisOf } from './basis.js';
+import { SHIPPING_ERROR_CODES, type ShippingOffer, type ShippingQuote, type ShippingQuoteRequest, type ShippingResolvedDestination, type ShippingService } from './port.js';
 
 interface Zone {
-  readonly region: string;
-  readonly base: number;
-  readonly perKg: number;
-  readonly eta: { min: number; max: number };
+  /** NET CLP, like the production owner. */
+  readonly baseNet: number;
+  readonly perKgNet: number;
+  readonly eta: string;
   readonly express: boolean;
 }
 
-const ZONES: Readonly<Record<'metro' | 'central' | 'extended', Omit<Zone, 'region'>>> = {
-  metro: { base: 9_990, perKg: 150, eta: { min: 1, max: 3 }, express: true },
-  central: { base: 14_990, perKg: 250, eta: { min: 2, max: 5 }, express: true },
-  extended: { base: 24_990, perKg: 400, eta: { min: 4, max: 8 }, express: false },
+const ZONES: Readonly<Record<'metro' | 'central' | 'extended', Zone>> = {
+  metro: { baseNet: 8_390, perKgNet: 126, eta: '1 a 3 días hábiles', express: true },
+  central: { baseNet: 12_590, perKgNet: 210, eta: '2 a 5 días hábiles', express: true },
+  extended: { baseNet: 20_990, perKgNet: 336, eta: '4 a 8 días hábiles', express: false },
 };
 
-const SERVED: readonly (readonly [commune: string, zone: keyof typeof ZONES, region: string])[] = [
-  ...['Santiago', 'Providencia', 'Ñuñoa', 'Las Condes', 'La Florida', 'Maipú', 'Puente Alto', 'Vitacura', 'Lo Barnechea', 'La Reina', 'Macul', 'San Miguel', 'Peñalolén', 'Estación Central'].map((c) => [c, 'metro', 'Metropolitana'] as const),
+/** Communes the fixture owner knows (its own commune catalog), with fixture ids — never real owner ids. */
+const COMMUNES: readonly (readonly [name: string, zone: keyof typeof ZONES | null, region: string])[] = [
+  ...['Santiago Centro', 'Providencia', 'Ñuñoa', 'Las Condes', 'La Florida', 'Maipú', 'Puente Alto', 'Vitacura', 'Lo Barnechea', 'La Reina', 'Macul', 'San Miguel', 'Peñalolén', 'Estación Central'].map((c) => [c, 'metro', 'Metropolitana de Santiago'] as const),
   ['Valparaíso', 'central', 'Valparaíso'],
   ['Viña del Mar', 'central', 'Valparaíso'],
-  ['Rancagua', 'central', "O'Higgins"],
+  ['Rancagua', 'central', "Libertador General Bernardo O'Higgins"],
   ['Talca', 'central', 'Maule'],
   ['Concepción', 'central', 'Biobío'],
   ['Antofagasta', 'extended', 'Antofagasta'],
   ['La Serena', 'extended', 'Coquimbo'],
-  ['Temuco', 'extended', 'Araucanía'],
+  ['Temuco', 'extended', 'La Araucanía'],
   ['Puerto Montt', 'extended', 'Los Lagos'],
+  // Known to the commune catalog but served by no carrier: the owner answers with no offers.
+  ['Tirúa', null, 'Biobío'],
 ];
 
-const COMMUNES: ReadonlyMap<string, { readonly zone: keyof typeof ZONES; readonly region: string; readonly display: string }> = new Map(
-  SERVED.map(([commune, zone, region]) => [normalizeText(commune), { zone, region, display: commune }]),
+interface FixtureCommune extends ShippingResolvedDestination {
+  readonly zone: keyof typeof ZONES | null;
+}
+
+const BY_NAME: ReadonlyMap<string, FixtureCommune> = new Map(
+  COMMUNES.map(([name, zone, regionName], index) => [normalizeCommuneName(name), { communeId: `fx-${String(index + 1).padStart(3, '0')}`, communeName: name, regionName, zone }]),
 );
 
-/** Product weights, as the shipping owner obtains them from the catalog owner. */
-export type WeightLookup = (productId: string) => number | null;
-
 /**
- * In-memory Shipping owner: cost by destination zone and total weight.
- * Deterministic; logistics live here, never in an agent prompt.
+ * In-memory Shipping owner with the production contract's semantics
+ * (R4-J2B): exact normalized commune resolution against its own catalog,
+ * NET tariffs by zone and weight, offers in a fixed owner order (not price
+ * ranked; one without an ETA), customer gross derived under the same VAT
+ * policy as the production adapter. Deterministic; logistics live here,
+ * never in an agent prompt.
  */
 export class FixtureShipping implements ShippingService {
   /** What this implementation is, for a shadow composition's binding check (R4-H): an in-memory, deterministic owner. */
   readonly bindingKind = 'fixture' as const;
   readonly availability = new AvailabilitySwitch('shipping');
-  readonly #weightOf: WeightLookup;
   readonly #now: () => Date;
   #quotes = 0;
 
-  constructor(options: { weightOf: WeightLookup; now?: () => Date }) {
-    this.#weightOf = options.weightOf;
+  constructor(options: { now?: () => Date } = {}) {
     this.#now = options.now ?? (() => new Date());
   }
 
@@ -60,35 +67,45 @@ export class FixtureShipping implements ShippingService {
   async quote(request: ShippingQuoteRequest, options?: CallOptions): Promise<ShippingQuote> {
     await this.availability.enter(options);
     this.#quotes += 1;
-    if (request.items.length === 0) throw new DomainError('validation', 'no_items', 'at least one item is required to quote shipping');
-    let totalWeightKg = 0;
-    for (const item of request.items) {
-      const weight = this.#weightOf(item.productId);
-      if (weight === null) throw new DomainError('validation', 'unknown_product', `the catalog has no product ${item.productId}`, { productId: item.productId });
-      totalWeightKg += weight * item.quantity;
+    const basis = quotedBasisOf(request.basis);
+    const commune = resolve(request.destination.commune);
+    const zone = commune.zone ? ZONES[commune.zone] : null;
+    const offers: ShippingOffer[] = [];
+    if (zone) {
+      const courierNet = netCost(zone, basis.weightKg);
+      offers.push({ carrierName: 'Fixture Courier', serviceType: 'NORMAL', price: offerPriceOf(courierNet), estimatedDelivery: zone.eta, ownerPosition: 0 });
+      if (zone.express) offers.push({ carrierName: 'Fixture Express', serviceType: 'EXPRESS', price: offerPriceOf(Math.round(courierNet * 1.6)), estimatedDelivery: null, ownerPosition: 1 });
     }
-    totalWeightKg = Math.round(totalWeightKg * 10) / 10;
-    const entry = COMMUNES.get(normalizeText(request.destination.commune));
-    const quotedAt = this.#now().toISOString();
-    if (!entry) {
-      return { destination: { commune: request.destination.commune, region: request.destination.region ?? null }, serviceable: false, options: [], totalWeightKg, quotedAt };
-    }
-    const zone = ZONES[entry.zone];
-    const standard = roundTo10(zone.base + zone.perKg * totalWeightKg);
-    const options_: ShippingOption[] = [{ serviceLevel: 'standard', amount: { amount: standard, currency: 'CLP' }, etaBusinessDays: zone.eta }];
-    if (zone.express) options_.push({ serviceLevel: 'express', amount: { amount: roundTo10(standard * 1.6), currency: 'CLP' }, etaBusinessDays: { min: 1, max: Math.max(1, zone.eta.min) } });
-    return { destination: { commune: entry.display, region: entry.region }, serviceable: true, options: options_, totalWeightKg, quotedAt };
+    const { zone: _, ...destination } = commune;
+    return {
+      destination,
+      basis,
+      serviceable: offers.length > 0,
+      offers,
+      asOf: this.#now().toISOString(),
+      ownerValidUntil: null,
+      provenance: { owner: 'fixture-shipping', endpoint: 'in-memory', ownerContractVersion: 'fixture-1' },
+    };
   }
 
-  /** Synchronous owner-side cost for the standard service (used by the fixture Quote owner). */
+  /**
+   * Synchronous owner-side customer gross of the courier service for a
+   * commune and weight (used by the fixture/shadow Quote owners, which price
+   * shipping themselves). Null when the commune is unknown or unserved.
+   */
   standardCost(commune: string, totalWeightKg: number): number | null {
-    const entry = COMMUNES.get(normalizeText(commune));
-    if (!entry) return null;
-    const zone = ZONES[entry.zone];
-    return roundTo10(zone.base + zone.perKg * totalWeightKg);
+    const entry = BY_NAME.get(normalizeCommuneName(commune));
+    const zone = entry?.zone ? ZONES[entry.zone] : null;
+    return zone ? offerPriceOf(netCost(zone, totalWeightKg)).customerGross.amount : null;
   }
 }
 
-function roundTo10(value: number): number {
-  return Math.round(value / 10) * 10;
+function resolve(commune: string): FixtureCommune {
+  const entry = commune.trim() ? BY_NAME.get(normalizeCommuneName(commune)) : undefined;
+  if (!entry) throw new DomainError('validation', SHIPPING_ERROR_CODES.invalidDestination, 'the commune is not in the shipping owner commune catalog', { commune: commune.slice(0, 80) });
+  return entry;
+}
+
+function netCost(zone: Zone, weightKg: number): number {
+  return zone.baseNet + zone.perKgNet * Math.ceil(weightKg);
 }

@@ -11,6 +11,7 @@ export * from './workspace/context-source.js';
 export * from './capabilities/catalog.js';
 export * from './capabilities/customer.js';
 export * from './capabilities/shipping.js';
+export * from './capabilities/shipping-basis.js';
 export * from './capabilities/workspace.js';
 export * from './capabilities/quote.js';
 export * from './harness/runtime.js';

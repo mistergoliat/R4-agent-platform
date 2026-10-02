@@ -131,6 +131,7 @@ export class FixtureCatalog implements CatalogPort {
         shortDescription: product.shortDescription,
         specifications: product.specifications.map((s) => ({ ...s })),
         status: { ...product.status },
+        weightKg: product.weightKg,
         sellableItem: product.variants.length === 0 ? { itemKey: product.productKey, ref: { productId: product.productId, variantId: null } } : null,
         variantOptions: product.variants.map((v) => ({ itemKey: v.itemKey, ref: { productId: product.productId, variantId: v.variantId }, sku: v.sku, attributes: v.attributes.map((a) => ({ ...a })) })),
       },

@@ -1,0 +1,16 @@
+{
+  "options": [
+    {
+      "carrier_name": "Pesas Chile",
+      "service_type": "Despacho Directo",
+      "total_cost": 4193,
+      "estimated_delivery": "1 a 2 días hábiles"
+    },
+    {
+      "carrier_name": "Blue Express",
+      "service_type": "EXPRESS",
+      "total_cost": 3175,
+      "estimated_delivery": "05-10-2026"
+    }
+  ]
+}

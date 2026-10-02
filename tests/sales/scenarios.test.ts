@@ -59,7 +59,7 @@ describe('R4-F acceptance scenarios (scripted, offline)', () => {
     const quote = report.receipts.find((r) => r.capabilityId === 'quote.create')!;
     expect(quote).toMatchObject({ status: 'succeeded', externalOperationRef: 'COT-100001' });
     expect(report.turns.at(-1)!.agentResponses.join(' ')).toContain('COT-100001');
-    expect(report.turns.at(-1)!.agentResponses.join(' ')).toContain('$932.350');
+    expect(report.turns.at(-1)!.agentResponses.join(' ')).toContain('$932.331');
     // Context accounting is available per snapshot (C2 telemetry reused), incl. the Sales workspace source.
     expect(report.context.length).toBeGreaterThan(0);
     expect(report.context.every((c) => (c.includedTokensBySource['sales.workspace'] ?? 0) > 0)).toBe(true);
