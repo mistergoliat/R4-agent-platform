@@ -17,6 +17,7 @@ import {
 } from '@r4/live-ops';
 import { loadWorkerConfig, runWorkerProcess } from '@r4/worker';
 import { HttpCatalogAdapter, describeCatalogHttpConfig, loadCatalogHttpConfig, type CatalogFetch } from '@r4-adapters/catalog-http';
+import { describeShippingHttpConfig, loadShippingHttpConfig, shippingModeOf } from '@r4-adapters/shipping-http';
 import { describeWhatsAppConfig, loadWhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
 import { adminDatabaseUrl } from '../harness/database.js';
 import { configuredModelProvider } from '../model.js';
@@ -116,6 +117,16 @@ async function plan(production: ReturnType<typeof loadProductionConfig>): Promis
       return { binding: gate, configuration: `not usable: ${error instanceof Error ? error.message : String(error)}` };
     }
   })();
+  // R4-J2B: the Shipping adapter can be configured, but no production profile composes it yet (Shipping stays UNAVAILABLE).
+  const shipping = (() => {
+    const profile = `${selectedSalesProductionProfile(production.config).domains[SALES_DOMAINS.shipping]?.status ?? 'UNAVAILABLE'} in this profile (not composed)`;
+    try {
+      if (shippingModeOf(process.env) !== 'real') return { binding: 'not configured (R4_SHIPPING_MODE unset)', profile };
+      return { ...describeShippingHttpConfig(loadShippingHttpConfig(process.env, { allowNetwork: production.config.allowNetwork })), profile };
+    } catch (error) {
+      return { configuration: `not usable: ${error instanceof Error ? error.message : String(error)}`, profile };
+    }
+  })();
   const model = configuredModelProvider(process.env);
   const recipient = process.env.R4_PROD_SMOKE_RECIPIENT;
   const recipientKey = recipient && process.env.R4_WHATSAPP_PHONE_NUMBER_ID ? conversationKey(production.secrets.identityHashKey, 'whatsapp', process.env.R4_WHATSAPP_PHONE_NUMBER_ID, recipient) : null;
@@ -152,6 +163,7 @@ async function plan(production: ReturnType<typeof loadProductionConfig>): Promis
     model: model ? { provider: 'openai_compatible', ...model.description } : 'not configured (R4_MODEL_*)',
     channel: whatsapp,
     catalog,
+    shipping,
     recipient: recipientKey ? { conversationKey: `${recipientKey.slice(0, 12)}…`, eligibility: rolloutEligibility(production.config.rollout, recipientKey) } : 'R4_PROD_SMOKE_RECIPIENT not set',
     rollout: { percent: production.config.rollout.percent, allowlisted: production.config.rollout.allowlist.length, denylisted: production.config.rollout.denylist.length, fingerprint: rolloutFingerprint(production.config.rollout) },
     killSwitch,

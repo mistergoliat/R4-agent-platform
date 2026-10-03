@@ -205,6 +205,12 @@ export interface CatalogProductFacts {
   /** Owner features verbatim (name/value), never parsed. */
   readonly specifications: readonly CatalogSpecification[];
   readonly status: CatalogProductStatus;
+  /**
+   * The owner's product-level physical weight in kg, verbatim (R4-J2B: the
+   * Shipping order basis aggregates it); null when the owner has none.
+   * Variants carry no weight of their own in the owner contract.
+   */
+  readonly weightKg: number | null;
   /** The product's own sellable unit when it has NO variants; null when a variant must be selected. */
   readonly sellableItem: CatalogSellableItem | null;
   /** One entry per variant, each with its own itemKey; empty when the product has no variants. */

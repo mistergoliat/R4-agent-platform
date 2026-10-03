@@ -90,8 +90,8 @@ export function projectWorkspace(input: WorkspaceProjectionInput): Record<string
     shippingEvidence: observations
       .filter((o) => o.source.kind === 'capability' && o.source.capabilityId === CAPABILITY_IDS.shippingQuote && o.outcome === 'succeeded')
       .flatMap((o) => {
-        const payload = o.payload as { destination?: { commune?: unknown }; requestedItems?: unknown } | null;
-        const commune = typeof payload?.destination?.commune === 'string' ? payload.destination.commune : null;
+        const payload = o.payload as { destination?: { communeName?: unknown }; requestedItems?: unknown } | null;
+        const commune = typeof payload?.destination?.communeName === 'string' ? payload.destination.communeName : null;
         if (commune === null) return [];
         return [{
           observationId: o.observationId,

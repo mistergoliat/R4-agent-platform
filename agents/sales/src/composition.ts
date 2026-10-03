@@ -50,7 +50,7 @@ export function composeSales(options: SalesCompositionOptions): SalesComposition
   capabilities.register(customerCapability(customers, store));
   capabilities.register(catalogSearch);
   capabilities.register(productContext);
-  capabilities.register(shippingCapability(shipping));
+  capabilities.register(shippingCapability(shipping, catalog));
   capabilities.registerWrite(workspaceCapability({ store, catalog, clock }));
   capabilities.registerWrite(quoteCapability({ store, quotes }));
   return {

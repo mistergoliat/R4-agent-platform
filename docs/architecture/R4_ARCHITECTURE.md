@@ -103,6 +103,8 @@ R4-agent-platform/
 │                               (H) `src/shadow`: bindings shadow, corpus de workloads + lock, ejecutor, worker de proceso (entrada `@r4-sales/agent/shadow`).
 ├── adapters/                   (F) Fuera de Core.
 │   ├── domains/                Ports Customer/Catalog/Shipping/Quote + fixtures deterministas (sin dependencia de R4).
+│   │   ├── catalog/http/       (J1B) Adapter HTTP de Catalog v2.
+│   │   └── shipping/http/      (J2B) Adapter de producción de Shipping sobre pc-carrier (ADR-032); no compuesto en producción.
 │   └── models/openai-compatible/  Primer ModelProvider real (protocolo chat-completions genérico).
 ├── tests/{unit,contract,integration,recovery,support,fixtures}
 └── docs/{architecture,adr,roadmap}
@@ -1485,7 +1487,7 @@ número productivo queda sujeto a un gate posterior de paridad de operador/UI.
 |---|---|---|
 | Customer | UNAVAILABLE | Sin contrato/endpoint en R4; clientes anónimos/desconocidos |
 | Catalog | UNAVAILABLE | Contrato sólo de segunda mano fuera de R4 (H); sin endpoint ni credencial |
-| Shipping | UNAVAILABLE | Sin contrato en R4 |
+| Shipping | UNAVAILABLE | Adapter pc-carrier implementado (J2B, ADR-032) pero no compuesto en ningún perfil |
 | Quote | UNAVAILABLE (+ `quote.create` REQUIRE_APPROVAL) | Sin sandbox/producción documentado en R4 |
 | Sales workspace | INTERNAL | Estado del pack en R4 |
 | Canal | WhatsApp Cloud API REAL (canary) | Contrato oficial verificado; validación live pendiente de credenciales |

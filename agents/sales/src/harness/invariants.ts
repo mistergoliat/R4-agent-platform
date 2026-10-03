@@ -194,9 +194,9 @@ function check(invariant: Invariant, state: ConversationState): { passed: boolea
     }
     case 'shipping_evidence_superseded_by_destination': {
       const shipping = reads.filter((o) => o.source.capabilityId === CAPABILITY_IDS.shippingQuote && o.outcome === 'succeeded');
-      const destinations = new Set(shipping.map((o) => (o.payload as { destination: { commune: string } }).destination.commune));
+      const destinations = new Set(shipping.map((o) => (o.payload as { destination: { communeName: string } }).destination.communeName));
       const current = state.workspace.state.delivery?.commune;
-      const lastForCurrent = shipping.at(-1) && (shipping.at(-1)!.payload as { destination: { commune: string } }).destination.commune === current;
+      const lastForCurrent = shipping.at(-1) && (shipping.at(-1)!.payload as { destination: { communeName: string } }).destination.communeName === current;
       // What the agent is shown now: evidence for the old destination is marked as not applying.
       const projection = projectWorkspace({ workspace: state.workspace, binding: null, quotes: state.quoteReferences, transitions: state.workspaceTransitions, observations: state.observations, now: new Date() });
       const evidence = projection.shippingEvidence as { destination: string; forCurrentDestination: boolean }[];

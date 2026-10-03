@@ -1,0 +1,15 @@
+{
+  "options": [
+    {
+      "carrier_name": "Blue Express",
+      "service_type": "EXPRESS",
+      "total_cost": 4525,
+      "estimated_delivery": "05-10-2026"
+    },
+    {
+      "carrier_name": "Starken",
+      "service_type": "NORMAL",
+      "total_cost": 3713
+    }
+  ]
+}

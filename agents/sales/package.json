@@ -32,6 +32,7 @@
   "dependencies": {
     "@r4-adapters/catalog-http": "*",
     "@r4-adapters/domains": "*",
+    "@r4-adapters/shipping-http": "*",
     "@r4-adapters/openai-compatible": "*",
     "@r4-adapters/whatsapp-cloud": "*",
     "@r4/agent-kernel": "*",

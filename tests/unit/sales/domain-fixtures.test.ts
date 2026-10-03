@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DomainError, createFixtureDomains } from '@r4-adapters/domains';
+import { DomainError, createFixtureDomains, deriveShippingGross } from '@r4-adapters/domains';
 import { CapabilityInvoker, CapabilityRegistry } from '@r4/capability-runtime';
 import { createSilentLogger } from '@r4/observability';
 import { catalogCapabilities, customerCapability, shippingCapability } from '@r4-sales/agent';
@@ -13,7 +13,7 @@ describe('fixture Quote owner', () => {
     const d = createFixtureDomains();
     const out = await d.quotes.create(REQUEST, 'key-1');
     if (out.status !== 'created') throw new Error(out.code);
-    expect(out.quote).toMatchObject({ quoteNumber: 'COT-100001', status: 'issued', subtotal: { amount: 129_990 + 119_990 }, shipping: { amount: { amount: 9_990 + 150 * 70 } } });
+    expect(out.quote).toMatchObject({ quoteNumber: 'COT-100001', status: 'issued', subtotal: { amount: 129_990 + 119_990 }, shipping: { amount: { amount: deriveShippingGross(8_390 + 126 * 70).grossAmount } } });
     expect(out.quote.total.amount).toBe(out.quote.subtotal.amount + out.quote.shipping.amount.amount);
   });
 
@@ -100,11 +100,12 @@ describe('fixture Catalog and Shipping owners', () => {
     expect(after).toMatchObject({ pricing: { quantity: 2, finalGross: { amount: 139_990 } }, freshness: { asOf: '2026-09-23T12:01:00.000Z', validUntil: '2026-09-23T12:06:00.000Z' }, provenance: { sourceUpdatedAt: '2026-09-23T12:00:00.000Z' } });
   });
 
-  it('shipping answers per destination and marks unserved destinations', async () => {
+  it('shipping resolves communes exactly, answers per destination and marks unserved ones', async () => {
     const d = createFixtureDomains();
-    const items = [{ productId: 'BAR-OLY20', quantity: 1 }];
-    expect(await d.shipping.quote({ destination: { commune: 'nunoa' }, items })).toMatchObject({ serviceable: true, destination: { commune: 'Ñuñoa', region: 'Metropolitana' } });
-    expect(await d.shipping.quote({ destination: { commune: 'Isla de Pascua' }, items })).toMatchObject({ serviceable: false, options: [] });
+    const basis = { type: 'reference' } as const;
+    expect(await d.shipping.quote({ destination: { commune: ' NUNOA ' }, basis })).toMatchObject({ serviceable: true, destination: { communeName: 'Ñuñoa', regionName: 'Metropolitana de Santiago' }, ownerValidUntil: null });
+    expect(await d.shipping.quote({ destination: { commune: 'Tirúa' }, basis })).toMatchObject({ serviceable: false, offers: [] });
+    await expect(d.shipping.quote({ destination: { commune: 'Isla de Pascua' }, basis })).rejects.toMatchObject({ category: 'validation', code: 'shipping_invalid_destination' });
   });
 });
 
@@ -116,7 +117,7 @@ describe('Sales READ capabilities over the domain ports', () => {
     const registry = new CapabilityRegistry();
     for (const r of catalogCapabilities(d.catalog)) registry.register(r as never);
     registry.register(customerCapability(d.customers, { conversation: () => Promise.resolve(conversation ? { taskId: context.taskId, channelRef: 'x', createdAt: '2026-09-23T00:00:00.000Z', ...conversation } : null) }));
-    registry.register(shippingCapability(d.shipping));
+    registry.register(shippingCapability(d.shipping, d.catalog));
     const clock = new FakeClock();
     const invoker = new CapabilityInvoker({ registry, observations: new InMemoryObservationStore(), ids: idsFrom(clock), clock, logger: createSilentLogger() });
     return { d, invoker, clock };
@@ -173,8 +174,8 @@ describe('Sales READ capabilities over the domain ports', () => {
 
   it('shipping evidence echoes what it was computed for', async () => {
     const { invoker } = setup();
-    const o = await invoker.invoke({ capabilityId: 'shipping.quote', arguments: { destination: { commune: 'Maipú' }, items: [{ productId: 'KB-16', quantity: 2 }] } }, context);
-    expect(o).toMatchObject({ outcome: 'succeeded', payload: { destination: { commune: 'Maipú' }, requestedItems: [{ productId: 'KB-16', quantity: 2 }], serviceable: true, totalWeightKg: 32 } });
+    const o = await invoker.invoke({ capabilityId: 'shipping.quote', arguments: { destination: { commune: 'Maipú' }, basis: 'order', items: [{ productId: 'KB-16', quantity: 2 }] } }, context);
+    expect(o).toMatchObject({ outcome: 'succeeded', payload: { destination: { communeName: 'Maipú' }, requestedItems: [{ productId: 'KB-16', quantity: 2 }], serviceable: true, basis: { type: 'order', weightKg: 32, declaredValue: { amount: 2 * 34_990, currency: 'CLP', taxIncluded: true } }, referenceLowestGross: null } });
   });
 
   it('DomainError classifies write-relevant uncertainty', () => {

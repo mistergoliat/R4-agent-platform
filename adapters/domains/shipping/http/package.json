@@ -1,0 +1,22 @@
+{
+  "name": "@r4-adapters/shipping-http",
+  "version": "0.0.0",
+  "private": true,
+  "description": "R4-J2B production Shipping adapter of the Shipping port against pc-carrier's read contract (GET /location, GET /carrier/v1/all): transport, deadline, commune resolution by exact normalized match, schema validation, failure classification, explicit VAT derivation of the customer gross — no carrier, coverage or tariff logic. Outside R4 Core. Not bound in production.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@r4-adapters/domains": "*",
+    "zod": "^4.6.0"
+  }
+}

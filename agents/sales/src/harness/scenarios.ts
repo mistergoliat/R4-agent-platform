@@ -59,6 +59,8 @@ const once = <T>(value: T, then: T) => {
 };
 const priceOf = (v: ContextView, id: string) => v.product(id).price!.finalGross.amount;
 const sumOf = (v: ContextView, ids: readonly string[]) => ids.reduce((sum, id) => sum + priceOf(v, id), 0);
+/** The owner's first offer as observed (the script states one offer; it never ranks or selects for the customer). */
+const firstOffer = (v: ContextView) => (v.latest(CAPABILITY_IDS.shippingQuote).payload as { offers: { carrierName: string; price: { customerGross: { amount: number } } }[] }).offers[0]!;
 const gymGoal = (v: ContextView) => v.goal(HOME_GYM);
 
 const always: readonly Invariant[] = [{ kind: 'no_unbacked_quote_claim' }, { kind: 'responded_every_turn' }, { kind: 'root_goal_active' }];
@@ -198,16 +200,16 @@ export const SCENARIOS: readonly SalesScenario[] = [
         agent: [
           read(CAPABILITY_IDS.catalogSearch, { query: 'barra discos fierro', limit: 10 }),
           update([add('BAR-OLY20'), add('PLT-IRON-50'), destination('Ñuñoa')]),
-          read(CAPABILITY_IDS.shippingQuote, { destination: { commune: 'Ñuñoa' }, items: [{ productId: 'BAR-OLY20', quantity: 1 }, { productId: 'PLT-IRON-50', quantity: 1 }] }),
-          respond((v) => `El despacho estándar a Ñuñoa sale ${clp((v.latest(CAPABILITY_IDS.shippingQuote).payload as { options: { amount: { amount: number } }[] }).options[0]!.amount.amount)}.`),
+          read(CAPABILITY_IDS.shippingQuote, { destination: { commune: 'Ñuñoa' }, basis: 'order', items: [{ productId: 'BAR-OLY20', quantity: 1 }, { productId: 'PLT-IRON-50', quantity: 1 }] }),
+          respond((v) => `El despacho a Ñuñoa con ${firstOffer(v).carrierName} sale ${clp(firstOffer(v).price.customerGross.amount)} (IVA incluido).`),
         ],
       },
       {
         customer: 'Me cambio de casa: el despacho ahora es a Viña del Mar.',
         agent: [
           update([destination('Viña del Mar')]),
-          read(CAPABILITY_IDS.shippingQuote, { destination: { commune: 'Viña del Mar' }, items: [{ productId: 'BAR-OLY20', quantity: 1 }, { productId: 'PLT-IRON-50', quantity: 1 }] }),
-          respond((v) => `A Viña del Mar el despacho estándar sale ${clp((v.latest(CAPABILITY_IDS.shippingQuote).payload as { options: { amount: { amount: number } }[] }).options[0]!.amount.amount)}; el valor anterior era para Ñuñoa.`),
+          read(CAPABILITY_IDS.shippingQuote, { destination: { commune: 'Viña del Mar' }, basis: 'order', items: [{ productId: 'BAR-OLY20', quantity: 1 }, { productId: 'PLT-IRON-50', quantity: 1 }] }),
+          respond((v) => `A Viña del Mar el despacho con ${firstOffer(v).carrierName} sale ${clp(firstOffer(v).price.customerGross.amount)} (IVA incluido); el valor anterior era para Ñuñoa.`),
         ],
       },
     ],
@@ -307,7 +309,7 @@ export const SCENARIOS: readonly SalesScenario[] = [
           read(CAPABILITY_IDS.catalogSearch, { query: 'power rack', limit: 5 }),
           read(CAPABILITY_IDS.catalogSearch, { query: 'barra olimpica discos fierro', limit: 10 }),
           update([add('RACK-PR200'), add('BAR-OLY20'), add('PLT-IRON-50'), destination('Ñuñoa')]),
-          read(CAPABILITY_IDS.shippingQuote, { destination: { commune: 'Ñuñoa' }, items: [{ productId: 'RACK-PR200', quantity: 1 }, { productId: 'BAR-OLY20', quantity: 1 }, { productId: 'PLT-IRON-50', quantity: 1 }] }),
+          read(CAPABILITY_IDS.shippingQuote, { destination: { commune: 'Ñuñoa' }, basis: 'order', items: [{ productId: 'RACK-PR200', quantity: 1 }, { productId: 'BAR-OLY20', quantity: 1 }, { productId: 'PLT-IRON-50', quantity: 1 }] }),
           proposeQuote(customerOnFile),
           respond((v) => `Listo, Camila: cotización ${observedQuote(v).quoteNumber} por ${clp(observedQuote(v).total.amount)} con despacho a Ñuñoa.`),
         ],
@@ -509,7 +511,7 @@ export const CENTRAL_SCENARIO: SalesScenario = {
       agent: [
         read(CAPABILITY_IDS.customerContext),
         update([destination('Ñuñoa')]),
-        read(CAPABILITY_IDS.shippingQuote, (v) => ({ destination: { commune: 'Ñuñoa' }, items: v.workspace.selection.map((s) => ({ productId: s.productId, quantity: s.quantity })) })),
+        read(CAPABILITY_IDS.shippingQuote, (v) => ({ destination: { commune: 'Ñuñoa' }, basis: 'order', items: v.workspace.selection.map((s) => ({ productId: s.productId, quantity: s.quantity })) })),
         proposeQuote(customerOnFile),
         respond((v) => `Listo: cotización ${observedQuote(v).quoteNumber} por ${clp(observedQuote(v).total.amount)} (despacho a Ñuñoa incluido), válida hasta el ${observedQuote(v).validUntil.slice(0, 10)}.`),
       ],

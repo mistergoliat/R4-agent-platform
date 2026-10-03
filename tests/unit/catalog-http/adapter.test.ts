@@ -42,8 +42,9 @@ describe('HttpCatalogAdapter — success paths (transport only, owner fixtures)'
       const owner = catalogFixture(file);
       const { catalog } = adapter(() => json(200, owner));
       const { schemaVersion: _, ...expected } = owner;
-      // Only fields R4 does not read (weightKg, stock, isDefault, product-level leadTime) are dropped.
-      const strip = (v: unknown): unknown => (Array.isArray(v) ? v.map(strip) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).filter(([k]) => !['weightKg', 'stock', 'isDefault'].includes(k)).map(([k, x]) => [k, strip(x)])) : v);
+      // Only fields R4 does not read (stock, isDefault, product-level leadTime; weightKg anywhere but the product facts) are dropped.
+      // R4-J2B: `facts.weightKg` is read (the Shipping order basis aggregates it).
+      const strip = (v: unknown, parent?: string): unknown => (Array.isArray(v) ? v.map((x) => strip(x)) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).filter(([k]) => !['stock', 'isDefault'].includes(k) && !(k === 'weightKg' && parent !== 'facts')).map(([k, x]) => [k, strip(x, k)])) : v);
       const result = await call(catalog);
       const expectedStripped = strip(expected) as { derived?: { availability?: Record<string, unknown> } };
       if (expectedStripped.derived?.availability) delete expectedStripped.derived.availability.leadTime;

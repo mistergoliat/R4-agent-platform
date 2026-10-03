@@ -14,6 +14,6 @@ export interface FixtureDomains {
 export function createFixtureDomains(options: { now?: () => Date } = {}): FixtureDomains {
   const now = options.now ?? (() => new Date());
   const catalog = new FixtureCatalog({ now });
-  const shipping = new FixtureShipping({ weightOf: (id) => catalog.current(id)?.weightKg ?? null, now });
+  const shipping = new FixtureShipping({ now });
   return { customers: new FixtureCustomerDirectory(), catalog, shipping, quotes: new FixtureQuoteService({ catalog, shipping, now }) };
 }
