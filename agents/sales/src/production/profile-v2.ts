@@ -1,4 +1,4 @@
-import { profileLabel, type ProductionProfile } from '@r4/live-ops';
+import type { ProductionProfile } from '@r4/live-ops';
 import { WHATSAPP_CHANNEL_ID, WHATSAPP_CLOUD_CONTRACT_REF } from '@r4-adapters/whatsapp-cloud';
 import { CATALOG_FRESHNESS_TTL_MS } from '../capabilities/catalog.js';
 import { CAPABILITY_IDS } from '../ids.js';
@@ -78,10 +78,4 @@ export const SALES_PRODUCTION_PROFILE_V2_GATE = Object.freeze([
   { id: 'explicit-authorization', blocking: true, requirement: 'explicit user authorization to compose profile v2 (J1 CLOSED is a separate decision)' },
 ] as const);
 
-/** The Sales production profiles a deployment may select with R4_PROD_POLICY_PROFILE. */
-export const SALES_PRODUCTION_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_PRODUCTION_PROFILE, SALES_PRODUCTION_PROFILE_V2_CANDIDATE]);
-
-/** The Sales production profile declared by `label` (`sales-production@1|2`), or null. */
-export function salesProductionProfile(label: string): ProductionProfile | null {
-  return SALES_PRODUCTION_PROFILES.find((profile) => profileLabel(profile) === label) ?? null;
-}
+// The selectable profile registry (v1, v2, v3) lives in profile-v3.ts.

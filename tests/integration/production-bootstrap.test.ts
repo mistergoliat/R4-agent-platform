@@ -66,13 +66,24 @@ async function definitionsDir(files: Record<string, string>): Promise<string> {
 const salesJson = () => readFile(join(SALES_AGENT_DIR, 'sales.agent.json'), 'utf8');
 
 describe('production:sales:bootstrap', () => {
-  it('empty registry → registers sales@3 (the real file, through the registry); repeat → unchanged', async () => {
+  it('empty registry → registers sales@3 and sales@4 (the real files, through the registry); repeat → unchanged', async () => {
     const { env, pool: p } = await migratedDatabase();
     expect(await definitions(p)).toEqual([]);
-    expect(await bootstrap(env)).toEqual({ code: 0, out: 'production Sales bootstrap:\nregistered: sales@3', err: '' });
-    expect(await definitions(p)).toEqual([{ agent_id: 'sales', version: 3, content_hash: definitionContentHash(loadSalesAgentDefinition()) }]);
-    expect(await bootstrap(env)).toEqual({ code: 0, out: 'production Sales bootstrap:\nunchanged: sales@3', err: '' });
-    expect(await definitions(p)).toHaveLength(1);
+    expect(await bootstrap(env)).toEqual({ code: 0, out: 'production Sales bootstrap:\nregistered: sales@3, sales@4', err: '' });
+    expect(await definitions(p)).toEqual([
+      { agent_id: 'sales', version: 3, content_hash: definitionContentHash(loadSalesAgentDefinition(3)) },
+      { agent_id: 'sales', version: 4, content_hash: definitionContentHash(loadSalesAgentDefinition(4)) },
+    ]);
+    expect(await bootstrap(env)).toEqual({ code: 0, out: 'production Sales bootstrap:\nunchanged: sales@3, sales@4', err: '' });
+    expect(await definitions(p)).toHaveLength(2);
+  });
+
+  it('R4-J2D upgrade path: a registry holding only sales@3 (production today) gains sales@4; sales@3 stays byte-identical', async () => {
+    const { env, pool: p } = await migratedDatabase();
+    expect(await bootstrap(env, await definitionsDir({ 'sales.agent.json': await salesJson() }))).toMatchObject({ code: 0, out: 'production Sales bootstrap:\nregistered: sales@3' });
+    const [v3] = await definitions(p);
+    expect(await bootstrap(env)).toEqual({ code: 0, out: 'production Sales bootstrap:\nregistered: sales@4\nunchanged: sales@3', err: '' });
+    expect(await definitions(p)).toEqual([v3, { agent_id: 'sales', version: 4, content_hash: definitionContentHash(loadSalesAgentDefinition(4)) }]);
   });
 
   it('the same version with different content fails with agent_definition_version_immutable and changes nothing', async () => {
@@ -175,9 +186,10 @@ describe('the production gap it closes (gateway + worker, no API)', () => {
     expect(await bed.rows('select count(*)::int as n from agent_tasks')).toEqual([{ n: 0 }]);
     expect(await bed.rows('select count(*)::int as n from inbound_events')).toEqual([{ n: 1 }]);
 
-    expect(await bootstrap(bed.env)).toMatchObject({ code: 0, out: 'production Sales bootstrap:\nregistered: sales@3' });
+    expect(await bootstrap(bed.env)).toMatchObject({ code: 0, out: 'production Sales bootstrap:\nregistered: sales@3, sales@4' });
     await bed.gateway.ingress.resumeUnsettled(0);
     const taskId = await bed.taskOf(CUSTOMER);
+    // R4-J2D: sales@4 is registered too, yet a sales-production@1 conversation is pinned to v3 (never "latest").
     expect(await bed.rows('select agent_id, agent_version from agent_tasks where task_id = $1', [taskId])).toEqual([{ agent_id: 'sales', agent_version: 3 }]);
     expect(await bed.rows('select count(*)::int as n from inbound_events')).toEqual([{ n: 1 }]);
   });

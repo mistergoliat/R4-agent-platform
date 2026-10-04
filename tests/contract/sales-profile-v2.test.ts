@@ -72,7 +72,7 @@ describe('Sales production profile v2', () => {
   it('is selected explicitly and refuses to compose without the catalog-service binding', () => {
     expect(() => compose('sales-production@2')).toThrow(/catalog-service binding/);
     expect(() => compose('sales-production@2', UNAVAILABLE_CATALOG)).toThrow(/catalog-service binding/);
-    expect(() => compose('sales-production@3', httpCatalog)).toThrow(/not a Sales production profile/);
+    expect(() => compose('sales-production@4', httpCatalog)).toThrow(/not a Sales production profile/);
   });
 
   it('composed with the binding, offers exactly the workspace and the two READ Catalog capabilities', () => {

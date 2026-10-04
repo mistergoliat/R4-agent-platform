@@ -1487,7 +1487,7 @@ número productivo queda sujeto a un gate posterior de paridad de operador/UI.
 |---|---|---|
 | Customer | UNAVAILABLE | Sin contrato/endpoint en R4; clientes anónimos/desconocidos |
 | Catalog | UNAVAILABLE | Contrato sólo de segunda mano fuera de R4 (H); sin endpoint ni credencial |
-| Shipping | UNAVAILABLE | Adapter pc-carrier implementado (J2B, ADR-032) pero no compuesto en ningún perfil |
+| Shipping | UNAVAILABLE en v1/v2; REAL en `sales-production@3` | Adapter pc-carrier (ADR-032); v3 implementado, despliegue pendiente (R4-J2_SHIPPING_ROLLOUT.md) |
 | Quote | UNAVAILABLE (+ `quote.create` REQUIRE_APPROVAL) | Sin sandbox/producción documentado en R4 |
 | Sales workspace | INTERNAL | Estado del pack en R4 |
 | Canal | WhatsApp Cloud API REAL (canary) | Contrato oficial verificado; validación live pendiente de credenciales |

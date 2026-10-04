@@ -17,11 +17,13 @@ import {
 } from '@r4/live-ops';
 import { loadWorkerConfig, runWorkerProcess } from '@r4/worker';
 import { HttpCatalogAdapter, describeCatalogHttpConfig, loadCatalogHttpConfig, type CatalogFetch } from '@r4-adapters/catalog-http';
-import { describeShippingHttpConfig, loadShippingHttpConfig, shippingModeOf } from '@r4-adapters/shipping-http';
+import { ProductionShippingAdapter, loadShippingHttpConfig, type ShippingFetch } from '@r4-adapters/shipping-http';
 import { describeWhatsAppConfig, loadWhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
 import { adminDatabaseUrl } from '../harness/database.js';
 import { configuredModelProvider } from '../model.js';
 import { composeSalesGateway, composeSalesProductionWorker, selectedSalesProductionProfile } from '../production/composition.js';
+import { salesProductionAgentVersion } from '../production/profile-v3.js';
+import { salesShippingPlan } from '../production/shipping-plan.js';
 import { SALES_DOMAINS, SALES_PRODUCTION_PROFILE } from '../production/profile.js';
 import { SALES_PRODUCTION_PROCESSES, schedulerConfigurationStatus } from '../production/topology.js';
 import { flag, loadLocalEnv, option, print } from './common.js';
@@ -93,11 +95,27 @@ function productionCatalog(production: ReturnType<typeof loadProductionConfig>, 
   return new HttpCatalogAdapter({ config, fetch: nodeFetch, ...(logger ? { onCall: (event) => logger.info({ event: 'catalog.call', ...event }, 'catalog call') } : {}) });
 }
 
+const shippingFetch: ShippingFetch = async (url, init) => {
+  const response = await fetch(url, init);
+  return { status: response.status, text: () => response.text() };
+};
+
+/**
+ * The pc-carrier binding when the selected profile makes Shipping REAL (v3); undefined under v1/v2.
+ * Fails closed on an incomplete R4_SHIPPING_* configuration. Nothing is called here.
+ */
+function productionShipping(production: ReturnType<typeof loadProductionConfig>, logger?: ReturnType<typeof createLogger>): ProductionShippingAdapter | undefined {
+  if (selectedSalesProductionProfile(production.config).domains[SALES_DOMAINS.shipping]?.status !== 'REAL') return undefined;
+  const config = loadShippingHttpConfig(process.env, { allowNetwork: production.config.allowNetwork });
+  return new ProductionShippingAdapter({ config, fetch: shippingFetch, ...(logger ? { onEvent: (event) => logger.info({ event: `shipping.${event.kind}`, ...event }, 'shipping call') } : {}) });
+}
+
 function composition() {
   const noStore = { readControls: () => Promise.reject(new Error('plan only')) } as never;
   const production = loadProductionConfig(process.env);
   const catalog = productionCatalog(production);
-  return composeSalesProductionWorker({ pool: { query: () => Promise.reject(new Error('plan only')) } as never, store: noStore, production, modelProvider: { providerId: 'plan', invoke: () => Promise.reject(new Error('plan only')) }, logger: createLogger({ service: 'plan', level: 'silent' }), ...(catalog ? { catalog } : {}) });
+  const shipping = productionShipping(production);
+  return composeSalesProductionWorker({ pool: { query: () => Promise.reject(new Error('plan only')) } as never, store: noStore, production, modelProvider: { providerId: 'plan', invoke: () => Promise.reject(new Error('plan only')) }, logger: createLogger({ service: 'plan', level: 'silent' }), ...(catalog ? { catalog } : {}), ...(shipping ? { shipping } : {}) });
 }
 
 async function plan(production: ReturnType<typeof loadProductionConfig>): Promise<void> {
@@ -117,16 +135,8 @@ async function plan(production: ReturnType<typeof loadProductionConfig>): Promis
       return { binding: gate, configuration: `not usable: ${error instanceof Error ? error.message : String(error)}` };
     }
   })();
-  // R4-J2B: the Shipping adapter can be configured, but no production profile composes it yet (Shipping stays UNAVAILABLE).
-  const shipping = (() => {
-    const profile = `${selectedSalesProductionProfile(production.config).domains[SALES_DOMAINS.shipping]?.status ?? 'UNAVAILABLE'} in this profile (not composed)`;
-    try {
-      if (shippingModeOf(process.env) !== 'real') return { binding: 'not configured (R4_SHIPPING_MODE unset)', profile };
-      return { ...describeShippingHttpConfig(loadShippingHttpConfig(process.env, { allowNetwork: production.config.allowNetwork })), profile };
-    } catch (error) {
-      return { configuration: `not usable: ${error instanceof Error ? error.message : String(error)}`, profile };
-    }
-  })();
+  // Shipping is composed only when the profile makes it REAL (sales-production@3); nothing is probed here.
+  const shipping = salesShippingPlan(selectedSalesProductionProfile(production.config), process.env, { allowNetwork: production.config.allowNetwork });
   const model = configuredModelProvider(process.env);
   const recipient = process.env.R4_PROD_SMOKE_RECIPIENT;
   const recipientKey = recipient && process.env.R4_WHATSAPP_PHONE_NUMBER_ID ? conversationKey(production.secrets.identityHashKey, 'whatsapp', process.env.R4_WHATSAPP_PHONE_NUMBER_ID, recipient) : null;
@@ -159,6 +169,7 @@ async function plan(production: ReturnType<typeof loadProductionConfig>): Promis
     networkAllowed: production.config.allowNetwork,
     profile: report.profile,
     profileFingerprint: report.profileFingerprint,
+    agentDefinition: `sales@${salesProductionAgentVersion(selectedSalesProductionProfile(production.config))}`,
     productionConfigFingerprint: productionConfigFingerprint(production.config),
     model: model ? { provider: 'openai_compatible', ...model.description } : 'not configured (R4_MODEL_*)',
     channel: whatsapp,
@@ -192,7 +203,8 @@ async function worker(production: ReturnType<typeof loadProductionConfig>): Prom
   const logger = createLogger({ service: 'r4-worker', level: config.logLevel });
   const pool = createPool({ connectionString: config.databaseUrl, logger, applicationName: 'r4-worker-bindings', max: 2 });
   const catalog = productionCatalog(production, logger);
-  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...(catalog ? { catalog } : {}) });
+  const shipping = productionShipping(production, logger);
+  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...(catalog ? { catalog } : {}), ...(shipping ? { shipping } : {}) });
   logger.info({ event: 'service.composed', profile: composed.report.profile, profileFingerprint: composed.report.profileFingerprint }, 'production worker composed');
   await runWorkerProcess(config, composed.bindings, { logger });
 }
