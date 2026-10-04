@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import type { Logger } from 'pino';
-import { DomainError, type CatalogPort } from '@r4-adapters/domains';
+import { DomainError, type CatalogPort, type ShippingService } from '@r4-adapters/domains';
 import { WhatsAppInboundAdapter, WhatsAppOutboundAdapter, describeWhatsAppConfig, loadWhatsAppCloudConfig, type FetchLike, type WhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
 import { CapabilityRegistry } from '@r4/capability-runtime';
 import { systemClock, type Clock, type Principal } from '@r4/contracts';
@@ -27,8 +27,9 @@ import { SALES_ROOT_GOAL } from '../goal.js';
 import { SalesWorkspaceContextSource } from '../workspace/context-source.js';
 import { PostgresSalesStore } from '../workspace/store.js';
 import { SALES_DOMAINS, SALES_PRODUCTION_ACTION_POLICY } from './profile.js';
-import { SALES_PRODUCTION_PROFILES, salesProductionProfile } from './profile-v2.js';
+import { SALES_PRODUCTION_PROFILES, salesProductionAgentVersion, salesProductionProfile } from './profile-v3.js';
 import { catalogCapabilities } from '../capabilities/catalog.js';
+import { shippingCapability } from '../capabilities/shipping.js';
 
 /** Who opens production Sales conversations: the channel ingress (a platform service, never the model). */
 export const SALES_CHANNEL_INGRESS: Principal = { kind: 'service', ref: 'sales-channel-ingress' };
@@ -61,6 +62,8 @@ export interface SalesProductionWorkerOptions {
   readonly clock?: Clock;
   /** The catalog-service binding; required when the selected profile makes Catalog REAL (v2). */
   readonly catalog?: CatalogPort & { readonly bindingKind: string };
+  /** The pc-carrier binding (ProductionShippingAdapter); required when the selected profile makes Shipping REAL (v3). */
+  readonly shipping?: ShippingService & { readonly bindingKind: string };
 }
 
 /** The Sales production profile the deployment declared, or a refusal (nothing is defaulted). */
@@ -110,10 +113,24 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
     capabilities.register(catalogSearch);
     capabilities.register(productContext);
   }
-  // Customer / Shipping / Quote (and Catalog under v1) are UNAVAILABLE: their capabilities are deliberately not registered.
+  // Shipping is bound only when the profile makes it REAL (v3): the pc-carrier HTTP adapter, never a fixture.
+  // Its order basis reads Catalog, so a REAL Shipping without a REAL Catalog is refused too.
+  const shippingReal = profile.domains[SALES_DOMAINS.shipping]?.status === 'REAL';
+  if (shippingReal) {
+    if (!options.shipping || options.shipping.bindingKind !== 'http') {
+      throw new Error(`refusing production composition: ${profileLabel(profile)} binds Shipping REAL but no pc-carrier binding was provided (R4_SHIPPING_*)`);
+    }
+    if (!catalogReal) throw new Error(`refusing production composition: ${profileLabel(profile)} binds Shipping REAL without a REAL Catalog (the order basis reads Catalog)`);
+    if (capabilityAvailability(profile, CAPABILITY_IDS.shippingQuote).available) capabilities.register(shippingCapability(options.shipping, catalog));
+  }
+  // Customer / Quote (and Catalog under v1, Shipping under v1/v2) are UNAVAILABLE: their capabilities are deliberately not registered.
   const report = assertProductionComposition(
     profile,
-    [{ domain: SALES_DOMAINS.workspace, bindingKind: 'internal' }, { domain: SALES_DOMAINS.catalog, bindingKind: catalogReal ? 'real' : UNAVAILABLE_CATALOG.bindingKind }],
+    [
+      { domain: SALES_DOMAINS.workspace, bindingKind: 'internal' },
+      { domain: SALES_DOMAINS.catalog, bindingKind: catalogReal ? 'real' : UNAVAILABLE_CATALOG.bindingKind },
+      ...(shippingReal ? [{ domain: SALES_DOMAINS.shipping, bindingKind: 'real' as const }] : []),
+    ],
     capabilities.list().map((c) => c.capabilityId),
   );
   return {
@@ -130,12 +147,16 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
   };
 }
 
-/** How the channel ingress opens a Sales conversation task (deterministic in the binding; idempotent hook). */
-export function salesConversationTaskFactory(pool: pg.Pool): ConversationTaskFactory {
+/**
+ * How the channel ingress opens a Sales conversation task (deterministic in the binding; idempotent hook).
+ * The task is pinned to the Sales definition version of the selected profile (R4-J2D): registering a newer
+ * definition never switches a running profile, since an unpinned task would run the latest registered version.
+ */
+export function salesConversationTaskFactory(pool: pg.Pool, agentVersion: number): ConversationTaskFactory {
   const sales = new PostgresSalesStore(pool);
   return {
     requestedBy: SALES_CHANNEL_INGRESS,
-    request: (binding) => ({ taskType: SALES_TASK_TYPE, agentId: SALES_AGENT_ID, goal: SALES_ROOT_GOAL, input: { channel: binding.channel, conversationBinding: binding.bindingId } }),
+    request: (binding) => ({ taskType: SALES_TASK_TYPE, agentId: SALES_AGENT_ID, agentVersion, goal: SALES_ROOT_GOAL, input: { channel: binding.channel, conversationBinding: binding.bindingId } }),
     // Customer identity is UNAVAILABLE in this profile: the conversation acts for an unknown customer.
     afterOpen: async (taskId, binding) => {
       await sales.bindConversation({ taskId, customerRef: null, channelRef: binding.channel });
@@ -154,16 +175,17 @@ export interface SalesGatewayOptions {
 /** Gateway bindings of the Sales canary: the WhatsApp Cloud adapter (canary number), the profile and the task factory. */
 export function composeSalesGateway(options: SalesGatewayOptions): { bindings: GatewayBindings; whatsapp: WhatsAppCloudConfig; describe: Record<string, string | boolean> } {
   const config = assertProductionMode(options.production.config);
+  const profile = selectedSalesProductionProfile(config);
   const whatsapp = loadWhatsAppCloudConfig(options.env, { allowNetwork: config.allowNetwork });
   return {
     whatsapp,
     describe: describeWhatsAppConfig(whatsapp),
     bindings: {
       production: options.production,
-      profile: selectedSalesProductionProfile(config),
+      profile,
       inbound: [new WhatsAppInboundAdapter(whatsapp)],
       outbound: [new WhatsAppOutboundAdapter(whatsapp, options.fetch ? { fetch: options.fetch } : {})],
-      taskFactory: salesConversationTaskFactory(options.pool),
+      taskFactory: salesConversationTaskFactory(options.pool, salesProductionAgentVersion(profile)),
     },
   };
 }

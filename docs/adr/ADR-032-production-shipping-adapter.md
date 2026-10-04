@@ -1,6 +1,6 @@
 # ADR-032 — Adapter de producción de Shipping sobre pc-carrier
 
-- **Estado:** Aceptado (R4-J2B). Adapter implementado y probado; **no** compuesto en ningún perfil de producción (Shipping sigue UNAVAILABLE en `sales-production@1/@2`).
+- **Estado:** Aceptado (R4-J2B/J2C). Compuesto por `sales-production@3` (R4-J2D, despliegue pendiente; ver `docs/architecture/R4-J2_SHIPPING_ROLLOUT.md`); `sales-production@1/@2` siguen con Shipping UNAVAILABLE.
 - **Fecha:** 2026-10-02
 - **Autoridad superior:** Constitución ("model output is untrusted"; la verdad durable pertenece a su owner); PRD; ADR-002, ADR-005, ADR-030
 - **Evidencia:** `docs/architecture/R4-J2A_SHIPPING_OWNER_AUDIT.md`

@@ -27,7 +27,8 @@
   "files": [
     "dist",
     "migrations",
-    "sales.agent.json"
+    "sales.agent.json",
+    "sales.v4.agent.json"
   ],
   "dependencies": {
     "@r4-adapters/catalog-http": "*",

@@ -21,7 +21,7 @@ afterEach(async () => {
 describe('agent definition loading', () => {
   it('loads and validates the repository agent definitions', async () => {
     const loaded = await loadAgentDefinitionsFromDirectory(REPO_AGENTS_DIR);
-    expect(loaded.map((l) => `${l.definition.agentId}@${l.definition.version}`)).toEqual(['platform-probe@1', 'sales@3']); // R4-F ships the sales pack
+    expect(loaded.map((l) => `${l.definition.agentId}@${l.definition.version}`)).toEqual(['platform-probe@1', 'sales@3', 'sales@4']); // R4-F ships the sales pack; R4-J2D adds v4 beside the immutable v3
     expect(loaded[0]!.source).toBe('platform-probe/platform-probe.agent.json');
   });
 

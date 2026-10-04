@@ -74,12 +74,11 @@ describe('Sales Agent Pack boundary', () => {
   });
 
   it('carries no provider, model, endpoint or secret in its definition; no subagents', () => {
-    const raw = readFileSync(join(ROOT, 'agents/sales/sales.agent.json'), 'utf8');
-    expect(raw).not.toMatch(/api[_-]?key|base[_-]?url|https?:\/\/|openai|deepseek|anthropic|gpt|llama|vllm|\bR4_MODEL/i);
+    for (const file of ['agents/sales/sales.agent.json', 'agents/sales/sales.v4.agent.json']) expect(readFileSync(join(ROOT, file), 'utf8'), file).not.toMatch(/api[_-]?key|base[_-]?url|https?:\/\/|openai|deepseek|anthropic|gpt|llama|vllm|\bR4_MODEL/i);
     expect(definition.delegationPolicy).toEqual({ mode: 'none', allowedAgentIds: [] });
     expect(definition.budgets.maxDelegations).toBe(0);
     const agentFiles = files(join(ROOT, 'agents'), '.agent.json').map(rel).sort();
-    expect(agentFiles).toEqual(['agents/platform-probe/platform-probe.agent.json', 'agents/sales/sales.agent.json']);
+    expect(agentFiles).toEqual(['agents/platform-probe/platform-probe.agent.json', 'agents/sales/sales.agent.json', 'agents/sales/sales.v4.agent.json']);
   });
 
   it('instructions set criteria, not a scripted sequence or an intent router', () => {
