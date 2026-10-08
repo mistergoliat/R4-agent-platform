@@ -1,13 +1,14 @@
 # R4-J3B — Quote V2 Sales Integration Report
 
-Date: 2026-10-08 · Scope: R4-J3 Quote V2 Sales integration without harness modifications · Status: **PARTIAL** (source and offline evidence complete; EC2 run not authorized)
+Date: 2026-10-08 · Scope: R4-J3 Quote V2 Sales integration without harness modifications · Status: **J3B implementation COMPLETE; J3C EC2 synthetic E2E PASS** (governed agent execution not run; `sales-production@4` not deployed)
 
 Evidence is labelled by where it comes from:
 
 - **SOURCE**: code in this working tree.
 - **OFFLINE**: automated tests with fixtures or mocks.
 - **LOCAL-OWNER**: the real Quote V2 service (the owner's own `dist/` in its pinned Node 24 image) run on this workstation.
-- **EC2**: the deployed integration host. **No EC2 command was executed in this slice.**
+- **EC2-SERVICE**: the deployed Quote V2 on EC2 (`127.0.0.1:4020`), driven by the R4 runner on this workstation through an SSH tunnel (R4-J3C, §O.1). J3B itself ran no EC2 command.
+- **GOVERNED-AGENT**: a real Sales agent turn (model → proposal → policy → approval → `ActionExecutor` → capability) in a deployed R4 worker. **Not run** in J3B or J3C.
 
 ---
 
@@ -15,7 +16,7 @@ Evidence is labelled by where it comes from:
 
 | Repository | Ref | State |
 |---|---|---|
-| R4-agent-platform | `main` @ `aa974b7` | Pre-existing local changes not made by this slice: `.claude/settings.json` (modified) and `docs/architecture/R4_CRM_LEGACY_DEPENDENCY_DECOMMISSION_AUDIT.md` (untracked). J3B changes are uncommitted and await owner review. |
+| R4-agent-platform | branch `r4-j3b-quote-v2-sales-integration`: J3B committed as `ee199a9` on `aa974b7` (local, not pushed); J3C evidence in a separate local commit (this report only) | Pre-existing local changes not made by this slice: `.claude/settings.json` (modified) and `docs/architecture/R4_CRM_LEGACY_DEPENDENCY_DECOMMISSION_AUDIT.md` (untracked). Neither is in either commit. |
 | MS-pesaschile-quote-service | local `HEAD` `686a0f6` (R1.7B-G2 closure commit; its PR/merge may still be pending) | Deployed release on EC2: `6735352` (R1.7B-G1 §W). No source change. Working tree unchanged apart from a pre-existing untracked review doc. `dist/` (gitignored) was rebuilt locally for the LOCAL-OWNER run. |
 | Contract | `docs/v2/openapi.yaml`, OpenAPI `2.0.0` | sha256 `88b6b4b23ea9c31fde3698de45f064c6159f92f8c6506cd1d209dee2812c20d5` |
 
@@ -286,7 +287,98 @@ Known non-J3B results:
 
 ## O. Integration evidence beyond offline
 
-**EC2: NOT RUN.** No R4 principal has been provisioned, and generating secret material on the host requires explicit authorization (§11), which this slice did not have. Nothing was executed on EC2.
+What each level proves, and what it does not:
+
+| Level | Owner | R4 code path | Proves | Does not prove |
+|---|---|---|---|---|
+| OFFLINE (J3B) | `FixtureQuoteV2Service` | full capability, gateway, policy, approval (contract and integration tests) | the full scenario matrix, governance, recovery | real owner behaviour |
+| LOCAL-OWNER (J3B) | real Quote V2 `dist/` on this workstation | runner → `quote.create@2` → HTTP adapter | wire compatibility with the real owner | the deployed instance, its registry and data |
+| EC2-SERVICE (J3C, §O.1) | the **deployed** Quote V2 `6735352` on EC2 | the same runner at `ee199a9` → `quote.create@2` → HTTP adapter, through a tunnel | the deployed owner accepts R4's principal, request, idempotency and reconciliation; the PDF is intact; authorization boundaries | anything that goes through the gateway, policy and approval, or the model |
+| GOVERNED-AGENT | — | **not run** | — | everything above the capability: the model proposing `quote.create@2`, approval, `ActionExecutor`, worker, channel |
+
+The runner calls `capability.execute` and `reconcile` directly with a synthetic `WriteHandlerContext`. It **bypasses** the gateway, the policy engine and approval on purpose: it exercises the capability and adapter only. Governance is proven OFFLINE (§I). Commercial evidence in J3C is the fixture Catalog and Shipping (synthetic products), not the production owners.
+
+### O.1 R4-J3C — EC2-SERVICE synthetic E2E (2026-10-08)
+
+Authorization: owner instruction R4-J3C (principal provisioning on the Quote V2 registry, the token used only for this synthetic test, a local runner through a tunnel and a throwaway local PostgreSQL).
+
+**Principal provisioning (EC2, 21:51Z)**
+
+- On the host, `docker exec quote-v2-integration node dist/scripts/generate-principal-token.js` (the owner's generator inside the deployed image, as in the G1 README) produced the token. The token went straight into `~/.config/quote-v2-integration/token-r4-sales-integration` (0600, `ec2-user`). It was never printed. The file's SHA-256 was checked against the generator's hash, and the length checked (43 characters or more).
+- Registry: appended `{principalId: "r4-sales-integration", principalType: "service", scopes: ["quotes:create","quotes:read","quotes:document:read"], tokenSha256: [<hash>]}`.
+  - Before the write, a check confirmed the two existing principals (`quote-g1-synthetic`, `quote-g1-monitor`) and `version` would stay byte-identical.
+  - The write was in place, so the single-file bind mount keeps the same inode (verified `inode_same=yes`), with mode `0400 999:999` unchanged.
+  - Backup: `principals.json.bak-pre-r4-j3c` (hashes only, same mode and owner).
+- Reload: `docker kill --signal=HUP quote-v2-integration`. `dumb-init` forwards the signal to node. Log: `principal_registry.reloaded principals=3`. **No container restart** (the container was still "Up 2 hours" afterwards). No other principal was modified, revoked or replaced.
+
+**Transport and isolation**
+
+- The runner ran on this workstation. `ssh -N -L 127.0.0.1:4020:127.0.0.1:4020 ec2-user@98.80.166.131` (`StrictHostKeyChecking=yes`) carried the HTTP traffic; no remote process was started for the run.
+- The token was read over the same encrypted SSH channel straight into the runner's environment. It was **never written to local disk**, and was unset when the process exited.
+- PostgreSQL was a throwaway local container (`postgres:16-alpine`, random password, `127.0.0.1:55499`). It was removed together with its volume afterwards.
+- The commit was `ee199a969ec339c81191d013cc0413ba6b36dff0`, freshly built, with no tracked change other than `.claude/settings.json`.
+- `R4_QUOTE_MODE=real`, `R4_QUOTE_BASE_URL=http://127.0.0.1:4020`, `R4_QUOTE_TIMEOUT_MS=20000`.
+
+**`npm run sales:quote-v2:e2e` (21:53:14–21:53:21Z): `verdict: PASS`, exit 0**
+
+| Check | Result |
+|---|---|
+| Sales migrations (throwaway database) | `0006`, `0007` applied |
+| Readiness | `200`, `database`, `schema`, `artifactStorage`, `renderer` and `lifecycle` all `ok` |
+| Authenticated lookup of an unused key | `200`, not bound (authentication and `quotes:read` OK) |
+| Issue | `applied`, `201`, **`PC-000003`** `issued`, quote `367d4bf5-953c-4f33-a08a-163763cf022d`, issued 21:53:16.321Z |
+| Totals (owner = R4 `expectedTotals`) | net **189 119** · tax **35 933** · gross **225 052** · exemptNet 0 |
+| Lines | 129 990 (1 × BAR-OLY20) and 79 980 (2 × BAR-EZ) gross. Shipping Fixture Courier NORMAL, Ñuñoa, net 12 674 / gross 15 082 |
+| Validity (owner policy) | `cl-retail-5-calendar-days-v1`, 2026-10-08 → through **2026-10-12**, `validUntilExclusive` 2026-10-13T03:00:00Z, `source=policy`, no override |
+| Idempotent replay (same key and body, via the capability) | `applied`, `replayed: true`, same quote (`201`, `Idempotent-Replay`) |
+| Reconcile by key | `applied`, same quote (lookup → get quote → get operation → document) |
+| Document | `verified`: 31 839 bytes, SHA-256 `add836bee1e75c0d1a33b454ecb8416882409f866cd024d56aa866fafa74e874` |
+| Frozen request (R4 canonical JSON of the body) | SHA-256 `1a157e721cfbb4b2846505466bf07013b57e34a5388ce27be739dc8868b16fb2` |
+| Owner calls | 9: 2× `createAndIssue` (201, 201 replayed), 3× `getDocument`, 2× `lookupIdempotency`, 1× `getQuote`, 1× `getOperation`. All `ok`, 156–356 ms |
+
+**Persistence (throwaway R4 database, read before removal)**
+
+| Table | Rows |
+|---|---:|
+| `sales.quote_v2_requests` | 1 |
+| `sales.quote_v2_sends` | 2 (first send and replay) |
+| `sales.quote_v2_acceptances` | 1 |
+| `sales.quote_v2_issued` | 1 (`verified`) |
+
+**Independent checks against the deployed owner (no quote issued)**
+
+| Probe | Result |
+|---|---|
+| `GET /v2/quotes/{id}` | `issued`, version 2, `PC-000003`, totals as above, `createdByPrincipalId=r4-sales-integration`, correlation `r4-sales` / `r4-task`, 2 lines, shipping present |
+| PDF downloaded again and hashed locally | `200 application/pdf`, starts with `%PDF-`, 31 839 bytes. SHA-256 equals the owner manifest, `X-Document-Sha256` and R4's `sales.quote_v2_issued` record |
+| Lookup of the run's key | `bound`, same quote, `quoteStatus=issued` |
+| Exact frozen body re-sent with the run's key (raw HTTP) | `201`, `Idempotent-Replay: true`, same quote |
+| Run's key with a different body | `409 idempotency_key_conflict` |
+| Fresh key, `expectedTotals.gross + 1` | `422 arithmetic_mismatch`. The key stays `not_found` |
+| Fresh key, person without `displayName` | `422 validation_error`. The key stays `not_found` |
+| No token, and a random 256-bit token (read and create) | `401 unauthenticated` ×3. The create key stays `not_found` |
+| R4 principal on routes outside its scopes | `403 forbidden` with `requiredScope`: `quotes:draft:write` (drafts), `quotes:cancel`, `quotes:audit:read`, `quotes:delivery:email`, `service:health:dependencies` |
+| Quote after all probes | still `issued`, version 2 (unchanged) |
+
+Owner database, read-only (`begin read only` via `docker exec … psql` on the Quote Postgres, `quote_service` schema):
+
+- `r4-sales-integration`: **1 issued quote, 1 idempotency binding**, so there was zero duplicate issuance.
+- `quote-g1-synthetic` data is unchanged: 1 draft, 2 issued, 4 bindings.
+
+Notes:
+
+- **Fingerprint.** The owner's `requestFingerprint` (shown by the lookup) is SHA-256 over JCS of `{operation, pathParameters, body}`. R4's `request_sha256` hashes the body alone, so the two values differ **by definition**; they are not compared. EC2 proves request identity functionally instead:
+  - the exact frozen body replays (201, same quote);
+  - a different body conflicts (409).
+
+  The envelope parity of R4's fixture with the owner is the LOCAL-OWNER and OFFLINE evidence (§K).
+- **Probe redo.** The first probe pass parsed the owner's error envelope (`{error:{code}}`) and quote body incorrectly, so it recorded HTTP statuses without codes. The statuses agreed with the table above. The probes were re-run, without issuing anything, with correct parsing. The results above come from the second pass.
+- **Not exercised on EC2:**
+  - a `202` (issuance finished in about 360 ms);
+  - lost response, timeout and owner-unavailable paths (OFFLINE only);
+  - cross-principal visibility;
+  - the governed agent path.
+- **Secrets.** The token appeared 0 times in the runner and probe outputs (checked by exact match), and the throwaway database password appeared 0 times. No credential is in Git, a log or this report. The raw idempotency key is not reported.
 
 **LOCAL-OWNER (not EC2):**
 
@@ -297,33 +389,46 @@ Known non-J3B results:
 - Not exercised against the real owner: a 202 (issuance finished inside the 5 s budget) and 403.
 - All containers and the throwaway databases were removed afterwards.
 
-**Prepared EC2 procedure** (each step needs the authorization named):
+**EC2 procedure:**
 
-1. *(Authorization: R4 principal provisioning.)* On the host, use the owner's rotation mechanism (`npm run principals:token`) to create principal `r4-sales-integration` with exactly the three scopes. Put only the hash in `principals.json` and reload with `kill -HUP`. No container restart. Store the token in R4's secret store.
-2. Check connectivity and authentication: `curl -s http://127.0.0.1:4020/health/ready`, then the runner's authenticated lookup.
-3. Run the runner from an isolated shell, not PM2, with a throwaway database:
+1. Provision the principal: done in J3C (§O.1).
+2. Check connectivity and authentication: done in J3C.
+3. Run the runner with a throwaway database: done in J3C. It ran locally through a tunnel, not on the host and not under PM2:
 
    ```
-   R4_QUOTE_MODE=real R4_QUOTE_BASE_URL=http://127.0.0.1:4020 R4_QUOTE_BEARER_TOKEN=<secret store> R4_QUOTE_TIMEOUT_MS=20000 R4_QUOTE_E2E_DATABASE_URL=<throwaway db> npm run sales:quote-v2:e2e
+   R4_QUOTE_MODE=real R4_QUOTE_BASE_URL=http://127.0.0.1:4020 R4_QUOTE_BEARER_TOKEN=<from host, over SSH, env only> R4_QUOTE_TIMEOUT_MS=20000 R4_QUOTE_E2E_DATABASE_URL=<throwaway db> npm run sales:quote-v2:e2e
    ```
 
-   It refuses a database that holds an R4 platform schema. It uses synthetic products and a synthetic guest, and makes no model, channel, rollout, Meta or PM2 change.
-4. Record the JSON evidence in this report. Leave `sales-production@4` undeployed until separate authorization.
+4. Record the evidence: done (§O.1).
+
+`sales-production@4` stays undeployed until separate authorization.
 
 ## P. Credential isolation
 
 - The token comes from `R4_QUOTE_BEARER_TOKEN` only, validated as at least 32 printable characters. It is never in a URL (URL credentials are refused), never in `describeQuoteHttpConfig`, plan output, telemetry or test output (checked).
-- R4 needs only its own principal with three scopes. It never uses the G1 test tokens, never asks for `read:any`, `quotes:validity:override` or `quotes:delivery:email`, and never accesses the Quote database or volumes.
+- R4 needs only its own principal with three scopes. It never uses the G1 test tokens, never asks for `read:any`, `quotes:validity:override` or `quotes:delivery:email`, and never accesses the Quote database or volumes. (The J3C operator check on the owner database was a read-only `psql` session over `docker exec`, not R4 code.)
+- J3C: the `r4-sales-integration` token exists only in `~/.config/quote-v2-integration/token-r4-sales-integration` on EC2 (0600, next to the G1 tokens). The registry holds only its hash. No copy exists on the workstation or in Git. It is to be moved into R4's secret store, or rotated, when `sales-production@4` deployment is authorized. If this principal is not wanted until then, revoke it by removing its hash and sending HUP.
 
 ## Q. Existing service impact
 
-- No EC2 command, no PM2 restart, no rollout, allowlist or Meta change, no WhatsApp routing change, no CRM-Customer-360 change, no Quote source change, migration or deployment. No EBS or Docker change on EC2.
+- J3B: no EC2 command.
+- J3C on EC2, all authorized:
+  - one registry entry added;
+  - one HUP to the Quote container (no restart);
+  - one synthetic quote `PC-000003` (`r4-sales-integration`);
+  - read-only checks.
+- Unchanged:
+  - Quote source, image, compose, migrations, database schema, and the existing principals;
+  - R4's PM2 processes (`r4-channel-gateway`, `r4-sales-worker`, `r4-scheduler`: same uptime start, no restart), R4's EC2 database (no `0007`) and R4's checkout;
+  - rollout, allowlist, Meta and WhatsApp routing;
+  - CRM-Customer-360, Catalog, Shipping and Customer Profile.
+- Not done: no Gmail activation, no WhatsApp message, no EBS change, no Docker prune, no push, no merge.
 - Deployed profiles v1–v3 keep their frozen fingerprints, and v3 still runs Sales definition v4.
 - **Deployment note:** once this code is deployed (even under v3), `production:sales:bootstrap` and `production:sales:control` refuse with `schema_not_current` until `npm run sales:migrate` applies `0007_sales_quote_v2_issuance`. Run it before any restart that picks up this code.
 
 ## R. Remaining limitations
 
-1. **EC2 synthetic E2E not run**: it needs authorization for R4 principal provisioning (§O).
+1. **No governed agent execution.** The EC2-SERVICE run (J3C, PASS) exercised the capability and adapter, not a model turn through policy, approval and `ActionExecutor` in a deployed worker. That needs `sales-production@4` deployed (and `0007` applied to R4's EC2 database), which is not authorized. Also not exercised on EC2: a 202 issuance, timeout and lost-response paths, owner outage, and production Catalog and Shipping evidence. These are OFFLINE only.
 2. **Shipping selection is carried by the approved proposal**, not persisted in the workspace (the J2 port and workspace have no "selected offer" operation). The approver and a fresh owner re-quote guard it. A workspace selection operation would be a separate, bounded J2/workspace change.
 3. **The model must compute `expectedTotals`.** A wrong value fails closed after approval, which wastes that approval. The generic gateway has **no pre-approval validation hook**. That is the precise missing extension point, and adding it is a harness change and was not made. A Sales-only READ "quote preview" capability (no harness change) is the recommended follow-up.
 4. Descriptive fields (description, SKU, attributes, provenance `asOf`) are resolved from Catalog for the approved item keys at first execution and frozen. They are not shown to the approver; any commercial difference fails closed.
@@ -334,7 +439,18 @@ Known non-J3B results:
 
 ## S. R4-J3 readiness decision
 
-The implementation is complete at source and offline level, and was validated against the real Quote V2 owner locally. The EC2 step is pending authorization. **Not ready for customer rollout.** Next gates: authorize R4 principal provisioning and the EC2 synthetic run, then owner review and commit, then a separate decision to deploy `sales-production@4`.
+Status by level:
+
+- The implementation is complete at source and offline level (J3B, `ee199a9`).
+- It was validated against the real owner locally (LOCAL-OWNER).
+- It was validated against the **deployed** Quote V2 on EC2 with R4's own principal (J3C, **PASS**). Issuance, totals, idempotency, reconciliation, persistence, PDF SHA-256 and the authorization and conflict probes all behaved as specified, with zero duplicate issuance.
+
+**J3C accepted (EC2-SERVICE). Not ready for customer rollout.** Next gates:
+
+1. Owner review, then push and merge.
+2. A separate authorization to apply `0007` to R4's EC2 database and deploy `sales-production@4`.
+3. A governed-agent synthetic run: a model turn, approval, then issuance.
+4. A rollout decision.
 
 ```
 R4_HARNESS_MODIFIED=NO
@@ -346,10 +462,16 @@ R4_COMMERCIAL_SNAPSHOT_VALIDATED=YES
 R4_QUOTE_APPROVAL_ENFORCED=YES
 R4_IDEMPOTENCY_RECONCILIATION=PASS
 R4_QUOTE_CONTRACT_TESTS=PASS
-R4_EC2_SYNTHETIC_E2E=NOT_RUN
+R4_EC2_SYNTHETIC_E2E=PASS
+R4_EC2_GOVERNED_AGENT_RUN=NOT_RUN
+R4_SALES_PRODUCTION_V4_DEPLOYED=NO
+R4_EC2_MIGRATION_0007_APPLIED=NO
+R4_PM2_RESTARTED=NO
 R4_PRODUCTION_WHATSAPP_UNCHANGED=YES
-QUOTE_SERVICE_UNMODIFIED=YES
+QUOTE_SERVICE_CODE_UNMODIFIED=YES
+QUOTE_PRINCIPAL_REGISTRY_MODIFIED=YES (authorized: +r4-sales-integration, 3 scopes; existing principals unchanged)
 GMAIL_PROVIDER_UNCHANGED=YES
-R4_J3B_IMPLEMENTATION_STATUS=PARTIAL
+R4_J3B_IMPLEMENTATION_STATUS=COMPLETE
+R4_J3C_STATUS=PASS
 R4_J3_READY_FOR_CUSTOMER_ROLLOUT=NO
 ```
