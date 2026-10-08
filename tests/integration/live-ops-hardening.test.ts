@@ -282,13 +282,10 @@ describe('privacy and secrets', () => {
   it('no secret, raw payload or profile name is ever persisted; the address lives only on the binding', async () => {
     await withPendingResponse();
     await bed!.deliver();
-    const dump = JSON.stringify(await bed!.rows(`select table_name from information_schema.tables where table_schema in ('public', 'sales')`));
-    const tables = (JSON.parse(dump) as { table_name: string }[]).map((t) => t.table_name);
+    const located = await bed!.rows<{ table_schema: string; table_name: string }>(`select table_schema, table_name from information_schema.tables where table_schema in ('public', 'sales')`);
+    const tables = located.map((t) => t.table_name);
     const everything: string[] = [];
-    for (const t of tables) {
-      const schema = ['conversations', 'workspaces', 'workspace_transitions', 'quote_requests', 'quote_references'].includes(t) ? 'sales' : 'public';
-      everything.push(JSON.stringify(await bed!.rows(`select * from ${schema}.${t}`)));
-    }
+    for (const t of located) everything.push(JSON.stringify(await bed!.rows(`select * from ${t.table_schema}.${t.table_name}`)));
     const all = everything.join('\n');
     for (const secret of [APP_SECRET, ACCESS_TOKEN, VERIFY_TOKEN, IDENTITY_KEY, 'Bearer ']) expect(all).not.toContain(secret);
     expect(all).not.toContain('Test Contact');

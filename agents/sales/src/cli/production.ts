@@ -18,11 +18,12 @@ import {
 import { loadWorkerConfig, runWorkerProcess } from '@r4/worker';
 import { HttpCatalogAdapter, describeCatalogHttpConfig, loadCatalogHttpConfig, type CatalogFetch } from '@r4-adapters/catalog-http';
 import { ProductionShippingAdapter, loadShippingHttpConfig, type ShippingFetch } from '@r4-adapters/shipping-http';
+import { QuoteV2HttpClient, describeQuoteHttpConfig, loadQuoteHttpConfig, quoteModeOf, type QuoteFetch } from '@r4-adapters/quote-http';
 import { describeWhatsAppConfig, loadWhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
 import { adminDatabaseUrl } from '../harness/database.js';
 import { configuredModelProvider } from '../model.js';
 import { composeSalesGateway, composeSalesProductionWorker, selectedSalesProductionProfile } from '../production/composition.js';
-import { salesProductionAgentVersion } from '../production/profile-v3.js';
+import { salesProductionAgentVersion } from '../production/profile-v4.js';
 import { salesShippingPlan } from '../production/shipping-plan.js';
 import { SALES_DOMAINS, SALES_PRODUCTION_PROFILE } from '../production/profile.js';
 import { SALES_PRODUCTION_PROCESSES, schedulerConfigurationStatus } from '../production/topology.js';
@@ -110,12 +111,25 @@ function productionShipping(production: ReturnType<typeof loadProductionConfig>,
   return new ProductionShippingAdapter({ config, fetch: shippingFetch, ...(logger ? { onEvent: (event) => logger.info({ event: `shipping.${event.kind}`, ...event }, 'shipping call') } : {}) });
 }
 
+const quoteFetch: QuoteFetch = (url, init) => fetch(url, init);
+
+/**
+ * The Quote V2 binding when the selected profile makes Quote REAL (v4); undefined under v1–v3.
+ * Fails closed on an incomplete R4_QUOTE_* configuration. Nothing is called here; the token is never logged.
+ */
+function productionQuotes(production: ReturnType<typeof loadProductionConfig>, logger?: ReturnType<typeof createLogger>): QuoteV2HttpClient | undefined {
+  if (selectedSalesProductionProfile(production.config).domains[SALES_DOMAINS.quote]?.status !== 'REAL') return undefined;
+  const config = loadQuoteHttpConfig(process.env, { allowNetwork: production.config.allowNetwork });
+  return new QuoteV2HttpClient({ config, fetch: quoteFetch, ...(logger ? { onCall: (event) => logger.info({ event: 'quote.call', ...event }, 'quote call') } : {}) });
+}
+
 function composition() {
   const noStore = { readControls: () => Promise.reject(new Error('plan only')) } as never;
   const production = loadProductionConfig(process.env);
   const catalog = productionCatalog(production);
   const shipping = productionShipping(production);
-  return composeSalesProductionWorker({ pool: { query: () => Promise.reject(new Error('plan only')) } as never, store: noStore, production, modelProvider: { providerId: 'plan', invoke: () => Promise.reject(new Error('plan only')) }, logger: createLogger({ service: 'plan', level: 'silent' }), ...(catalog ? { catalog } : {}), ...(shipping ? { shipping } : {}) });
+  const quotes = productionQuotes(production);
+  return composeSalesProductionWorker({ pool: { query: () => Promise.reject(new Error('plan only')) } as never, store: noStore, production, modelProvider: { providerId: 'plan', invoke: () => Promise.reject(new Error('plan only')) }, logger: createLogger({ service: 'plan', level: 'silent' }), ...(catalog ? { catalog } : {}), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}) });
 }
 
 async function plan(production: ReturnType<typeof loadProductionConfig>): Promise<void> {
@@ -137,6 +151,16 @@ async function plan(production: ReturnType<typeof loadProductionConfig>): Promis
   })();
   // Shipping is composed only when the profile makes it REAL (sales-production@3); nothing is probed here.
   const shipping = salesShippingPlan(selectedSalesProductionProfile(production.config), process.env, { allowNetwork: production.config.allowNetwork });
+  // Quote is composed only when the profile makes it REAL (sales-production@4); nothing is probed here.
+  const quote = (() => {
+    const gate = selectedSalesProductionProfile(production.config).domains[SALES_DOMAINS.quote]?.status === 'REAL' ? 'REAL: Quote Service V2 over HTTP (quote.create@2, approval required)' : 'UNAVAILABLE in this profile (not composed)';
+    try {
+      if (quoteModeOf(process.env) !== 'real') return { binding: gate, configuration: 'not configured (R4_QUOTE_MODE unset)' };
+      return { profile: gate, ...describeQuoteHttpConfig(loadQuoteHttpConfig(process.env, { allowNetwork: production.config.allowNetwork })) };
+    } catch (error) {
+      return { binding: gate, configuration: `not usable: ${error instanceof Error ? error.message : String(error)}` };
+    }
+  })();
   const model = configuredModelProvider(process.env);
   const recipient = process.env.R4_PROD_SMOKE_RECIPIENT;
   const recipientKey = recipient && process.env.R4_WHATSAPP_PHONE_NUMBER_ID ? conversationKey(production.secrets.identityHashKey, 'whatsapp', process.env.R4_WHATSAPP_PHONE_NUMBER_ID, recipient) : null;
@@ -175,6 +199,7 @@ async function plan(production: ReturnType<typeof loadProductionConfig>): Promis
     channel: whatsapp,
     catalog,
     shipping,
+    quote,
     recipient: recipientKey ? { conversationKey: `${recipientKey.slice(0, 12)}…`, eligibility: rolloutEligibility(production.config.rollout, recipientKey) } : 'R4_PROD_SMOKE_RECIPIENT not set',
     rollout: { percent: production.config.rollout.percent, allowlisted: production.config.rollout.allowlist.length, denylisted: production.config.rollout.denylist.length, fingerprint: rolloutFingerprint(production.config.rollout) },
     killSwitch,
@@ -204,7 +229,8 @@ async function worker(production: ReturnType<typeof loadProductionConfig>): Prom
   const pool = createPool({ connectionString: config.databaseUrl, logger, applicationName: 'r4-worker-bindings', max: 2 });
   const catalog = productionCatalog(production, logger);
   const shipping = productionShipping(production, logger);
-  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...(catalog ? { catalog } : {}), ...(shipping ? { shipping } : {}) });
+  const quotes = productionQuotes(production, logger);
+  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...(catalog ? { catalog } : {}), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}) });
   logger.info({ event: 'service.composed', profile: composed.report.profile, profileFingerprint: composed.report.profileFingerprint }, 'production worker composed');
   await runWorkerProcess(config, composed.bindings, { logger });
 }

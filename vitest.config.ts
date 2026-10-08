@@ -32,6 +32,8 @@ const alias = {
   '@r4-adapters/catalog-http': src('./adapters/domains/catalog/http/src/index.ts'),
   // R4-J2B: production Shipping adapter over pc-carrier (outside Core; not bound in production).
   '@r4-adapters/shipping-http': src('./adapters/domains/shipping/http/src/index.ts'),
+  // R4-J3B: Quote V2 HTTP adapter (outside Core; bound only by sales-production@4).
+  '@r4-adapters/quote-http': src('./adapters/domains/quote/http/src/index.ts'),
   '@r4-adapters/openai-compatible': src('./adapters/models/openai-compatible/src/index.ts'),
   // R4-I: channel adapter (outside Core). The testing entry (local fake provider) is listed first: aliases match by prefix.
   '@r4-adapters/whatsapp-cloud/testing': src('./adapters/channels/whatsapp-cloud/src/testing.ts'),

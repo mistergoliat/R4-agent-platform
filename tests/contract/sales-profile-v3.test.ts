@@ -132,10 +132,10 @@ describe('B. profile isolation', () => {
     expect(v3.capabilities.find((c) => c.capabilityId === CAPABILITY_IDS.quoteCreate)).toMatchObject({ effect: 'write', decision: 'REQUIRE_APPROVAL' });
   });
 
-  it('every profile pins its Sales definition: v1/v2 run v3, v3 runs v4 (never "latest")', () => {
-    expect(SALES_PRODUCTION_PROFILES.map(profileLabel)).toEqual(['sales-production@1', 'sales-production@2', 'sales-production@3']);
-    expect(SALES_PRODUCTION_AGENT_VERSIONS).toEqual({ 'sales-production@1': 3, 'sales-production@2': 3, 'sales-production@3': 4 });
-    expect(SALES_PRODUCTION_PROFILES.map(salesProductionAgentVersion)).toEqual([3, 3, 4]);
+  it('every profile pins its Sales definition: v1/v2 run v3, v3/v4 run v4 (never "latest")', () => {
+    expect(SALES_PRODUCTION_PROFILES.map(profileLabel)).toEqual(['sales-production@1', 'sales-production@2', 'sales-production@3', 'sales-production@4']);
+    expect(SALES_PRODUCTION_AGENT_VERSIONS).toEqual({ 'sales-production@1': 3, 'sales-production@2': 3, 'sales-production@3': 4, 'sales-production@4': 4 });
+    expect(SALES_PRODUCTION_PROFILES.map(salesProductionAgentVersion)).toEqual([3, 3, 4, 4]);
     const pool = {} as never;
     expect(salesConversationTaskFactory(pool, 3).request({ bindingId: 'b1', channel: 'whatsapp' })).toMatchObject({ agentId: 'sales', agentVersion: 3 });
     expect(salesConversationTaskFactory(pool, 4).request({ bindingId: 'b1', channel: 'whatsapp' })).toMatchObject({ agentId: 'sales', agentVersion: 4 });

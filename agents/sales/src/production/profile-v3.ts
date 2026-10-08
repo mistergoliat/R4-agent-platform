@@ -1,8 +1,7 @@
-import { profileLabel, type ProductionProfile } from '@r4/live-ops';
+import type { ProductionProfile } from '@r4/live-ops';
 import { SHIPPING_FRESHNESS_TTL_MS } from '../capabilities/shipping.js';
-import type { SalesAgentDefinitionVersion } from '../definition.js';
 import { CAPABILITY_IDS } from '../ids.js';
-import { SALES_DOMAINS, SALES_PRODUCTION_PROFILE } from './profile.js';
+import { SALES_DOMAINS } from './profile.js';
 import { SALES_PRODUCTION_PROFILE_V2_CANDIDATE } from './profile-v2.js';
 
 /**
@@ -72,29 +71,4 @@ export const SALES_PRODUCTION_PROFILE_V3_GATE = Object.freeze([
   { id: 'explicit-authorization', blocking: true, requirement: 'explicit user authorization to deploy sales-production@3' },
 ] as const);
 
-/** The Sales production profiles a deployment may select with R4_PROD_POLICY_PROFILE. */
-export const SALES_PRODUCTION_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_PRODUCTION_PROFILE, SALES_PRODUCTION_PROFILE_V2_CANDIDATE, SALES_PRODUCTION_PROFILE_V3]);
-
-/** The Sales production profile declared by `label` (`sales-production@1|2|3`), or null. */
-export function salesProductionProfile(label: string): ProductionProfile | null {
-  return SALES_PRODUCTION_PROFILES.find((profile) => profileLabel(profile) === label) ?? null;
-}
-
-/**
- * The Sales definition version each production profile runs. Production
- * pins it: a conversation task is created for exactly this version, so
- * registering a newer definition never switches an existing profile (the
- * registry otherwise resolves the latest). Kept outside the profile objects
- * so the deployed v1/v2 fingerprints are unchanged.
- */
-export const SALES_PRODUCTION_AGENT_VERSIONS: Readonly<Record<string, SalesAgentDefinitionVersion>> = Object.freeze({
-  'sales-production@1': 3,
-  'sales-production@2': 3,
-  'sales-production@3': 4,
-});
-
-export function salesProductionAgentVersion(profile: ProductionProfile): SalesAgentDefinitionVersion {
-  const version = SALES_PRODUCTION_AGENT_VERSIONS[profileLabel(profile)];
-  if (version === undefined) throw new Error(`no Sales definition version is pinned for ${profileLabel(profile)}`);
-  return version;
-}
+// The selectable profile registry (v1–v4) and the pinned definition versions live in profile-v4.ts (R4-J3B).

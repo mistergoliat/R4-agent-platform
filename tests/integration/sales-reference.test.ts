@@ -30,7 +30,7 @@ const harnesses: SalesHarness[] = [];
 beforeAll(async () => {
   db = await createMigratedTestDatabase();
   pool = openPool(db.url);
-  expect((await migrateSales(pool)).applied).toEqual(['0006_sales_reference_application']);
+  expect((await migrateSales(pool)).applied).toEqual(['0006_sales_reference_application', '0007_sales_quote_v2_issuance']);
   expect((await migrateSales(pool)).applied).toEqual([]);
 });
 

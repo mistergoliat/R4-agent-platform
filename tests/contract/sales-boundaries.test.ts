@@ -55,13 +55,18 @@ describe('Core stays Sales-free', () => {
     const core = files(join(ROOT, 'packages/persistence-postgres/migrations'), '.sql').map((f) => readFileSync(f, 'utf8')).join('\n');
     expect(core).not.toMatch(/\bsales\b/i);
     const pack = files(join(ROOT, 'agents/sales/migrations'), '.sql');
-    expect(pack.map(rel)).toEqual(['agents/sales/migrations/0006_sales_reference_application.sql']);
+    expect(pack.map(rel)).toEqual(['agents/sales/migrations/0006_sales_reference_application.sql', 'agents/sales/migrations/0007_sales_quote_v2_issuance.sql']);
     const sql = readFileSync(pack[0]!, 'utf8');
     // Sales tables are in their own schema and never reference an R4 runtime table.
     expect(sql).not.toMatch(/references\s+(public\.)?(agent_tasks|agent_runs|observations|action_\w+|goals|memory_entries)/i);
     expect([...sql.matchAll(/create table (\S+)/g)].map((m) => m[1])).toEqual(['sales.conversations', 'sales.workspaces', 'sales.workspace_transitions', 'sales.quote_requests', 'sales.quote_references']);
     // Sales state has no column for domain truth.
     expect(sql).not.toMatch(/\b(price|unit_price|stock|total|subtotal|amount)\b\s+(integer|numeric|bigint|text)/i);
+    // R4-J3B: Quote V2 records — the frozen outbound request and owner pointers; still no domain-truth column, no runtime reference.
+    const v2 = readFileSync(pack[1]!, 'utf8');
+    expect(v2).not.toMatch(/references\s+(public\.)?(agent_tasks|agent_runs|observations|action_\w+|goals|memory_entries)/i);
+    expect([...v2.matchAll(/create table (\S+)/g)].map((m) => m[1])).toEqual(['sales.quote_v2_requests', 'sales.quote_v2_sends', 'sales.quote_v2_acceptances', 'sales.quote_v2_issued']);
+    expect(v2).not.toMatch(/\b(price|unit_price|stock|totals?|subtotal|amount)\b\s+(integer|numeric|bigint|text|jsonb)/i);
   });
 });
 
@@ -179,11 +184,13 @@ describe('domain adapters and the provider adapter stay behind their seams', () 
     // R4-I: the channel adapter depends only on the channel-neutral contracts.
     expect(manifest('adapters/channels/whatsapp-cloud')).toEqual(['@r4/live-ops']);
     const salesDeps = manifest('agents/sales');
-    expect(salesDeps.filter((d) => !/^(@r4\/(contracts|observability|model-gateway|capability-runtime|context-compiler|policy-engine|persistence-postgres|agent-kernel|api|worker|evaluation|evaluator|scheduler|shadow|live-ops|channel-gateway)|@r4-adapters\/(domains|catalog-http|shipping-http|openai-compatible|whatsapp-cloud)|pg|pino|zod)$/.test(d))).toEqual([]);
+    expect(salesDeps.filter((d) => !/^(@r4\/(contracts|observability|model-gateway|capability-runtime|context-compiler|policy-engine|persistence-postgres|agent-kernel|api|worker|evaluation|evaluator|scheduler|shadow|live-ops|channel-gateway)|@r4-adapters\/(domains|catalog-http|shipping-http|quote-http|openai-compatible|whatsapp-cloud)|pg|pino|zod)$/.test(d))).toEqual([]);
     // R4-J1B: the Catalog HTTP adapter depends only on the domain ports and zod — nothing from R4 Core.
     expect(manifest('adapters/domains/catalog/http')).toEqual(['@r4-adapters/domains', 'zod']);
     // R4-J2B: the Shipping HTTP adapter likewise depends only on the domain ports and zod.
     expect(manifest('adapters/domains/shipping/http')).toEqual(['@r4-adapters/domains', 'zod']);
+    // R4-J3B: the Quote V2 HTTP adapter likewise depends only on the domain ports and zod.
+    expect(manifest('adapters/domains/quote/http')).toEqual(['@r4-adapters/domains', 'zod']);
     expect(salesDeps).not.toContain('@r4/task-runtime');
   });
 });

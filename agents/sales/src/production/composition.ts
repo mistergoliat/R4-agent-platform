@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import type { Logger } from 'pino';
-import { DomainError, type CatalogPort, type ShippingService } from '@r4-adapters/domains';
+import { DomainError, type CatalogPort, type QuoteV2Service, type ShippingService } from '@r4-adapters/domains';
 import { WhatsAppInboundAdapter, WhatsAppOutboundAdapter, describeWhatsAppConfig, loadWhatsAppCloudConfig, type FetchLike, type WhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
 import { CapabilityRegistry } from '@r4/capability-runtime';
 import { systemClock, type Clock, type Principal } from '@r4/contracts';
@@ -27,9 +27,10 @@ import { SALES_ROOT_GOAL } from '../goal.js';
 import { SalesWorkspaceContextSource } from '../workspace/context-source.js';
 import { PostgresSalesStore } from '../workspace/store.js';
 import { SALES_DOMAINS, SALES_PRODUCTION_ACTION_POLICY } from './profile.js';
-import { SALES_PRODUCTION_PROFILES, salesProductionAgentVersion, salesProductionProfile } from './profile-v3.js';
+import { SALES_PRODUCTION_PROFILES, salesProductionAgentVersion, salesProductionProfile } from './profile-v4.js';
 import { catalogCapabilities } from '../capabilities/catalog.js';
 import { shippingCapability } from '../capabilities/shipping.js';
+import { quoteCreateV2Capability } from '../capabilities/quote-v2.js';
 
 /** Who opens production Sales conversations: the channel ingress (a platform service, never the model). */
 export const SALES_CHANNEL_INGRESS: Principal = { kind: 'service', ref: 'sales-channel-ingress' };
@@ -64,6 +65,8 @@ export interface SalesProductionWorkerOptions {
   readonly catalog?: CatalogPort & { readonly bindingKind: string };
   /** The pc-carrier binding (ProductionShippingAdapter); required when the selected profile makes Shipping REAL (v3). */
   readonly shipping?: ShippingService & { readonly bindingKind: string };
+  /** The Quote V2 binding (QuoteV2HttpClient); required when the selected profile makes Quote REAL (v4). */
+  readonly quotes?: QuoteV2Service & { readonly bindingKind: string };
 }
 
 /** The Sales production profile the deployment declared, or a refusal (nothing is defaulted). */
@@ -123,13 +126,24 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
     if (!catalogReal) throw new Error(`refusing production composition: ${profileLabel(profile)} binds Shipping REAL without a REAL Catalog (the order basis reads Catalog)`);
     if (capabilityAvailability(profile, CAPABILITY_IDS.shippingQuote).available) capabilities.register(shippingCapability(options.shipping, catalog));
   }
-  // Customer / Quote (and Catalog under v1, Shipping under v1/v2) are UNAVAILABLE: their capabilities are deliberately not registered.
+  // Quote is bound only when the profile makes it REAL (v4): the Quote V2 HTTP adapter, never a fixture.
+  // quote.create@2 verifies the approved snapshot against Catalog and Shipping, so both must be REAL too.
+  const quoteReal = profile.domains[SALES_DOMAINS.quote]?.status === 'REAL';
+  if (quoteReal) {
+    if (!options.quotes || options.quotes.bindingKind !== 'http') {
+      throw new Error(`refusing production composition: ${profileLabel(profile)} binds Quote REAL but no Quote V2 binding was provided (R4_QUOTE_*)`);
+    }
+    if (!catalogReal || !shippingReal || !options.shipping) throw new Error(`refusing production composition: ${profileLabel(profile)} binds Quote REAL without REAL Catalog and Shipping (the commercial snapshot is verified against both)`);
+    if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV2Capability({ store: sales, quotes: options.quotes, catalog, shipping: options.shipping, now: () => clock.now() }));
+  }
+  // Customer (and Catalog under v1, Shipping under v1/v2, Quote under v1–v3) are UNAVAILABLE: their capabilities are deliberately not registered.
   const report = assertProductionComposition(
     profile,
     [
       { domain: SALES_DOMAINS.workspace, bindingKind: 'internal' },
       { domain: SALES_DOMAINS.catalog, bindingKind: catalogReal ? 'real' : UNAVAILABLE_CATALOG.bindingKind },
       ...(shippingReal ? [{ domain: SALES_DOMAINS.shipping, bindingKind: 'real' as const }] : []),
+      ...(quoteReal ? [{ domain: SALES_DOMAINS.quote, bindingKind: 'real' as const }] : []),
     ],
     capabilities.list().map((c) => c.capabilityId),
   );
