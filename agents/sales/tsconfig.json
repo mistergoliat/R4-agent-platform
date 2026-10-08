@@ -61,6 +61,9 @@
       "path": "../../adapters/domains/shipping/http"
     },
     {
+      "path": "../../adapters/domains/quote/http"
+    },
+    {
       "path": "../../adapters/models/openai-compatible"
     },
     {

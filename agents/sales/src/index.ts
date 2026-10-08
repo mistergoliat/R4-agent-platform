@@ -14,6 +14,7 @@ export * from './capabilities/shipping.js';
 export * from './capabilities/shipping-basis.js';
 export * from './capabilities/workspace.js';
 export * from './capabilities/quote.js';
+export * from './capabilities/quote-v2.js';
 export * from './harness/runtime.js';
 export * from './harness/report.js';
 export * from './harness/invariants.js';

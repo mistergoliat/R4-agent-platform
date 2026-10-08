@@ -13,6 +13,7 @@
     "adapters/domains",
     "adapters/domains/catalog/http",
     "adapters/domains/shipping/http",
+    "adapters/domains/quote/http",
     "adapters/models/*",
     "adapters/channels/*",
     "agents/sales"
@@ -39,6 +40,7 @@
     "test:sales": "vitest run --project sales",
     "sales:migrate": "node agents/sales/dist/cli/migrate.js",
     "sales:e2e": "node agents/sales/dist/cli/e2e.js",
+    "sales:quote-v2:e2e": "node agents/sales/dist/cli/quote-v2-e2e.js",
     "sales:live": "node agents/sales/dist/cli/live.js",
     "eval:sales": "node agents/sales/dist/cli/eval.js",
     "eval:sales:live": "node agents/sales/dist/cli/eval.js --live",

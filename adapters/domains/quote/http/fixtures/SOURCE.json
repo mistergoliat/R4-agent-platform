@@ -1,0 +1,8 @@
+{
+  "owner": "MS-pesaschile-quote-service",
+  "contract": "docs/v2/openapi.yaml (OpenAPI 2.0.0, frozen R1.2)",
+  "openapiSha256": "88b6b4b23ea9c31fde3698de45f064c6159f92f8c6506cd1d209dee2812c20d5",
+  "ownerCommit": "686a0f6cdc4a5a5b3211405a52f6b727fad42dd6",
+  "deployedRelease": "6735352 (EC2 integration, R1.7B-G1 §W)",
+  "copiedFrom": "docs/v2/examples/*.json, verbatim (R4-J3B). Read-only contract evidence: never edited in R4."
+}

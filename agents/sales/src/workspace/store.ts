@@ -1,4 +1,5 @@
 import type pg from 'pg';
+import type { QuoteV2CreateRequest } from '@r4-adapters/domains';
 import { applyOperations, emptyWorkspace, type Workspace, type WorkspaceApplication, type WorkspaceChange, type WorkspaceState, type WorkspaceUpdateInput } from './model.js';
 
 /** Who a conversation acts for, as the Sales ingress established it. */
@@ -43,6 +44,31 @@ export interface QuoteReference {
   readonly quoteId: string;
   readonly quoteNumber: string;
   readonly basedOnWorkspaceVersion: number;
+  readonly recordedAt: string;
+}
+
+/** The frozen Quote V2 body R4 sends for one execution key (0007). */
+export interface QuoteV2RequestRecord {
+  readonly executionKey: string;
+  readonly taskId: string;
+  readonly workspaceVersion: number;
+  readonly request: QuoteV2CreateRequest;
+  readonly requestSha256: string;
+  readonly recordedAt: string;
+}
+
+/** A formally issued Quote V2 quote as the owner reported it, with R4's document verification. */
+export interface QuoteV2IssuedRecord {
+  readonly executionKey: string;
+  readonly taskId: string;
+  readonly quoteId: string;
+  readonly quoteNumber: string;
+  readonly issuedAt: string;
+  readonly validThroughLocalDate: string;
+  readonly validUntilExclusive: string;
+  readonly pdfSha256: string;
+  readonly byteLength: number;
+  readonly documentVerification: 'verified' | 'unavailable' | 'mismatch';
   readonly recordedAt: string;
 }
 
@@ -188,6 +214,80 @@ export class PostgresSalesStore {
       [taskId],
     );
     return r.rows.map((row) => ({ executionKey: row.execution_key, taskId: row.task_id, quoteId: row.quote_id, quoteNumber: row.quote_number, basedOnWorkspaceVersion: row.workspace_version, recordedAt: row.recorded_at.toISOString() }));
+  }
+
+  /**
+   * Freezes the Quote V2 request body for this execution key, once (0007): a
+   * later call returns the first record unchanged, so every retry and
+   * reconciliation sends exactly the same body.
+   */
+  async recordQuoteV2Request(request: Omit<QuoteV2RequestRecord, 'recordedAt'>): Promise<QuoteV2RequestRecord> {
+    await this.#pool.query(
+      `insert into sales.quote_v2_requests (execution_key, task_id, workspace_version, request, request_sha256) values ($1, $2, $3, $4, $5)
+       on conflict (execution_key) do nothing`,
+      [request.executionKey, request.taskId, request.workspaceVersion, JSON.stringify(request.request), request.requestSha256],
+    );
+    const stored = await this.quoteV2Request(request.executionKey);
+    if (!stored) throw new Error(`quote v2 request ${request.executionKey} was not recorded`);
+    return stored;
+  }
+
+  async quoteV2Request(executionKey: string): Promise<QuoteV2RequestRecord | null> {
+    const r = await this.#pool.query<{ execution_key: string; task_id: string; workspace_version: number; request: QuoteV2CreateRequest; request_sha256: string; recorded_at: Date }>('select * from sales.quote_v2_requests where execution_key = $1', [executionKey]);
+    const row = r.rows[0];
+    return row ? { executionKey: row.execution_key, taskId: row.task_id, workspaceVersion: row.workspace_version, request: row.request, requestSha256: row.request_sha256, recordedAt: row.recorded_at.toISOString() } : null;
+  }
+
+  /** Logged before every POST of the frozen body. */
+  async recordQuoteV2Send(executionKey: string): Promise<void> {
+    await this.#pool.query('insert into sales.quote_v2_sends (execution_key) values ($1) on conflict do nothing', [executionKey]);
+  }
+
+  /** Milliseconds since the latest POST of this key started (database clock), or null when it was never sent. */
+  async quoteV2SendAgeMs(executionKey: string): Promise<number | null> {
+    const r = await this.#pool.query<{ age_ms: string | null }>('select (extract(epoch from (clock_timestamp() - max(sent_at))) * 1000)::bigint as age_ms from sales.quote_v2_sends where execution_key = $1', [executionKey]);
+    const age = r.rows[0]?.age_ms;
+    return age === null || age === undefined ? null : Number(age);
+  }
+
+  /** Idempotent per execution key; only ever called with the Quote owner's own answer. */
+  async recordQuoteV2Acceptance(acceptance: { executionKey: string; taskId: string; quoteId: string; quoteNumber: string; operationId: string }): Promise<void> {
+    await this.#pool.query(
+      `insert into sales.quote_v2_acceptances (execution_key, task_id, quote_id, quote_number, operation_id) values ($1, $2, $3, $4, $5)
+       on conflict (execution_key) do nothing`,
+      [acceptance.executionKey, acceptance.taskId, acceptance.quoteId, acceptance.quoteNumber, acceptance.operationId],
+    );
+  }
+
+  /** Idempotent per execution key: the first verified record stands (a later read never rewrites it). */
+  async recordQuoteV2Issued(issued: Omit<QuoteV2IssuedRecord, 'recordedAt'>): Promise<QuoteV2IssuedRecord> {
+    await this.#pool.query(
+      `insert into sales.quote_v2_issued (execution_key, task_id, quote_id, quote_number, issued_at, valid_through_local_date, valid_until_exclusive, pdf_sha256, byte_length, document_verification)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) on conflict (execution_key) do nothing`,
+      [issued.executionKey, issued.taskId, issued.quoteId, issued.quoteNumber, issued.issuedAt, issued.validThroughLocalDate, issued.validUntilExclusive, issued.pdfSha256, issued.byteLength, issued.documentVerification],
+    );
+    return (await this.quoteV2Issued(issued.taskId)).find((q) => q.executionKey === issued.executionKey)!;
+  }
+
+  async quoteV2Issued(taskId: string): Promise<QuoteV2IssuedRecord[]> {
+    const r = await this.#pool.query<{ execution_key: string; task_id: string; quote_id: string; quote_number: string; issued_at: Date; valid_through_local_date: string; valid_until_exclusive: Date; pdf_sha256: string; byte_length: number; document_verification: QuoteV2IssuedRecord['documentVerification']; recorded_at: Date }>(
+      `select execution_key, task_id, quote_id, quote_number, issued_at, to_char(valid_through_local_date, 'YYYY-MM-DD') as valid_through_local_date, valid_until_exclusive, pdf_sha256, byte_length, document_verification, recorded_at
+         from sales.quote_v2_issued where task_id = $1 order by recorded_at, execution_key`,
+      [taskId],
+    );
+    return r.rows.map((row) => ({
+      executionKey: row.execution_key,
+      taskId: row.task_id,
+      quoteId: row.quote_id,
+      quoteNumber: row.quote_number,
+      issuedAt: row.issued_at.toISOString(),
+      validThroughLocalDate: row.valid_through_local_date,
+      validUntilExclusive: row.valid_until_exclusive.toISOString(),
+      pdfSha256: row.pdf_sha256,
+      byteLength: row.byte_length,
+      documentVerification: row.document_verification,
+      recordedAt: row.recorded_at.toISOString(),
+    }));
   }
 
   async #transition(client: pg.Pool | pg.PoolClient, executionKey: string): Promise<WorkspaceTransition | null> {
