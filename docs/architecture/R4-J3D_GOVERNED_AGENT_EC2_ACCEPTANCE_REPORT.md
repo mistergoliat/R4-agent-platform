@@ -2,6 +2,8 @@
 
 Date: 2026-10-08 · Scope: R4-J3D controlled EC2 deployment of Quote V2 Sales integration and governed `sales-production@4` canary · Status: **BLOCKED** (no EC2 command executed; governed canary has no operational approval mechanism)
 
+**Recovery update 2026-10-09 (R4-J3D-R, §8).** The isolated canary tooling now exists and passes its isolation tests locally. Approval inspection is read-only. Approve and reject remain **blocked**, because no trusted human identity exists. EC2 is still not authorized. J3D stays **BLOCKED**.
+
 Evidence labels: **LOCAL** = executed on the workstation against throwaway resources; **SOURCE** = verified in code at `main`; **NOT RUN** = not executed.
 
 ## 1. Outcome summary
@@ -119,3 +121,52 @@ OTHER_SERVICES_UNAFFECTED=YES
 R4_J3D_STATUS=BLOCKED
 CUSTOMER_ROLLOUT_AUTHORIZED=NO
 ```
+
+## 8. Recovery update (R4-J3D-R, 2026-10-09)
+
+Authorized scope: Sales-pack tooling only (an operator approval CLI and an isolated synthetic canary), no harness change, no EC2 change while the access gate is pending. Details:
+
+- `R4-J3D-R_SALES_APPROVAL_CLI_REPORT.md`
+- `R4-J3D-R_SALES_ISOLATED_CANARY_REPORT.md`
+- `QUOTE_W10_GMAIL_ACTIVATION_PROCEDURE.md`
+- `R4-J3D-R_CHANGE_MAP.md`
+
+### 8.1 Gaps of §5, re-assessed
+
+| §5 gap | Now |
+|---|---|
+| Human inspects and approves the exact arguments | **Inspection delivered** (`approvals list\|show`: exact validated arguments, hash, recomputed hash check). **Decision BLOCKED**: no legitimate existing mechanism provides a trusted human identity (no IAM; ADR-021 §5; roadmap "(E) no simularlo"; D-5 rejected host-declared identity, enforced by `live-ops-boundaries`). `approve`/`reject` are refused with `trusted_human_required`. |
+| Synthetic inbound without WhatsApp | **Delivered**: `sales:canary send` runs the real `ChannelIngress.ingest` on the synthetic channel `r4-synthetic`, with the production task factory (provisional requester, pinned `sales@4`). |
+| Isolation from the live `@3` worker | **Delivered**: dedicated database (marker, name and foreign-traffic guards, checked before every claim), local outbound capture, its own rollout. 10/10 isolation scenarios pass locally, with the production database fingerprint unchanged. |
+
+### 8.2 EC2 (§3–§4 of the recovery instruction)
+
+SSH stays refused by the session's permission policy. No other access mechanism was attempted. The read-only preflight, the off-host backup, the isolated `0007` validation copy, the migration, the `@3` deployment and regression, and the isolated `@4` canary on EC2 were **not run**. The runbook in §4 and canary report §7 still apply. To proceed, the operator must enable SSH to the host for the session (permission configuration) and authorize the preflight.
+
+### 8.3 Verification (LOCAL, workstation, Node 20.19, Docker Postgres)
+
+| Check | Result |
+|---|---|
+| `npm run build`, `npm run lint`, `npm run typecheck` | exit 0 |
+| `test:unit` | 70 files, 946 passed |
+| `test:contract` | 22 files, 292 passed |
+| `integration` (`--no-file-parallelism`) | 30 files passed, 1 skipped; 367 passed, 12 skipped |
+| `test:sales` | 29 passed |
+| `test:shadow` | 5 passed |
+| `test:recovery` | 17 passed, **1 failed (pre-existing)**: `production-bootstrap-process.test.ts` expects `registered: sales@3`. Since J2D `50ec670` added `sales.v4.agent.json`, the bootstrap registers `sales@3, sales@4`. The bootstrap code, the definitions and the test are byte-identical to `76585b3`, so this is a stale expectation, outside this slice and unchanged. Operational note: on EC2, `production:sales:bootstrap` will register `sales@4` the first time it runs with this code, which is expected by J2D's design. |
+
+### 8.4 Flags
+
+```
+SALES_APPROVAL_CLI=PARTIAL            (list/show delivered; approve/reject BLOCKED on trusted human identity)
+SALES_CANARY_ISOLATION=PASS           (LOCAL)
+R4_HARNESS_MODIFIED=NO
+R4_EC2_DEPLOYMENT=NOT_RUN             (EC2 access gate pending)
+R4_GOVERNED_AGENT_E2E=BLOCKED         (no trusted human approval; real model/owners on EC2 NOT RUN)
+QUOTE_W10_CONFIG_PREPARED=YES         (procedure, validation and probe prepared; owner file not yet filled)
+QUOTE_W10_EMAIL_SENT=NO
+CUSTOMER_ROLLOUT_AUTHORIZED=NO
+R4_J3D_STATUS=BLOCKED
+```
+
+The tooling is not a governed acceptance. J3D acceptance still depends on the real E2E with a real human approval.
