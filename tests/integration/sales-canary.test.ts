@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -26,7 +26,10 @@ import {
   type CanaryRuntime,
 } from '@r4-sales/agent/canary';
 import { runCanary } from '../../agents/sales/src/cli/canary/command.js';
+import { createPlatform } from '@r4/api';
+import { createOidcHumanContext, NonceLedger, OidcVerifier, OperatorRegistry, loadOperatorAuthConfig } from '../../agents/sales/src/operator-auth/index.js';
 import { createTestDatabase, openPool, type TestDatabase } from '../support/database.js';
+import { FakeOidcProvider, freePort } from '../support/oidc-provider.js';
 import { LiveOpsTestbed, say } from '../support/live-ops.js';
 
 /**
@@ -274,12 +277,12 @@ describe('governed sales-production@4 path in the canary, up to and through the 
       // Read-only output through the canary CLI (exact arguments and the decision blocker).
       const shown = io();
       expect(await runCanary(['approvals', 'show', '--request', requestId], canaryEnv(canaryDb, ['q1']), shown.io)).toBe(0);
-      expect(JSON.parse(shown.out.join('\n'))).toMatchObject({ approval: { requestId, arguments: { hashVerified: true } }, decision: expect.stringMatching(/trusted human identity/) });
-      // Neither CLI can decide: refused before reading configuration or the database.
+      expect(JSON.parse(shown.out.join('\n'))).toMatchObject({ approval: { requestId, arguments: { hashVerified: true } }, decision: expect.stringMatching(/never decides for a human/) });
+      // Host administration never decides (D-5); the canary needs an OIDC operator configuration to decide.
       for (const verb of ['approve', 'reject']) {
         const c = io();
-        expect(await runCanary(['approvals', verb, '--request', requestId, '--reason', 'test'], canaryEnv(canaryDb, ['q1']), c.io)).toBe(1);
-        expect(c.err.join('\n')).toMatch(/^error: trusted_human_required:/);
+        expect(await runCanary(['approvals', verb, '--request', requestId, '--arguments-hash', 'h', '--reason', 'test'], canaryEnv(canaryDb, ['q1']), c.io)).toBe(1);
+        expect(c.err.join('\n')).toMatch(/^error: operator_auth_config_incomplete:/);
         const p = io();
         expect(await runProductionControl(['approvals', verb, '--request', requestId, '--reason', 'test'], {}, p.io)).toBe(1);
         expect(p.err.join('\n')).toMatch(/^error: trusted_human_required:/);
@@ -426,6 +429,218 @@ describe('isolation under errors, restarts and recovery', () => {
       }
     } finally {
       await db.drop();
+    }
+  });
+});
+
+/**
+ * R4-J3D-S Phase C: OIDC-authenticated operator decisions on the isolated canary, through the real decision flow
+ * (sales:canary approvals approve|reject → sign-in → verification → registry RBAC → POST /v1/human-requests/:id/respond
+ * with the OIDC humanContext adapter → Temporal Runtime → Policy Engine re-evaluation → ActionExecutor).
+ */
+describe('R4-J3D-S: trusted human approval on the canary (local OIDC issuer)', () => {
+  let idp: FakeOidcProvider;
+  let operatorEnv: Record<string, string>;
+  const ISSUER_DOMAIN = 'pesaschile.test';
+
+  beforeAll(async () => {
+    idp = new FakeOidcProvider();
+    await idp.start();
+    const dir = mkdtempSync(join(tmpdir(), 'r4-operators-'));
+    const registryFile = join(dir, 'operators.json');
+    writeFileSync(registryFile, JSON.stringify({
+      version: 1,
+      operators: [
+        { operatorRef: 'ops.approver', issuer: idp.issuer, subject: 'sub-approver', roles: ['approver'], displayName: 'Approver' },
+        { operatorRef: 'ops.viewer', issuer: idp.issuer, subject: 'sub-viewer', roles: [] },
+      ],
+    }));
+    if (process.platform !== 'win32') chmodSync(registryFile, 0o600);
+    operatorEnv = {
+      R4_OPERATOR_OIDC_ISSUER: idp.issuer, R4_OPERATOR_OIDC_CLIENT_ID: idp.clientId, R4_OPERATOR_REGISTRY_FILE: registryFile,
+      R4_OPERATOR_OIDC_HOSTED_DOMAIN: ISSUER_DOMAIN, R4_OPERATOR_OIDC_REDIRECT_PORT: String(await freePort()),
+    };
+  });
+
+  afterAll(async () => {
+    await idp?.stop();
+  });
+
+  const signInAs = (sub: string, extra: Partial<{ hd: string }> = {}) => {
+    idp.login = { sub, email: `${sub}@${ISSUER_DOMAIN}`, hd: extra.hd ?? ISSUER_DOMAIN };
+    idp.tokenClaims = {};
+    idp.tokenForge = undefined;
+  };
+
+  /** A quote.create@2 approval request on a fresh synthetic conversation, with its runtime. */
+  async function pendingApproval(conversation: string, tail: Step[]) {
+    const canary = loadCanaryEnvironment(canaryEnv(canaryDb, [conversation]));
+    const router = new Router();
+    const owned = owners();
+    const { runtime } = await canaryRuntime(canary, canaryDb, router, owned, `sales-canary:test:${conversation}`);
+    const taskId = router.route(((await sendSynthetic(canary, { conversation, text: 'Cotízame una barra olímpica' }, logger)) as { taskId: string }).taskId, [...toApproval, ...tail]);
+    await drain(runtime);
+    const { inspection, close } = await openCanaryApprovals(canary, logger);
+    try {
+      const approval = (await inspection.list()).find((a) => a.task.taskId === taskId)!;
+      return { runtime, owned, taskId, requestId: approval.requestId, hash: approval.arguments.hash, env: { ...canaryEnv(canaryDb, [conversation]), ...operatorEnv } };
+    } finally {
+      await close();
+    }
+  }
+
+  const decide = async (env: Record<string, string>, verb: 'approve' | 'reject', requestId: string, hash: string, reason = 'revisado: argumentos exactos') => {
+    const c = io();
+    const code = await runCanary(['approvals', verb, '--request', requestId, '--arguments-hash', hash, '--reason', reason], env, c.io, { openUrl: idp.browser });
+    return { code, out: c.out.join('\n'), err: c.err.join('\n') };
+  };
+
+  async function requestState(requestId: string) {
+    const pool = openPool(canaryDb.url);
+    try {
+      return {
+        status: ((await pool.query('select status from human_requests where request_id = $1', [requestId])).rows[0] as { status: string }).status,
+        decisions: (await pool.query("select actor_ref, event_type, response_key, data->>'content' as content from temporal_events where entity_id = $1 and event_type in ('approval.approved', 'approval.rejected', 'approval.cancelled')", [requestId])).rows,
+      };
+    } finally {
+      await pool.end();
+    }
+  }
+
+  it('an authenticated approver approves the exact arguments: the action executes once, the reply is captured, no WhatsApp message', async () => {
+    const quoted = (v: ContextView) => (v.observations(CAPABILITY_IDS.quoteCreate).filter((o) => o.outcome === 'succeeded').at(-1)!.payload as { result: { quoteNumber: string } }).result.quoteNumber;
+    const { runtime, owned, taskId, requestId, hash, env } = await pendingApproval('oidc-ok', [respond((v) => `Cotización ${quoted(v)} emitida.`)]);
+    const whatsappBefore = production.provider.sends.length;
+    try {
+      signInAs('sub-approver');
+      const result = await decide(env, 'approve', requestId, hash);
+      expect(result.err).not.toMatch(/^error:/m);
+      expect(result.code).toBe(0);
+      const decided = (JSON.parse(result.out) as { decided: Record<string, unknown> }).decided;
+      expect(decided).toMatchObject({ requestId, taskId, decision: 'approve', status: 'approved', capability: 'quote.create@2', argumentsHash: hash, audit: { actorRef: 'oidc:ops.approver', event: 'approval.approved', content: 'revisado: argumentos exactos' } });
+      expect(await requestState(requestId)).toMatchObject({ status: 'approved', decisions: [{ actor_ref: 'oidc:ops.approver', event_type: 'approval.approved' }] });
+      await drain(runtime);
+      expect(owned.quotes.quotes).toHaveLength(1);
+      const pool = openPool(canaryDb.url);
+      try {
+        expect((await pool.query("select status from action_receipts where task_id = $1 and capability_id = 'quote.create'", [taskId])).rows).toEqual([{ status: 'succeeded' }]);
+        expect((await pool.query("select count(*)::int as n from outbound_messages where channel <> 'r4-synthetic'")).rows[0]).toEqual({ n: 0 });
+      } finally {
+        await pool.end();
+      }
+      expect(readFileSync(runtime.capture.file, 'utf8')).toMatch(/Cotización PC-000001 emitida\./);
+      // No duplicate issuance: a second decision is refused, and further worker cycles issue nothing.
+      const again = await decide(env, 'approve', requestId, hash);
+      expect(again.code).toBe(1);
+      expect(again.err).toMatch(/approval_not_open/);
+      await drain(runtime);
+      expect(owned.quotes.quotes).toHaveLength(1);
+      expect(owned.quotes.createCalls).toBe(1);
+      expect(production.provider.sends.length).toBe(whatsappBefore);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it('a rejection by an authenticated approver keeps approval_rejected semantics; nothing is issued', async () => {
+    const { runtime, owned, taskId, requestId, hash, env } = await pendingApproval('oidc-reject', [respond('No pude emitir la cotización.')]);
+    try {
+      signInAs('sub-approver');
+      const result = await decide(env, 'reject', requestId, hash, 'precio no autorizado');
+      expect(result.code).toBe(0);
+      expect(await requestState(requestId)).toMatchObject({ status: 'rejected', decisions: [{ actor_ref: 'oidc:ops.approver', event_type: 'approval.rejected', content: 'precio no autorizado' }] });
+      await drain(runtime);
+      expect(owned.quotes.createCalls).toBe(0);
+      const pool = openPool(canaryDb.url);
+      try {
+        expect((await pool.query("select error_code from observations where task_id = $1 and capability_id = 'quote.create' order by created_at desc limit 1", [taskId])).rows[0]).toEqual({ error_code: 'approval_rejected' });
+      } finally {
+        await pool.end();
+      }
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it('refuses: an operator without the approver role, an unregistered identity, an invented identity, a stale or expired session, another domain', async () => {
+    const { runtime, owned, requestId, hash, env } = await pendingApproval('oidc-refusals', []);
+    try {
+      const cases: [() => void, string][] = [
+        [() => signInAs('sub-viewer'), 'operator_not_authorized'],
+        [() => signInAs('sub-stranger'), 'operator_not_registered'],
+        [() => { signInAs('sub-approver'); idp.tokenForge = 'attacker-key'; }, 'oidc_signature_invalid'],
+        [() => { signInAs('sub-approver'); idp.tokenForge = 'hs256'; }, 'oidc_algorithm_rejected'],
+        [() => { signInAs('sub-approver'); idp.tokenClaims = { iat: Math.floor(Date.now() / 1000) - 3600 }; }, 'oidc_authentication_stale'],
+        [() => { signInAs('sub-approver'); idp.tokenClaims = { iat: Math.floor(Date.now() / 1000) - 7200, exp: Math.floor(Date.now() / 1000) - 3600 }; }, 'oidc_token_expired'],
+        [() => { signInAs('sub-approver'); idp.tokenClaims = { aud: 'another-client' }; }, 'oidc_audience_mismatch'],
+        [() => signInAs('sub-approver', { hd: 'gmail.com' }), 'oidc_domain_mismatch'],
+      ];
+      for (const [arrange, code] of cases) {
+        arrange();
+        const result = await decide(env, 'approve', requestId, hash);
+        expect({ code: result.code, err: result.err.split('\n').find((l) => l.startsWith('error:')) }).toEqual({ code: 1, err: expect.stringMatching(new RegExp(`^error: ${code}:`)) });
+      }
+      expect(await requestState(requestId)).toEqual({ status: 'requested', decisions: [] });
+      expect(owned.quotes.createCalls).toBe(0);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it('refuses an altered argument hash before any sign-in; stored arguments cannot be altered at all', async () => {
+    const { runtime, owned, requestId, hash, env } = await pendingApproval('oidc-hash', []);
+    try {
+      signInAs('sub-approver');
+      const signIns = idp.authorizeRequests;
+      const wrong = await decide(env, 'approve', requestId, `${hash.slice(0, -1)}${hash.endsWith('0') ? '1' : '0'}`);
+      expect(wrong.code).toBe(1);
+      expect(wrong.err).toMatch(/^error: arguments_hash_mismatch:/m);
+      // The stored arguments cannot be altered after the Policy Engine bound them: the database itself refuses it.
+      const pool = openPool(canaryDb.url);
+      try {
+        await expect(pool.query("update human_requests set payload = jsonb_set(payload, '{validatedArguments,expectedTotals,gross}', '1'::jsonb) where request_id = $1", [requestId])).rejects.toThrow(/invalid human lifecycle transition/);
+      } finally {
+        await pool.end();
+      }
+      expect(idp.authorizeRequests).toBe(signIns);
+      expect(await requestState(requestId)).toEqual({ status: 'requested', decisions: [] });
+      expect(owned.quotes.createCalls).toBe(0);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it('the runtime gate itself: forged, replayed and unauthorized tokens are refused by the approval route', async () => {
+    const { runtime, requestId } = await pendingApproval('oidc-route', []);
+    const verifier = await OidcVerifier.discover(loadOperatorAuthConfig(operatorEnv));
+    const registry = new OperatorRegistry(JSON.parse(readFileSync(operatorEnv.R4_OPERATOR_REGISTRY_FILE!, 'utf8')));
+    const nonces = new NonceLedger();
+    const adapter = createOidcHumanContext({ verifier, registry, nonces });
+    const definitions = mkdtempSync(join(tmpdir(), 'r4-defs-'));
+    const platform = await createPlatform({ databaseUrl: canaryDb.url, host: '127.0.0.1', port: 0, logLevel: 'silent', agentDefinitionsDir: definitions, dbPoolMax: 2 }, { logger, humanContext: adapter.resolve });
+    const respondWith = async (token: string | null, responseKey: string) => {
+      const response = await platform.app.inject({ method: 'POST', url: `/v1/human-requests/${requestId}/respond`, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}), 'x-operator': 'ops.approver' }, payload: { responseKey, outcome: 'approve', content: 'x' } });
+      return { status: response.statusCode, code: response.json<{ error?: { code: string } }>().error?.code ?? null };
+    };
+    const claims = (nonce: string, sub = 'sub-approver') => ({ sub, nonce, email_verified: true, hd: ISSUER_DOMAIN });
+    try {
+      // No credential (an operator name header is not an identity).
+      expect(await respondWith(null, 'k1')).toEqual({ status: 422, code: 'trusted_human_required' });
+      // Invented identity: correct claims, wrong signing key.
+      expect(await respondWith(idp.mint({ claims: claims(nonces.issue()), forge: 'attacker-key' }), 'k2')).toEqual({ status: 422, code: 'trusted_human_required' });
+      // A token from another login (its nonce is not outstanding here): replay of a captured token.
+      expect(await respondWith(idp.mint({ claims: claims('r'.repeat(32)) }), 'k3')).toEqual({ status: 422, code: 'trusted_human_required' });
+      // Registered but without the approver role: authenticated, then refused by the Temporal Runtime's scope check.
+      expect(await respondWith(idp.mint({ claims: claims(nonces.issue(), 'sub-viewer') }), 'k4')).toEqual({ status: 422, code: 'human_scope_denied' });
+      expect(await requestState(requestId)).toEqual({ status: 'requested', decisions: [] });
+      // A valid token decides once; the same token cannot be used again (nonce consumed).
+      const token = idp.mint({ claims: claims(nonces.issue()) });
+      expect((await respondWith(token, 'k5')).status).toBe(200);
+      expect(await respondWith(token, 'k6')).toEqual({ status: 422, code: 'trusted_human_required' });
+      expect(await requestState(requestId)).toMatchObject({ status: 'approved', decisions: [{ actor_ref: 'oidc:ops.approver', response_key: 'k5' }] });
+    } finally {
+      await platform.close();
+      await runtime.close();
     }
   });
 });

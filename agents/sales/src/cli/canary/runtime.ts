@@ -264,6 +264,18 @@ export async function startCanaryRuntime(canary: CanaryEnvironment, options: Can
   }
 }
 
+/** Proves the canary database is isolated and current (before an operator decision on it). */
+export async function assertCanaryReady(canary: CanaryEnvironment, logger: Logger): Promise<string> {
+  const pool = canaryPool(canary, logger, 'ready');
+  try {
+    const canaryId = await assertIsolatedCanaryDatabase(pool);
+    await assertCurrentSchema(pool);
+    return canaryId;
+  } finally {
+    await pool.end().catch(() => undefined);
+  }
+}
+
 /** Read-only approval inspection over the canary database (after proving isolation). */
 export async function openCanaryApprovals(canary: CanaryEnvironment, logger: Logger): Promise<{ readonly inspection: ApprovalInspection; readonly close: () => Promise<void> }> {
   const pool = canaryPool(canary, logger, 'approvals');

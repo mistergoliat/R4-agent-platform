@@ -8,9 +8,11 @@ import { loadWorkerConfig } from '@r4/worker';
 import { HttpCatalogAdapter, loadCatalogHttpConfig } from '@r4-adapters/catalog-http';
 import { ProductionShippingAdapter, loadShippingHttpConfig } from '@r4-adapters/shipping-http';
 import { QuoteV2HttpClient, loadQuoteHttpConfig, quoteModeOf } from '@r4-adapters/quote-http';
-import { canaryStatus, initCanary, loadCanaryEnvironment, openCanaryApprovals, sendSynthetic, startCanaryRuntime, syntheticConversationKey, type CanaryEnvironment } from './index.js';
+import { assertCanaryReady, canaryStatus, initCanary, loadCanaryEnvironment, openCanaryApprovals, sendSynthetic, startCanaryRuntime, syntheticConversationKey, type CanaryEnvironment } from './index.js';
 import { configuredModelProvider } from '../../model.js';
-import { APPROVAL_DECISION_BLOCKER } from '../../production/approvals.js';
+import { loadOperatorAuthConfig } from '../../operator-auth/index.js';
+import { decideApproval } from '../operator-approval.js';
+import { parseDecision, printLoginUrl } from '../operator-command.js';
 import { inspectApprovals } from '../../production/control.js';
 
 /**
@@ -20,9 +22,9 @@ import { inspectApprovals } from '../../production/control.js';
  * locally captured outbound. Never a channel provider, never the
  * production database. Reads the process environment only (never `.env`).
  *
- * It is a test mechanism, not an acceptance: J3D still needs a governed
- * E2E with a real human approval, which R4 cannot provide without a
- * trusted operator identity (`approvals approve|reject` are refused).
+ * Approval decisions (R4-J3D-S, ADR-033) are made by an OIDC-authenticated,
+ * registered operator through the same flow as `production:sales:operator`
+ * (cli/operator-approval.ts), against the canary database only.
  */
 export const CANARY_USAGE = [
   'usage: sales:canary <command>',
@@ -32,7 +34,7 @@ export const CANARY_USAGE = [
   '  send --conversation <name> --text "<text>"   (one synthetic inbound through the real channel ingress)',
   '  run                                        (canary worker + scheduler + local outbound capture; until SIGINT/SIGTERM)',
   '  approvals list | approvals show --request <request-id>   (read-only)',
-  '  approvals approve|reject --request <request-id> --reason "<reason>"   (REFUSED: needs a trusted human identity)',
+  '  approvals approve|reject --request <request-id> --arguments-hash <hash> --reason "<reason>"   (OIDC operator sign-in)',
 ].join('\n');
 
 export type CanaryCommand =
@@ -43,7 +45,7 @@ export type CanaryCommand =
   | { readonly kind: 'run' }
   | { readonly kind: 'approvals-list' }
   | { readonly kind: 'approvals-show'; readonly requestId: string }
-  | { readonly kind: 'approvals-decide' };
+  | { readonly kind: 'approvals-decide'; readonly decision: 'approve' | 'reject'; readonly requestId: string; readonly argumentsHash: string; readonly reason: string };
 
 export class CanaryUsageError extends Error {
   readonly code = 'invalid_command';
@@ -77,8 +79,7 @@ export function parseCanaryCommand(argv: readonly string[]): CanaryCommand {
   if (group === 'approvals' && verb === 'list' && rest.length === 0) return { kind: 'approvals-list' };
   if (group === 'approvals' && verb === 'show') return { kind: 'approvals-show', requestId: options(rest, ['request']).request! };
   if (group === 'approvals' && (verb === 'approve' || verb === 'reject')) {
-    options(rest, ['request', 'reason']);
-    return { kind: 'approvals-decide' };
+    return { kind: 'approvals-decide', ...parseDecision(verb, rest, (message) => new CanaryUsageError(message)) };
   }
   throw new CanaryUsageError(`unknown command: ${argv.join(' ') || '(none)'}`);
 }
@@ -115,7 +116,13 @@ function realBindings(env: NodeJS.ProcessEnv, canary: CanaryEnvironment, logger:
 }
 
 /** Returns the exit code: 0 done, 2 invalid command, 1 refused or failed. `run` resolves only when it stops. */
-export async function runCanary(argv: readonly string[], env: NodeJS.ProcessEnv, io: CanaryIo): Promise<number> {
+export interface CanaryDeps {
+  /** Tests: how the operator sign-in URL is "opened" (default: printed). */
+  readonly openUrl?: (url: string) => void | Promise<void>;
+  readonly fetchImpl?: typeof fetch;
+}
+
+export async function runCanary(argv: readonly string[], env: NodeJS.ProcessEnv, io: CanaryIo, deps: CanaryDeps = {}): Promise<number> {
   let command: CanaryCommand;
   try {
     command = parseCanaryCommand(argv);
@@ -123,10 +130,6 @@ export async function runCanary(argv: readonly string[], env: NodeJS.ProcessEnv,
     const { code, message } = describeError(error);
     io.err(`error: ${code}: ${message}\n${CANARY_USAGE}`);
     return 2;
-  }
-  if (command.kind === 'approvals-decide') {
-    io.err(`error: trusted_human_required: ${APPROVAL_DECISION_BLOCKER}`);
-    return 1;
   }
   const level = env.R4_LOG_LEVEL === 'info' || env.R4_LOG_LEVEL === 'debug' ? env.R4_LOG_LEVEL : 'warn';
   const logger = createLogger({ service: 'r4-sales-canary', level });
@@ -157,6 +160,17 @@ export async function runCanary(argv: readonly string[], env: NodeJS.ProcessEnv,
         } finally {
           await close();
         }
+      }
+      case 'approvals-decide': {
+        await assertCanaryReady(canary, logger);
+        const auth = loadOperatorAuthConfig(env);
+        print({
+          decided: await decideApproval({
+            databaseUrl: canary.databaseUrl, decision: command.decision, requestId: command.requestId, reason: command.reason, argumentsHash: command.argumentsHash,
+            auth, logger, openUrl: deps.openUrl ?? printLoginUrl(io, auth.redirectPort), ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
+          }),
+        });
+        return 0;
       }
       case 'run':
         return await run(canary, env, logger, io);

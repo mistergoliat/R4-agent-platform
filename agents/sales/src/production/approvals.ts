@@ -13,15 +13,13 @@ import type { StructuredLogger } from '@r4/observability';
  * fingerprint). It reads only the Temporal Runtime's attention view and the
  * production store's binding/task facts.
  *
- * It never decides. Approving or rejecting needs a trusted human identity
- * (an authenticated operator context for the Temporal Runtime), and R4 has
- * no operator IAM (ADR-021 §5; roadmap §4 "(E) IAM productivo de
- * operadores: no simularlo"; R4-I D-5 rejected a host-declared identity).
- * Host access is not a verified individual, so nothing here builds an
- * operator context or writes anything.
+ * It never decides. Host access is not a verified individual (R4-I D-5),
+ * so nothing here builds an operator context or writes anything. Decisions
+ * belong to an OIDC-authenticated, registered operator through the
+ * platform's approval route (R4-J3D-S, ADR-033: cli/operator-approval.ts).
  */
 export const APPROVAL_DECISION_BLOCKER =
-  'approving or rejecting needs a trusted human identity (an authenticated operator context); R4 has no operator IAM and host access is not a verified individual (ADR-021 §5, R4-I D-5). See docs/architecture/R4-J3D-R_SALES_APPROVAL_CLI_REPORT.md';
+  'host administration never decides for a human (R4-I D-5): approve or reject as an OIDC-authenticated, registered operator with "production:sales:operator approvals approve|reject" (ADR-033)';
 
 /** What the inspection reads from the Temporal Runtime (its attention view). */
 export interface ApprovalAttentionSource {

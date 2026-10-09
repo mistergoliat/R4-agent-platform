@@ -2,6 +2,8 @@
 
 Date: 2026-10-09 · Scope: §1 of the R4-J3D recovery instruction (operator approval CLI for the Sales pack) · Status: **PARTIAL** (read-only inspection delivered; approve/reject **BLOCKED** on trusted human identity)
 
+> **Superseded 2026-10-09 by R4-J3D-S** (ADR-033, `R4-J3D-S_TRUSTED_HUMAN_APPROVAL_REPORT.md`). Option 1 of §3 was implemented: OIDC (Google Workspace) operators decide through `production:sales:operator`. Host control still refuses decisions (D-5).
+
 Evidence labels: **SOURCE** = verified in code at `main` `76585b3` plus this slice; **LOCAL** = executed on the workstation against throwaway PostgreSQL databases; **NOT RUN** = not executed.
 
 ## 1. Outcome

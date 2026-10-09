@@ -170,3 +170,19 @@ R4_J3D_STATUS=BLOCKED
 ```
 
 The tooling is not a governed acceptance. J3D acceptance still depends on the real E2E with a real human approval.
+
+## 9. Trusted human approval (R4-J3D-S, 2026-10-09)
+
+The §8.1 approval blocker is resolved **locally** by ADR-033: Google Workspace OIDC operators, authorized by an owner-managed registry, decide through the platform's existing approval route with a `humanContext` adapter. The harness is unchanged. Validated on the isolated canary against a local, conformant OIDC issuer (`R4-J3D-S_TRUSTED_HUMAN_APPROVAL_REPORT.md`).
+
+Still open for J3D acceptance:
+
+- registering the Google OAuth client and the operator registry (owner);
+- the EC2 access gate;
+- deployment §4;
+- the real-model, real-owner governed E2E on EC2.
+
+```
+TRUSTED_HUMAN_AUTH=PASS (LOCAL)   SALES_APPROVAL_CLI=PASS (LOCAL)   GOVERNED_CANARY_LOCAL=PASS
+R4_HARNESS_MODIFIED=NO            R4_EC2_DEPLOYMENT=NOT_RUN          R4_J3D_STATUS=BLOCKED (EC2 gate, live IdP, real E2E)
+```

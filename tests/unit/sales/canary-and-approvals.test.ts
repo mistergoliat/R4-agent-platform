@@ -97,10 +97,13 @@ describe('sales:canary command', () => {
     expect(() => parseCanaryCommand([])).toThrow(/unknown command/);
   });
 
-  it('refuses approve/reject before reading anything, and refuses to start without the canary environment', async () => {
+  it('a decision needs the reviewed argument hash and the canary environment (then an OIDC operator sign-in)', async () => {
     const c = io();
-    expect(await runCanary(['approvals', 'approve', '--request', T(1), '--reason', 'ok'], {}, c.io)).toBe(1);
-    expect(c.err).toEqual([`error: trusted_human_required: ${APPROVAL_DECISION_BLOCKER}`]);
+    expect(await runCanary(['approvals', 'approve', '--request', T(1), '--reason', 'ok'], {}, c.io)).toBe(2);
+    expect(c.err.join('')).toMatch(/--arguments-hash is required/);
+    const b = io();
+    expect(await runCanary(['approvals', 'approve', '--request', T(1), '--arguments-hash', 'h', '--reason', 'ok'], {}, b.io)).toBe(1);
+    expect(b.err.join('')).toMatch(/production_mode_not_declared/);
     const d = io();
     expect(await runCanary(['status'], {}, d.io)).toBe(1);
     expect(d.err.join('')).toMatch(/production_mode_not_declared/);
