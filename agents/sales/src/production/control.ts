@@ -12,6 +12,7 @@ import {
 import { createLogger } from '@r4/observability';
 import { SALES_MIGRATIONS_DIR } from '../definition.js';
 import { SALES_PRODUCTION_PROFILES, salesProductionProfile } from './profile-v4.js';
+import { APPROVAL_DECISION_BLOCKER, type ApprovalInspection, type OpenApprovalInspection } from './approvals.js';
 
 /**
  * `npm run production:sales:control -- <command>` — production
@@ -25,6 +26,12 @@ import { SALES_PRODUCTION_PROFILES, salesProductionProfile } from './profile-v4.
  * R4 database of the deployment. Every change is attributed to
  * `platform:production-control` (a production-host administrative action,
  * not a verified individual).
+ *
+ * (R4-J3D-R) `approvals list|show` are read-only: they print the exact
+ * validated arguments and argument hash of open approval requests.
+ * `approvals approve|reject` are refused before anything is read: a
+ * decision needs a trusted human identity that host access does not
+ * provide (see production/approvals.ts).
  */
 export const CONTROL_USAGE = [
   'usage: production:sales:control <command>',
@@ -34,6 +41,9 @@ export const CONTROL_USAGE = [
   '  holds list                               (tasks held because autonomy was disabled)',
   '  holds release --task <task-id> --reason "<reason>"   (one task; autonomy must be on)',
   '  tasks cancel --task <task-id> --reason "<reason>"    (retire one task; the next inbound re-evaluates rollout)',
+  '  approvals list                           (open approval requests; read-only)',
+  '  approvals show --request <request-id>    (exact validated arguments and hash; read-only)',
+  '  approvals approve|reject --request <request-id> --reason "<reason>"   (REFUSED: needs a trusted human identity)',
 ].join('\n');
 
 export type ControlCommand =
@@ -41,7 +51,12 @@ export type ControlCommand =
   | { readonly kind: 'autonomy-set'; readonly enabled: boolean; readonly reason: string }
   | { readonly kind: 'holds-list' }
   | { readonly kind: 'holds-release'; readonly taskId: string; readonly reason: string }
-  | { readonly kind: 'tasks-cancel'; readonly taskId: string; readonly reason: string };
+  | { readonly kind: 'tasks-cancel'; readonly taskId: string; readonly reason: string }
+  | { readonly kind: 'approvals-list' }
+  | { readonly kind: 'approvals-show'; readonly requestId: string }
+  | { readonly kind: 'approvals-decide'; readonly decision: 'approve' | 'reject'; readonly requestId: string };
+
+type ApprovalReadCommand = Extract<ControlCommand, { kind: 'approvals-list' | 'approvals-show' }>;
 
 export class ControlUsageError extends Error {
   readonly code = 'invalid_command';
@@ -80,6 +95,13 @@ export function parseControlCommand(argv: readonly string[]): ControlCommand {
     const o = options(rest, ['task', 'reason']);
     return { kind: 'tasks-cancel', taskId: o.task!, reason: reasonOf(o.reason!) };
   }
+  if (group === 'approvals' && verb === 'list' && rest.length === 0) return { kind: 'approvals-list' };
+  if (group === 'approvals' && verb === 'show') return { kind: 'approvals-show', requestId: options(rest, ['request']).request! };
+  if (group === 'approvals' && (verb === 'approve' || verb === 'reject')) {
+    const o = options(rest, ['request', 'reason']);
+    reasonOf(o.reason!);
+    return { kind: 'approvals-decide', decision: verb, requestId: o.request! };
+  }
   throw new ControlUsageError(`unknown command: ${argv.join(' ') || '(none)'}`);
 }
 
@@ -107,7 +129,13 @@ function describeError(error: unknown): { code: string; message: string } {
  * process exit code: 0 done, 2 invalid command, 1 refused or failed
  * (configuration, schema, database, eligibility, mutation).
  */
-export async function runProductionControl(argv: readonly string[], env: Readonly<Record<string, string | undefined>>, io: ControlIo): Promise<number> {
+export async function runProductionControl(
+  argv: readonly string[],
+  env: Readonly<Record<string, string | undefined>>,
+  io: ControlIo,
+  /** The host composition of the read-only approval inspection (cli/approval-inspection.ts). */
+  deps: { readonly openApprovals?: OpenApprovalInspection } = {},
+): Promise<number> {
   let command: ControlCommand;
   try {
     command = parseControlCommand(argv);
@@ -115,6 +143,11 @@ export async function runProductionControl(argv: readonly string[], env: Readonl
     const { code, message } = describeError(error);
     io.err(`error: ${code}: ${message}\n${CONTROL_USAGE}`);
     return 2;
+  }
+  if (command.kind === 'approvals-decide') {
+    // Refused before any configuration or database is read: nothing here can establish who decides.
+    io.err(`error: trusted_human_required: ${APPROVAL_DECISION_BLOCKER}`);
+    return 1;
   }
   try {
     // Production must be positively established; nothing is guessed or defaulted.
@@ -127,6 +160,16 @@ export async function runProductionControl(argv: readonly string[], env: Readonl
     if (!databaseUrl || !DATABASE_URL.test(databaseUrl)) throw new ProductionConfigError('production_config_incomplete', 'R4_DATABASE_URL (postgres://) of the production deployment is required');
     const level = env.R4_LOG_LEVEL === 'info' || env.R4_LOG_LEVEL === 'debug' ? env.R4_LOG_LEVEL : 'warn';
     const logger = createLogger({ service: 'r4-production-control', level });
+    if (command.kind === 'approvals-list' || command.kind === 'approvals-show') {
+      if (!deps.openApprovals) throw new ProductionConfigError('approvals_unavailable', 'this entry point does not compose the approval inspection');
+      const { inspection, close } = await deps.openApprovals({ databaseUrl, migrationDirectories: [SALES_MIGRATIONS_DIR], logger });
+      try {
+        io.out(JSON.stringify(await inspectApprovals(inspection, command), null, 2));
+        return 0;
+      } finally {
+        await close();
+      }
+    }
     // Refuses a database whose schema (Core + Sales) is not current before anything is read or changed.
     const { admin, close } = await openProductionAdministration({
       databaseUrl,
@@ -147,7 +190,20 @@ export async function runProductionControl(argv: readonly string[], env: Readonl
   }
 }
 
-async function execute(admin: ProductionAdministration, command: ControlCommand): Promise<unknown> {
+/** Read-only approval inspection output (shared with the isolated Sales canary). */
+export async function inspectApprovals(inspection: ApprovalInspection, command: ApprovalReadCommand): Promise<unknown> {
+  if (command.kind === 'approvals-show') return { approval: await inspection.show(command.requestId), decision: APPROVAL_DECISION_BLOCKER };
+  const approvals = await inspection.list();
+  return {
+    approvals: approvals.map((a) => ({
+      requestId: a.requestId, createdAt: a.createdAt, expiresAt: a.expiresAt, taskId: a.task.taskId, channel: a.conversation?.channel ?? null,
+      capability: `${a.action.capabilityId}@${a.action.capabilityVersion}`, argumentsHash: a.arguments.hash, hashVerified: a.arguments.hashVerified,
+    })),
+    decision: APPROVAL_DECISION_BLOCKER,
+  };
+}
+
+async function execute(admin: ProductionAdministration, command: Exclude<ControlCommand, ApprovalReadCommand | { kind: 'approvals-decide' }>): Promise<unknown> {
   switch (command.kind) {
     case 'autonomy-status': {
       const s = await admin.autonomyStatus();

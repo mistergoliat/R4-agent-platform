@@ -22,6 +22,10 @@
     "./production": {
       "types": "./dist/production/index.d.ts",
       "import": "./dist/production/index.js"
+    },
+    "./canary": {
+      "types": "./dist/cli/canary/index.d.ts",
+      "import": "./dist/cli/canary/index.js"
     }
   },
   "files": [
