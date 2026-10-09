@@ -44,6 +44,8 @@ const alias = {
   '@r4-sales/agent/shadow': src('./agents/sales/src/shadow/index.ts'),
   // R4-I: the Sales production composition (profile, policy, canary gateway bindings).
   '@r4-sales/agent/production': src('./agents/sales/src/production/index.ts'),
+  // R4-J3D-R: the isolated Sales canary (test tooling; never loaded by the deployed agent).
+  '@r4-sales/agent/canary': src('./agents/sales/src/cli/canary/index.ts'),
   '@r4-sales/agent': src('./agents/sales/src/index.ts'),
 };
 

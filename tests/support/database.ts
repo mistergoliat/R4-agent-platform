@@ -10,10 +10,11 @@ export interface TestDatabase {
   drop(): Promise<void>;
 }
 
-/** Creates an empty, uniquely named database. Every test file gets its own. */
-export async function createTestDatabase(): Promise<TestDatabase> {
+/** Creates an empty, uniquely named database. Every test file gets its own. `prefix` must be a plain lowercase identifier. */
+export async function createTestDatabase(prefix = 'r4_it'): Promise<TestDatabase> {
+  if (!/^[a-z][a-z0-9_]{0,30}$/.test(prefix)) throw new Error('invalid test database prefix');
   const adminUrl = testAdminDatabaseUrl();
-  const name = `r4_it_${randomBytes(6).toString('hex')}`;
+  const name = `${prefix}_${randomBytes(6).toString('hex')}`;
   await withAdmin(adminUrl, (client) => client.query(`create database ${name}`));
   return {
     name,

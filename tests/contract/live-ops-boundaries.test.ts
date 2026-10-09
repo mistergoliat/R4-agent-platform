@@ -132,7 +132,8 @@ describe('R4-I boundaries: kill switch defaults safe', () => {
 });
 
 describe('R4-I boundaries: production administration (D-5/D-6) is host tooling, not the operator plane', () => {
-  const ADMIN = ['packages/live-ops/src/administration.ts', 'apps/channel-gateway/src/administration.ts', 'agents/sales/src/production/control.ts', 'agents/sales/src/cli/production-control.ts'];
+  // (R4-J3D-R) + the read-only approval inspection and its host composition.
+  const ADMIN = ['packages/live-ops/src/administration.ts', 'apps/channel-gateway/src/administration.ts', 'agents/sales/src/production/control.ts', 'agents/sales/src/cli/production-control.ts', 'agents/sales/src/production/approvals.ts', 'agents/sales/src/cli/approval-inspection.ts'];
   /** Source without comments (the docs name what the code must never do). */
   const code = (f: string) => text(join(ROOT, f)).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
