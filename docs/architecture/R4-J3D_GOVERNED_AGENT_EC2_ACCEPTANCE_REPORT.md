@@ -186,3 +186,128 @@ Still open for J3D acceptance:
 TRUSTED_HUMAN_AUTH=PASS (LOCAL)   SALES_APPROVAL_CLI=PASS (LOCAL)   GOVERNED_CANARY_LOCAL=PASS
 R4_HARNESS_MODIFIED=NO            R4_EC2_DEPLOYMENT=NOT_RUN          R4_J3D_STATUS=BLOCKED (EC2 gate, live IdP, real E2E)
 ```
+
+## 10. EC2 execution (2026-10-09, SSH authorized)
+
+Evidence label **EC2** = executed on the production host (`ip-172-31-1-183`, `ssh Master`). Times are UTC. No secret value was printed or copied off the host. The backups are the only production data taken off the host (to the operator workstation).
+
+### 10.1 Preflight (§A): read-only
+
+| Check | Result |
+|---|---|
+| R4 checkout | `main` at `ae76a9e` (J2D), clean. `origin/main` = `ef5a354` (PR #7). |
+| Diff `ae76a9e..ef5a354` | Harness paths (`packages/`, `apps/`, `adapters/channels`, `adapters/models`, Catalog and Shipping adapters): **0 changes**. Lock: only the new workspace link `adapters/domains/quote/http`, no external dependency. Migrations: only Sales `0007` added. `profile-v3.ts`: the profile registry moved to `profile-v4.ts`, and the `@3` object is unchanged. |
+| PM2 | `r4-sales-worker`, `r4-channel-gateway`, `r4-scheduler`, `catalog-service`, `customer-profile`, `crm-web` online. `quote-service` (V1) stopped since 2026-09-16. Four `crm-*` jobs stopped. All pre-existing, none touched. |
+| Docker | `r4-production-postgres` (healthy, 10 days), `quote-v2-integration` and its Postgres (healthy), `crm-customer-360-mariadb`, `pesaschile-quote-service-postgres` (exited, pre-existing). Images 1.41 GB, build cache 0. |
+| Capacity | Root 10 GB, 90 % used, **1.1 GB free** (993 MB after this session). Inodes 10 %. RAM 3.8 GB, about 1.8 GB available, no swap. `/tmp` is tmpfs. |
+| R4 config | `R4_PROD_POLICY_PROFILE=sales-production@3`, rollout 0 % with 1 allowlisted key, `R4_GATEWAY_DISPATCH=true`, autonomy `enabled` (`global:2`, 2026-09-28). |
+| Migration ledger | `0006_sales_reference_application` = `856c60a1…` (expected). `0007_sales_quote_v2_issuance` absent. Core `0001–0010` applied. |
+| Old-code tolerance | `migrationStatus` reports only on-disk migrations that are pending or modified. An applied migration unknown to the code is ignored, so `ae76a9e` keeps running with `0007` applied. That makes the application rollback possible without a down migration. |
+| Quote V2 | `127.0.0.1:4020` `/health/ready`: `ready` (database, schema, artifactStorage, renderer, lifecycle ok). |
+| Pre-deploy plan | `@3`, profile fingerprint `847aa0ef…`, `quote.create` `domain_unavailable`, Shipping REAL (saved: `~/r4-j3d/plan-before.json`). |
+
+### 10.2 Backup and migration (§B)
+
+| Step | Result |
+|---|---|
+| Off-host backup | `pg_dump -Fc` streamed over SSH to the workstation (`E:\dev\codex\R4-backups\r4-production-pre-0007-20261009T205622Z\`), plus `globals.sql` (no role passwords) and the ledger. `r4_production.dump` SHA-256 `dbfc08cb…`. A final dump right before the migration, `r4_production.final-pre-migrate.dump`, has SHA-256 `e61cccb4…`. No EC2 disk was used. |
+| Backup verification | Restored into a throwaway local `postgres:16-alpine`: `pg_restore --exit-on-error` succeeded with 36 `TABLE DATA` entries. Row counts per table are **identical** to live production at the time (36/36). |
+| Isolated rehearsal | On the restored copy with `main`'s `npm run sales:migrate`: applied `0007` (`414f0d28…`), and the re-run is a no-op. Content hashes of every pre-existing table are unchanged, apart from the ledger row. Schema diff: additions only (the 2 removed lines are `pg_dump`'s random `\restrict` tokens). Objects: 4 tables, `sales_quote_v2_issued_by_task`, 4 triggers. A `DELETE` on a probe row was refused (`quote_v2_requests is append-only`). Container removed with its volume. |
+| Production | 20:59:48 `sales:migrate`: `sales migrations applied: 0007_sales_quote_v2_issuance`. Re-run: `sales schema already current`. Ledger `0007` = `414f0d28ebbd0ca7…` and `0006` unchanged. 4 tables, 1 index and 4 triggers present; `quote_v2_requests` has 0 rows. |
+| Data preservation | Every pre-existing table in live production after the migration was compared with the final pre-migration dump (restored locally), by count and content hash: **34/35 identical**. The only difference is `public.worker_presence` (1 row), the live worker heartbeat. |
+
+A first in-place before/after hash on production was invalid: `docker exec` without `-i` dropped stdin, so both captures were the same SQL error. It was discarded and replaced by the dump comparison above.
+
+Quote V2 PostgreSQL was not touched.
+
+### 10.3 Deployment under `@3` (§C)
+
+| Step | Result |
+|---|---|
+| Code | `git merge --ff-only origin/main` → `ef5a354`. `npm install --prefer-offline` added the one workspace link and left the lock unchanged. The working tree stays clean. `npm run build` exit 0. Disk unchanged. `npm install` was used instead of `npm ci` so `node_modules` was never deleted under the live processes. |
+| Bootstrap | `production:sales:bootstrap`: `unchanged: sales@3, sales@4`. |
+| Plan after (`@3`) | Compared key by key with the pre-deploy plan. `profile`, `profileFingerprint` (`847aa0ef…`), `productionConfigFingerprint`, `capabilities` (`quote.create` still `domain_unavailable`), `writes`, `rollout`, `killSwitch`, `agentDefinition` (`sales@4`), `channel`, `model`, Catalog and Shipping are **identical**. New key `quote`: "UNAVAILABLE in this profile (not composed)". `scheduler` differs only by its PID-bearing owner string. |
+| Restart | 21:01:43 `pm2 restart r4-sales-worker r4-channel-gateway`, with no running task or run at that moment (tasks: 9 cancelled, 1 failed, 1 waiting). Both online, with no further restarts after 60 s and empty error logs. The worker logged `service.composed profile=sales-production@3 profileFingerprint=847aa0ef…`. `r4-scheduler` was not restarted: the generic scheduler code is unchanged. |
+| Regression | Gateway `/health` 200. `/ready` 200: `sales-production@3`, `pendingMigrations: []`, WhatsApp REAL, dispatcher on. `/ready/r4` 200. Autonomy unchanged (`enabled`, version 2). Approvals: 0 open, and host control still refuses decisions (D-5). 0 outbound messages since the restart. |
+
+Not exercised: a live WhatsApp turn. The regression is readiness, plan and fingerprint equality; no customer conversation was triggered.
+
+**Rollback**:
+- **Application:** `git checkout --detach ae76a9e && npm install && npm run build && pm2 restart r4-sales-worker r4-channel-gateway`. This keeps the `0007` tables and their data; the old code ignores them (§10.1).
+- **Data:** only on corruption, restore the off-host dump into a new database. This loses writes made after 20:59.
+
+### 10.4 Google Workspace OIDC (§D): BLOCKED on the owner
+
+- Private store created separately from Gmail and production: `~/.config/r4-operator/` (0700) holds `oidc.env` (0600) and `operators.json` (0600, `{"version":1,"operators":[]}`).
+  - `oidc.env` sets `ISSUER=https://accounts.google.com`, `HOSTED_DOMAIN=pesaschile.cl` (to be confirmed by the owner) and `REDIRECT_PORT=8765`.
+  - `CLIENT_ID` and `CLIENT_SECRET` are empty.
+- `production:sales:operator whoami` fails closed: `operator_auth_config_incomplete: R4_OPERATOR_OIDC_CLIENT_ID is required`.
+- No Google OAuth client exists. None of the real-Google checks (PKCE, state, nonce, signature, iss, aud, exp, registry, `approval.decide`, rejection of an unknown identity, audit) could be run.
+
+### 10.5 Governed canary (§E): prepared, BLOCKED on §10.4
+
+| Element | State |
+|---|---|
+| Canary PostgreSQL | **Separate container** `r4-sales-canary-postgres` from the existing `postgres:16-alpine` image (no download): loopback `127.0.0.1:55434`, volume `r4-sales-canary-pgdata`, `--memory 384m`. The password is in `~/.config/r4-canary/pg-password` (0600). |
+| Canary env | `~/.config/r4-canary/canary.env` (0600). Derived from `production.env` with the model, Catalog, Shipping, reconciliation and worker timings. It has **no** WhatsApp, gateway, `R4_DATABASE_URL`, production identity key or allowlist. It has its own identity hash key, `sales-production@4`, rollout 0 % with 1 synthetic key, `R4_QUOTE_*` → `127.0.0.1:4020` with the `r4-sales-integration` principal, `R4_EXEC_MAX_WRITE_ACTIONS=3`, and capture to `~/r4-j3d/canary-outbound.jsonl`. |
+| `sales:canary init` | Marker written (`canaryId 50ea36160c0b`), migrations applied, `sales@3`/`sales@4` registered, autonomy enabled **in the canary database only**. |
+| `sales:canary status` | `isolation: verified`, foreign traffic 0/0/0, no tasks. `production.env` unchanged. |
+| `run`/`send` | **NOT RUN.** Without a real OIDC operator the flow would stop at `REQUIRE_APPROVAL` with an approval nobody can decide. Per instruction, no approval is simulated. |
+
+### 10.6 Flags (this session)
+
+```
+R4_EC2_DEPLOYMENT=PASS                 (ef5a354 on EC2; worker+gateway restarted under sales-production@3)
+R4_SALES_MIGRATION_0007=PASS           (off-host verified backup; isolated rehearsal; 34/35 tables identical, the 35th is the live heartbeat)
+R4_PROFILE_V3_REGRESSION=PASS          (fingerprint, plan, readiness, controls identical; no live WhatsApp turn exercised)
+R4_GOOGLE_OIDC_REAL=BLOCKED            (no Google OAuth client; private store prepared; fails closed)
+R4_GOVERNED_AGENT_E2E=BLOCKED          (canary DB/env/init ready and isolated; needs a real OIDC operator)
+R4_HARNESS_MODIFIED=NO
+R4_PRODUCTION_WHATSAPP_UNCHANGED=YES   (profile, rollout, allowlist, kill switch, Meta config unchanged; 0 outbound since restart)
+CUSTOMER_ROLLOUT_AUTHORIZED=NO
+R4_J3D_STATUS=BLOCKED                  (owner: OAuth client + operator registry)
+```
+
+## 11. Final acceptance attempt (2026-10-10)
+
+**Phase 1, W10 closure.** Done; see `QUOTE_W10_GMAIL_E2E_REPORT.md` §9.
+- Received PDF SHA-256 `6ec23e4d…a7a8`, as confirmed by the owner.
+- Temporary principal `w10-email-test` revoked (token → 401; other principals byte-identical).
+- Gmail disabled.
+
+**Phase 2, Google OIDC: BLOCKED.**
+- `~/.config/r4-operator/oidc.env` is unchanged since 2026-10-09 21:06 UTC: `R4_OPERATOR_OIDC_CLIENT_ID` and `R4_OPERATOR_OIDC_CLIENT_SECRET` are empty.
+- `operators.json` lists 0 operators.
+- No sign-in was attempted. No identity was accepted from an email, a header, a Linux user, a SQL write or `ADMIN_BYPASS_TOKEN`.
+
+Sign-in procedure once the client exists:
+1. Run `ssh -L 8765:127.0.0.1:8765 Master` with `production:sales:operator whoami`, using `production.env` + `oidc.env`.
+2. The operator opens the printed URL in a browser on the workstation that holds the tunnel.
+3. Google redirects to `127.0.0.1:8765`, which the tunnel forwards to the EC2 listener.
+4. The CLI verifies the token (RS256/JWKS, `iss`, `aud`/`azp`, `exp`/`iat`, `nonce`, `email_verified`, `hd=pesaschile.cl`) and prints `(iss, sub)`.
+5. The owner then approves adding that `(iss, sub)` with role `approver` to the registry.
+
+**Phase 3, governed canary: BLOCKED on Phase 2.**
+- Not started, so no approval waits to expire.
+- Canary state: `isolation: verified`, 0 foreign traffic, 0 tasks, 0 open human requests.
+- No direct `quote.create@2` call and no simulated approval.
+
+**Production.**
+- Gateway `/ready`: `ready`, `sales-production@3`, WhatsApp REAL.
+- `production.env` still `sales-production@3`, rollout 0 %.
+- PM2 restart counters unchanged since the deployment (worker 16, gateway 11, scheduler 0).
+- EC2 checkout `ef5a354`, clean.
+
+```
+GOOGLE_OIDC_REAL=BLOCKED               (OAuth client not configured in oidc.env)
+TRUSTED_OPERATOR_AUTH=BLOCKED          (no Google-authenticated operator; registry empty)
+R4_GOVERNED_AGENT_E2E=BLOCKED          (requires a trusted operator; canary ready, not started)
+R4_QUOTE_ISSUED_ONCE=NO                (no governed issuance yet; nothing issued by the canary)
+R4_PDF_SHA256=NOT_RUN
+R4_HARNESS_MODIFIED=NO
+R4_PRODUCTION_PROFILE=@3
+R4_WHATSAPP_UNCHANGED=YES
+QUOTE_GMAIL_DISABLED=YES
+QUOTE_W10_TEMP_PRINCIPAL_REVOKED=YES
+CUSTOMER_ROLLOUT_AUTHORIZED=NO
+```
