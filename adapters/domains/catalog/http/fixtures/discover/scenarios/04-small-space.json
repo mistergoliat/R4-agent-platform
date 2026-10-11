@@ -1,0 +1,243 @@
+{
+  "id": 4,
+  "key": "small-space",
+  "title": "Contexto de espacio reducido (preferencia)",
+  "request": {
+    "schemaVersion": 1,
+    "need": "entrenar espalda en poco espacio"
+  },
+  "http": {
+    "status": 200,
+    "body": {
+      "schemaVersion": 1,
+      "contractVersion": "catalog-discover-v1b1",
+      "requestId": "req-1",
+      "status": "COMPLETE",
+      "interpretation": {
+        "need": "entrenar espalda en poco espacio",
+        "required": [
+          "ANATOMY:BACK"
+        ],
+        "preferred": [
+          "USE_CONTEXT:SMALL_SPACE"
+        ],
+        "notVerifiable": [],
+        "ambiguities": [],
+        "unrecognized": [],
+        "structured": {
+          "applied": [],
+          "duplicatesOfText": []
+        },
+        "hints": {
+          "productKeys": [],
+          "notFound": []
+        },
+        "selection": {
+          "itemKeys": [],
+          "notFound": [],
+          "unverified": []
+        }
+      },
+      "exactMatch": null,
+      "verified": [
+        {
+          "productKey": "P7",
+          "name": "Remo Plegable Compacto",
+          "disposition": "VERIFIED_MATCH",
+          "matchedBy": [
+            "STRUCTURED:CONCEPT_MATCH",
+            "STRUCTURED:CONCEPT_MATCH_SOFT"
+          ],
+          "satisfied": [
+            "BACK@TRAINING_V2"
+          ],
+          "unresolved": [],
+          "readings": [],
+          "requirements": [
+            {
+              "code": "ANATOMY:BACK",
+              "state": "SATISFIED",
+              "authority": "TRAINING_V2",
+              "derived": false
+            }
+          ],
+          "commercial": {
+            "status": "OBSERVED",
+            "authority": "catalog-commercial-truth-v2",
+            "asOf": "2026-10-09T12:00:00.000Z",
+            "validUntil": "2026-10-09T12:00:15.000Z",
+            "price": {
+              "finalGrossClp": 261800,
+              "kind": "from",
+              "basis": "offerable"
+            },
+            "sellability": "sellable",
+            "orderable": true
+          }
+        },
+        {
+          "productKey": "P6",
+          "itemKey": "P6",
+          "name": "Barra Dominadas Muro",
+          "disposition": "VERIFIED_MATCH",
+          "matchedBy": [
+            "STRUCTURED:CONCEPT_MATCH"
+          ],
+          "satisfied": [
+            "BACK@TRAINING_V2"
+          ],
+          "unresolved": [],
+          "readings": [],
+          "requirements": [
+            {
+              "code": "ANATOMY:BACK",
+              "state": "SATISFIED",
+              "authority": "TRAINING_V2",
+              "derived": false
+            }
+          ],
+          "commercial": {
+            "status": "OBSERVED",
+            "authority": "catalog-commercial-truth-v2",
+            "asOf": "2026-10-09T12:00:00.000Z",
+            "validUntil": "2026-10-09T12:00:15.000Z",
+            "price": {
+              "finalGrossClp": 71400,
+              "kind": "exact",
+              "basis": "offerable"
+            },
+            "sellability": "sellable",
+            "orderable": true,
+            "unit": {
+              "itemKey": "P6",
+              "finalGrossClp": 71400,
+              "sellability": "sellable",
+              "reason": "in_stock",
+              "availableQuantity": 4,
+              "orderable": true,
+              "validUntil": "2026-10-09T12:00:15.000Z"
+            }
+          }
+        },
+        {
+          "productKey": "P14",
+          "itemKey": "P14",
+          "name": "Maquina Remo Polea Baja",
+          "disposition": "VERIFIED_MATCH",
+          "matchedBy": [
+            "STRUCTURED:CONCEPT_MATCH"
+          ],
+          "satisfied": [
+            "BACK@TRAINING_V2"
+          ],
+          "unresolved": [],
+          "readings": [],
+          "requirements": [
+            {
+              "code": "ANATOMY:BACK",
+              "state": "SATISFIED",
+              "authority": "TRAINING_V2",
+              "derived": false
+            }
+          ],
+          "commercial": {
+            "status": "OBSERVED",
+            "authority": "catalog-commercial-truth-v2",
+            "asOf": "2026-10-09T12:00:00.000Z",
+            "validUntil": "2026-10-09T12:00:15.000Z",
+            "price": {
+              "finalGrossClp": 1071000,
+              "kind": "exact",
+              "basis": "offerable"
+            },
+            "sellability": "sellable",
+            "orderable": true,
+            "unit": {
+              "itemKey": "P14",
+              "finalGrossClp": 1071000,
+              "sellability": "sellable",
+              "reason": "in_stock",
+              "availableQuantity": 4,
+              "orderable": true,
+              "validUntil": "2026-10-09T12:00:15.000Z"
+            }
+          }
+        }
+      ],
+      "possible": [],
+      "completeness": {
+        "retrieval": "COMPLETE",
+        "commercial": "NOT_REQUIRED",
+        "exhaustive": true,
+        "moreVerifiedAvailable": false,
+        "counts": {
+          "retrieved": 3,
+          "technicallyExamined": 3,
+          "commerciallyHydrated": 3,
+          "pendingHydration": 0,
+          "rejectedByKnownConstraints": 0,
+          "rejectedByCommercialConstraints": 0,
+          "withUnresolvedConstraints": 0,
+          "verified": 3,
+          "presented": 3
+        }
+      },
+      "absence": null,
+      "degradation": [],
+      "commercialFreshness": {
+        "status": "OBSERVED",
+        "authority": "catalog-commercial-truth-v2",
+        "integrationVersion": "catalog-discover-v0.2-c2",
+        "oldestAsOf": "2026-10-09T12:00:00.000Z",
+        "newestAsOf": "2026-10-09T12:00:00.000Z",
+        "earliestValidUntil": "2026-10-09T12:00:15.000Z",
+        "maxCacheAgeMs": 0,
+        "reads": 1,
+        "coherence": "PER_PRODUCT_READ",
+        "observations": {
+          "observed": 3,
+          "notFound": 0,
+          "unavailable": 0
+        }
+      },
+      "lineage": {
+        "contractVersion": "catalog-discover-v1b1",
+        "retrievalVersion": "catalog-discover-v0.2",
+        "interpreterVersion": "catalog-discover-v0.2",
+        "lexiconVersion": "discover-v0.2-lexicon-v1",
+        "documentRulesVersion": "retrieval-document-v0.1",
+        "commercialIntegrationVersion": "catalog-discover-v0.2-c2",
+        "bundleId": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "sourceExtractionId": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "indexFingerprint": "sha256:46318bfea2fb081b4a3412866de23fb80dada2fa3514df9838d1b71f82a67dff",
+        "productSemanticsSnapshotId": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "trainingV2SnapshotId": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "specsSnapshotId": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+        "admissionContractHash": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "strategy": [
+          "EXACT",
+          "LEXICAL",
+          "STRUCTURED"
+        ]
+      },
+      "warnings": []
+    }
+  },
+  "ownerConsumerExpectation": {
+    "status": "COMPLETE",
+    "outcome": null,
+    "labels": [],
+    "notLabels": [],
+    "allowed": {},
+    "forbidden": {
+      "P6": [
+        "MEETS:USE_CONTEXT:SMALL_SPACE"
+      ],
+      "P7": [
+        "MEETS:USE_CONTEXT:SMALL_SPACE"
+      ]
+    },
+    "answerAllowed": [],
+    "answerForbidden": []
+  }
+}

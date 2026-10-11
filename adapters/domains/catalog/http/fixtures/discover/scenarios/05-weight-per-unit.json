@@ -1,0 +1,170 @@
+{
+  "id": 5,
+  "key": "weight-per-unit",
+  "title": "Peso obligatorio por unidad",
+  "request": {
+    "schemaVersion": 1,
+    "need": "mancuernas de 10 kg"
+  },
+  "http": {
+    "status": 200,
+    "body": {
+      "schemaVersion": 1,
+      "contractVersion": "catalog-discover-v1b1",
+      "requestId": "req-1",
+      "status": "COMPLETE",
+      "interpretation": {
+        "need": "mancuernas de 10 kg",
+        "required": [
+          "weight_kg=10kg/PER_UNIT",
+          "PRODUCT_TYPE:DUMBBELL"
+        ],
+        "preferred": [],
+        "notVerifiable": [],
+        "ambiguities": [],
+        "unrecognized": [],
+        "structured": {
+          "applied": [],
+          "duplicatesOfText": []
+        },
+        "hints": {
+          "productKeys": [],
+          "notFound": []
+        },
+        "selection": {
+          "itemKeys": [],
+          "notFound": [],
+          "unverified": []
+        }
+      },
+      "exactMatch": null,
+      "verified": [
+        {
+          "productKey": "P11",
+          "itemKey": "P11",
+          "name": "Par Mancuernas Hierro 10kg",
+          "disposition": "VERIFIED_MATCH",
+          "matchedBy": [
+            "LEXICAL:BM25",
+            "LEXICAL:NOMINAL_ALL_TOKENS",
+            "STRUCTURED:CONCEPT_MATCH",
+            "STRUCTURED:SPEC_MATCH_QUALIFIED"
+          ],
+          "satisfied": [
+            "weight_kg=10kg/PER_UNIT@SPECS",
+            "DUMBBELL@PRODUCT_SEMANTICS"
+          ],
+          "unresolved": [],
+          "readings": [],
+          "requirements": [
+            {
+              "code": "weight_kg=10kg/PER_UNIT",
+              "state": "SATISFIED",
+              "authority": "SPECS",
+              "derived": false
+            },
+            {
+              "code": "PRODUCT_TYPE:DUMBBELL",
+              "state": "SATISFIED",
+              "authority": "PRODUCT_SEMANTICS",
+              "derived": false
+            }
+          ],
+          "commercial": {
+            "status": "OBSERVED",
+            "authority": "catalog-commercial-truth-v2",
+            "asOf": "2026-10-09T12:00:00.000Z",
+            "validUntil": "2026-10-09T12:00:15.000Z",
+            "price": {
+              "finalGrossClp": 47600,
+              "kind": "exact",
+              "basis": "offerable"
+            },
+            "sellability": "sellable",
+            "orderable": true,
+            "unit": {
+              "itemKey": "P11",
+              "finalGrossClp": 47600,
+              "sellability": "sellable",
+              "reason": "in_stock",
+              "availableQuantity": 4,
+              "orderable": true,
+              "validUntil": "2026-10-09T12:00:15.000Z"
+            }
+          }
+        }
+      ],
+      "possible": [],
+      "completeness": {
+        "retrieval": "COMPLETE",
+        "commercial": "NOT_REQUIRED",
+        "exhaustive": true,
+        "moreVerifiedAvailable": false,
+        "counts": {
+          "retrieved": 1,
+          "technicallyExamined": 1,
+          "commerciallyHydrated": 1,
+          "pendingHydration": 0,
+          "rejectedByKnownConstraints": 0,
+          "rejectedByCommercialConstraints": 0,
+          "withUnresolvedConstraints": 0,
+          "verified": 1,
+          "presented": 1
+        }
+      },
+      "absence": null,
+      "degradation": [],
+      "commercialFreshness": {
+        "status": "OBSERVED",
+        "authority": "catalog-commercial-truth-v2",
+        "integrationVersion": "catalog-discover-v0.2-c2",
+        "oldestAsOf": "2026-10-09T12:00:00.000Z",
+        "newestAsOf": "2026-10-09T12:00:00.000Z",
+        "earliestValidUntil": "2026-10-09T12:00:15.000Z",
+        "maxCacheAgeMs": 0,
+        "reads": 1,
+        "coherence": "PER_PRODUCT_READ",
+        "observations": {
+          "observed": 1,
+          "notFound": 0,
+          "unavailable": 0
+        }
+      },
+      "lineage": {
+        "contractVersion": "catalog-discover-v1b1",
+        "retrievalVersion": "catalog-discover-v0.2",
+        "interpreterVersion": "catalog-discover-v0.2",
+        "lexiconVersion": "discover-v0.2-lexicon-v1",
+        "documentRulesVersion": "retrieval-document-v0.1",
+        "commercialIntegrationVersion": "catalog-discover-v0.2-c2",
+        "bundleId": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "sourceExtractionId": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "indexFingerprint": "sha256:46318bfea2fb081b4a3412866de23fb80dada2fa3514df9838d1b71f82a67dff",
+        "productSemanticsSnapshotId": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "trainingV2SnapshotId": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "specsSnapshotId": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+        "admissionContractHash": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "strategy": [
+          "EXACT",
+          "LEXICAL",
+          "STRUCTURED"
+        ]
+      },
+      "warnings": []
+    }
+  },
+  "ownerConsumerExpectation": {
+    "status": "COMPLETE",
+    "outcome": null,
+    "labels": [],
+    "notLabels": [],
+    "allowed": {
+      "P11": [
+        "MEETS:weight_kg=10kg/PER_UNIT"
+      ]
+    },
+    "forbidden": {},
+    "answerAllowed": [],
+    "answerForbidden": []
+  }
+}

@@ -1,0 +1,229 @@
+{
+  "id": 19,
+  "key": "hydration-limited",
+  "title": "Hidratación comercial limitada (presupuesto de tiempo)",
+  "request": {
+    "schemaVersion": 1,
+    "need": "kettlebell menos de 50 mil"
+  },
+  "http": {
+    "status": 200,
+    "body": {
+      "schemaVersion": 1,
+      "contractVersion": "catalog-discover-v1b1",
+      "requestId": "req-1",
+      "status": "PARTIAL",
+      "interpretation": {
+        "need": "kettlebell menos de 50 mil",
+        "required": [
+          "price<=50000CLP",
+          "PRODUCT_TYPE:KETTLEBELL"
+        ],
+        "preferred": [],
+        "notVerifiable": [],
+        "ambiguities": [],
+        "unrecognized": [],
+        "structured": {
+          "applied": [],
+          "duplicatesOfText": []
+        },
+        "hints": {
+          "productKeys": [],
+          "notFound": []
+        },
+        "selection": {
+          "itemKeys": [],
+          "notFound": [],
+          "unverified": []
+        }
+      },
+      "exactMatch": null,
+      "verified": [],
+      "possible": [
+        {
+          "productKey": "P140",
+          "name": "Kettlebell Hierro Serie 140",
+          "disposition": "POSSIBLE_MATCH",
+          "matchedBy": [
+            "LEXICAL:BM25",
+            "LEXICAL:NOMINAL_PHRASE",
+            "STRUCTURED:CONCEPT_MATCH"
+          ],
+          "satisfied": [
+            "KETTLEBELL@PRODUCT_SEMANTICS"
+          ],
+          "unresolved": [
+            "price<=50000CLP:UNKNOWN:COMMERCIAL_TRUTH_NOT_OBSERVED"
+          ],
+          "readings": [],
+          "requirements": [
+            {
+              "code": "price<=50000CLP",
+              "state": "UNKNOWN",
+              "authority": "COMMERCIAL_TRUTH",
+              "derived": false
+            },
+            {
+              "code": "PRODUCT_TYPE:KETTLEBELL",
+              "state": "SATISFIED",
+              "authority": "PRODUCT_SEMANTICS",
+              "derived": false
+            }
+          ],
+          "commercial": {
+            "status": "UNKNOWN",
+            "reason": "NOT_EVALUATED_OUTSIDE_BOUND"
+          }
+        },
+        {
+          "productKey": "P141",
+          "name": "Kettlebell Hierro Serie 141",
+          "disposition": "POSSIBLE_MATCH",
+          "matchedBy": [
+            "LEXICAL:BM25",
+            "LEXICAL:NOMINAL_PHRASE",
+            "STRUCTURED:CONCEPT_MATCH"
+          ],
+          "satisfied": [
+            "KETTLEBELL@PRODUCT_SEMANTICS"
+          ],
+          "unresolved": [
+            "price<=50000CLP:UNKNOWN:COMMERCIAL_TRUTH_NOT_OBSERVED"
+          ],
+          "readings": [],
+          "requirements": [
+            {
+              "code": "price<=50000CLP",
+              "state": "UNKNOWN",
+              "authority": "COMMERCIAL_TRUTH",
+              "derived": false
+            },
+            {
+              "code": "PRODUCT_TYPE:KETTLEBELL",
+              "state": "SATISFIED",
+              "authority": "PRODUCT_SEMANTICS",
+              "derived": false
+            }
+          ],
+          "commercial": {
+            "status": "UNKNOWN",
+            "reason": "NOT_EVALUATED_OUTSIDE_BOUND"
+          }
+        },
+        {
+          "productKey": "P142",
+          "name": "Kettlebell Hierro Serie 142",
+          "disposition": "POSSIBLE_MATCH",
+          "matchedBy": [
+            "LEXICAL:BM25",
+            "LEXICAL:NOMINAL_PHRASE",
+            "STRUCTURED:CONCEPT_MATCH"
+          ],
+          "satisfied": [
+            "KETTLEBELL@PRODUCT_SEMANTICS"
+          ],
+          "unresolved": [
+            "price<=50000CLP:UNKNOWN:COMMERCIAL_TRUTH_NOT_OBSERVED"
+          ],
+          "readings": [],
+          "requirements": [
+            {
+              "code": "price<=50000CLP",
+              "state": "UNKNOWN",
+              "authority": "COMMERCIAL_TRUTH",
+              "derived": false
+            },
+            {
+              "code": "PRODUCT_TYPE:KETTLEBELL",
+              "state": "SATISFIED",
+              "authority": "PRODUCT_SEMANTICS",
+              "derived": false
+            }
+          ],
+          "commercial": {
+            "status": "UNKNOWN",
+            "reason": "NOT_EVALUATED_OUTSIDE_BOUND"
+          }
+        }
+      ],
+      "completeness": {
+        "retrieval": "COMPLETE",
+        "commercial": "INCOMPLETE",
+        "exhaustive": false,
+        "moreVerifiedAvailable": false,
+        "counts": {
+          "retrieved": 120,
+          "technicallyExamined": 120,
+          "commerciallyHydrated": 40,
+          "pendingHydration": 80,
+          "rejectedByKnownConstraints": 40,
+          "rejectedByCommercialConstraints": 40,
+          "withUnresolvedConstraints": 80,
+          "verified": 0,
+          "presented": 3
+        }
+      },
+      "absence": {
+        "reason": "COMMERCIAL_EVALUATION_INCOMPLETE",
+        "contributing": [],
+        "engineReason": "COMMERCIAL_HYDRATION_BOUNDED"
+      },
+      "degradation": [],
+      "commercialFreshness": {
+        "status": "OBSERVED",
+        "authority": "catalog-commercial-truth-v2",
+        "integrationVersion": "catalog-discover-v0.2-c2",
+        "oldestAsOf": null,
+        "newestAsOf": null,
+        "earliestValidUntil": null,
+        "maxCacheAgeMs": null,
+        "reads": 1,
+        "coherence": "PER_PRODUCT_READ",
+        "observations": {
+          "observed": 40,
+          "notFound": 0,
+          "unavailable": 0
+        }
+      },
+      "lineage": {
+        "contractVersion": "catalog-discover-v1b1",
+        "retrievalVersion": "catalog-discover-v0.2",
+        "interpreterVersion": "catalog-discover-v0.2",
+        "lexiconVersion": "discover-v0.2-lexicon-v1",
+        "documentRulesVersion": "retrieval-document-v0.1",
+        "commercialIntegrationVersion": "catalog-discover-v0.2-c2",
+        "bundleId": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "sourceExtractionId": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "indexFingerprint": "sha256:57d978edd313ec74b3d8d79d014042a727860f950434e29c7d38f7d47fe2e33c",
+        "productSemanticsSnapshotId": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "trainingV2SnapshotId": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "specsSnapshotId": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+        "admissionContractHash": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "strategy": [
+          "EXACT",
+          "LEXICAL",
+          "STRUCTURED"
+        ]
+      },
+      "warnings": [
+        "COMMERCIAL_HYDRATION_BOUNDED",
+        "COMMERCIAL_CANDIDATES_REJECTED"
+      ]
+    }
+  },
+  "ownerConsumerExpectation": {
+    "status": "PARTIAL",
+    "outcome": null,
+    "labels": [
+      "CANNOT_ASSERT_NO_PRODUCTS_EXIST"
+    ],
+    "notLabels": [],
+    "allowed": {},
+    "forbidden": {},
+    "answerAllowed": [],
+    "answerForbidden": [
+      "NONE_EXIST",
+      "COMPLETE_LIST"
+    ]
+  }
+}

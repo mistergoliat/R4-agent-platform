@@ -1,0 +1,1005 @@
+{
+  "$ref": "#/definitions/DiscoverAgentResponseTolerant",
+  "definitions": {
+    "DiscoverAgentResponseTolerant": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "number",
+          "const": 1
+        },
+        "contractVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "COMPLETE",
+            "PARTIAL",
+            "DEGRADED",
+            "FAILED"
+          ]
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "INVALID_REQUEST",
+                "UNSUPPORTED_SCHEMA_VERSION",
+                "CONTRADICTORY_CONSTRAINTS",
+                "INDEX_UNAVAILABLE",
+                "INDEX_INCOMPATIBLE",
+                "INTERNAL_ERROR"
+              ]
+            },
+            "retryable": {
+              "type": "boolean"
+            },
+            "issues": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^[A-Z][A-Z0-9_]{0,63}$"
+                  },
+                  "path": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 400
+                  }
+                },
+                "required": [
+                  "code",
+                  "path",
+                  "message"
+                ],
+                "additionalProperties": true
+              },
+              "maxItems": 64
+            },
+            "detail": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 160
+              },
+              "maxItems": 16
+            }
+          },
+          "required": [
+            "code",
+            "retryable"
+          ],
+          "additionalProperties": true
+        },
+        "interpretation": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "need": {
+                  "type": "string",
+                  "maxLength": 121
+                },
+                "required": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160
+                  },
+                  "maxItems": 64
+                },
+                "preferred": {
+                  "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/interpretation/anyOf/0/properties/required"
+                },
+                "notVerifiable": {
+                  "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/interpretation/anyOf/0/properties/required"
+                },
+                "ambiguities": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "text": {
+                        "type": "string",
+                        "maxLength": 160
+                      },
+                      "readings": {
+                        "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/interpretation/anyOf/0/properties/required"
+                      },
+                      "groupId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 32
+                      },
+                      "readingRequirements": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "readingId": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 16
+                            },
+                            "required": {
+                              "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/interpretation/anyOf/0/properties/required"
+                            }
+                          },
+                          "required": [
+                            "readingId",
+                            "required"
+                          ],
+                          "additionalProperties": true
+                        },
+                        "maxItems": 16
+                      }
+                    },
+                    "required": [
+                      "text",
+                      "readings",
+                      "groupId",
+                      "readingRequirements"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "maxItems": 8
+                },
+                "unrecognized": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "maxItems": 64
+                },
+                "structured": {
+                  "type": "object",
+                  "properties": {
+                    "applied": {
+                      "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/interpretation/anyOf/0/properties/required"
+                    },
+                    "duplicatesOfText": {
+                      "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/interpretation/anyOf/0/properties/required"
+                    }
+                  },
+                  "required": [
+                    "applied",
+                    "duplicatesOfText"
+                  ],
+                  "additionalProperties": true
+                },
+                "hints": {
+                  "type": "object",
+                  "properties": {
+                    "productKeys": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^P\\d+$"
+                      },
+                      "maxItems": 8
+                    },
+                    "notFound": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/interpretation/anyOf/0/properties/hints/properties/productKeys/items"
+                      },
+                      "maxItems": 8
+                    }
+                  },
+                  "required": [
+                    "productKeys",
+                    "notFound"
+                  ],
+                  "additionalProperties": true
+                },
+                "selection": {
+                  "type": "object",
+                  "properties": {
+                    "itemKeys": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^P\\d+(?:-V\\d+)?$"
+                      },
+                      "maxItems": 8
+                    },
+                    "notFound": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/interpretation/anyOf/0/properties/selection/properties/itemKeys/items"
+                      },
+                      "maxItems": 8
+                    },
+                    "unverified": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/interpretation/anyOf/0/properties/selection/properties/itemKeys/items"
+                      },
+                      "maxItems": 8
+                    }
+                  },
+                  "required": [
+                    "itemKeys",
+                    "notFound",
+                    "unverified"
+                  ],
+                  "additionalProperties": true
+                }
+              },
+              "required": [
+                "need",
+                "required",
+                "preferred",
+                "notVerifiable",
+                "ambiguities",
+                "unrecognized",
+                "structured",
+                "hints",
+                "selection"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exactMatch": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "productKey": {
+                  "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/interpretation/anyOf/0/properties/hints/properties/productKeys/items"
+                },
+                "itemKey": {
+                  "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/interpretation/anyOf/0/properties/selection/properties/itemKeys/items"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                "disposition": {
+                  "type": "string",
+                  "enum": [
+                    "VERIFIED_MATCH",
+                    "POSSIBLE_MATCH",
+                    "REJECTED"
+                  ]
+                },
+                "matchedBy": {
+                  "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/interpretation/anyOf/0/properties/required"
+                },
+                "satisfied": {
+                  "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/interpretation/anyOf/0/properties/required"
+                },
+                "unresolved": {
+                  "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/interpretation/anyOf/0/properties/required"
+                },
+                "readings": {
+                  "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/interpretation/anyOf/0/properties/required"
+                },
+                "requirements": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "code": {
+                        "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/interpretation/anyOf/0/properties/required/items"
+                      },
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "SATISFIED",
+                          "UNKNOWN",
+                          "UNSUPPORTED",
+                          "VIOLATED",
+                          "NOT_EVALUATED"
+                        ]
+                      },
+                      "authority": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 32
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "derived": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "code",
+                      "state",
+                      "authority",
+                      "derived"
+                    ],
+                    "additionalProperties": true
+                  },
+                  "maxItems": 64
+                },
+                "commercial": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "const": "OBSERVED"
+                        },
+                        "authority": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "asOf": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "validUntil": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/exactMatch/anyOf/0/properties/commercial/anyOf/0/properties/asOf"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "price": {
+                          "type": "object",
+                          "properties": {
+                            "finalGrossClp": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "kind": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "exact",
+                                    "from"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "basis": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "offerable",
+                                    "not_offerable"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "finalGrossClp",
+                            "kind",
+                            "basis"
+                          ],
+                          "additionalProperties": true
+                        },
+                        "sellability": {
+                          "type": "string",
+                          "enum": [
+                            "sellable",
+                            "backorder",
+                            "not_sellable",
+                            "check_with_staff"
+                          ]
+                        },
+                        "orderable": {
+                          "type": "boolean"
+                        },
+                        "unit": {
+                          "type": "object",
+                          "properties": {
+                            "itemKey": {
+                              "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/interpretation/anyOf/0/properties/selection/properties/itemKeys/items"
+                            },
+                            "finalGrossClp": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": 0
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "sellability": {
+                              "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/exactMatch/anyOf/0/properties/commercial/anyOf/0/properties/sellability"
+                            },
+                            "reason": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64
+                            },
+                            "availableQuantity": {
+                              "anyOf": [
+                                {
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "orderable": {
+                              "type": "boolean"
+                            },
+                            "validUntil": {
+                              "anyOf": [
+                                {
+                                  "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/exactMatch/anyOf/0/properties/commercial/anyOf/0/properties/asOf"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "itemKey",
+                            "finalGrossClp",
+                            "sellability",
+                            "reason",
+                            "availableQuantity",
+                            "orderable",
+                            "validUntil"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "authority",
+                        "asOf",
+                        "validUntil",
+                        "price",
+                        "sellability",
+                        "orderable"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "const": "EXPIRED"
+                        },
+                        "authority": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "asOf": {
+                          "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/exactMatch/anyOf/0/properties/commercial/anyOf/0/properties/asOf"
+                        },
+                        "validUntil": {
+                          "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/exactMatch/anyOf/0/properties/commercial/anyOf/0/properties/asOf"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "authority",
+                        "asOf",
+                        "validUntil"
+                      ],
+                      "additionalProperties": true
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "const": "UNKNOWN"
+                        },
+                        "reason": {
+                          "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/error/properties/issues/items/properties/code"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "reason"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "productKey",
+                "name",
+                "disposition",
+                "matchedBy",
+                "satisfied",
+                "unresolved",
+                "readings",
+                "requirements",
+                "commercial"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verified": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/exactMatch/anyOf/0"
+          },
+          "maxItems": 8
+        },
+        "possible": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/exactMatch/anyOf/0"
+          },
+          "maxItems": 3
+        },
+        "completeness": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "retrieval": {
+                  "type": "string",
+                  "enum": [
+                    "COMPLETE",
+                    "TRUNCATED"
+                  ]
+                },
+                "commercial": {
+                  "type": "string",
+                  "enum": [
+                    "NOT_REQUIRED",
+                    "COMPLETE",
+                    "SUFFICIENT",
+                    "INCOMPLETE",
+                    "UNAVAILABLE"
+                  ]
+                },
+                "exhaustive": {
+                  "type": "boolean"
+                },
+                "moreVerifiedAvailable": {
+                  "type": "boolean"
+                },
+                "counts": {
+                  "type": "object",
+                  "properties": {
+                    "retrieved": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "technicallyExamined": {
+                      "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/completeness/anyOf/0/properties/counts/properties/retrieved"
+                    },
+                    "commerciallyHydrated": {
+                      "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/completeness/anyOf/0/properties/counts/properties/retrieved"
+                    },
+                    "pendingHydration": {
+                      "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/completeness/anyOf/0/properties/counts/properties/retrieved"
+                    },
+                    "rejectedByKnownConstraints": {
+                      "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/completeness/anyOf/0/properties/counts/properties/retrieved"
+                    },
+                    "rejectedByCommercialConstraints": {
+                      "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/completeness/anyOf/0/properties/counts/properties/retrieved"
+                    },
+                    "withUnresolvedConstraints": {
+                      "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/completeness/anyOf/0/properties/counts/properties/retrieved"
+                    },
+                    "verified": {
+                      "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/completeness/anyOf/0/properties/counts/properties/retrieved"
+                    },
+                    "presented": {
+                      "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/completeness/anyOf/0/properties/counts/properties/retrieved"
+                    }
+                  },
+                  "required": [
+                    "retrieved",
+                    "technicallyExamined",
+                    "commerciallyHydrated",
+                    "pendingHydration",
+                    "rejectedByKnownConstraints",
+                    "rejectedByCommercialConstraints",
+                    "withUnresolvedConstraints",
+                    "verified",
+                    "presented"
+                  ],
+                  "additionalProperties": true
+                }
+              },
+              "required": [
+                "retrieval",
+                "commercial",
+                "exhaustive",
+                "moreVerifiedAvailable",
+                "counts"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "absence": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "NO_RELEVANT_CANDIDATES",
+                    "NO_VERIFIED_CANDIDATES",
+                    "AMBIGUOUS_NEED",
+                    "CONSTRAINTS_UNSUPPORTED",
+                    "COMMERCIAL_TRUTH_UNAVAILABLE",
+                    "COMMERCIAL_EVALUATION_INCOMPLETE",
+                    "RETRIEVAL_TRUNCATED",
+                    "SOURCE_UNAVAILABLE"
+                  ]
+                },
+                "contributing": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/error/properties/issues/items/properties/code"
+                  },
+                  "maxItems": 8
+                },
+                "engineReason": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "reason",
+                "contributing",
+                "engineReason"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "degradation": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "component": {
+                "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/error/properties/issues/items/properties/code"
+              },
+              "cause": {
+                "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/error/properties/issues/items/properties/code"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "component",
+              "cause",
+              "retryable"
+            ],
+            "additionalProperties": true
+          },
+          "maxItems": 8
+        },
+        "commercialFreshness": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "OBSERVED",
+                    "PARTIAL",
+                    "UNAVAILABLE",
+                    "NOT_CONFIGURED",
+                    "NOT_REQUESTED"
+                  ]
+                },
+                "authority": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "integrationVersion": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "oldestAsOf": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/exactMatch/anyOf/0/properties/commercial/anyOf/0/properties/asOf"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "newestAsOf": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/exactMatch/anyOf/0/properties/commercial/anyOf/0/properties/asOf"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "earliestValidUntil": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/exactMatch/anyOf/0/properties/commercial/anyOf/0/properties/asOf"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "maxCacheAgeMs": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/completeness/anyOf/0/properties/counts/properties/retrieved"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "reads": {
+                  "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/completeness/anyOf/0/properties/counts/properties/retrieved"
+                },
+                "observations": {
+                  "type": "object",
+                  "properties": {
+                    "observed": {
+                      "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/completeness/anyOf/0/properties/counts/properties/retrieved"
+                    },
+                    "notFound": {
+                      "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/completeness/anyOf/0/properties/counts/properties/retrieved"
+                    },
+                    "unavailable": {
+                      "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/completeness/anyOf/0/properties/counts/properties/retrieved"
+                    }
+                  },
+                  "required": [
+                    "observed",
+                    "notFound",
+                    "unavailable"
+                  ],
+                  "additionalProperties": true
+                },
+                "coherence": {
+                  "type": "string",
+                  "const": "PER_PRODUCT_READ"
+                }
+              },
+              "required": [
+                "status",
+                "authority",
+                "integrationVersion",
+                "oldestAsOf",
+                "newestAsOf",
+                "earliestValidUntil",
+                "maxCacheAgeMs",
+                "reads",
+                "observations",
+                "coherence"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lineage": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "contractVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "retrievalVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "interpreterVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "lexiconVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "documentRulesVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "commercialIntegrationVersion": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "bundleId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sourceExtractionId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "indexFingerprint": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "productSemanticsSnapshotId": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "trainingV2SnapshotId": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "specsSnapshotId": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "admissionContractHash": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "strategy": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "maxItems": 8
+                }
+              },
+              "required": [
+                "contractVersion",
+                "retrievalVersion",
+                "interpreterVersion",
+                "lexiconVersion",
+                "documentRulesVersion",
+                "commercialIntegrationVersion",
+                "bundleId",
+                "sourceExtractionId",
+                "indexFingerprint",
+                "productSemanticsSnapshotId",
+                "trainingV2SnapshotId",
+                "specsSnapshotId",
+                "admissionContractHash",
+                "strategy"
+              ],
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/DiscoverAgentResponseTolerant/properties/error/properties/issues/items/properties/code"
+          },
+          "maxItems": 32
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "contractVersion",
+        "requestId",
+        "status",
+        "interpretation",
+        "exactMatch",
+        "verified",
+        "possible",
+        "completeness",
+        "absence",
+        "degradation",
+        "commercialFreshness",
+        "lineage",
+        "warnings"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}

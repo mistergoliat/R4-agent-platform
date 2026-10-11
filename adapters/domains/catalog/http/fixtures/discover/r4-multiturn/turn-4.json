@@ -1,0 +1,114 @@
+{
+  "turn": 4,
+  "customer": "Prefiero una polea",
+  "request": {
+    "schemaVersion": 1,
+    "need": "polea para entrenar espalda poco espacio",
+    "constraints": {
+      "maxUnitPriceClp": 300000
+    }
+  },
+  "http": {
+    "status": 200,
+    "body": {
+      "schemaVersion": 1,
+      "contractVersion": "catalog-discover-v1b1",
+      "requestId": "req-1",
+      "status": "COMPLETE",
+      "interpretation": {
+        "need": "polea para entrenar espalda poco espacio",
+        "required": [
+          "PRODUCT_TYPE:CABLE_MACHINE",
+          "ANATOMY:BACK",
+          "price<=300000CLP"
+        ],
+        "preferred": [
+          "USE_CONTEXT:SMALL_SPACE"
+        ],
+        "notVerifiable": [],
+        "ambiguities": [],
+        "unrecognized": [],
+        "structured": {
+          "applied": [
+            "price<=300000CLP"
+          ],
+          "duplicatesOfText": []
+        },
+        "hints": {
+          "productKeys": [],
+          "notFound": []
+        },
+        "selection": {
+          "itemKeys": [],
+          "notFound": [],
+          "unverified": []
+        }
+      },
+      "exactMatch": null,
+      "verified": [],
+      "possible": [],
+      "completeness": {
+        "retrieval": "COMPLETE",
+        "commercial": "COMPLETE",
+        "exhaustive": true,
+        "moreVerifiedAvailable": false,
+        "counts": {
+          "retrieved": 3,
+          "technicallyExamined": 3,
+          "commerciallyHydrated": 1,
+          "pendingHydration": 0,
+          "rejectedByKnownConstraints": 3,
+          "rejectedByCommercialConstraints": 1,
+          "withUnresolvedConstraints": 0,
+          "verified": 0,
+          "presented": 0
+        }
+      },
+      "absence": {
+        "reason": "NO_VERIFIED_CANDIDATES",
+        "contributing": [],
+        "engineReason": "ALL_CANDIDATES_VIOLATE_HARD_CONSTRAINTS"
+      },
+      "degradation": [],
+      "commercialFreshness": {
+        "status": "OBSERVED",
+        "authority": "catalog-commercial-truth-v2",
+        "integrationVersion": "catalog-discover-v0.2-c2",
+        "oldestAsOf": null,
+        "newestAsOf": null,
+        "earliestValidUntil": null,
+        "maxCacheAgeMs": null,
+        "reads": 1,
+        "coherence": "PER_PRODUCT_READ",
+        "observations": {
+          "observed": 1,
+          "notFound": 0,
+          "unavailable": 0
+        }
+      },
+      "lineage": {
+        "contractVersion": "catalog-discover-v1b1",
+        "retrievalVersion": "catalog-discover-v0.2",
+        "interpreterVersion": "catalog-discover-v0.2",
+        "lexiconVersion": "discover-v0.2-lexicon-v1",
+        "documentRulesVersion": "retrieval-document-v0.1",
+        "commercialIntegrationVersion": "catalog-discover-v0.2-c2",
+        "bundleId": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "sourceExtractionId": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "indexFingerprint": "sha256:46318bfea2fb081b4a3412866de23fb80dada2fa3514df9838d1b71f82a67dff",
+        "productSemanticsSnapshotId": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "trainingV2SnapshotId": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "specsSnapshotId": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+        "admissionContractHash": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "strategy": [
+          "EXACT",
+          "LEXICAL",
+          "STRUCTURED"
+        ]
+      },
+      "warnings": [
+        "COMMERCIAL_CANDIDATES_REJECTED"
+      ]
+    }
+  }
+}

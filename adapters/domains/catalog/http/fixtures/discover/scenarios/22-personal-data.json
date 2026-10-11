@@ -1,0 +1,40 @@
+{
+  "id": 22,
+  "key": "personal-data",
+  "title": "Consulta con datos personales",
+  "request": {
+    "schemaVersion": 1,
+    "need": "kettlebell para Ana, mi correo ana@example.com y fono +56 9 8765 4321"
+  },
+  "http": {
+    "status": 400,
+    "body": {
+      "error": {
+        "code": "invalid_request",
+        "message": "Invalid discover request",
+        "correlationId": "req-fixture",
+        "retryable": false,
+        "requestId": "req-1",
+        "issues": [
+          {
+            "code": "PERSONAL_DATA",
+            "path": "need"
+          }
+        ]
+      }
+    }
+  },
+  "ownerConsumerExpectation": {
+    "status": "FAILED",
+    "outcome": "REQUEST_REJECTED",
+    "labels": [
+      "FIX_REQUEST",
+      "CANNOT_ASSERT_NO_PRODUCTS_EXIST"
+    ],
+    "notLabels": [],
+    "allowed": {},
+    "forbidden": {},
+    "answerAllowed": [],
+    "answerForbidden": []
+  }
+}

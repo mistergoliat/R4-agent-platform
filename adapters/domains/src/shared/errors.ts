@@ -25,12 +25,17 @@ export class DomainError extends Error {
   readonly retryable: boolean;
   readonly details: Readonly<Record<string, string | number | boolean | null>>;
 
-  constructor(category: DomainErrorCategory, code: string, message: string, details: Readonly<Record<string, string | number | boolean | null>> = {}) {
+  /**
+   * `options.retryable` lets an owner that states retryability itself (e.g. a
+   * capability the owner reports as disabled: unavailable, yet retrying cannot
+   * help) override the category default. Absent, the category decides.
+   */
+  constructor(category: DomainErrorCategory, code: string, message: string, details: Readonly<Record<string, string | number | boolean | null>> = {}, options: { readonly retryable?: boolean } = {}) {
     super(message);
     this.name = 'DomainError';
     this.category = category;
     this.code = code;
-    this.retryable = category === 'temporarily_unavailable' || category === 'timeout';
+    this.retryable = options.retryable ?? (category === 'temporarily_unavailable' || category === 'timeout');
     this.details = details;
   }
 

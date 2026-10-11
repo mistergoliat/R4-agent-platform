@@ -1,0 +1,228 @@
+{
+  "id": 15,
+  "key": "ambiguous-barbell-support",
+  "title": "Ambigüedad «soporte de barra»",
+  "request": {
+    "schemaVersion": 1,
+    "need": "soporte de barra"
+  },
+  "http": {
+    "status": 200,
+    "body": {
+      "schemaVersion": 1,
+      "contractVersion": "catalog-discover-v1b1",
+      "requestId": "req-1",
+      "status": "COMPLETE",
+      "interpretation": {
+        "need": "soporte de barra",
+        "required": [],
+        "preferred": [],
+        "notVerifiable": [],
+        "ambiguities": [
+          {
+            "text": "soporte de barra",
+            "readings": [
+              "A:accesorio físico «soporte de barra»",
+              "B:función: sostener la barra durante el entrenamiento"
+            ],
+            "groupId": "G1",
+            "readingRequirements": [
+              {
+                "readingId": "A",
+                "required": [
+                  "PRODUCT_TYPE:MACHINE_ATTACHMENT"
+                ]
+              },
+              {
+                "readingId": "B",
+                "required": [
+                  "TRAINING_FUNCTION:BARBELL_SUPPORT"
+                ]
+              }
+            ]
+          }
+        ],
+        "unrecognized": [],
+        "structured": {
+          "applied": [],
+          "duplicatesOfText": []
+        },
+        "hints": {
+          "productKeys": [],
+          "notFound": []
+        },
+        "selection": {
+          "itemKeys": [],
+          "notFound": [],
+          "unverified": []
+        }
+      },
+      "exactMatch": null,
+      "verified": [],
+      "possible": [
+        {
+          "productKey": "P12",
+          "itemKey": "P12",
+          "name": "Soporte de Barra Accesorio Rack",
+          "disposition": "POSSIBLE_MATCH",
+          "matchedBy": [
+            "LEXICAL:BM25",
+            "LEXICAL:NOMINAL_PHRASE",
+            "STRUCTURED:CONCEPT_MATCH"
+          ],
+          "satisfied": [
+            "MACHINE_ATTACHMENT@PRODUCT_SEMANTICS"
+          ],
+          "unresolved": [
+            "G1:UNKNOWN:AMBIGUOUS_NEED:CONFLICTING_EVIDENCE"
+          ],
+          "readings": [
+            "A:accesorio físico «soporte de barra»"
+          ],
+          "requirements": [],
+          "commercial": {
+            "status": "OBSERVED",
+            "authority": "catalog-commercial-truth-v2",
+            "asOf": "2026-10-09T12:00:00.000Z",
+            "validUntil": "2026-10-09T12:00:15.000Z",
+            "price": {
+              "finalGrossClp": 47600,
+              "kind": "exact",
+              "basis": "offerable"
+            },
+            "sellability": "sellable",
+            "orderable": true,
+            "unit": {
+              "itemKey": "P12",
+              "finalGrossClp": 47600,
+              "sellability": "sellable",
+              "reason": "in_stock",
+              "availableQuantity": 4,
+              "orderable": true,
+              "validUntil": "2026-10-09T12:00:15.000Z"
+            }
+          }
+        },
+        {
+          "productKey": "P13",
+          "itemKey": "P13",
+          "name": "Rack Potencia Acero",
+          "disposition": "POSSIBLE_MATCH",
+          "matchedBy": [
+            "STRUCTURED:CONCEPT_MATCH"
+          ],
+          "satisfied": [
+            "BARBELL_SUPPORT@TRAINING_V2"
+          ],
+          "unresolved": [
+            "G1:UNKNOWN:AMBIGUOUS_NEED"
+          ],
+          "readings": [
+            "B:función: sostener la barra durante el entrenami…"
+          ],
+          "requirements": [],
+          "commercial": {
+            "status": "OBSERVED",
+            "authority": "catalog-commercial-truth-v2",
+            "asOf": "2026-10-09T12:00:00.000Z",
+            "validUntil": "2026-10-09T12:00:15.000Z",
+            "price": {
+              "finalGrossClp": 357000,
+              "kind": "exact",
+              "basis": "offerable"
+            },
+            "sellability": "sellable",
+            "orderable": true,
+            "unit": {
+              "itemKey": "P13",
+              "finalGrossClp": 357000,
+              "sellability": "sellable",
+              "reason": "in_stock",
+              "availableQuantity": 4,
+              "orderable": true,
+              "validUntil": "2026-10-09T12:00:15.000Z"
+            }
+          }
+        }
+      ],
+      "completeness": {
+        "retrieval": "COMPLETE",
+        "commercial": "NOT_REQUIRED",
+        "exhaustive": true,
+        "moreVerifiedAvailable": false,
+        "counts": {
+          "retrieved": 3,
+          "technicallyExamined": 3,
+          "commerciallyHydrated": 3,
+          "pendingHydration": 0,
+          "rejectedByKnownConstraints": 0,
+          "rejectedByCommercialConstraints": 0,
+          "withUnresolvedConstraints": 3,
+          "verified": 0,
+          "presented": 2
+        }
+      },
+      "absence": {
+        "reason": "AMBIGUOUS_NEED",
+        "contributing": [],
+        "engineReason": "AMBIGUOUS_NEED_UNRESOLVED"
+      },
+      "degradation": [],
+      "commercialFreshness": {
+        "status": "OBSERVED",
+        "authority": "catalog-commercial-truth-v2",
+        "integrationVersion": "catalog-discover-v0.2-c2",
+        "oldestAsOf": "2026-10-09T12:00:00.000Z",
+        "newestAsOf": "2026-10-09T12:00:00.000Z",
+        "earliestValidUntil": "2026-10-09T12:00:15.000Z",
+        "maxCacheAgeMs": 0,
+        "reads": 1,
+        "coherence": "PER_PRODUCT_READ",
+        "observations": {
+          "observed": 3,
+          "notFound": 0,
+          "unavailable": 0
+        }
+      },
+      "lineage": {
+        "contractVersion": "catalog-discover-v1b1",
+        "retrievalVersion": "catalog-discover-v0.2",
+        "interpreterVersion": "catalog-discover-v0.2",
+        "lexiconVersion": "discover-v0.2-lexicon-v1",
+        "documentRulesVersion": "retrieval-document-v0.1",
+        "commercialIntegrationVersion": "catalog-discover-v0.2-c2",
+        "bundleId": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "sourceExtractionId": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "indexFingerprint": "sha256:46318bfea2fb081b4a3412866de23fb80dada2fa3514df9838d1b71f82a67dff",
+        "productSemanticsSnapshotId": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "trainingV2SnapshotId": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "specsSnapshotId": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+        "admissionContractHash": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "strategy": [
+          "EXACT",
+          "LEXICAL",
+          "STRUCTURED"
+        ]
+      },
+      "warnings": [
+        "AMBIGUOUS_NEED",
+        "CONFLICTING_EVIDENCE_PRESENT",
+        "WEAK_MATCHES_OMITTED"
+      ]
+    }
+  },
+  "ownerConsumerExpectation": {
+    "status": null,
+    "outcome": null,
+    "labels": [
+      "CLARIFICATION_RECOMMENDED",
+      "MAY_PRESENT_POSSIBILITIES_WITH_CAVEATS",
+      "CANNOT_ASSERT_NO_PRODUCTS_EXIST"
+    ],
+    "notLabels": [],
+    "allowed": {},
+    "forbidden": {},
+    "answerAllowed": [],
+    "answerForbidden": []
+  }
+}

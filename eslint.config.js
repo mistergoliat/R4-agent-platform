@@ -213,7 +213,8 @@ export default tseslint.config(
   },
   {
     // Plain-JS child processes spawned by recovery tests (Node cannot run TS directly), and repo scripts.
-    files: ['tests/**/*.mjs', 'scripts/**/*.mjs'],
+    // R4-DISCOVER-I1: scripts/catalog-discover/*.mts run on the Catalog owner's toolchain (tsx), outside R4's TS project.
+    files: ['tests/**/*.mjs', 'scripts/**/*.mjs', 'scripts/**/*.mts'],
     ...tseslint.configs.disableTypeChecked,
     languageOptions: { ...tseslint.configs.disableTypeChecked.languageOptions, globals: { process: 'readonly' } },
   },

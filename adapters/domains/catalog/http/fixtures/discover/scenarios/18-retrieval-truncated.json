@@ -1,0 +1,487 @@
+{
+  "id": 18,
+  "key": "retrieval-truncated",
+  "title": "Retrieval truncado",
+  "request": {
+    "schemaVersion": 1,
+    "need": "kettlebell hierro serie"
+  },
+  "http": {
+    "status": 200,
+    "body": {
+      "schemaVersion": 1,
+      "contractVersion": "catalog-discover-v1b1",
+      "requestId": "req-1",
+      "status": "PARTIAL",
+      "interpretation": {
+        "need": "kettlebell hierro serie",
+        "required": [
+          "PRODUCT_TYPE:KETTLEBELL"
+        ],
+        "preferred": [],
+        "notVerifiable": [],
+        "ambiguities": [],
+        "unrecognized": [
+          "hierro",
+          "serie"
+        ],
+        "structured": {
+          "applied": [],
+          "duplicatesOfText": []
+        },
+        "hints": {
+          "productKeys": [],
+          "notFound": []
+        },
+        "selection": {
+          "itemKeys": [],
+          "notFound": [],
+          "unverified": []
+        }
+      },
+      "exactMatch": null,
+      "verified": [
+        {
+          "productKey": "P100",
+          "itemKey": "P100",
+          "name": "Kettlebell Hierro Serie 100",
+          "disposition": "VERIFIED_MATCH",
+          "matchedBy": [
+            "LEXICAL:BM25",
+            "LEXICAL:NOMINAL_PHRASE",
+            "STRUCTURED:CONCEPT_MATCH"
+          ],
+          "satisfied": [
+            "KETTLEBELL@PRODUCT_SEMANTICS"
+          ],
+          "unresolved": [],
+          "readings": [],
+          "requirements": [
+            {
+              "code": "PRODUCT_TYPE:KETTLEBELL",
+              "state": "SATISFIED",
+              "authority": "PRODUCT_SEMANTICS",
+              "derived": false
+            }
+          ],
+          "commercial": {
+            "status": "OBSERVED",
+            "authority": "catalog-commercial-truth-v2",
+            "asOf": "2026-10-09T12:00:00.000Z",
+            "validUntil": "2026-10-09T12:00:15.000Z",
+            "price": {
+              "finalGrossClp": 47600,
+              "kind": "exact",
+              "basis": "offerable"
+            },
+            "sellability": "sellable",
+            "orderable": true,
+            "unit": {
+              "itemKey": "P100",
+              "finalGrossClp": 47600,
+              "sellability": "sellable",
+              "reason": "in_stock",
+              "availableQuantity": 4,
+              "orderable": true,
+              "validUntil": "2026-10-09T12:00:15.000Z"
+            }
+          }
+        },
+        {
+          "productKey": "P101",
+          "itemKey": "P101",
+          "name": "Kettlebell Hierro Serie 101",
+          "disposition": "VERIFIED_MATCH",
+          "matchedBy": [
+            "LEXICAL:BM25",
+            "LEXICAL:NOMINAL_PHRASE",
+            "STRUCTURED:CONCEPT_MATCH"
+          ],
+          "satisfied": [
+            "KETTLEBELL@PRODUCT_SEMANTICS"
+          ],
+          "unresolved": [],
+          "readings": [],
+          "requirements": [
+            {
+              "code": "PRODUCT_TYPE:KETTLEBELL",
+              "state": "SATISFIED",
+              "authority": "PRODUCT_SEMANTICS",
+              "derived": false
+            }
+          ],
+          "commercial": {
+            "status": "OBSERVED",
+            "authority": "catalog-commercial-truth-v2",
+            "asOf": "2026-10-09T12:00:00.000Z",
+            "validUntil": "2026-10-09T12:00:15.000Z",
+            "price": {
+              "finalGrossClp": 47600,
+              "kind": "exact",
+              "basis": "offerable"
+            },
+            "sellability": "sellable",
+            "orderable": true,
+            "unit": {
+              "itemKey": "P101",
+              "finalGrossClp": 47600,
+              "sellability": "sellable",
+              "reason": "in_stock",
+              "availableQuantity": 4,
+              "orderable": true,
+              "validUntil": "2026-10-09T12:00:15.000Z"
+            }
+          }
+        },
+        {
+          "productKey": "P102",
+          "itemKey": "P102",
+          "name": "Kettlebell Hierro Serie 102",
+          "disposition": "VERIFIED_MATCH",
+          "matchedBy": [
+            "LEXICAL:BM25",
+            "LEXICAL:NOMINAL_PHRASE",
+            "STRUCTURED:CONCEPT_MATCH"
+          ],
+          "satisfied": [
+            "KETTLEBELL@PRODUCT_SEMANTICS"
+          ],
+          "unresolved": [],
+          "readings": [],
+          "requirements": [
+            {
+              "code": "PRODUCT_TYPE:KETTLEBELL",
+              "state": "SATISFIED",
+              "authority": "PRODUCT_SEMANTICS",
+              "derived": false
+            }
+          ],
+          "commercial": {
+            "status": "OBSERVED",
+            "authority": "catalog-commercial-truth-v2",
+            "asOf": "2026-10-09T12:00:00.000Z",
+            "validUntil": "2026-10-09T12:00:15.000Z",
+            "price": {
+              "finalGrossClp": 47600,
+              "kind": "exact",
+              "basis": "offerable"
+            },
+            "sellability": "sellable",
+            "orderable": true,
+            "unit": {
+              "itemKey": "P102",
+              "finalGrossClp": 47600,
+              "sellability": "sellable",
+              "reason": "in_stock",
+              "availableQuantity": 4,
+              "orderable": true,
+              "validUntil": "2026-10-09T12:00:15.000Z"
+            }
+          }
+        },
+        {
+          "productKey": "P103",
+          "itemKey": "P103",
+          "name": "Kettlebell Hierro Serie 103",
+          "disposition": "VERIFIED_MATCH",
+          "matchedBy": [
+            "LEXICAL:BM25",
+            "LEXICAL:NOMINAL_PHRASE",
+            "STRUCTURED:CONCEPT_MATCH"
+          ],
+          "satisfied": [
+            "KETTLEBELL@PRODUCT_SEMANTICS"
+          ],
+          "unresolved": [],
+          "readings": [],
+          "requirements": [
+            {
+              "code": "PRODUCT_TYPE:KETTLEBELL",
+              "state": "SATISFIED",
+              "authority": "PRODUCT_SEMANTICS",
+              "derived": false
+            }
+          ],
+          "commercial": {
+            "status": "OBSERVED",
+            "authority": "catalog-commercial-truth-v2",
+            "asOf": "2026-10-09T12:00:00.000Z",
+            "validUntil": "2026-10-09T12:00:15.000Z",
+            "price": {
+              "finalGrossClp": 47600,
+              "kind": "exact",
+              "basis": "offerable"
+            },
+            "sellability": "sellable",
+            "orderable": true,
+            "unit": {
+              "itemKey": "P103",
+              "finalGrossClp": 47600,
+              "sellability": "sellable",
+              "reason": "in_stock",
+              "availableQuantity": 4,
+              "orderable": true,
+              "validUntil": "2026-10-09T12:00:15.000Z"
+            }
+          }
+        },
+        {
+          "productKey": "P104",
+          "itemKey": "P104",
+          "name": "Kettlebell Hierro Serie 104",
+          "disposition": "VERIFIED_MATCH",
+          "matchedBy": [
+            "LEXICAL:BM25",
+            "LEXICAL:NOMINAL_PHRASE",
+            "STRUCTURED:CONCEPT_MATCH"
+          ],
+          "satisfied": [
+            "KETTLEBELL@PRODUCT_SEMANTICS"
+          ],
+          "unresolved": [],
+          "readings": [],
+          "requirements": [
+            {
+              "code": "PRODUCT_TYPE:KETTLEBELL",
+              "state": "SATISFIED",
+              "authority": "PRODUCT_SEMANTICS",
+              "derived": false
+            }
+          ],
+          "commercial": {
+            "status": "OBSERVED",
+            "authority": "catalog-commercial-truth-v2",
+            "asOf": "2026-10-09T12:00:00.000Z",
+            "validUntil": "2026-10-09T12:00:15.000Z",
+            "price": {
+              "finalGrossClp": 47600,
+              "kind": "exact",
+              "basis": "offerable"
+            },
+            "sellability": "sellable",
+            "orderable": true,
+            "unit": {
+              "itemKey": "P104",
+              "finalGrossClp": 47600,
+              "sellability": "sellable",
+              "reason": "in_stock",
+              "availableQuantity": 4,
+              "orderable": true,
+              "validUntil": "2026-10-09T12:00:15.000Z"
+            }
+          }
+        },
+        {
+          "productKey": "P105",
+          "itemKey": "P105",
+          "name": "Kettlebell Hierro Serie 105",
+          "disposition": "VERIFIED_MATCH",
+          "matchedBy": [
+            "LEXICAL:BM25",
+            "LEXICAL:NOMINAL_PHRASE",
+            "STRUCTURED:CONCEPT_MATCH"
+          ],
+          "satisfied": [
+            "KETTLEBELL@PRODUCT_SEMANTICS"
+          ],
+          "unresolved": [],
+          "readings": [],
+          "requirements": [
+            {
+              "code": "PRODUCT_TYPE:KETTLEBELL",
+              "state": "SATISFIED",
+              "authority": "PRODUCT_SEMANTICS",
+              "derived": false
+            }
+          ],
+          "commercial": {
+            "status": "OBSERVED",
+            "authority": "catalog-commercial-truth-v2",
+            "asOf": "2026-10-09T12:00:00.000Z",
+            "validUntil": "2026-10-09T12:00:15.000Z",
+            "price": {
+              "finalGrossClp": 47600,
+              "kind": "exact",
+              "basis": "offerable"
+            },
+            "sellability": "sellable",
+            "orderable": true,
+            "unit": {
+              "itemKey": "P105",
+              "finalGrossClp": 47600,
+              "sellability": "sellable",
+              "reason": "in_stock",
+              "availableQuantity": 4,
+              "orderable": true,
+              "validUntil": "2026-10-09T12:00:15.000Z"
+            }
+          }
+        },
+        {
+          "productKey": "P106",
+          "itemKey": "P106",
+          "name": "Kettlebell Hierro Serie 106",
+          "disposition": "VERIFIED_MATCH",
+          "matchedBy": [
+            "LEXICAL:BM25",
+            "LEXICAL:NOMINAL_PHRASE",
+            "STRUCTURED:CONCEPT_MATCH"
+          ],
+          "satisfied": [
+            "KETTLEBELL@PRODUCT_SEMANTICS"
+          ],
+          "unresolved": [],
+          "readings": [],
+          "requirements": [
+            {
+              "code": "PRODUCT_TYPE:KETTLEBELL",
+              "state": "SATISFIED",
+              "authority": "PRODUCT_SEMANTICS",
+              "derived": false
+            }
+          ],
+          "commercial": {
+            "status": "OBSERVED",
+            "authority": "catalog-commercial-truth-v2",
+            "asOf": "2026-10-09T12:00:00.000Z",
+            "validUntil": "2026-10-09T12:00:15.000Z",
+            "price": {
+              "finalGrossClp": 47600,
+              "kind": "exact",
+              "basis": "offerable"
+            },
+            "sellability": "sellable",
+            "orderable": true,
+            "unit": {
+              "itemKey": "P106",
+              "finalGrossClp": 47600,
+              "sellability": "sellable",
+              "reason": "in_stock",
+              "availableQuantity": 4,
+              "orderable": true,
+              "validUntil": "2026-10-09T12:00:15.000Z"
+            }
+          }
+        },
+        {
+          "productKey": "P107",
+          "itemKey": "P107",
+          "name": "Kettlebell Hierro Serie 107",
+          "disposition": "VERIFIED_MATCH",
+          "matchedBy": [
+            "LEXICAL:BM25",
+            "LEXICAL:NOMINAL_PHRASE",
+            "STRUCTURED:CONCEPT_MATCH"
+          ],
+          "satisfied": [
+            "KETTLEBELL@PRODUCT_SEMANTICS"
+          ],
+          "unresolved": [],
+          "readings": [],
+          "requirements": [
+            {
+              "code": "PRODUCT_TYPE:KETTLEBELL",
+              "state": "SATISFIED",
+              "authority": "PRODUCT_SEMANTICS",
+              "derived": false
+            }
+          ],
+          "commercial": {
+            "status": "OBSERVED",
+            "authority": "catalog-commercial-truth-v2",
+            "asOf": "2026-10-09T12:00:00.000Z",
+            "validUntil": "2026-10-09T12:00:15.000Z",
+            "price": {
+              "finalGrossClp": 47600,
+              "kind": "exact",
+              "basis": "offerable"
+            },
+            "sellability": "sellable",
+            "orderable": true,
+            "unit": {
+              "itemKey": "P107",
+              "finalGrossClp": 47600,
+              "sellability": "sellable",
+              "reason": "in_stock",
+              "availableQuantity": 4,
+              "orderable": true,
+              "validUntil": "2026-10-09T12:00:15.000Z"
+            }
+          }
+        }
+      ],
+      "possible": [],
+      "completeness": {
+        "retrieval": "TRUNCATED",
+        "commercial": "NOT_REQUIRED",
+        "exhaustive": false,
+        "moreVerifiedAvailable": true,
+        "counts": {
+          "retrieved": 230,
+          "technicallyExamined": 230,
+          "commerciallyHydrated": 40,
+          "pendingHydration": 190,
+          "rejectedByKnownConstraints": 0,
+          "rejectedByCommercialConstraints": 0,
+          "withUnresolvedConstraints": 0,
+          "verified": 230,
+          "presented": 8
+        }
+      },
+      "absence": null,
+      "degradation": [],
+      "commercialFreshness": {
+        "status": "OBSERVED",
+        "authority": "catalog-commercial-truth-v2",
+        "integrationVersion": "catalog-discover-v0.2-c2",
+        "oldestAsOf": "2026-10-09T12:00:00.000Z",
+        "newestAsOf": "2026-10-09T12:00:00.000Z",
+        "earliestValidUntil": "2026-10-09T12:00:15.000Z",
+        "maxCacheAgeMs": 0,
+        "reads": 1,
+        "coherence": "PER_PRODUCT_READ",
+        "observations": {
+          "observed": 40,
+          "notFound": 0,
+          "unavailable": 0
+        }
+      },
+      "lineage": {
+        "contractVersion": "catalog-discover-v1b1",
+        "retrievalVersion": "catalog-discover-v0.2",
+        "interpreterVersion": "catalog-discover-v0.2",
+        "lexiconVersion": "discover-v0.2-lexicon-v1",
+        "documentRulesVersion": "retrieval-document-v0.1",
+        "commercialIntegrationVersion": "catalog-discover-v0.2-c2",
+        "bundleId": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "sourceExtractionId": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "indexFingerprint": "sha256:2fbe9d9c71d2f1818c28b5fad59ca892675dd7f0edc3dac738551cc122ecd7ba",
+        "productSemanticsSnapshotId": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "trainingV2SnapshotId": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "specsSnapshotId": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+        "admissionContractHash": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "strategy": [
+          "EXACT",
+          "LEXICAL",
+          "STRUCTURED"
+        ]
+      },
+      "warnings": [
+        "RETRIEVAL_TRUNCATED"
+      ]
+    }
+  },
+  "ownerConsumerExpectation": {
+    "status": "PARTIAL",
+    "outcome": null,
+    "labels": [],
+    "notLabels": [],
+    "allowed": {},
+    "forbidden": {},
+    "answerAllowed": [],
+    "answerForbidden": [
+      "COMPLETE_LIST",
+      "NONE_EXIST"
+    ]
+  }
+}

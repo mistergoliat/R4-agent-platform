@@ -1,0 +1,98 @@
+{
+  "failure": {
+    "INVALID_REQUEST": {
+      "status": 400,
+      "code": "invalid_request",
+      "retryable": false,
+      "message": "Invalid discover request"
+    },
+    "UNSUPPORTED_SCHEMA_VERSION": {
+      "status": 400,
+      "code": "unsupported_schema_version",
+      "retryable": false,
+      "message": "Unsupported schemaVersion"
+    },
+    "CONTRADICTORY_CONSTRAINTS": {
+      "status": 400,
+      "code": "contradictory_constraints",
+      "retryable": false,
+      "message": "Structured constraints contradict the need"
+    },
+    "INDEX_UNAVAILABLE": {
+      "status": 503,
+      "code": "capability_not_ready",
+      "retryable": true,
+      "message": "catalog.discover is not ready"
+    },
+    "INDEX_INCOMPATIBLE": {
+      "status": 503,
+      "code": "index_incompatible",
+      "retryable": false,
+      "message": "catalog.discover index is incompatible with this service"
+    },
+    "INTERNAL_ERROR": {
+      "status": 500,
+      "code": "internal_error",
+      "retryable": false,
+      "message": "catalog.discover failed"
+    }
+  },
+  "rejection": {
+    "DISABLED": {
+      "status": 503,
+      "code": "capability_disabled",
+      "retryable": false,
+      "message": "catalog.discover is disabled"
+    },
+    "NOT_CONFIGURED": {
+      "status": 503,
+      "code": "capability_not_ready",
+      "retryable": false,
+      "message": "catalog.discover is not configured"
+    },
+    "SATURATED": {
+      "status": 503,
+      "code": "capability_saturated",
+      "retryable": true,
+      "message": "catalog.discover is at capacity"
+    },
+    "SHUTTING_DOWN": {
+      "status": 503,
+      "code": "capability_shutting_down",
+      "retryable": true,
+      "message": "catalog.discover is shutting down"
+    },
+    "CANCELLED": {
+      "status": 503,
+      "code": "request_cancelled",
+      "retryable": true,
+      "message": "The request was cancelled"
+    }
+  },
+  "boundary": {
+    "unauthenticated": {
+      "status": 401,
+      "code": "unauthorized"
+    },
+    "forbidden": {
+      "status": 403,
+      "code": "forbidden"
+    },
+    "payloadTooLarge": {
+      "status": 413,
+      "code": "payload_too_large"
+    },
+    "unsupportedMediaType": {
+      "status": 415,
+      "code": "unsupported_media_type"
+    },
+    "rateLimited": {
+      "status": 429,
+      "code": "rate_limited"
+    },
+    "contractOutputInvalid": {
+      "status": 500,
+      "code": "contract_output_invalid"
+    }
+  }
+}

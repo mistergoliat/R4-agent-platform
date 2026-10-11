@@ -5,6 +5,7 @@ export * from './customer/fixture.js';
 export * from './catalog/port.js';
 export * from './catalog/fixture.js';
 export * from './catalog/fixture-data.js';
+export * from './catalog/discover.js';
 export * from './shipping/port.js';
 export * from './shipping/vat.js';
 export * from './shipping/basis.js';

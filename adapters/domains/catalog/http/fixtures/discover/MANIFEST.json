@@ -1,0 +1,207 @@
+{
+  "capability": "catalog.discover",
+  "schemaVersion": 1,
+  "contractVersion": "catalog-discover-v1b1",
+  "contractRevisions": [
+    "catalog-discover-v1a",
+    "catalog-discover-v1b2",
+    "catalog-discover-v1b1"
+  ],
+  "route": "POST /v2/catalog/discover",
+  "owner": {
+    "repository": "MS-pesaschile-catalog-service",
+    "commit": "6dd4b5d677a04bae350ce604cbb344c45c3fb2df",
+    "branch": "feat/catalog-discover-c2",
+    "contractSourcesUncommitted": false,
+    "contractSourcesLfSha256": {
+      "src/application/catalog/discover-v1a/agentContract.ts": "sha256:c58a0426b65af824afdac5921fde6247b4a32a2f99c26339c694084710510279",
+      "src/application/catalog/discover-v1a/contracts.ts": "sha256:797e5f87bf77041135ef744fa69919a54ffb2e4b2c7328192ec1830d4a1cac20",
+      "src/interfaces/http/routes/catalogDiscoverRoute.ts": "sha256:18e0dd7b5d96d3e80177dae08dd2614f00175ed9d43fa1354243d9cb833f4af3",
+      "src/domain/catalog/v2/contracts.ts": "sha256:992b83102f0fdd68b836e42b20aaed0fa252200d490f5121fc592472dbf0e88c",
+      "src/domain/catalog/v2/unitPriceBudget.ts": "sha256:44a10a7a76f95d9dc2f8247806571a2fb3a09a0893b7afb5c8e8d95e44933921",
+      "tests/contract/discover-agent/scenarios.ts": "sha256:d18567c53e34c46916825b1d1cd96eb7e22e67b040615d460d4fba466e472342",
+      "tests/contract/discover-agent/referenceConsumer.ts": "sha256:cb247c5c8f700e285f07882fb3515332e9e81f9b8c564f216069c3a718e0e61f"
+    }
+  },
+  "producedBy": "owner OperationalDiscoverService + J1 v2 owner (in-memory) over the owner SYNTHETIC agent catalog; R4 scripts/catalog-discover/export-fixtures.mts",
+  "nature": "SYNTHETIC contract fixtures: not production data, not relevance gold",
+  "scenarios": [
+    {
+      "id": 1,
+      "key": "exact-product-key",
+      "file": "scenarios/01-exact-product-key.json"
+    },
+    {
+      "id": 2,
+      "key": "nominal-name",
+      "file": "scenarios/02-nominal-name.json"
+    },
+    {
+      "id": 3,
+      "key": "training-goal",
+      "file": "scenarios/03-training-goal.json"
+    },
+    {
+      "id": 4,
+      "key": "small-space",
+      "file": "scenarios/04-small-space.json"
+    },
+    {
+      "id": 5,
+      "key": "weight-per-unit",
+      "file": "scenarios/05-weight-per-unit.json"
+    },
+    {
+      "id": 6,
+      "key": "pair-pack",
+      "file": "scenarios/06-pair-pack.json"
+    },
+    {
+      "id": 7,
+      "key": "mandatory-budget",
+      "file": "scenarios/07-mandatory-budget.json"
+    },
+    {
+      "id": 8,
+      "key": "reference-price",
+      "file": "scenarios/08-reference-price.json"
+    },
+    {
+      "id": 9,
+      "key": "variants",
+      "file": "scenarios/09-variants.json"
+    },
+    {
+      "id": 10,
+      "key": "missing-variant",
+      "file": "scenarios/10-missing-variant.json"
+    },
+    {
+      "id": 11,
+      "key": "out-of-stock",
+      "file": "scenarios/11-out-of-stock.json"
+    },
+    {
+      "id": 12,
+      "key": "backorder",
+      "file": "scenarios/12-backorder.json"
+    },
+    {
+      "id": 13,
+      "key": "commercial-truth-down",
+      "file": "scenarios/13-commercial-truth-down.json"
+    },
+    {
+      "id": 14,
+      "key": "expired-price",
+      "file": "scenarios/14-expired-price.json"
+    },
+    {
+      "id": 15,
+      "key": "ambiguous-barbell-support",
+      "file": "scenarios/15-ambiguous-barbell-support.json"
+    },
+    {
+      "id": 16,
+      "key": "possible-only",
+      "file": "scenarios/16-possible-only.json"
+    },
+    {
+      "id": 17,
+      "key": "complete-not-exhaustive",
+      "file": "scenarios/17-complete-not-exhaustive.json"
+    },
+    {
+      "id": 18,
+      "key": "retrieval-truncated",
+      "file": "scenarios/18-retrieval-truncated.json"
+    },
+    {
+      "id": 19,
+      "key": "hydration-limited",
+      "file": "scenarios/19-hydration-limited.json"
+    },
+    {
+      "id": 20,
+      "key": "owner-partial",
+      "file": "scenarios/20-owner-partial.json"
+    },
+    {
+      "id": 21,
+      "key": "unsupported-requirement",
+      "file": "scenarios/21-unsupported-requirement.json"
+    },
+    {
+      "id": 22,
+      "key": "personal-data",
+      "file": "scenarios/22-personal-data.json"
+    },
+    {
+      "id": 23,
+      "key": "multi-turn",
+      "file": "scenarios/23-multi-turn.json"
+    },
+    {
+      "id": 24,
+      "key": "no-result-incomplete",
+      "file": "scenarios/24-no-result-incomplete.json"
+    }
+  ],
+  "r4MultiTurn": [
+    {
+      "turn": 1,
+      "file": "r4-multiturn/turn-1.json"
+    },
+    {
+      "turn": 2,
+      "file": "r4-multiturn/turn-2.json"
+    },
+    {
+      "turn": 3,
+      "file": "r4-multiturn/turn-3.json"
+    },
+    {
+      "turn": 4,
+      "file": "r4-multiturn/turn-4.json"
+    },
+    {
+      "turn": 5,
+      "file": "r4-multiturn/turn-5.json"
+    }
+  ],
+  "hashRule": "sha256(JSON.stringify(JSON.parse(file)))",
+  "files": {
+    "scenarios/01-exact-product-key.json": "sha256:809feaabaf4240a1fe8230bd0adab8e6d5422e6988eb481fb76763dc3e0b75e0",
+    "scenarios/02-nominal-name.json": "sha256:746e42bd751e354f17a0271df43233ce816fc94d8ceae3c1fab89cf5506551a0",
+    "scenarios/03-training-goal.json": "sha256:cb41c837238ddf42f6727f2b425f416d19df8238b329b4573c65607170c15bf7",
+    "scenarios/04-small-space.json": "sha256:a02a952506d9c26d866b3fbbb174d9f58412cb4a0fc60d61bad9f6452f1d2027",
+    "scenarios/05-weight-per-unit.json": "sha256:e50f7df7288c4e4c20bd5985705f01199078c154db0ca52873df02a9fa730c12",
+    "scenarios/06-pair-pack.json": "sha256:7871ccdb5944a8f260c4325d5222e0d9b5037a3bcd81bcbeb4a5b727adf96096",
+    "scenarios/07-mandatory-budget.json": "sha256:fd59d9500a917bcc4dc44b3d368b0de50e2df89653fab91171ee50a89b0b0229",
+    "scenarios/08-reference-price.json": "sha256:285931c40acbecaac2190b76bcf6d9d498fdaee4b48f40e7f3f0cb3e0320edca",
+    "scenarios/09-variants.json": "sha256:44d8753929826dc2c8cfc74876b4f8f2fd391debeb861ab068efa7ed8b614b3b",
+    "scenarios/10-missing-variant.json": "sha256:2f8c12111179adea1021cc9fee011705412cc5422847013d0242bfe8551d0a13",
+    "scenarios/11-out-of-stock.json": "sha256:e37ce171a44d223d83aa627129e72ca4db2b4f492f25caa2c076dd0cfb5a31fb",
+    "scenarios/12-backorder.json": "sha256:82278ddfd1d4fbb5ac214485f4918b5ce29520eae48e730055138ef49c999b54",
+    "scenarios/13-commercial-truth-down.json": "sha256:85ef1249331a1b0c5ff851e44b9fcdff4d0ccb6bd7b29a65d51803b64ac722c7",
+    "scenarios/14-expired-price.json": "sha256:c581fa8d7b7c9930b25b176d7e2ca787f6a9865ad898b6272c53044c3a656031",
+    "scenarios/15-ambiguous-barbell-support.json": "sha256:a37f92641c3c3b8969c7b6ec513be2ca7a96189693baaf9dd578d9deb9b14a1e",
+    "scenarios/16-possible-only.json": "sha256:126d39e03fb65f12ea2eee9d0f9606ae50bd0487c903ba5eebf85792293ece42",
+    "scenarios/17-complete-not-exhaustive.json": "sha256:f321abb6f8a3e5b5d8980762cc63cd3f372829b7230272fa38fb4b8927107ef1",
+    "scenarios/18-retrieval-truncated.json": "sha256:42ea4efe1b136bc9fa9dfc961cf0a227e77c49f60dcff92db499e3127a4c74d0",
+    "scenarios/19-hydration-limited.json": "sha256:de492bea4c698d7ab466af702b957d52fccec7e0916c30c443cdbf0f50061d92",
+    "scenarios/20-owner-partial.json": "sha256:c746d72038cf0d05b0466b25fa8b17dac130b93a4e5f9b68a294c6e172ac95e6",
+    "scenarios/21-unsupported-requirement.json": "sha256:07504382a7e4edf71a3d07ce7978ba4b6f03ea34900f12340c0e3f12c6fb8007",
+    "scenarios/22-personal-data.json": "sha256:8b0a37ecb39ecbd4e7443725fa1243de7dcfe45c3315464e747199efbcd280d3",
+    "scenarios/23-multi-turn.json": "sha256:9b876655b99d81066c302064169d06b7228813ae02ab417f95caf9c6ce0aca45",
+    "scenarios/24-no-result-incomplete.json": "sha256:9ed6eb50c02ff9c2babc8d2c1182a45d2bc8087485a68a2140accd6042ff00a1",
+    "r4-multiturn/turn-1.json": "sha256:db72307c99f2a24cd142c8176dbdc841b485a742361443e1d57cbd14ceb94438",
+    "r4-multiturn/turn-2.json": "sha256:c1dc06b629b25c1934453fa27baf50071d5231e74e41c6ed6bdc90af89ecb347",
+    "r4-multiturn/turn-3.json": "sha256:51a27e97bfa5208bfc573c142b914b8cb6477c9ab3c700ab0309698518b6ea88",
+    "r4-multiturn/turn-4.json": "sha256:a683942cca5226e99450e9b5f1deadb3c92f616dad89bec7271d04d1c7bda490",
+    "r4-multiturn/turn-5.json": "sha256:08795e7164f9f7d8a6090c7a6858eb181dd33dfa28447a98482d83a5a68de531",
+    "http-error-matrix.json": "sha256:22306b52479cf63c53eb680e0d97ee8224a57889b13ee0aeb72c23967a96b008",
+    "request.schema.json": "sha256:0f43858d7f8c4b3e7cf4c75a322dd7dcbc3ddb3866c74cd7b87958dbcd64054d",
+    "response.tolerant.schema.json": "sha256:88a91cbcb53e305dc5bca3b20955c9496cccf7823a7891b64c20558ce97bbfff"
+  }
+}
