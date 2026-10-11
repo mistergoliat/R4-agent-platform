@@ -10,6 +10,8 @@ export * from './workspace/store.js';
 export * from './workspace/context-source.js';
 export * from './capabilities/catalog.js';
 export * from './capabilities/customer.js';
+export * from './capabilities/discover.js';
+export * from './capabilities/discover-reading.js';
 export * from './capabilities/shipping.js';
 export * from './capabilities/shipping-basis.js';
 export * from './capabilities/workspace.js';

@@ -1,11 +1,12 @@
 import type pg from 'pg';
-import type { CatalogPort, CustomerDirectory, QuoteService, ShippingService } from '@r4-adapters/domains';
+import type { CatalogDiscoverPort, CatalogPort, CustomerDirectory, QuoteService, ShippingService } from '@r4-adapters/domains';
 import { CapabilityRegistry } from '@r4/capability-runtime';
 import { systemClock, type Clock } from '@r4/contracts';
 import type { ModelProvider } from '@r4/model-gateway';
 import type { WorkerBindings } from '@r4/worker';
 import { catalogCapabilities } from './capabilities/catalog.js';
 import { customerCapability } from './capabilities/customer.js';
+import { catalogDiscoverCapability } from './capabilities/discover.js';
 import { quoteCapability } from './capabilities/quote.js';
 import { shippingCapability } from './capabilities/shipping.js';
 import { workspaceCapability } from './capabilities/workspace.js';
@@ -19,6 +20,8 @@ export interface SalesDomains {
   readonly catalog: CatalogPort;
   readonly shipping: ShippingService;
   readonly quotes: QuoteService;
+  /** R4-DISCOVER-I1: catalog.discover binding. Absent (the default) = the capability is not registered. Non-production only. */
+  readonly catalogDiscover?: CatalogDiscoverPort;
 }
 
 export interface SalesCompositionOptions {
@@ -50,6 +53,7 @@ export function composeSales(options: SalesCompositionOptions): SalesComposition
   capabilities.register(customerCapability(customers, store));
   capabilities.register(catalogSearch);
   capabilities.register(productContext);
+  if (options.domains.catalogDiscover) capabilities.register(catalogDiscoverCapability({ discover: options.domains.catalogDiscover, workspaces: store, now: () => clock.now() }));
   capabilities.register(shippingCapability(shipping, catalog));
   capabilities.registerWrite(workspaceCapability({ store, catalog, clock }));
   capabilities.registerWrite(quoteCapability({ store, quotes }));
