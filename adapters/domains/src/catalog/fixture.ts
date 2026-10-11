@@ -45,8 +45,9 @@ const clp = (amount: number): Money => ({ amount, currency: 'CLP' });
  * `validUntil` is its own declared window. Search ranks by the owner's own
  * match signals and never hides unsellable products unless asked. It follows
  * the real owner's rules (catalog-service v2): search is product-level and
- * leaves out inactive and unlisted products; `from` is the minimum over all
- * priced variants.
+ * leaves out inactive and unlisted products; `from` is the minimum over the
+ * OFFERABLE variants (over all, marked not_offerable, only when none is);
+ * `maxUnitPrice` is satisfied only by an offerable price (R4-DISCOVER-I1 §5).
  */
 export class FixtureCatalog implements CatalogPort {
   /** What this implementation is, for a shadow composition's binding check (R4-H): an in-memory, deterministic owner. */
@@ -90,7 +91,10 @@ export class FixtureCatalog implements CatalogPort {
       const priceSummary = priceSummaryOf(product);
       const filters = request.filters ?? {};
       if (filters.categoryId !== undefined && product.category.id !== filters.categoryId) continue;
-      if (filters.maxUnitPrice !== undefined && (priceSummary === null || priceSummary.finalGross.amount > filters.maxUnitPrice)) continue;
+      // The owner's ONE budget predicate (catalog-service unitPriceBudget.evaluatePriceSummaryBudget, CAT-DISCOVER-C2):
+      // only an offerable price can satisfy it; a reference price (basis not_offerable) or no price is UNKNOWN, and
+      // search keeps only SATISFIED. A "from" summary proves that SOME orderable unit fits, never a given variant.
+      if (filters.maxUnitPrice !== undefined && (priceSummary === null || priceSummary.basis !== 'offerable' || priceSummary.finalGross.amount > filters.maxUnitPrice)) continue;
       if (filters.sellableOnly && availabilityOf(product).sellability !== 'sellable') continue;
       const match = { type: exactSku ? 'exact_reference' : exactName ? 'exact_name' : 'name', matchedTokens: exactSku || exactName ? Math.max(tokens.length, 1) : matched, totalTokens: Math.max(tokens.length, 1) };
       matches.push({ rank: exactSku ? 1_000 : exactName ? 500 : matched, order, result: resultOf(product, match) });
