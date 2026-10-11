@@ -32,11 +32,13 @@ Sales guidance:
 
 export const SALES_CLAIM_EXTRACTION_RUBRIC: Rubric = defineRubric({
   id: 'sales.rubric.claim_extraction',
-  version: 1,
+  // v2 (R4-DISCOVER-I1): commercial offers are reported apart from informative prices.
+  version: 2,
   title: 'Sales claim extraction',
   instructions: `${CLAIM_EXTRACTION_RUBRIC.instructions}
-Sales entity kinds: product (a specific item; use its catalog id such as RACK-PR200 as ref when the evidence gives it), category (a kind of equipment offered, e.g. racks, discos, or a product type such as "cinta" or "elíptica"), brand, service (shipping service), quote, customer.
-Prices: attributes.amount in CLP as an integer. Stock: attributes.status or attributes.units. Compatibility claims ("compatible con", "sirve para", "calza con") list both products.`,
+Sales entity kinds: product (a specific item; use its catalog id such as RACK-PR200 as ref when the evidence gives it, or the variant's itemKey when the response refers to one variant), category (a kind of equipment offered, e.g. racks, discos, or a product type such as "cinta" or "elíptica"), brand, service (shipping service), quote, customer.
+Prices: attributes.amount in CLP as an integer. Stock: attributes.status or attributes.units. Compatibility claims ("compatible con", "sirve para", "calza con") list both products.
+Commercial offers: when the response presents a product as something the customer can buy or order now (at a price or not), set attributes.offer=true; when it says a product fits the customer's budget, set attributes.withinBudget=true and attributes.budget to that budget in CLP. A price merely stated as information ("cuesta", "desde", "precio de referencia") has no offer attribute.`,
   allowedCodes: [],
   output: 'claims',
 });
@@ -52,6 +54,7 @@ export const SALES_RUBRIC_LOCK: RubricLock = {
   'sales.rubric.objective_continuity@1': 'b3b9488d8f8cbef06edfb22382c4a715deb81a27ec36767e2c86f359ba28bf65',
   'sales.rubric.question_quality@1': '692607290b6fd241d28c4e41b197fe474210919dee0f8df509b094c4c3b9cf1d',
   'sales.rubric.claim_extraction@1': '92eaa0fc5a43d7c26f593c5faf38e536de4452e8a723e8aff2a9cb0f20c5c2e7',
+  'sales.rubric.claim_extraction@2': '54b5d59de603d07f43cefbd48fc35fea55dfb4a22a213bd96a53f240e89d163f',
   'r4.rubric.action_timing@1': '68896a894e623b80c390f9c1e77943c16391b045f8fb421137eac0c5edfe4c84',
   'r4.rubric.capability_choice@1': '217a237f5f85fc4b71fd75b293b81813f928337ffdb3d11af838ae820537860d',
 };

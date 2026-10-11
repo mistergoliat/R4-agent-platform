@@ -40,8 +40,8 @@ export function salesEvaluationDefinition(): EvaluationDefinition {
       new SalesCorrectionEvaluator(),
       new KnownInformationQuestionEvaluator({ ref: { id: 'sales.known_questions', version: 1 }, classifier: salesQuestionClassifier, state: salesKnownState }),
       new GroundingEvaluator({
-        ref: { id: 'sales.grounding', version: 2 },
-        extractor: new JudgeClaimExtractor({ ref: { id: 'sales.claim_extractor', version: 1 }, rubric: SALES_CLAIM_EXTRACTION_RUBRIC }),
+        ref: { id: 'sales.grounding', version: 3 },
+        extractor: new JudgeClaimExtractor({ ref: { id: 'sales.claim_extractor', version: 2 }, rubric: SALES_CLAIM_EXTRACTION_RUBRIC }),
         verifier: new SalesClaimVerifier(),
         nonexistentEntityCode: 'nonexistent_product_or_category_claim',
       }),
