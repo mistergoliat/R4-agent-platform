@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import type { QuoteV2CreateRequest } from '@r4-adapters/domains';
-import { applyOperations, emptyWorkspace, type Workspace, type WorkspaceApplication, type WorkspaceChange, type WorkspaceState, type WorkspaceUpdateInput } from './model.js';
+import { applyOperations, emptyWorkspace, type Workspace, type WorkspaceApplication, type WorkspaceChange, type WorkspaceState, type WorkspaceUpdateInput, type WorkspaceUpdateV2Input } from './model.js';
 
 /** Who a conversation acts for, as the Sales ingress established it. */
 export interface ConversationBinding {
@@ -72,9 +72,34 @@ export interface QuoteV2IssuedRecord {
   readonly recordedAt: string;
 }
 
+/** (R4-J3E) One autonomous decision of quote.create@3 (0008), as recorded. */
+export interface AutonomousQuoteDecisionRecord {
+  readonly executionKey: string;
+  readonly taskId: string;
+  readonly previewId: string;
+  readonly outcome: 'authorized' | 'rejected';
+  /** `eligible` exactly when authorized; otherwise why the issuance was refused. */
+  readonly reasonCode: string;
+  readonly snapshot: object | null;
+  readonly limits: object;
+  readonly measurements: object;
+  readonly quoteRequest: object | null;
+  readonly decidedAt: string;
+}
+
+/** (R4-J3E) What `decideAutonomousQuote` measured under its lock, for the caller's judgement. */
+export interface AutonomousQuoteCounters {
+  /** Autonomous authorizations already recorded for this conversation task. */
+  readonly authorizedInConversation: number;
+  /** Autonomous authorizations recorded in this database during the last hour (database clock). */
+  readonly authorizedLastHour: number;
+  /** The execution key that already authorized this exact snapshot in this conversation, if any. */
+  readonly sameSnapshotAuthorizedBy: string | null;
+}
+
 /**
  * PostgreSQL store of Sales application state. It touches only the `sales`
- * schema (0006, owned by this pack): never an R4 runtime table and never a
+ * schema (0006–0008, owned by this pack): never an R4 runtime table and never a
  * domain owner's database.
  *
  * `applyCommand` is idempotent on the platform execution key: the first call
@@ -116,7 +141,7 @@ export class PostgresSalesStore {
    * `unknownProducts` are ids the Catalog owner said it does not have (checked
    * by the caller before the transaction): the batch is then rejected.
    */
-  async applyCommand(command: { taskId: string; executionKey: string; input: WorkspaceUpdateInput; unknownProducts: readonly string[]; now: string }): Promise<{ result: StoredWorkspaceResult; workspace: Workspace; replayed: boolean }> {
+  async applyCommand(command: { taskId: string; executionKey: string; input: WorkspaceUpdateInput | WorkspaceUpdateV2Input; unknownProducts: readonly string[]; now: string; requireVersion?: number }): Promise<{ result: StoredWorkspaceResult; workspace: Workspace; replayed: boolean }> {
     const client = await this.#pool.connect();
     try {
       await client.query('begin');
@@ -132,7 +157,10 @@ export class PostgresSalesStore {
       const application: WorkspaceApplication =
         command.unknownProducts.length > 0
           ? { kind: 'rejected', code: 'unknown_product', message: `the catalog has no product ${command.unknownProducts.join(', ')}`, operationIndex: null }
-          : applyOperations(current, command.input, command.now);
+          : command.requireVersion !== undefined && command.requireVersion !== current.version
+            ? // (R4-J3E) The caller verified owner facts against this exact version; anything newer must be re-verified.
+              { kind: 'rejected', code: 'version_conflict', message: `the workspace changed (version ${current.version}, verified at ${command.requireVersion}); verify again`, operationIndex: null }
+            : applyOperations(current, command.input, command.now);
       let workspace = current;
       let result: StoredWorkspaceResult;
       if (application.kind === 'applied') {
@@ -290,6 +318,84 @@ export class PostgresSalesStore {
     }));
   }
 
+  async autonomousDecision(executionKey: string, client: pg.Pool | pg.PoolClient = this.#pool): Promise<AutonomousQuoteDecisionRecord | null> {
+    const r = await client.query<AutonomousDecisionRow>('select * from sales.quote_autonomous_decisions where execution_key = $1', [executionKey]);
+    return r.rows[0] ? decisionOf(r.rows[0]) : null;
+  }
+
+  /** Records a refusal decided before any counter mattered (once per key; a replay returns the first decision). */
+  async recordAutonomousRejection(rejection: Omit<AutonomousQuoteDecisionRecord, 'outcome' | 'decidedAt'>): Promise<AutonomousQuoteDecisionRecord> {
+    await this.#pool.query(
+      `insert into sales.quote_autonomous_decisions (execution_key, task_id, preview_id, outcome, reason_code, snapshot, limits, measurements, quote_request)
+       values ($1, $2, $3, 'rejected', $4, $5, $6, $7, $8) on conflict (execution_key) do nothing`,
+      [rejection.executionKey, rejection.taskId, rejection.previewId, rejection.reasonCode, json(rejection.snapshot), JSON.stringify(rejection.limits), JSON.stringify(rejection.measurements), json(rejection.quoteRequest)],
+    );
+    return (await this.autonomousDecision(rejection.executionKey))!;
+  }
+
+  /**
+   * (R4-J3E) The autonomous decision of one quote.create@3 command, atomically:
+   * a decision already taken for this key is returned as is (replay); otherwise,
+   * under one lock that serializes every autonomous decision of this database,
+   * the counters are measured (authorized quotes of this conversation, of the
+   * last hour, an earlier authorization of the same snapshot) and `judge`
+   * decides. An authorization is recorded in the SAME transaction that freezes
+   * the exact Quote V2 request (0007): nothing is ever sent without its decision.
+   */
+  async decideAutonomousQuote(command: {
+    readonly executionKey: string;
+    readonly taskId: string;
+    readonly previewId: string;
+    readonly snapshot: object;
+    readonly limits: object;
+    readonly quoteRequest: object;
+    readonly workspaceVersion: number;
+    readonly request: QuoteV2CreateRequest;
+    readonly requestSha256: string;
+    readonly judge: (counters: AutonomousQuoteCounters) => { readonly reasonCode: string; readonly measurements: object };
+  }): Promise<{ readonly decision: AutonomousQuoteDecisionRecord; readonly replayed: boolean }> {
+    const client = await this.#pool.connect();
+    try {
+      await client.query('begin');
+      await client.query('select pg_advisory_xact_lock(hashtextextended($1, 7))', ['sales.quote_autonomous_decisions']);
+      const previous = await this.autonomousDecision(command.executionKey, client);
+      if (previous) {
+        await client.query('commit');
+        return { decision: previous, replayed: true };
+      }
+      const counts = await client.query<{ conversation: string; last_hour: string; same_snapshot: string | null }>(
+        `select count(*) filter (where task_id = $1) as conversation,
+                count(*) filter (where decided_at > clock_timestamp() - interval '1 hour') as last_hour,
+                min(execution_key) filter (where task_id = $1 and preview_id = $2) as same_snapshot
+           from sales.quote_autonomous_decisions where outcome = 'authorized'`,
+        [command.taskId, command.previewId],
+      );
+      const row = counts.rows[0]!;
+      const verdict = command.judge({ authorizedInConversation: Number(row.conversation), authorizedLastHour: Number(row.last_hour), sameSnapshotAuthorizedBy: row.same_snapshot });
+      const authorized = verdict.reasonCode === 'eligible';
+      await client.query(
+        `insert into sales.quote_autonomous_decisions (execution_key, task_id, preview_id, outcome, reason_code, snapshot, limits, measurements, quote_request)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [command.executionKey, command.taskId, command.previewId, authorized ? 'authorized' : 'rejected', verdict.reasonCode, JSON.stringify(command.snapshot), JSON.stringify(command.limits), JSON.stringify(verdict.measurements), JSON.stringify(command.quoteRequest)],
+      );
+      if (authorized) {
+        await client.query(
+          `insert into sales.quote_v2_requests (execution_key, task_id, workspace_version, request, request_sha256) values ($1, $2, $3, $4, $5)
+           on conflict (execution_key) do nothing`,
+          [command.executionKey, command.taskId, command.workspaceVersion, JSON.stringify(command.request), command.requestSha256],
+        );
+      }
+      const decision = (await this.autonomousDecision(command.executionKey, client))!;
+      await client.query('commit');
+      return { decision, replayed: false };
+    } catch (error) {
+      await client.query('rollback').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async #transition(client: pg.Pool | pg.PoolClient, executionKey: string): Promise<WorkspaceTransition | null> {
     const r = await client.query<TransitionRow>('select * from sales.workspace_transitions where execution_key = $1', [executionKey]);
     return r.rows[0] ? transitionOf(r.rows[0]) : null;
@@ -320,4 +426,36 @@ function transitionOf(row: TransitionRow): WorkspaceTransition {
     result: row.result,
     recordedAt: row.recorded_at.toISOString(),
   };
+}
+
+interface AutonomousDecisionRow {
+  execution_key: string;
+  task_id: string;
+  preview_id: string;
+  outcome: 'authorized' | 'rejected';
+  reason_code: string;
+  snapshot: object | null;
+  limits: object;
+  measurements: object;
+  quote_request: object | null;
+  decided_at: Date;
+}
+
+function decisionOf(row: AutonomousDecisionRow): AutonomousQuoteDecisionRecord {
+  return {
+    executionKey: row.execution_key,
+    taskId: row.task_id,
+    previewId: row.preview_id,
+    outcome: row.outcome,
+    reasonCode: row.reason_code,
+    snapshot: row.snapshot,
+    limits: row.limits,
+    measurements: row.measurements,
+    quoteRequest: row.quote_request,
+    decidedAt: row.decided_at.toISOString(),
+  };
+}
+
+function json(value: object | null): string | null {
+  return value === null ? null : JSON.stringify(value);
 }

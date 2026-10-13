@@ -36,7 +36,7 @@ describe('R4-J3D-R boundaries: the isolated Sales canary', () => {
     expect(runtime).toMatch(/composeSalesProductionWorker\(/);
     expect(runtime).toMatch(/createWorkerPlatform\(options\.worker, \{ \.\.\.composed\.bindings, admission: new CanaryAdmission\(pool, composed\.controls\) \}/);
     expect(runtime).toMatch(/new ChannelIngress\(/);
-    expect(runtime).toMatch(/salesConversationTaskFactory\(pool, salesProductionAgentVersion\(CANARY_PROFILE\)\)/);
+    expect(runtime).toMatch(/salesConversationTaskFactory\(pool, salesProductionAgentVersion\(canary\.profile\)\)/);
     for (const f of CANARY) expect(code(f), f).not.toMatch(/\.register(Write)?\(|\.execute\(|\.reconcile\(|CapabilityInvoker|ActionRuntime|new ActionPolicyEngine|actionPolicy:/);
   });
 

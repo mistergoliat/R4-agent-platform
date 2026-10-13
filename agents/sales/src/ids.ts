@@ -11,6 +11,16 @@ export const CAPABILITY_IDS = {
   quoteCreate: 'quote.create',
 } as const;
 
+/**
+ * (R4-J3E) Capabilities of autonomous quote issuance, composed only by
+ * sales-production@5 (and its isolated canary). Kept out of CAPABILITY_IDS:
+ * the reference composition and @1–@4 never register them.
+ */
+export const AUTONOMOUS_QUOTE_CAPABILITY_IDS = {
+  /** READ: the commercial snapshot the workspace would issue. */
+  quotePreview: 'quote.preview',
+} as const;
+
 export const SCOPES = {
   customerRead: 'customer.read',
   catalogRead: 'catalog.read',

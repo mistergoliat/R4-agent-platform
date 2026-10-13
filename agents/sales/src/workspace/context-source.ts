@@ -107,6 +107,18 @@ export function projectWorkspace(input: WorkspaceProjectionInput): Record<string
       basedOnWorkspaceVersion: q.basedOnWorkspaceVersion,
       selectionOrDeliveryChangedSince: input.transitions.some((t) => t.outcome === 'applied' && t.toVersion > q.basedOnWorkspaceVersion && t.changes.some((c) => c.kind === 'item' || c.kind === 'delivery')),
     })),
+    // (R4-J3E) Only in states written by sales.workspace.update@2 (sales-production@5): earlier projections are unchanged.
+    ...(state.shipping !== undefined
+      ? {
+          shippingChoice:
+            state.shipping === null
+              ? null
+              : state.shipping.kind === 'selected'
+                ? { kind: 'selected', commune: state.shipping.commune, carrierName: state.shipping.carrierName, serviceType: state.shipping.serviceType, agreedOwnerNetClp: state.shipping.agreedOwnerNetClp, sinceVersion: state.shipping.sinceVersion }
+                : { kind: 'excluded', sinceVersion: state.shipping.sinceVersion },
+        }
+      : {}),
+    ...(state.quoteRequest !== undefined ? { quoteRequest: state.quoteRequest === null ? null : { previewId: state.quoteRequest.previewId, customerWords: state.quoteRequest.customerWords, sinceVersion: state.quoteRequest.sinceVersion } } : {}),
   };
 }
 

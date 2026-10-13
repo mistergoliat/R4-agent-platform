@@ -6,5 +6,6 @@ export * from './bootstrap.js';
 export * from './profile-v2.js';
 export * from './profile-v3.js';
 export * from './profile-v4.js';
+export * from './profile-v5.js';
 export * from './shipping-plan.js';
 export * from './topology.js';

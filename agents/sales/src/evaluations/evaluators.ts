@@ -106,8 +106,22 @@ export const salesWorkspaceHistories: StateHistoryAccessor = {
     for (const t of data.transitions.filter((x) => x.outcome === 'applied')) {
       const position = positions.get(t.executionKey) ?? null;
       for (const c of t.changes) {
-        const key = c.kind === 'fact' ? `fact:${c.key}` : c.kind === 'item' ? `item:${c.productId}` : 'delivery';
-        const to = c.kind === 'fact' ? (c.to?.value ?? null) : c.kind === 'item' ? (c.to?.quantity ?? null) : (c.to?.commune ?? null);
+        // R4-J3E kinds (workspace.update@2 only): the delivery choice and the quote request.
+        const key = c.kind === 'fact' ? `fact:${c.key}` : c.kind === 'item' ? `item:${c.productId}` : c.kind === 'shipping' ? 'shipping' : c.kind === 'quote_request' ? 'quote_request' : 'delivery';
+        const to =
+          c.kind === 'fact'
+            ? (c.to?.value ?? null)
+            : c.kind === 'item'
+              ? (c.to?.quantity ?? null)
+              : c.kind === 'shipping'
+                ? c.to === null
+                  ? null
+                  : c.to.kind === 'selected'
+                    ? `${c.to.carrierName} ${c.to.serviceType}`
+                    : 'excluded'
+                : c.kind === 'quote_request'
+                  ? (c.to?.previewId ?? null)
+                  : (c.to?.commune ?? null);
         entry(key).events.push({ position, version: t.toVersion, kind: to === null ? 'removed' : 'set', value: (to ?? null) });
       }
     }

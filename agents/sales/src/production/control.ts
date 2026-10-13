@@ -11,7 +11,7 @@ import {
 } from '@r4/live-ops';
 import { createLogger } from '@r4/observability';
 import { SALES_MIGRATIONS_DIR } from '../definition.js';
-import { SALES_PRODUCTION_PROFILES, salesProductionProfile } from './profile-v4.js';
+import { SALES_PRODUCTION_PROFILES, salesProductionProfile } from './profile-v5.js';
 import { APPROVAL_DECISION_BLOCKER, type ApprovalInspection, type OpenApprovalInspection } from './approvals.js';
 
 /**
