@@ -1,6 +1,29 @@
 # R4-J3E — Autonomous Quote Issuance Report
 
-Date: 2026-10-13 · Branch: `r4-j3e-autonomous-quote-issuance` (from `main` `ef5a354`), **not committed, not pushed, not deployed** · Decision: ADR-034 (proposed)
+Date: 2026-10-13 · Branch: `r4-j3e-autonomous-quote-issuance`, commit **`cc1e6c33f3b61cfc38d1b9809c73bfd61465873b`** (from `main` `ef5a354`), **not pushed, not merged, not deployed to production** · Decision: ADR-034, **accepted for experimentation and canary only**
+
+**Final flags (after the owner-authorized EC2 canary, §13–§16):**
+
+```
+R4_J3E_COMMIT=cc1e6c33f3b61cfc38d1b9809c73bfd61465873b
+R4_AUTONOMOUS_EC2_CANARY=PASS
+R4_REAL_MODEL_USED=YES                   (openai-compatible.deepseek-v4-flash; 34 model calls across 3 scenarios)
+R4_QUOTE_ISSUED_COUNT=1                  (PC-000004; Quote V2 4 → 5 quotes)
+R4_AUTONOMOUS_POLICY=PASS                (quote.create@3 allow/autonomous, sales-production-autonomous-policy@1, hash 515ce98f…)
+R4_CUSTOMER_INTENT_EVIDENCE=MODEL_ATTESTED
+R4_PDF_SHA256=PASS                       (3685d137…; owner manifest = stored artifact = R4 receipt; 29 590 bytes)
+R4_PRODUCTION_PROFILE=@3
+R4_PRODUCTION_SCHEMA_UNCHANGED=YES       (production ledger fingerprint identical; no 0008)
+R4_HARNESS_MODIFIED=NO
+R4_WHATSAPP_UNCHANGED=YES                (0 production outbound during the canary window)
+QUOTE_GMAIL_DISABLED=YES
+CUSTOMER_ROLLOUT_AUTHORIZED=NO
+AUTONOMOUS_QUOTE_CANARY_APPROVED
+AUTONOMOUS_QUOTE_CUSTOMER_ROLLOUT_NOT_APPROVED
+CUSTOMER_INTENT_INDEPENDENT_EVIDENCE_REQUIRED   (production blocker; proposal in ADR-034)
+```
+
+The flags below are the state **before** the EC2 canary (implementation and local validation).
 
 Evidence labels: **SOURCE** = verified in code; **LOCAL** = executed on the workstation (Docker PostgreSQL, fixture owners, scripted stand-in model); **EC2** = executed on the host; **NOT RUN**.
 
@@ -210,7 +233,7 @@ Asserted:
 
 A second scenario raises a Catalog price before the confirmation: the Policy Engine allows, the commercial decision refuses (`preview_stale`), nothing is issued, and the agent explains.
 
-**EC2: NOT RUN.** Running it there means placing this unreviewed, uncommitted code on the production host. That has to be a separate checkout: the production checkout must not change, and the root filesystem has about 1 GB free. It also needs real-model calls against Quote V2 integration. Both need the owner's go. The isolated canary database and environment from J3D are in place (`r4-sales-canary-postgres`, `~/.config/r4-canary/canary.env`, `@4`). Running `@5` needs:
+**EC2: run on 2026-10-13 with owner authorization; see §13.** The paragraph below records the state before that authorization. Running it there means placing this unreviewed, uncommitted code on the production host. That has to be a separate checkout: the production checkout must not change, and the root filesystem has about 1 GB free. It also needs real-model calls against Quote V2 integration. Both need the owner's go. The isolated canary database and environment from J3D are in place (`r4-sales-canary-postgres`, `~/.config/r4-canary/canary.env`, `@4`). Running `@5` needs:
 - `R4_PROD_POLICY_PROFILE=sales-production@5` and the five `R4_AUTONOMOUS_QUOTE_*` limits in that file;
 - `sales:canary init`, which applies `0008` and registers `sales@5` in the canary database only.
 
@@ -269,3 +292,143 @@ Issuance and delivery are separate operations, and only issuance is in scope. Au
 - a document-verification policy for `mismatch` and `unavailable`.
 
 The `@5` instructions tell the agent it cannot send or share the quote.
+
+## 13. Reproducible commit (owner authorization of 2026-10-13, §1)
+
+| Check | Result |
+|---|---|
+| Diff review | 41 files, +2 636 / −118. Harness, owner and adapter paths (`packages/`, `apps/`, `adapters/`): **0 files**. No `.env`, credential, token or private data (pattern scan: no matches). No dependency change: `package.json` and `package-lock.json` are identical to `ef5a354`. |
+| `@1–@4` | Fingerprints and policy hash equal `main` (§10), pinned in `tests/contract/sales-autonomous-quote.test.ts`. |
+| Migration `0008` | Append-only (trigger). `check ((outcome = 'authorized') = (reason_code = 'eligible'))`. An authorized decision needs a snapshot and a request. Unique partial index `(task_id, preview_id) where outcome = 'authorized'`. Index on `decided_at` for the hourly count. Nothing outside `sales`; no existing object altered. |
+| Recovery failure | `tests/recovery/production-bootstrap-process.test.ts` **fails identically on `main` `ef5a354`** (a temporary worktree without J3E, same assertion). It is pre-existing and not a J3E regression. |
+| Commit | **`cc1e6c33f3b61cfc38d1b9809c73bfd61465873b`** on `r4-j3e-autonomous-quote-issuance`. Not pushed, not merged. |
+
+## 14. previewId audit (§2)
+
+| Identity | Carrier | Finding |
+|---|---|---|
+| Commercial content | `previewId = sha256(canonical snapshot)`. Excludes task, time and owner timestamps. | Identical content in two conversations has the **same id by design**: it names content, not a request. |
+| Conversation | `task_id` (decision row, frozen request `externalCorrelation.externalReference`, Quote `externalCorrelation`) | Separates otherwise identical quotes. |
+| Customer request | `workspace.quoteRequest` of **that** conversation, cleared by any commercial change | A request cannot be borrowed from another conversation. Reverting to identical content needs a new request (test C12). |
+| Issuance idempotency | Platform execution key = Quote `Idempotency-Key`, with the body frozen per key | A retry of one command replays; a new command is a new key. |
+| PostgreSQL uniqueness | Unique `(task_id, preview_id)` for authorized decisions, plus a global advisory lock | One issuance per snapshot **per conversation**; no cross-conversation collision. |
+| Preview validity | Recomputed at issuance (fresh owner reads). The Observation bounds what the model may present (earliest owner validity). | The id has no expiry by design: an identical recomputation is current by construction; any price, offer or stock change yields `preview_stale` or a blocker. |
+
+New tests (`sales-autonomous-quote.test.ts`, now 20/20):
+- **C10:** two conversations with identical snapshots produce the same `previewId` and **two** quotes (PC-000001, PC-000002), each correlated to its task with its own key; both authorized rows coexist.
+- **C11:** repeated requests in one conversation produce one quote, then `duplicate_quote` twice.
+- **C12:** a request cleared by intermediate changes is not revived by identical content.
+
+**No uniqueness defect found; no code change was needed.**
+
+## 15. EC2 canary (§3–§7)
+
+### 15.1 Budget and limits
+
+| Owner value | Variable (real name) | Set |
+|---|---|---|
+| Gross ≤ 250 000 CLP | `R4_AUTONOMOUS_QUOTE_MAX_GROSS_CLP` | 250000 |
+| ≤ 3 lines | `R4_AUTONOMOUS_QUOTE_MAX_LINES` | 3 |
+| ≤ 5 **total** units | `R4_AUTONOMOUS_QUOTE_MAX_UNITS_PER_LINE` | 5 |
+| ≤ 1 per conversation | `R4_AUTONOMOUS_QUOTE_MAX_PER_CONVERSATION` | 1 |
+| ≤ 2 per hour | `R4_AUTONOMOUS_QUOTE_MAX_PER_HOUR` | 2 |
+
+**Semantic gap (reported, not changed).** The implementation limits units **per line**, not in total. With 3 lines, up to 15 units would pass the code. The "5 total units" budget was held **operationally**: the positive scenario has 1 unit. A total-units limit is a follow-up decision.
+
+The absolute maximum of **one** real quote was enforced operationally: one positive scenario, the Quote V2 count checked before and after, and the canary runtime stopped (SIGTERM) right after the issuance.
+
+### 15.2 Preflight and setup (EC2)
+
+- **Disk:** 961 MB free before setup.
+  - Separate checkout `~/r4-j3e-canary`, cloned from a git bundle of the branch: HEAD = `cc1e6c3…`, clean, 11 MB.
+  - `npm ci --prefer-offline` (offline cache, no download), then `npm run build`: checkout 163 MB.
+  - **768 MB free after preparation** (≥ 700). npm's temporary cache dipped free space to 672 MB during install, recovered right after.
+  - 764 MB free at the end. EBS untouched; no other service's files deleted.
+- **Production preserved:**
+  - checkout `~/R4-agent-platform` at `ef5a354`, clean;
+  - PM2 `r4-sales-worker`/`r4-channel-gateway`/`r4-scheduler` online, restart counters 16/11/0 before and after;
+  - `production.env` `@3`, rollout 0 %, allowlist 1 key, unchanged;
+  - production database not used.
+- **Canary database** (`r4-sales-canary-postgres`, marker `r4-sales-canary:v1:50ea36160c0b`): `sales:canary init` with `@5` applied **only** `0008_sales_autonomous_quote_decisions` and registered **only** `sales@5` (`sales@3`/`@4` unchanged). Isolation `verified`, 0 foreign traffic.
+- **Production ledger fingerprint** `f9c22251…` (11 migrations, no `0008`): identical before, after `init` and at the end.
+- **Canary environment** `~/.config/r4-canary/canary-j3e.env` (0600): derived from the J3D canary env (no WhatsApp keys, no `R4_DATABASE_URL`), with:
+  - `@5`, the limits above, and `R4_EXEC_MAX_WRITE_ACTIONS=6`;
+  - its own allowlist of three synthetic conversation keys;
+  - local capture `~/r4-j3d/j3e-canary-outbound.jsonl`.
+- **Owners:** real Catalog (`127.0.0.1:4010`), real Shipping (pc-carrier), Quote V2 integration (`127.0.0.1:4020`, principal `r4-sales-integration`). Gmail **disabled** before and after.
+- **Runtime:** `node agents/sales/dist/cli/canary.js run` (worker, scheduler, local capture) started detached, outside PM2, reporting `profile: sales-production@5`.
+
+### 15.3 Products (read-only selection; nothing altered)
+
+Selected with read-only Catalog calls:
+
+| Product | Item context (quantity 1) | Use |
+|---|---|---|
+| `P229` "Par Mancuernas Hexagonales 12.5kg \| HWM®" | sellable, stock 143, 47 990 CLP incl., rate 0.19 | Positive |
+| `P1543` "Power Rack Alpha \| HWM®" | sellable, stock 22, 414 990 CLP | Above the amount limit; **cannot** be issued |
+
+No price, stock, Shipping quote or Quote V2 policy was changed.
+
+### 15.4 Scenarios (real model, synthetic ingress)
+
+| # | Conversation | What happened | Effect |
+|---|---|---|---|
+| 1 | `j3e-ro-1` (read-only) | "How much is the Power Rack Alpha and delivery to Ñuñoa? Just looking, no quote." The model answered with the real price and the two real shipping offers, and explicitly offered no quote. | 2 workspace updates; 0 `quote.create` |
+| 2 | `j3e-reject-1` (rejection) | Quote request → shipping choice → **`quote.preview`**. The model presented Sales' totals (net 348 732, VAT 66 259, total 414 991) and said the total exceeds the 250 000 autonomous limit, offering a human. The customer insisted ("emítela tú ahora"). The model **declined to propose**, citing the limit. | 0 `quote.create` proposals; no autonomous decision |
+| 3 | `j3e-pos-1` (single positive) | Turn 1: quote request → search, product context, workspace (P229 ×1, Ñuñoa), `shipping.quote` → two real offers presented. Turn 2: customer chose "Pesas Chile Despacho Directo" → `select_shipping_offer` (owner NET 4 193) → `quote.preview` → totals 44 521 / 8 459 / **52 980** presented, confirmation asked. Turn 3: "Sí, confirmo esa cotización. Emítela por favor." → `record_quote_request` → **`quote.create` {previewId}** → issued → reply "Cotización N° PC-000004 … Total: $52.980 … Validez: hasta el 17 de octubre de 2026." | **1 quote** |
+
+Scenario 2 shows the model honoring the limit by itself. The platform-side refusal of an over-limit proposal (`autonomy_limit_amount`) was **not** exercised on EC2 because no proposal was made. It is covered by the local matrix (C6, A5).
+
+**Real-model incident (handled, no effect).** In turn 2 of scenario 3, run 2 ended `failed` with `invalid_structured_output` ("model output is not a JSON document"), after the shipping choice and a preview. The existing ADR-028 recovery opened run 3, which replied correctly. Nothing was proposed twice and no quote was affected.
+
+### 15.5 Evidence (canary DB, Quote V2, logs)
+
+| Required evidence | Value |
+|---|---|
+| Effective profile | binding `r4-synthetic` / `sales-production@5`; runtime start record `profile: sales-production@5` |
+| Sales definition | task `01a137a3-0415-7789-a31f-cf2ff24c8821` on `sales@5` |
+| Effective policy | `sales-production-autonomous-policy@1`, hash `515ce98f81933f2dbbb1bb24530f24b85beea959c44d2cb6caa1c9f34aacdc4a`, identity `provisional` |
+| Versioned capability | `quote.create@3` (decision, execution, receipt); `sales.workspace.update@2`; `quote.preview@1` |
+| Real model | `providerId: openai-compatible.deepseek-v4-flash` (`R4_MODEL_NAME=deepseek-flash`); 34 `model.call.completed` across the canary; 13 model calls in the positive task (4 runs) |
+| Tools selected (positive task) | `catalog.search` ×1, `catalog.get_product_context` ×1, `shipping.quote` ×1, `quote.preview` ×2, `sales.workspace.update` ×3, `quote.create` ×1, `respond` ×3 |
+| Preview | `quote.preview@1` succeeded, `status: ready`, `previewId 5f57b2751489b1c0e82cb14423b583457fb932537e0a12e5570f0bc608332b1d`, totals 44 521 / 8 459 / 52 980, 0 limit breaches (both previews identical) |
+| ActionProposal | `quote.create` `{ "previewId": "5f57b275…" }`, 2 evidence refs (`quote.preview` observations) |
+| PolicyDecision | `quote.create@3` → **`allow` / `autonomous`**, rule `capabilities.quote.create.autonomy` (the 3 workspace updates: `allow`/`autonomous`) |
+| Autonomous decision (0008) | `authorized` / `eligible`. Limits as configured. Measurements: gross 52 980, 1 line, 1 unit, 0 earlier in conversation, 0 in the last hour, no same snapshot. Customer words "Sí, confirmo esa cotización. Emítela por favor." (model-attested) |
+| ActionExecution | `quote.create@3` `succeeded`, `reconcile_before_retry`, execution key `r4x_01a137a7e6097cf680d2469d4c1d3492`, **1 attempt** (`execute` → `applied`) |
+| Receipt | `succeeded`, v3, `quote:ba360fce-2754-41dd-8a85-403a640e7875`, `PC-000004`, `replayed: false`, totals 44 521 / 8 459 / 52 980, validity through 2026-10-17 |
+| Totals | Owner quote: gross 52 980, net 44 521, tax 8 459 (line 47 990 incl.; freight NET 4 193 excl. 19 %) = snapshot = `expectedTotals` = receipt |
+| Idempotency | Frozen request `request_sha256 41bb1e00…`, customer `{kind: guest}`, 1 line, carrier Pesas Chile NET 4 193; **1 send**. Quote V2: 1 idempotency binding (`r4-sales-integration`, `quote.create_and_issue`), 1 issuance operation `succeeded` |
+| Quotes created in Quote V2 | **4 → 5** (PC-000004 only; `r4-sales-integration` 1 → 2); the runtime was stopped right after |
+| PDF integrity | Manifest `3685d137e816999c6d2bee5ec06597599041819d7332d4b6576e7caa29e51315`, 29 590 bytes. The stored artifact re-hashes to the same value. R4 receipt `verification: verified`; `sales.quote_v2_issued` `verified` |
+| Human approval requests | **0** (whole canary database) |
+| Deliveries and external contact | Quote V2 deliveries 1 → 1 (the W10 row only; **0** for PC-000004). Canary outbound: 7 messages, all `r4-synthetic` / `accepted` (local capture). Production outbound during the window: **0**. Gmail disabled. |
+
+**What this canary does not prove.** The customer's intent is **model-attested**: the agent recorded the customer's words, and nothing compared them with the inbound text at runtime. The canary validates the governed autonomous path, the commercial determinism, the limits, idempotency and PDF integrity. It does **not** validate independent evidence of customer intent, which does not exist yet.
+
+### 15.6 State left on EC2
+
+- **Canary runtime:** stopped.
+- **Separate checkout `~/r4-j3e-canary`:** about 163 MB, kept for reproducibility; it can be removed at the owner's request.
+- **`canary-j3e.env`:** 0600, kept.
+- **Canary database:** now has `0008`, `sales@5`, 3 synthetic tasks and the decision row.
+- **Logs:** run log `~/r4-j3d/j3e-canary-run.log` (0600) and capture `~/r4-j3d/j3e-canary-outbound.jsonl`, kept on the host.
+- **PC-000004:** remains in the Quote V2 *integration* deployment (synthetic-only, Gmail disabled).
+
+## 16. Customer-intent evidence (§8)
+
+ADR-034 is **accepted for experimentation and canary only**:
+- `AUTONOMOUS_QUOTE_CANARY_APPROVED`
+- `AUTONOMOUS_QUOTE_CUSTOMER_ROLLOUT_NOT_APPROVED`
+
+The production blocker `CUSTOMER_INTENT_INDEPENDENT_EVIDENCE_REQUIRED` remains.
+
+**Can Sales resolve it with existing contracts? Yes.** `ProductionStore.thread(taskId)` is a public `@r4/live-ops` port, already passed to `composeSalesProductionWorker` as `options.store`. It returns the conversation's authenticated customer messages (`contact`: text, `inputId`, time) and the agent's replies (`agent`: text, delivery status).
+
+The concrete proposal in ADR-034 (§"Evidencia independiente de intención") is a deterministic confirmation protocol:
+- the preview exposes a `confirmationCode`;
+- the agent must present it together with the total;
+- a new `quote.create@4` issues only when a delivered agent reply carrying the code and total is followed by a **customer** message containing that code;
+- the confirming input's id, time and hash are recorded.
+
+It needs no harness change. Its dependencies and the required tests are listed in the ADR. It is not implemented: it needs the owner's UX decision (the customer must type a code) and a new profile/capability version.

@@ -1,6 +1,10 @@
 # ADR-034 — Emisión autónoma de cotizaciones (sales-production@5)
 
-- **Estado:** Propuesto (R4-J3E). Implementado y validado **localmente**. No desplegado y no seleccionado por ningún worker productivo.
+- **Estado:** **Aceptado solo para experimentación y canary** (decisión del owner, 2026-10-13). Implementado en `cc1e6c3`. Validado localmente y en un canary aislado en EC2 (R4-J3E §13). No desplegado y no seleccionado por ningún worker productivo.
+- **Decisión registrada:**
+  - `AUTONOMOUS_QUOTE_CANARY_APPROVED`
+  - `AUTONOMOUS_QUOTE_CUSTOMER_ROLLOUT_NOT_APPROVED`
+- **Bloqueo de producción vigente:** `CUSTOMER_INTENT_INDEPENDENT_EVIDENCE_REQUIRED`. La propuesta de solución está en "Evidencia independiente de intención (propuesta)".
 - **Fecha:** 2026-10-13
 - **Autoridad superior:** Constitución ("model output is untrusted"; "writes require governed execution"); PRD; ADR-016, ADR-017, ADR-018, ADR-029, ADR-033
 - **Sustituye parcialmente:** ADR-029, en un solo punto. ADR-029 establece que `quote.create` es `REQUIRE_APPROVAL`; esa regla deja de aplicarse **solo en el perfil `sales-production@5`** y **solo para `quote.create@3`**. Para `@1–@4`, para `quote.create@2` y para cualquier otra escritura, ADR-029 sigue vigente sin cambios.
@@ -61,6 +65,43 @@ Conclusión: la autonomía cabe en extensiones existentes. **No hubo bloqueo.**
 - **Intención del cliente.** La solicitud (`record_quote_request`) la registra el agente con las palabras del cliente, así que está **atestiguada por el modelo**. R4 la verifica estructuralmente: debe existir, nombrar ese snapshot y quedar invalidada por cualquier cambio comercial. **No la verifica contra el texto literal del inbound**, porque ningún seam lo expone al pack. Las palabras quedan registradas para la auditoría y la evaluación post-hoc. Verificarla en runtime exigiría un seam nuevo de la plataforma (decisión del owner, fuera de J3E). Es un gate de despliegue de `@5`.
 - **Concurrencia de la frecuencia.** El límite por hora y el de la conversación se cuentan en la base de datos del despliegue, bajo un advisory lock. Valen por base de datos, no globalmente entre despliegues.
 - **Un snapshot autorizado no se reemite.** Si el owner rechaza definitivamente una emisión autorizada (por ejemplo un 422, que indica un defecto de R4), el mismo contenido no se reemite en esa conversación. Se prefiere la seguridad sobre la reintentabilidad.
+
+## Evidencia independiente de intención (propuesta, no implementada)
+
+**Hallazgo.** La auditoría de J3E concluyó que ningún seam entrega el texto del cliente al pack. Eso vale para `ContextSource`, `WriteHandlerContext` y `ConversationTaskFactory`. Pero hay un contrato existente que sí lo hace: el puerto **`ProductionStore.thread(taskId)`** de `@r4/live-ops`, implementado por `PostgresProductionStore`. Devuelve el hilo de la conversación:
+- mensajes del cliente (`kind: 'contact'`, con `text`, `refs.inputId` y `at`), que el canal ya autenticó (el ingress verifica antes de parsear);
+- respuestas del agente (`kind: 'agent'`, con `text` y estado de entrega).
+
+`composeSalesProductionWorker` **ya recibe** ese `store`. Por lo tanto la evidencia de origen se resuelve con componentes Sales-owned y contratos existentes, **sin modificar el harness**.
+
+**Propuesta (protocolo de confirmación determinista).**
+
+1. `quote.preview` expone un `confirmationCode` derivado del `previewId`, por ejemplo `Q-` y los primeros 6 caracteres en mayúsculas. Las instrucciones v6 obligan al agente a mostrarlo junto con los totales y a pedir que el cliente lo repita para confirmar.
+2. `quote.create@4` (versión nueva; `@3` queda como está) recibe un lector `Pick<ProductionStore, 'thread'>` desde la composición. En la decisión exige, además de lo que exige `@3`:
+   - a. una entrada `agent` posterior al preview, con entrega no fallida, cuyo texto contenga el `confirmationCode` y el total bruto del snapshot (el cliente vio esa cotización);
+   - b. una entrada `contact` **posterior** a esa respuesta que contenga el `confirmationCode` (el cliente confirmó **esa** cotización, con su propio mensaje autenticado).
+3. La decisión (`0008`, o una columna en una migración `0009` nueva) registra el `inputId`, la hora de recepción y el SHA-256 del mensaje que confirmó. El texto queda en el Core y no se copia.
+4. Fallas posibles: no hay código en el hilo (`customer_confirmation_missing`); el código pertenece a otro preview, o la confirmación llegó antes de la presentación (`customer_confirmation_stale`). En ambos casos la emisión se rechaza.
+
+**Variante mínima.** Exigir que `customerWords` aparezcan textualmente, normalizadas, en una entrada `contact` posterior al preview. Esto prueba el **origen** de las palabras, pero su **significado** lo sigue interpretando el modelo. Se recomienda el protocolo con código.
+
+**Dependencias:**
+- la composición inyecta `options.store`; el canary ya compone un `PostgresProductionStore`;
+- una versión nueva de la definición Sales con instrucciones para presentar y pedir el código;
+- una capacidad versionada nueva (`quote.create@4`) y su perfil (`@6`), o una enmienda explícita de `@5`;
+- una decisión de UX del owner: el cliente debe escribir un código;
+- el canal sintético del canary pasa por el mismo `ChannelIngress`, así que el hilo es equivalente.
+
+**Pruebas necesarias:**
+- Sin código, código ajeno, código anterior a la presentación, código de otro preview, y código presente solo en la respuesta del agente: todos se rechazan.
+- Una respuesta del agente con entrega fallida no cuenta.
+- Mensajes duplicados y reintentos de ingress no duplican la evidencia.
+- El código no se acepta si lo "dice" el modelo en `customerWords`, sino solo si aparece en el hilo.
+- Concurrencia con dos previews.
+- Canary EC2 con el modelo real.
+- Contract: el pack solo usa `ProductionStore.thread`, sin SQL a tablas del Core.
+
+**Fuera de alcance de esta propuesta:** la verificación semántica de la intención sin código, que exigiría NLP o un humano, y la identidad del cliente (Customer UNAVAILABLE).
 
 ## Consecuencias
 
