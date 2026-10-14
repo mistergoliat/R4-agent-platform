@@ -110,7 +110,7 @@ beforeAll(async () => {
   captureDir = mkdtempSync(join(tmpdir(), 'r4-autonomous-canary-'));
   canaryDb = await createTestDatabase('r4_it_autonomous_canary');
   const init = await initCanary(loadCanaryEnvironment(canaryEnv([])), logger);
-  expect(init.migrations.sales).toEqual(['0006_sales_reference_application', '0007_sales_quote_v2_issuance', '0008_sales_autonomous_quote_decisions']);
+  expect(init.migrations.sales).toEqual(['0006_sales_reference_application', '0007_sales_quote_v2_issuance', '0008_sales_autonomous_quote_decisions', '0009_sales_quote_intent_evidence']);
   expect(init.definitions.registered).toContain('sales@5');
 });
 

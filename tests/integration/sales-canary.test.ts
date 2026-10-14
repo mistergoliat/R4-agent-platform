@@ -178,8 +178,8 @@ afterAll(async () => {
 });
 
 describe('canary environment and database guards (nothing is changed on a refused database)', () => {
-  it('runs sales-production@4 or @5 only, needs its own database URL, and never the production one', () => {
-    expect(() => loadCanaryEnvironment({ ...canaryEnv(canaryDb), R4_PROD_POLICY_PROFILE: 'sales-production@3' })).toThrow(/runs sales-production@4 or sales-production@5 only/);
+  it('runs sales-production@4, @5 or @6 only, needs its own database URL, and never the production one', () => {
+    expect(() => loadCanaryEnvironment({ ...canaryEnv(canaryDb), R4_PROD_POLICY_PROFILE: 'sales-production@3' })).toThrow(/runs sales-production@4 or sales-production@5 or sales-production@6 only/);
     expect(() => loadCanaryEnvironment({ ...canaryEnv(canaryDb), R4_CANARY_DATABASE_URL: '' })).toThrow(/R4_CANARY_DATABASE_URL/);
     expect(() => loadCanaryEnvironment({ ...canaryEnv(canaryDb), R4_DATABASE_URL: canaryDb.url })).toThrow(expect.objectContaining({ code: 'canary_shares_production_database' }));
     expect(() => loadCanaryEnvironment({ ...canaryEnv(canaryDb), R4_EXECUTION_MODE: '' })).toThrow(expect.objectContaining({ code: 'production_mode_not_declared' }));
@@ -213,7 +213,7 @@ describe('canary init and synthetic ingress', () => {
   it('marks, migrates, registers Sales and enables autonomy only in the canary database; re-init is a no-op', async () => {
     const canary = loadCanaryEnvironment(canaryEnv(canaryDb));
     const first = await initCanary(canary, logger);
-    expect(first).toMatchObject({ markerCreated: true, autonomy: 'enabled', migrations: { sales: ['0006_sales_reference_application', '0007_sales_quote_v2_issuance', '0008_sales_autonomous_quote_decisions'] } });
+    expect(first).toMatchObject({ markerCreated: true, autonomy: 'enabled', migrations: { sales: ['0006_sales_reference_application', '0007_sales_quote_v2_issuance', '0008_sales_autonomous_quote_decisions', '0009_sales_quote_intent_evidence'] } });
     expect(first.definitions.registered.length).toBeGreaterThan(0);
     expect(first.migrations.core.length).toBeGreaterThan(0);
     const again = await initCanary(canary, logger);

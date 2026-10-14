@@ -95,11 +95,33 @@ export interface AutonomousQuoteCounters {
   readonly authorizedLastHour: number;
   /** The execution key that already authorized this exact snapshot in this conversation, if any. */
   readonly sameSnapshotAuthorizedBy: string | null;
+  /** (R4-J3E-B, @4 only) The execution key that already consumed this confirming customer message, if any; null without intent evidence. */
+  readonly confirmationUsedBy: string | null;
+}
+
+/** (R4-J3E-B) What showed that the customer confirmed the offer (0009): identities, times and hashes only, never the customer's text. */
+export interface QuoteIntentEvidenceRecord {
+  readonly executionKey: string;
+  readonly taskId: string;
+  readonly previewId: string;
+  readonly commercialVersion: number;
+  readonly presentedReference: string;
+  readonly presentedGross: number;
+  readonly offerRef: string;
+  readonly offerAt: string;
+  readonly offerDeliveryStatus: 'accepted' | 'delivered' | 'read';
+  readonly offerOutboundId: string;
+  readonly offerTextSha256: string;
+  readonly confirmationInputId: string;
+  readonly confirmationAt: string;
+  readonly confirmationTextSha256: string;
+  readonly grammarVersion: string;
+  readonly grammarRule: string;
 }
 
 /**
  * PostgreSQL store of Sales application state. It touches only the `sales`
- * schema (0006–0008, owned by this pack): never an R4 runtime table and never a
+ * schema (0006–0009, owned by this pack): never an R4 runtime table and never a
  * domain owner's database.
  *
  * `applyCommand` is idempotent on the platform execution key: the first call
@@ -352,6 +374,8 @@ export class PostgresSalesStore {
     readonly workspaceVersion: number;
     readonly request: QuoteV2CreateRequest;
     readonly requestSha256: string;
+    /** (R4-J3E-B, quote.create@4) The intent evidence: checked for reuse under the lock and recorded with an authorization. */
+    readonly intentEvidence?: Omit<QuoteIntentEvidenceRecord, 'executionKey' | 'taskId' | 'previewId'>;
     readonly judge: (counters: AutonomousQuoteCounters) => { readonly reasonCode: string; readonly measurements: object };
   }): Promise<{ readonly decision: AutonomousQuoteDecisionRecord; readonly replayed: boolean }> {
     const client = await this.#pool.connect();
@@ -371,7 +395,9 @@ export class PostgresSalesStore {
         [command.taskId, command.previewId],
       );
       const row = counts.rows[0]!;
-      const verdict = command.judge({ authorizedInConversation: Number(row.conversation), authorizedLastHour: Number(row.last_hour), sameSnapshotAuthorizedBy: row.same_snapshot });
+      const evidence = command.intentEvidence;
+      const used = evidence ? (await client.query<{ execution_key: string }>('select execution_key from sales.quote_intent_evidence where confirmation_input_id = $1', [evidence.confirmationInputId])).rows[0]?.execution_key ?? null : null;
+      const verdict = command.judge({ authorizedInConversation: Number(row.conversation), authorizedLastHour: Number(row.last_hour), sameSnapshotAuthorizedBy: row.same_snapshot, confirmationUsedBy: used });
       const authorized = verdict.reasonCode === 'eligible';
       await client.query(
         `insert into sales.quote_autonomous_decisions (execution_key, task_id, preview_id, outcome, reason_code, snapshot, limits, measurements, quote_request)
@@ -384,6 +410,15 @@ export class PostgresSalesStore {
            on conflict (execution_key) do nothing`,
           [command.executionKey, command.taskId, command.workspaceVersion, JSON.stringify(command.request), command.requestSha256],
         );
+        if (evidence) {
+          await client.query(
+            `insert into sales.quote_intent_evidence (execution_key, task_id, preview_id, commercial_version, presented_reference, presented_gross, offer_ref, offer_at, offer_delivery_status,
+               offer_outbound_id, offer_text_sha256, confirmation_input_id, confirmation_at, confirmation_text_sha256, grammar_version, grammar_rule)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+            [command.executionKey, command.taskId, command.previewId, evidence.commercialVersion, evidence.presentedReference, evidence.presentedGross, evidence.offerRef, evidence.offerAt, evidence.offerDeliveryStatus,
+              evidence.offerOutboundId, evidence.offerTextSha256, evidence.confirmationInputId, evidence.confirmationAt, evidence.confirmationTextSha256, evidence.grammarVersion, evidence.grammarRule],
+          );
+        }
       }
       const decision = (await this.autonomousDecision(command.executionKey, client))!;
       await client.query('commit');
@@ -394,6 +429,46 @@ export class PostgresSalesStore {
     } finally {
       client.release();
     }
+  }
+
+  /** (R4-J3E-B) The intent evidence recorded with an authorization, if any. */
+  async intentEvidence(executionKey: string): Promise<QuoteIntentEvidenceRecord | null> {
+    const r = await this.#pool.query<Record<string, unknown>>('select * from sales.quote_intent_evidence where execution_key = $1', [executionKey]);
+    const row = r.rows[0];
+    if (!row) return null;
+    return {
+      executionKey: row.execution_key as string,
+      taskId: row.task_id as string,
+      previewId: row.preview_id as string,
+      commercialVersion: row.commercial_version as number,
+      presentedReference: row.presented_reference as string,
+      presentedGross: Number(row.presented_gross),
+      offerRef: row.offer_ref as string,
+      offerAt: (row.offer_at as Date).toISOString(),
+      offerDeliveryStatus: row.offer_delivery_status as QuoteIntentEvidenceRecord['offerDeliveryStatus'],
+      offerOutboundId: row.offer_outbound_id as string,
+      offerTextSha256: row.offer_text_sha256 as string,
+      confirmationInputId: row.confirmation_input_id as string,
+      confirmationAt: (row.confirmation_at as Date).toISOString(),
+      confirmationTextSha256: row.confirmation_text_sha256 as string,
+      grammarVersion: row.grammar_version as string,
+      grammarRule: row.grammar_rule as string,
+    };
+  }
+
+  /**
+   * (R4-J3E-B) The workspace version of the latest APPLIED change to what would
+   * be quoted (items, quantities, destination, shipping choice), or 0. A fact or
+   * a quote request does not move it. Deterministic over the pack's own transitions.
+   */
+  async commercialVersion(taskId: string): Promise<number> {
+    const r = await this.#pool.query<{ version: number | null }>(
+      `select max(to_version) as version from sales.workspace_transitions t
+        where t.task_id = $1 and t.outcome = 'applied'
+          and (t.changes @> '[{"kind": "item"}]' or t.changes @> '[{"kind": "delivery"}]' or t.changes @> '[{"kind": "shipping"}]')`,
+      [taskId],
+    );
+    return r.rows[0]?.version ?? 0;
   }
 
   async #transition(client: pg.Pool | pg.PoolClient, executionKey: string): Promise<WorkspaceTransition | null> {

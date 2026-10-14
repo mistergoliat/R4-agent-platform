@@ -4,7 +4,7 @@ import { createLogger } from '@r4/observability';
 import { SALES_MIGRATIONS_DIR } from '../definition.js';
 import { OidcError, loadOperatorAuthConfig } from '../operator-auth/index.js';
 import { inspectApprovals } from '../production/control.js';
-import { SALES_PRODUCTION_PROFILES, salesProductionProfile } from '../production/profile-v5.js';
+import { SALES_PRODUCTION_PROFILES, salesProductionProfile } from '../production/profile-v6.js';
 import { openApprovalInspection } from './approval-inspection.js';
 import { DecisionRefused, decideApproval, whoAmI } from './operator-approval.js';
 

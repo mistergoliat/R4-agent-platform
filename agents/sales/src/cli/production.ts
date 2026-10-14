@@ -23,8 +23,9 @@ import { describeWhatsAppConfig, loadWhatsAppCloudConfig } from '@r4-adapters/wh
 import { adminDatabaseUrl } from '../harness/database.js';
 import { configuredModelProvider } from '../model.js';
 import { composeSalesGateway, composeSalesProductionWorker, selectedSalesProductionProfile } from '../production/composition.js';
-import { isAutonomousQuoteProfile, salesProductionAgentVersion } from '../production/profile-v5.js';
-import { loadAutonomousQuoteLimits } from '../capabilities/autonomy-limits.js';
+import { isAutonomousQuoteProfile } from '../production/profile-v5.js';
+import { isConfirmedIntentProfile, salesProductionAgentVersion } from '../production/profile-v6.js';
+import { loadAutonomousQuoteLimits, loadAutonomousQuoteLimitsV6 } from '../capabilities/autonomy-limits.js';
 import { salesShippingPlan } from '../production/shipping-plan.js';
 import { SALES_DOMAINS, SALES_PRODUCTION_PROFILE } from '../production/profile.js';
 import { SALES_PRODUCTION_PROCESSES, schedulerConfigurationStatus } from '../production/topology.js';
@@ -126,7 +127,10 @@ function productionQuotes(production: ReturnType<typeof loadProductionConfig>, l
 
 /** (R4-J3E) The autonomous issuance limits, read only when the selected profile issues quotes autonomously (v5); fails closed without them. */
 function autonomousLimits(production: ReturnType<typeof loadProductionConfig>) {
-  return isAutonomousQuoteProfile(selectedSalesProductionProfile(production.config)) ? { autonomousQuoteLimits: loadAutonomousQuoteLimits(process.env) } : {};
+  const profile = selectedSalesProductionProfile(production.config);
+  if (!isAutonomousQuoteProfile(profile)) return {};
+  // (R4-J3E-B) @6 also requires the total-units limit and the confirmation window.
+  return { autonomousQuoteLimits: isConfirmedIntentProfile(profile) ? loadAutonomousQuoteLimitsV6(process.env) : loadAutonomousQuoteLimits(process.env) };
 }
 
 function composition() {

@@ -17,8 +17,10 @@ export const SALES_MIGRATIONS_DIR = fileURLToPath(new URL('../migrations', impor
  * - 5: v4 plus the shipping choice, quote request, quote.preview and
  *      autonomous quote.create@3 guidance — run only by sales-production@5
  *      (R4-J3E). Not the latest: non-production compositions keep v4.
+ * - 6: v5 with the offer reference and the conversational confirmation read by
+ *      quote.create@4 — run only by sales-production@6 (R4-J3E-B).
  */
-export const SALES_AGENT_DEFINITION_FILES = Object.freeze({ 3: 'sales.agent.json', 4: 'sales.v4.agent.json', 5: 'sales.v5.agent.json' } as const);
+export const SALES_AGENT_DEFINITION_FILES = Object.freeze({ 3: 'sales.agent.json', 4: 'sales.v4.agent.json', 5: 'sales.v5.agent.json', 6: 'sales.v6.agent.json' } as const);
 export type SalesAgentDefinitionVersion = keyof typeof SALES_AGENT_DEFINITION_FILES;
 /** The pack's current definition (what non-production compositions, which register every capability, run). */
 export const SALES_AGENT_LATEST_VERSION: SalesAgentDefinitionVersion = 4;

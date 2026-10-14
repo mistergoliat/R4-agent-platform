@@ -1,11 +1,8 @@
 import { DEFAULT_ACTION_POLICY, type ActionPolicyConfigurationInput } from '@r4/policy-engine';
 import { profileLabel, type ProductionProfile } from '@r4/live-ops';
 import { AUTONOMOUS_QUOTE_LIMIT_ENV } from '../capabilities/autonomy-limits.js';
-import type { SalesAgentDefinitionVersion } from '../definition.js';
 import { AUTONOMOUS_QUOTE_CAPABILITY_IDS, CAPABILITY_IDS } from '../ids.js';
-import { SALES_DOMAINS, SALES_PRODUCTION_ACTION_POLICY, SALES_PRODUCTION_PROFILE } from './profile.js';
-import { SALES_PRODUCTION_PROFILE_V2_CANDIDATE } from './profile-v2.js';
-import { SALES_PRODUCTION_PROFILE_V3 } from './profile-v3.js';
+import { SALES_DOMAINS, SALES_PRODUCTION_ACTION_POLICY } from './profile.js';
 import { QUOTE_CONTRACT_REF, SALES_PRODUCTION_PROFILE_V4 } from './profile-v4.js';
 
 /**
@@ -60,14 +57,18 @@ export const SALES_PRODUCTION_AUTONOMOUS_ACTION_POLICY: ActionPolicyConfiguratio
   },
 } satisfies ActionPolicyConfigurationInput);
 
-/** Profiles whose quote issuance is autonomous (they compose quote.preview, quote.create@3 and workspace.update@2). */
-export const SALES_AUTONOMOUS_QUOTE_PROFILES: ReadonlySet<string> = new Set(['sales-production@5']);
+/**
+ * Profiles whose quote issuance is autonomous (they compose quote.preview and workspace.update@2 and the
+ * autonomous action policy): @5 (quote.create@3, model-attested request) and @6 (R4-J3E-B: quote.create@4,
+ * customer confirmation read from the conversation).
+ */
+export const SALES_AUTONOMOUS_QUOTE_PROFILES: ReadonlySet<string> = new Set(['sales-production@5', 'sales-production@6']);
 
 export function isAutonomousQuoteProfile(profile: ProductionProfile): boolean {
   return SALES_AUTONOMOUS_QUOTE_PROFILES.has(profileLabel(profile));
 }
 
-/** The action policy a profile runs: the autonomous one only for @5; every earlier profile keeps SALES_PRODUCTION_ACTION_POLICY (same object, same hash). */
+/** The action policy a profile runs: the autonomous one only for @5 and @6; every earlier profile keeps SALES_PRODUCTION_ACTION_POLICY (same object, same hash). */
 export function salesProductionActionPolicy(profile: ProductionProfile): ActionPolicyConfigurationInput {
   return isAutonomousQuoteProfile(profile) ? SALES_PRODUCTION_AUTONOMOUS_ACTION_POLICY : SALES_PRODUCTION_ACTION_POLICY;
 }
@@ -83,31 +84,4 @@ export const SALES_PRODUCTION_PROFILE_V5_GATE = Object.freeze([
   { id: 'explicit-authorization', blocking: true, requirement: 'explicit user authorization to deploy and select sales-production@5' },
 ] as const);
 
-/** The Sales production profiles a deployment may select with R4_PROD_POLICY_PROFILE. */
-export const SALES_PRODUCTION_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_PRODUCTION_PROFILE, SALES_PRODUCTION_PROFILE_V2_CANDIDATE, SALES_PRODUCTION_PROFILE_V3, SALES_PRODUCTION_PROFILE_V4, SALES_PRODUCTION_PROFILE_V5]);
-
-/** The Sales production profile declared by `label` (`sales-production@1..5`), or null. */
-export function salesProductionProfile(label: string): ProductionProfile | null {
-  return SALES_PRODUCTION_PROFILES.find((profile) => profileLabel(profile) === label) ?? null;
-}
-
-/**
- * The Sales definition version each production profile runs. Production
- * pins it: a conversation task is created for exactly this version, so
- * registering a newer definition never switches an existing profile (the
- * registry otherwise resolves the latest). Kept outside the profile objects
- * so the deployed fingerprints are unchanged.
- */
-export const SALES_PRODUCTION_AGENT_VERSIONS: Readonly<Record<string, SalesAgentDefinitionVersion>> = Object.freeze({
-  'sales-production@1': 3,
-  'sales-production@2': 3,
-  'sales-production@3': 4,
-  'sales-production@4': 4,
-  'sales-production@5': 5,
-});
-
-export function salesProductionAgentVersion(profile: ProductionProfile): SalesAgentDefinitionVersion {
-  const version = SALES_PRODUCTION_AGENT_VERSIONS[profileLabel(profile)];
-  if (version === undefined) throw new Error(`no Sales definition version is pinned for ${profileLabel(profile)}`);
-  return version;
-}
+// The selectable profile registry (v1–v6) and the pinned definition versions live in profile-v6.ts (R4-J3E-B).

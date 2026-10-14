@@ -27,14 +27,16 @@ import { SALES_ROOT_GOAL } from '../goal.js';
 import { SalesWorkspaceContextSource } from '../workspace/context-source.js';
 import { PostgresSalesStore } from '../workspace/store.js';
 import { SALES_DOMAINS } from './profile.js';
-import { SALES_PRODUCTION_PROFILES, isAutonomousQuoteProfile, salesProductionActionPolicy, salesProductionAgentVersion, salesProductionProfile } from './profile-v5.js';
+import { isAutonomousQuoteProfile, salesProductionActionPolicy } from './profile-v5.js';
+import { SALES_PRODUCTION_PROFILES, isConfirmedIntentProfile, salesProductionAgentVersion, salesProductionProfile } from './profile-v6.js';
 import { catalogCapabilities } from '../capabilities/catalog.js';
 import { shippingCapability } from '../capabilities/shipping.js';
 import { quoteCreateV2Capability } from '../capabilities/quote-v2.js';
 import { quoteCreateV3Capability } from '../capabilities/quote-v3.js';
-import { quotePreviewCapability } from '../capabilities/quote-preview.js';
+import { quotePreviewCapability, quotePreviewV2Capability } from '../capabilities/quote-preview.js';
+import { quoteCreateV4Capability } from '../capabilities/quote-v4.js';
 import { workspaceCapabilityV2 } from '../capabilities/workspace-v2.js';
-import type { AutonomousQuoteLimits } from '../capabilities/autonomy-limits.js';
+import type { AutonomousQuoteLimits, AutonomousQuoteLimitsV6 } from '../capabilities/autonomy-limits.js';
 
 /** Who opens production Sales conversations: the channel ingress (a platform service, never the model). */
 export const SALES_CHANNEL_INGRESS: Principal = { kind: 'service', ref: 'sales-channel-ingress' };
@@ -71,8 +73,8 @@ export interface SalesProductionWorkerOptions {
   readonly shipping?: ShippingService & { readonly bindingKind: string };
   /** The Quote V2 binding (QuoteV2HttpClient); required when the selected profile makes Quote REAL (v4). */
   readonly quotes?: QuoteV2Service & { readonly bindingKind: string };
-  /** (R4-J3E) The configured limits of autonomous issuance; required when the selected profile issues quotes autonomously (v5). */
-  readonly autonomousQuoteLimits?: AutonomousQuoteLimits;
+  /** (R4-J3E) The configured limits of autonomous issuance; required when the selected profile issues quotes autonomously (v5; v6 also needs the total-units limit and the confirmation window). */
+  readonly autonomousQuoteLimits?: AutonomousQuoteLimits | AutonomousQuoteLimitsV6;
 }
 
 /** The Sales production profile the deployment declared, or a refusal (nothing is defaulted). */
@@ -148,8 +150,15 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
       const limits = options.autonomousQuoteLimits;
       if (!limits) throw new Error(`refusing production composition: ${profileLabel(profile)} issues quotes autonomously but no autonomous quote limits were configured (R4_AUTONOMOUS_QUOTE_*)`);
       capabilities.registerWrite(workspaceCapabilityV2({ store: sales, catalog, shipping: options.shipping, clock }));
-      if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewCapability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now() }));
-      if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV3Capability({ store: sales, quotes: options.quotes, catalog, shipping: options.shipping, limits, now: () => clock.now() }));
+      if (isConfirmedIntentProfile(profile)) {
+        // (R4-J3E-B, ADR-035) v6: the customer's confirmation is read from the conversation the platform recorded (ProductionStore.thread).
+        if (!isV6Limits(limits)) throw new Error(`refusing production composition: ${profileLabel(profile)} needs the total-units limit and the confirmation window (R4_AUTONOMOUS_QUOTE_MAX_TOTAL_UNITS, R4_AUTONOMOUS_QUOTE_CONFIRMATION_WINDOW_SECONDS)`);
+        if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV2Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now() }));
+        if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV4Capability({ store: sales, quotes: options.quotes, catalog, shipping: options.shipping, limits, conversation: options.store, now: () => clock.now() }));
+      } else {
+        if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewCapability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now() }));
+        if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV3Capability({ store: sales, quotes: options.quotes, catalog, shipping: options.shipping, limits, now: () => clock.now() }));
+      }
     } else if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) {
       capabilities.registerWrite(quoteCreateV2Capability({ store: sales, quotes: options.quotes, catalog, shipping: options.shipping, now: () => clock.now() }));
     }
@@ -222,4 +231,8 @@ export function composeSalesGateway(options: SalesGatewayOptions): { bindings: G
       taskFactory: salesConversationTaskFactory(options.pool, salesProductionAgentVersion(profile)),
     },
   };
+}
+
+function isV6Limits(limits: AutonomousQuoteLimits | AutonomousQuoteLimitsV6): limits is AutonomousQuoteLimitsV6 {
+  return 'maxTotalUnits' in limits && 'confirmationWindowSeconds' in limits;
 }
