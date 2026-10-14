@@ -8,6 +8,19 @@
 | Rama de ejecución | `r4-j3e-c-deterministic-commercial-offer` |
 | Documentos hermanos | [`R4_J3_FINAL_ACCEPTANCE.md`](R4_J3_FINAL_ACCEPTANCE.md) §15–§16 y [`R4_J3_CUSTOMER_JOURNEY_GAP_REGISTER.md`](R4_J3_CUSTOMER_JOURNEY_GAP_REGISTER.md) |
 
+**Estado vigente (§18, ejecución del 2026-10-14, 22:23–23:10 UTC, con la identidad SSH autorizada por el owner):**
+
+```text
+J3_CANARY_EC2=FAIL                         (latencia del proveedor del modelo frente al límite de 60 s por llamada de R4; no es un fallo de seguridad ni de integridad)
+J3_REAL_QUOTE_V2_ISSUANCES=0
+J3_PRODUCTION_UNCHANGED=YES                (verificado antes y después, en solo lectura)
+J3F_DEFERRED_DOCUMENTED=YES
+GAP_03_DISPOSITION=J7_PRODUCTION_GATE_P0
+J3_FINAL_STATUS=CONDITIONAL
+```
+
+**Primer intento (histórico): BLOCKED por acceso SSH.**
+
 ```text
 J3_CANARY_EC2=BLOCKED
 J3_REAL_QUOTE_V2_ISSUANCES=0
@@ -16,7 +29,7 @@ J3F_DEFERRED_DOCUMENTED=YES
 J3_FINAL_STATUS=CONDITIONAL
 ```
 
-**Qué pasó.**
+**Qué pasó en el primer intento.**
 - La sesión no tiene acceso SSH legítimo a EC2 desde esta estación (§2).
 - Siguiendo el mandato §3, se detuvo la ejecución remota: no se buscaron llaves, no se listaron directorios de credenciales y no se modificó la configuración SSH.
 - **No se emitió ninguna cotización.**
@@ -255,3 +268,112 @@ Comprobar con el owner de Shipping, por lectura, que San Bernardo tiene cobertur
 - producción idéntica.
 
 Cualquier desvío ⇒ `J3_CANARY_EC2=FAIL`, con el bloqueo exacto documentado y sin ampliar el alcance.
+
+## 18. Ejecución del canary con la identidad SSH autorizada (2026-10-14, 22:23–23:10 UTC): **FAIL**
+
+**Autorización del owner:**
+- usar la identidad SSH local indicada, solo por SSH (sin mostrar, copiar ni modificar la llave);
+- fijar el checkout aislado a `c46d6c3c0a16dd3d35ae113ba06ee916618094fb`;
+- como máximo una cotización sintética en Quote V2 de integración.
+
+Tras el primer intento fallido, el owner autorizó **un último intento** con una conversación nueva. Todo el preflight de §17 se cumplió. Ninguna conversación llegó a presentar una oferta: el modelo superó dos veces seguidas el límite de 60 s por llamada en cada una, la recuperación de ADR-028 se agotó y la plataforma pasó la tarea a humanos. **0 cotizaciones, 0 propuestas `quote.create` y producción intacta.**
+
+### 18.1 Commit y transferencia
+
+- Bundle incremental `a841adb..r4-j3e-c-deterministic-commercial-offer`, con una sola cabecera (`c46d6c3`):
+  - 210 127 bytes, SHA-256 `39e7025096ae483d61d76aaf6a1ca2283690ed59650ad89c5ec249301c22c2d6`;
+  - el mismo hash en el host; `git bundle verify` "is okay".
+- Checkout aislado `~/r4-j3e-canary`:
+  - `fetch` solo de esa rama; `checkout --detach c46d6c3c0a16dd3d35ae113ba06ee916618094fb`;
+  - árbol limpio;
+  - desde `a841adb`: 0 cambios de harness, 0 SQL, `package-lock.json` sin cambios, de modo que no se ejecutó `npm ci`;
+  - `npm run build` exit 0.
+- Disco libre: 747 MB antes y 745 MB después (≥ 700).
+
+### 18.2 Preflight de producción (solo lectura; antes y después)
+
+| Verificación | Antes (22:23) | Después (23:10) |
+|---|---|---|
+| Identidad del servidor | Llave del host verificada (`StrictHostKeyChecking=yes`); `ip-172-31-1-183`, `ec2-user` | Igual |
+| PM2 `r4-channel-gateway` / `r4-sales-worker` / `r4-scheduler` | online; reinicios 11 / 16 / 0; en línea desde el 2026-10-09 21:01 (despliegue J3D) | online; 11 / 16 / 0 |
+| Checkout productivo | `ef5a35404a7d28bf6ee1a1370de739bd8610df79`, `main`, limpio | Igual |
+| `production.env` | `R4_EXECUTION_MODE=production`, `sales-production@3`, rollout 0 % | Sin cambios |
+| Gateway `/ready` | `ready`, `sales-production@3`, WhatsApp REAL, `pendingMigrations: []`; `/ready/r4` 200 | Igual |
+| Ledger productivo | 11 migraciones; Sales hasta `0007`; **sin** `0008`/`0009` | 11 |
+| Outbound productivo | Último del 2026-10-08 | 0 nuevos en las últimas 3 h |
+| Otros | 20 inbound `rejected` en 24 h: tráfico previo del número productivo, ajeno al canary | — |
+
+### 18.3 Aislamiento
+
+| Gate | Resultado |
+|---|---|
+| Base del canary | `r4_sales_canary`, marcador `r4-sales-canary:v1:50ea36160c0b`, solo `127.0.0.1:55434`, 1 rol de login, 0 sesiones ajenas |
+| `sales:canary status` | `isolation: verified`, tráfico ajeno 0/0/0 (antes de cada arranque) |
+| Procesos | Ningún proceso del canary ni `apps/api` vivo antes de arrancar; solo los de producción, Catalog y Quote V2 |
+| Estado previo | 0 ejecuciones, schedules u outbound abiertos. 4 tareas `waiting` sin timers. `j3eb-neg-1` `blocked` (handoff) |
+| `j3eb-pos-1` (`01a138aa-…`) | Estaba `running` sin worker. **Cancelada solo en la base del canary**: `production:sales:control tasks cancel`, con `R4_DATABASE_URL` del canary, destino verificado `127.0.0.1:55434/r4_sales_canary` antes de ejecutar |
+| Entorno | `canary-j3e7.env` (0600), derivado de `canary-j3eb.env` con las mismas claves. Solo cambian el perfil (`sales-production@7`), la captura (`j3e7-canary-outbound.jsonl`) y `R4_BUILD_REF`. La allowlist del canary agrega dos claves sintéticas. 0 claves de WhatsApp, sin `R4_DATABASE_URL` |
+| Límites (sin cambios) | ≤ 250 000 CLP bruto, ≤ 3 líneas, ≤ 5 unidades por línea y ≤ 5 en total, 1 por conversación, 1 por hora, ventana de confirmación 900 s |
+| `sales:canary init` | Migraciones Core `[]` y Sales `[]`; registró **solo** `sales@7`; `@3–@6` sin cambios |
+| Quote V2 de integración | `QUOTE_EMAIL_PROVIDER=disabled`. Línea base: 6 cotizaciones, 5 operaciones, 8 bindings de idempotencia, 1 entrega |
+| Shipping real, San Bernardo | Resuelta (comuna 121, Metropolitana). Blue Express EXPRESS: $4.896 (10 kg), $8.921 (40 kg), lectura |
+
+### 18.4 Modelo
+
+`openai_compatible`, perfil `deepseek-v4-flash` (`R4_MODEL_NAME=deepseek-flash`), *thinking* activado (`R4_MODEL_EXTRA_BODY`). Es la misma configuración validada en J3E-A/B, sin cambios.
+
+Hay dos límites de tiempo:
+- el del proveedor, `R4_MODEL_TIMEOUT_MS=120000`;
+- el de cada llamada en el worker, `R4_EXEC_MODEL_CALL_TIMEOUT_MS`. No está definido en el entorno, así que vale su default de **60 000 ms** (`apps/worker/src/config.ts:27`) y se aplica primero (`packages/model-gateway/src/gateway.ts:79-92`).
+
+### 18.5 Conversaciones (canal sintético; mensajes del cliente guionados, decisiones del agente no)
+
+**`j3-final-1`** (task `01a13c88-d517-…`):
+1. Cliente: "Hola, necesito cotizar una rack, una barra olímpica y discos con despacho a San Bernardo." El agente pidió el tipo de entrenamiento, el espacio (alto y ancho) y el presupuesto. No inventó productos.
+2. Cliente: entrenamiento de fuerza en casa, garaje de 2,3 × 2 m, unos $200.000 con despacho. Tras varias búsquedas en Catalog real, el agente dijo **con honestidad** que $200.000 no alcanzan para el set completo. Citó un precio real (barra Cerakote Black Camo 700lb, $129.990, en stock) y ofreció tres caminos.
+3. Cliente: opción 3, hasta $240.000 con despacho (dentro del límite), las tres cosas en su versión más económica. Tras 9 lecturas de Catalog, dos llamadas seguidas al modelo superaron 60 s. Resultado: `model_failure`, recuperación agotada, handoff, task `blocked`, **sin mensaje al cliente** (comportamiento de GAP-17).
+
+**`j3-final-2`** (último intento autorizado; task `01a13ca3-393a-…`):
+1. Cliente: el mismo pedido, con presupuesto máximo de $240.000 y "lo más económico" desde el inicio. El agente hizo lecturas de Catalog y un `sales.workspace.update` (`REVERSIBLE_WRITE`, política `allow`, solo en la base del canary). Luego dos llamadas seguidas superaron 60 s, de nuevo con handoff, task `blocked` y 0 mensajes.
+
+En ninguna conversación se llegó a `quote.preview`, a la oferta determinista ni a la confirmación.
+
+### 18.6 Evidencia
+
+| Rubro | Valor |
+|---|---|
+| Oferta determinista, SHA-256 | No aplica: 0 `quote.preview` |
+| Confirmación ("Sí." / "Sí, emítela.") | No alcanzada; 0 decisiones `0008` nuevas y 0 evidencias `0009` nuevas |
+| Política y autorizaciones | 2 propuestas `sales.workspace.update`, 1 ejecución `succeeded`. 0 propuestas `quote.create` |
+| Quote V2 | **0 emisiones.** Después: 6 / 5 / 8 / 1, idéntico a la línea base. `sales.quote_v2_requests` sin filas nuevas (2) |
+| Liquidación estricta, PDF, idempotencia, recibos de emisión | No aplica |
+| Outbound | 2 mensajes, ambos `accepted` en la captura sintética, al destinatario sintético `synthetic:j3-final-1`. 0 WhatsApp, 0 email. Ningún texto afirma una emisión ni una entrega |
+| Llamadas al modelo | 61: 56 completadas y 5 `timeout`, todas a 60 000–60 003 ms con `httpStatus` nulo (el corte es de R4, no un error de DeepSeek). Latencia de las completadas: p50 21,4 s, p90 48,5 s, máximo 53,2 s. Tokens de entrada ≈ 1,93 M |
+| Comparación | J3E-B (misma configuración): p50 4,2 s, máximo 14,5 s. La latencia del proveedor fue ≈ 4–5 × mayor en esta ventana |
+| Estado final | Runtime del canary detenido (SIGTERM). Tareas `j3-final-1/2` `blocked` con handoff. Logs en `~/r4-j3d/j3e7-canary-run.log` y captura en `~/r4-j3d/j3e7-canary-outbound.jsonl` |
+
+### 18.7 Diagnóstico y lo que no se hizo
+
+- **No es un fallo de seguridad, aislamiento ni integridad.** Nada se emitió, nada salió del canal sintético y producción quedó idéntica.
+- **Causa:** latencia del proveedor del modelo frente al límite por llamada de R4 (60 s, default no configurado del worker), con dos excesos seguidos en un mismo turno. Es la misma clase que GAP-17 (dos fallas del modelo ⇒ handoff ⇒ cliente sin respuesta), con timeouts en vez de salidas mal formadas.
+- **Por decisión, no se hizo:**
+  - subir `R4_EXEC_MODEL_CALL_TIMEOUT_MS`;
+  - desactivar *thinking*;
+  - cambiar de modelo;
+  - un tercer intento.
+- **Opciones para el owner antes de un nuevo canary**, cada una con autorización propia:
+  1. Fijar en el entorno del canary `R4_EXEC_MODEL_CALL_TIMEOUT_MS=120000`, alineado con el timeout del proveedor. Es configuración del canary; no toca código, límites comerciales ni producción.
+  2. Repetir en una ventana con latencia normal del proveedor (J3E-B: máximo 14,5 s).
+  3. Evaluar *thinking* desactivado o JSON mode (propuesta J3E-B §12.2).
+- La recomendación es la opción 1, porque el umbral efectivo de 60 s no es una decisión explícita del perfil validado.
+
+### 18.8 Decisión de aceptación propuesta
+
+```text
+J3_CANARY_EC2=FAIL                 (proveedor del modelo / límite de 60 s; 0 emisiones)
+J3_REAL_QUOTE_V2_ISSUANCES=0
+J3_PRODUCTION_UNCHANGED=YES
+J3_FINAL_STATUS=CONDITIONAL        (falta la prueba final contra owners reales con @7)
+```
+
+No se amplía el alcance. GAP-17 (J7) recibe esta evidencia adicional: también los timeouts del proveedor llevan a un handoff sin respuesta al cliente.

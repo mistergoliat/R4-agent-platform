@@ -80,7 +80,8 @@ Las cuatro últimas surgieron de las conversaciones con el modelo real de esta a
 | Dependencias | Acceso SSH a EC2 permitido en la sesión; transferencia del commit por bundle incremental (sin publicar la rama); ≥ 700 MB libres; cancelar `j3eb-pos-1`. |
 | Test de aceptación | Recibo `succeeded`; decisión `authorized:eligible`; `offer_text_sha256` = renderización Sales; liquidación estricta sin `unknown`; PDF `verified`; 1 binding de idempotencia y 1 operación en Quote V2; producción en `@3` sin cambios; 0 outbound fuera del canal sintético. |
 | Hito | **J3** |
-| Estado (2026-10-14, canary final autorizado) | **BLOCKED** ([informe](R4_J3_FINAL_EC2_CANARY_REPORT.md)).<br><br>Esta estación no tiene el alias SSH `Master`, y el host documentado rechazó su identidad (`Permission denied (publickey)`). Se detuvo sin buscar llaves.<br><br>0 cotizaciones emitidas; producción no verificada. El informe contiene el procedimiento para un operador con acceso legítimo. |
+| Estado (2026-10-14, ejecución con la identidad SSH autorizada) | **FAIL, sin emisión** ([informe §18](R4_J3_FINAL_EC2_CANARY_REPORT.md)).<br><br>- Preflight y aislamiento en verde; producción intacta, verificada antes y después.<br>- En dos conversaciones, dos llamadas seguidas al modelo superaron el límite de 60 s por llamada de R4 (`R4_EXEC_MODEL_CALL_TIMEOUT_MS`, default). Resultado: handoff, sin oferta.<br>- 0 cotizaciones.<br>- Evidencia adicional para GAP-17. |
+| Estado (2026-10-14, primer intento) | **BLOCKED** ([informe](R4_J3_FINAL_EC2_CANARY_REPORT.md)).<br><br>Esta estación no tiene el alias SSH `Master`, y el host documentado rechazó su identidad (`Permission denied (publickey)`). Se detuvo sin buscar llaves.<br><br>0 cotizaciones emitidas; producción no verificada. El informe contiene el procedimiento para un operador con acceso legítimo. |
 
 ### GAP-03 — El mensaje de emisión lo redacta el modelo
 

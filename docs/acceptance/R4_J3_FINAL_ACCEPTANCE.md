@@ -21,11 +21,11 @@ J3_CUSTOMER_JOURNEY_FULL=INCOMPLETE
 J3F_DISPOSITION=DEFERRED_TO_R4_MEDIA
 ADR_038_STATUS=PROPOSED_DEFERRED
 GAP_03_DISPOSITION=J7_PRODUCTION_GATE_P0             (Sales Response Integrity; emisión protegida antes del outbound)
-J3_PRODUCTION_UNCHANGED=NOT_VERIFIED
-J3_CANARY_EC2=BLOCKED                                (sin acceso SSH legítimo desde esta estación; 0 emisiones)
+J3_PRODUCTION_UNCHANGED=YES                          (verificado antes y después del canary, solo lectura)
+J3_CANARY_EC2=FAIL                                   (2 conversaciones: timeouts del modelo > 60 s ⇒ handoff; 0 emisiones; ver informe §18. Antes: BLOCKED por SSH)
 J3_PRODUCTION_ROLLOUT=NOT_AUTHORIZED
 J3_FINAL_STATUS=CONDITIONAL
-J3_MINIMUM_REMAINING_WORK=canary EC2 de @7 por un operador con acceso legítimo (procedimiento en el informe del canary, §17)
+J3_MINIMUM_REMAINING_WORK=canary EC2 de @7 que llegue a la emisión (informe §17; opciones de §18.7: límite por llamada del modelo o ventana de latencia normal)
 ```
 
 ### Estado anterior (histórico, antes de la re-delimitación; no vigente)
