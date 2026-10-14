@@ -249,6 +249,16 @@ describe('catalog.discover — typed failures become failed observations (never 
     expect(o.payload).toBeNull();
     expect(o.error).toMatchObject({ details: { discoverFailure: failure, retryable } });
   });
+
+  it('a 200 answer of an unverified contract revision is a CONTRACT_VIOLATION observation: no candidates, no claims', async () => {
+    const body = JSON.parse(JSON.stringify(scenarioFixture(3).http.body)) as { contractVersion: string; lineage: { contractVersion: string } };
+    body.contractVersion = 'catalog-discover-v1b3';
+    body.lineage.contractVersion = 'catalog-discover-v1b3';
+    const o = await setup(fixedDiscover({ status: 200, body }).port).invoke({ need: 'máquina para entrenar espalda' });
+    expect(o.outcome).toBe('failed');
+    expect(o.payload).toBeNull();
+    expect(o.error).toMatchObject({ details: { category: 'contract_violation', discoverFailure: 'CONTRACT_VIOLATION', code: 'unverified_contract_revision', retryable: false } });
+  });
 });
 
 describe('catalog.discover — composition and production boundary', () => {

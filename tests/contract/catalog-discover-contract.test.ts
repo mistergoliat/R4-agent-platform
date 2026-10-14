@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { CATALOG_DISCOVER_KNOWN_REVISIONS, CatalogDiscoverError, type CatalogDiscoverAnswer } from '@r4-adapters/domains';
+import { CATALOG_DISCOVER_VERIFIED_REVISIONS, CatalogDiscoverError, type CatalogDiscoverAnswer } from '@r4-adapters/domains';
 import { catalogDiscoverAnswerSchema } from '@r4-adapters/catalog-http';
 import { catalogDiscoverView } from '@r4-sales/agent';
 import {
@@ -56,12 +56,12 @@ describe('catalog.discover owner fixtures — provenance', () => {
     for (const [file, hash] of Object.entries(manifest.files)) expect(discoverFixtureHash(discoverFixtureText(file)), file).toBe(hash);
   });
 
-  it('records the owner, its commit and a recognized contract revision; the contract sources were committed', () => {
+  it('records the owner, its commit and a verified contract revision; the contract sources were committed', () => {
     const manifest = discoverManifest();
     expect(manifest).toMatchObject({ capability: 'catalog.discover', schemaVersion: 1, route: 'POST /v2/catalog/discover', owner: { repository: 'MS-pesaschile-catalog-service', contractSourcesUncommitted: false } });
     expect(manifest.owner.commit).toMatch(/^[0-9a-f]{40}$/);
-    expect(CATALOG_DISCOVER_KNOWN_REVISIONS).toContain(manifest.contractVersion);
-    expect(manifest.contractRevisions).toEqual(expect.arrayContaining([...CATALOG_DISCOVER_KNOWN_REVISIONS]));
+    expect(CATALOG_DISCOVER_VERIFIED_REVISIONS).toContain(manifest.contractVersion);
+    expect(manifest.contractRevisions).toEqual(expect.arrayContaining([...CATALOG_DISCOVER_VERIFIED_REVISIONS]));
     expect(manifest.scenarios.map((s) => s.id)).toEqual(Array.from({ length: 24 }, (_v, i) => i + 1));
     expect(manifest.r4MultiTurn.map((t) => t.turn)).toEqual([1, 2, 3, 4, 5]);
   });
@@ -94,7 +94,11 @@ describe('catalog.discover owner fixtures — provenance', () => {
     // The R4 answer schema is derived as JSON Schema (zod v4) and every closed enum it enforces must be the owner's.
     // R4 enforces the 200 statuses only (FAILED never travels as 200), a subset of the owner's status enum.
     const r4Enums = new Set(r4(zodJson()));
+    // contractVersion is an open label on the owner side; R4 pins it to the revisions it verified (a consumer gate, not an owner enum).
+    const revisionPin = [...CATALOG_DISCOVER_VERIFIED_REVISIONS].sort().join('|');
+    expect(r4Enums.has(revisionPin)).toBe(true);
     for (const values of r4Enums) {
+      if (values === revisionPin) continue;
       if (values === 'COMPLETE|DEGRADED|PARTIAL') expect(ownerEnums.has('COMPLETE|DEGRADED|FAILED|PARTIAL')).toBe(true);
       else expect(ownerEnums.has(values), values).toBe(true);
     }
@@ -172,7 +176,7 @@ describe('catalog.discover — revision compatibility (v1b2 ↔ v1b1)', () => {
 
   it('a v1b2 answer parses; VERIFIED requirements derive from the disposition, POSSIBLE ones are never satisfied', async () => {
     const verified = await read({ http: { status: 200, body: asV1b2(scenarioFixture(3).http.body) } });
-    expect(verified.view.contract).toEqual({ schemaVersion: 1, contractVersion: 'catalog-discover-v1b2', recognized: true });
+    expect(verified.view.contract).toEqual({ schemaVersion: 1, contractVersion: 'catalog-discover-v1b2' });
     const p6 = verified.view.candidates.find((c) => c.productKey === 'P6')!;
     expect(p6.reading.requirementsSource).toBe('DERIVED_FROM_DISPOSITION');
     expect(p6.reading.allowedClaims).toContain('MEETS:ANATOMY:BACK');
@@ -195,9 +199,30 @@ describe('catalog.discover — revision compatibility (v1b2 ↔ v1b1)', () => {
     }
   });
 
-  it('an unknown revision label with schemaVersion 1 parses but is flagged unrecognized', async () => {
-    const body = { ...clone(scenarioFixture(1).http.body), contractVersion: 'catalog-discover-v9' };
-    expect((await read({ http: { status: 200, body } })).view.contract.recognized).toBe(false);
+  it('R4 consumes exactly the two revisions it verified, in the owner order (v1b2, then v1b1)', () => {
+    expect(CATALOG_DISCOVER_VERIFIED_REVISIONS).toEqual(['catalog-discover-v1b2', 'catalog-discover-v1b1']);
+    const owner = discoverManifest().contractRevisions;
+    expect(owner.indexOf('catalog-discover-v1b2')).toBeLessThan(owner.indexOf('catalog-discover-v1b1'));
+  });
+
+  it.each([
+    ['a later revision', 'catalog-discover-v1b3'],
+    ['the historical v1a (never verified by R4)', 'catalog-discover-v1a'],
+    ['a malformed label', 'v1b1; DROP'],
+    ['a missing label', undefined],
+  ])('schemaVersion 1 is not enough: %s is refused as CONTRACT_VIOLATION, never consumed', async (_what, label) => {
+    const body: Record<string, unknown> = { ...clone(scenarioFixture(3).http.body), contractVersion: label };
+    if (label !== undefined) (body as Body).lineage!.contractVersion = label;
+    else delete body.contractVersion;
+    const error = await failure({ status: 200, body });
+    expect(error).toMatchObject({ failure: 'CONTRACT_VIOLATION', code: 'unverified_contract_revision', category: 'contract_violation', retryable: false });
+    expect(error.message).not.toContain('DROP');
+  });
+
+  it('a lineage that names another revision than the answer is refused', async () => {
+    const body = mutable(scenarioFixture(3).http.body);
+    body.lineage!.contractVersion = 'catalog-discover-v1b2';
+    expect(await failure({ status: 200, body })).toMatchObject({ failure: 'CONTRACT_VIOLATION', code: 'contract_revision_mismatch', retryable: false });
   });
 });
 

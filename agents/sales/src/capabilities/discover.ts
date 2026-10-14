@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import {
-  CATALOG_DISCOVER_KNOWN_REVISIONS,
+  CATALOG_DISCOVER_VERIFIED_REVISIONS,
   CATALOG_DISCOVER_MAX_KEYS,
   CATALOG_DISCOVER_MAX_LIMIT,
   CATALOG_DISCOVER_MAX_NEED_CHARS,
@@ -113,7 +113,8 @@ export const catalogDiscoverOutput = z.strictObject({
     budgetFromWorkspace: z.string().nullable(),
     unappliedWorkspaceBudgets: z.array(z.strictObject({ key: z.string(), amountClp: z.int() })),
   }),
-  contract: z.strictObject({ schemaVersion: z.literal(1), contractVersion: z.string(), recognized: z.boolean() }),
+  /** Always a revision R4 verified: the adapter refuses any other label before this view exists. */
+  contract: z.strictObject({ schemaVersion: z.literal(1), contractVersion: z.enum(CATALOG_DISCOVER_VERIFIED_REVISIONS) }),
   requestId: z.string(),
   status: z.enum(['COMPLETE', 'PARTIAL', 'DEGRADED']),
   interpretation: z.strictObject({
@@ -230,7 +231,7 @@ export function catalogDiscoverView(answer: CatalogDiscoverAnswer, sent: Catalog
   const cf = answer.commercialFreshness;
   return {
     request: sent,
-    contract: { schemaVersion: 1, contractVersion: answer.contractVersion, recognized: (CATALOG_DISCOVER_KNOWN_REVISIONS as readonly string[]).includes(answer.contractVersion) },
+    contract: { schemaVersion: 1, contractVersion: answer.contractVersion },
     requestId: answer.requestId,
     status: answer.status,
     interpretation: {

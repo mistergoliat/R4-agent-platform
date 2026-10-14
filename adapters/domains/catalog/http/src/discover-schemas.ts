@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CATALOG_DISCOVER_MAX_KEYS, CATALOG_DISCOVER_MAX_LIMIT, CATALOG_DISCOVER_SCHEMA_VERSION, CATALOG_SELLABILITY, type CatalogDiscoverAnswer } from '@r4-adapters/domains';
+import { CATALOG_DISCOVER_MAX_KEYS, CATALOG_DISCOVER_MAX_LIMIT, CATALOG_DISCOVER_SCHEMA_VERSION, CATALOG_DISCOVER_VERIFIED_REVISIONS, CATALOG_SELLABILITY, type CatalogDiscoverAnswer } from '@r4-adapters/domains';
 import { catalogKeySchema } from './schemas.js';
 
 /**
@@ -7,7 +7,9 @@ import { catalogKeySchema } from './schemas.js';
  * the CONSUMER reading of the owner's agent contract (catalog-service
  * `discover-v1a/agentContract.ts`, `discoverAgentResponseTolerantSchema`):
  *
- * - `schemaVersion` must be 1 (checked before parsing, like the v2 reads).
+ * - `schemaVersion` must be 1 (checked before parsing, like the v2 reads), and
+ *   `contractVersion` (and `lineage.contractVersion`) one of the revisions R4
+ *   verified: schemaVersion 1 alone never admits a new revision.
  * - Objects are NOT strict: unknown fields are dropped (additive evolution).
  * - OPEN vocabularies (warnings, degradation component/cause, UNKNOWN reasons,
  *   absence.contributing) accept any well-formed code; R4 treats an unknown
@@ -73,7 +75,7 @@ const keys = z.array(catalogKeySchema).max(CATALOG_DISCOVER_MAX_KEYS);
 export const catalogDiscoverAnswerSchema = z
   .object({
     schemaVersion: z.literal(CATALOG_DISCOVER_SCHEMA_VERSION),
-    contractVersion: z.string().min(1).max(64),
+    contractVersion: z.enum(CATALOG_DISCOVER_VERIFIED_REVISIONS),
     requestId: z.string().min(1).max(128),
     status: z.enum(['COMPLETE', 'PARTIAL', 'DEGRADED']),
     interpretation: z.object({

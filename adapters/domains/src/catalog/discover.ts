@@ -17,19 +17,31 @@ import type { CatalogSellability } from './port.js';
  * wire schema (`@r4-adapters/catalog-http` discover-schemas) is checked
  * against them at compile time and against the owner's fixtures in tests.
  *
- * Contract revisions (lineage only; the compatibility gate is schemaVersion):
- *   catalog-discover-v1b2  base agent contract
- *   catalog-discover-v1b1  additive: candidate.requirements,
+ * Contract revisions. schemaVersion 1 is necessary but NOT sufficient: R4
+ * consumes only the revisions whose compatibility it verified, and refuses any
+ * other label (a later revision is not used automatically; it is verified and
+ * added here first):
+ *   catalog-discover-v1b2  base agent contract (owner aac3f8a)
+ *   catalog-discover-v1b1  additive over v1b2 (owner 6dd4b5d): candidate.requirements,
  *                          completeness.counts.rejectedByCommercialConstraints,
- *                          commercialFreshness.observations (+ open-vocabulary values)
- * Both are accepted: the three v1b1 fields are OPTIONAL here, and a missing
- * `requirements` is never read as "satisfied" (see the Sales capability).
+ *                          commercialFreshness.observations (+ open-vocabulary values).
+ *                          Verified by the executable-contract diff, the owner's
+ *                          fixtures re-exported at 6dd4b5d, and the v1b2 reduction of
+ *                          all 24 scenarios (never more permissive than v1b1).
+ * The three v1b1 fields are OPTIONAL here, and a missing `requirements` is never
+ * read as "satisfied" (see the Sales capability). catalog-discover-v1a is history:
+ * R4 never verified it and refuses it.
  */
 
 export const CATALOG_DISCOVER_CAPABILITY = 'catalog.discover';
 export const CATALOG_DISCOVER_SCHEMA_VERSION = 1;
-/** Revisions R4 was verified against (fixtures + schema diff). Others with schemaVersion 1 parse, flagged unrecognized. */
-export const CATALOG_DISCOVER_KNOWN_REVISIONS = ['catalog-discover-v1b2', 'catalog-discover-v1b1'] as const;
+/** The ONLY revisions R4 consumes. An answer labelled otherwise is a CONTRACT_VIOLATION (unverified_contract_revision). */
+export const CATALOG_DISCOVER_VERIFIED_REVISIONS = ['catalog-discover-v1b2', 'catalog-discover-v1b1'] as const;
+export type CatalogDiscoverRevision = (typeof CATALOG_DISCOVER_VERIFIED_REVISIONS)[number];
+
+export function isVerifiedDiscoverRevision(label: unknown): label is CatalogDiscoverRevision {
+  return typeof label === 'string' && (CATALOG_DISCOVER_VERIFIED_REVISIONS as readonly string[]).includes(label);
+}
 export const CATALOG_DISCOVER_MAX_LIMIT = 8;
 export const CATALOG_DISCOVER_MAX_KEYS = 8;
 export const CATALOG_DISCOVER_MAX_NEED_CHARS = 300;
@@ -164,8 +176,8 @@ export type CatalogDiscoverAbsenceReason =
   | 'SOURCE_UNAVAILABLE';
 
 export interface CatalogDiscoverAnswer {
-  /** Lineage label of the owner's revision (never branched on beyond "recognized or not"). */
-  readonly contractVersion: string;
+  /** The owner's revision; always one of CATALOG_DISCOVER_VERIFIED_REVISIONS (the adapter refuses the rest). */
+  readonly contractVersion: CatalogDiscoverRevision;
   readonly requestId: string;
   readonly status: CatalogDiscoverStatus;
   readonly interpretation: CatalogDiscoverInterpretation;
@@ -215,7 +227,8 @@ export interface CatalogDiscoverPort {
  *   TIMEOUT             R4's deadline passed before an answer.
  *   UNREACHABLE         the owner could not be reached.
  *   SERVICE_ERROR       a terminal owner failure (500, other 5xx).
- *   CONTRACT_VIOLATION  the owner answered outside its contract (also: a FAILED body sent as 200).
+ *   CONTRACT_VIOLATION  the owner answered outside its contract (also: a FAILED body sent as 200, or a
+ *                       contract revision R4 has not verified).
  */
 export const CATALOG_DISCOVER_FAILURES = ['INVALID_REQUEST', 'AUTH_FAILED', 'DISABLED', 'NOT_READY', 'SATURATED', 'RATE_LIMITED', 'TIMEOUT', 'UNREACHABLE', 'SERVICE_ERROR', 'CONTRACT_VIOLATION'] as const;
 export type CatalogDiscoverFailure = (typeof CATALOG_DISCOVER_FAILURES)[number];

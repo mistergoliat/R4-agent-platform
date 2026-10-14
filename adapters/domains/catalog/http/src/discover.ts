@@ -4,7 +4,9 @@ import {
   CATALOG_DISCOVER_MAX_LIMIT,
   CATALOG_DISCOVER_MAX_NEED_CHARS,
   CATALOG_DISCOVER_SCHEMA_VERSION,
+  CATALOG_DISCOVER_VERIFIED_REVISIONS,
   CatalogDiscoverError,
+  isVerifiedDiscoverRevision,
   type CallOptions,
   type CatalogDiscoverAnswer,
   type CatalogDiscoverFailure,
@@ -76,7 +78,8 @@ const CORRELATION = /^[A-Za-z0-9._:-]{1,64}$/;
  *   503 capability_saturated              → SATURATED (retryable after Retry-After; never retried here)
  *   500 / other 5xx                       → SERVICE_ERROR (retryability = the owner's; 500 is terminal)
  *   network failure                       → UNREACHABLE; local deadline → TIMEOUT
- *   200 that is not JSON, not schemaVersion 1, FAILED, or violates the contract → CONTRACT_VIOLATION
+ *   200 that is not JSON, not schemaVersion 1, FAILED, of an unverified contract revision,
+ *   or violates the contract              → CONTRACT_VIOLATION (not retryable)
  * A 200 COMPLETE / PARTIAL / DEGRADED is an ANSWER, never an error: the caller
  * must read status, completeness, degradation and each candidate's commercial state.
  */
@@ -166,9 +169,12 @@ function parseAnswer(text: string): CatalogDiscoverAnswer {
   } catch {
     throw violation('unparseable_response', 'the catalog.discover answer is not JSON');
   }
-  const body = json as { schemaVersion?: unknown; status?: unknown } | null;
+  const body = json as { schemaVersion?: unknown; status?: unknown; contractVersion?: unknown; lineage?: { contractVersion?: unknown } | null } | null;
   if (body?.schemaVersion !== CATALOG_DISCOVER_SCHEMA_VERSION) throw violation('unsupported_schema_version', `catalog.discover answered schemaVersion ${typeof body?.schemaVersion === 'number' ? body.schemaVersion : 'missing'}; R4 speaks ${CATALOG_DISCOVER_SCHEMA_VERSION}`);
   if (body.status === 'FAILED') throw violation('failed_answer_as_200', 'catalog.discover sent a FAILED answer with HTTP 200 (terminal failures are never 200)');
+  // A revision R4 has not verified is never consumed, even with schemaVersion 1: it is verified and listed first.
+  if (!isVerifiedDiscoverRevision(body.contractVersion)) throw violation('unverified_contract_revision', `catalog.discover answered contract revision ${revisionLabel(body.contractVersion)}, which R4 has not verified (verified: ${CATALOG_DISCOVER_VERIFIED_REVISIONS.join(', ')})`);
+  if (body.lineage && body.lineage.contractVersion !== body.contractVersion) throw violation('contract_revision_mismatch', `catalog.discover lineage names revision ${revisionLabel(body.lineage.contractVersion)}, not ${body.contractVersion}`);
   const parsed = catalogDiscoverAnswerSchema.safeParse(json);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
@@ -176,6 +182,11 @@ function parseAnswer(text: string): CatalogDiscoverAnswer {
   }
   const { schemaVersion: _, ...answer } = parsed.data;
   return answer;
+}
+
+/** An owner revision label safe to put in a message (anything else is not echoed). */
+function revisionLabel(label: unknown): string {
+  return typeof label === 'string' && /^[a-z0-9.-]{1,64}$/.test(label) ? label : '(malformed or missing)';
 }
 
 interface OwnerError {
