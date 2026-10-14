@@ -172,27 +172,35 @@ export function quoteCreateV2Capability(deps: QuoteV2CapabilityDeps): WriteCapab
       }
       return settle(deps, record, result.quote, result.operation, result.replayed, context);
     },
-    async reconcile(context): Promise<WriteReconciliationResult<QuoteCreateV2Output>> {
-      const record = await store.quoteV2Request(context.executionKey);
-      // The command died before its body was frozen: nothing can have been sent for this key.
-      if (!record) return { status: 'not_applied' };
-      try {
-        const binding = await quotes.lookupIdempotency(context.executionKey, { signal: context.signal, correlationId: context.execution.correlationId });
-        if (!binding) {
-          const age = await store.quoteV2SendAgeMs(context.executionKey);
-          // Owner rule: `not_found` is final only once no attempt can still commit.
-          if (age === null || age >= QUOTE_V2_TIMEOUT_MS + QUOTE_V2_NOT_FOUND_FINAL_AFTER_MS) return { status: 'not_applied' };
-          return { status: 'unknown', message: 'the quote owner has no binding for this key yet, but the last attempt could still commit' };
-        }
-        const quote = await quotes.getQuote(binding.quoteId, { signal: context.signal });
-        const operation = binding.operationId ? await quotes.getOperation(binding.operationId, { signal: context.signal }) : null;
-        return await settle(deps, record, quote, operation, true, context);
-      } catch (error) {
-        if (error instanceof DomainError) return { status: 'unknown', message: `quote reconciliation incomplete: ${error.message}` };
-        throw error;
-      }
-    },
+    reconcile: (context) => reconcileQuoteV2Command(deps, context),
   };
+}
+
+/**
+ * Reconciliation of one Quote V2 command by its execution key (shared by
+ * quote.create@2 and @3): never resends; asks the owner's idempotency lookup
+ * for the binding of the frozen body and settles from the owner's state.
+ */
+export async function reconcileQuoteV2Command(deps: Pick<QuoteV2CapabilityDeps, 'store' | 'quotes'>, context: WriteHandlerContext): Promise<WriteReconciliationResult<QuoteCreateV2Output>> {
+  const { store, quotes } = deps;
+  const record = await store.quoteV2Request(context.executionKey);
+  // The command died before its body was frozen: nothing can have been sent for this key.
+  if (!record) return { status: 'not_applied' };
+  try {
+    const binding = await quotes.lookupIdempotency(context.executionKey, { signal: context.signal, correlationId: context.execution.correlationId });
+    if (!binding) {
+      const age = await store.quoteV2SendAgeMs(context.executionKey);
+      // Owner rule: `not_found` is final only once no attempt can still commit.
+      if (age === null || age >= QUOTE_V2_TIMEOUT_MS + QUOTE_V2_NOT_FOUND_FINAL_AFTER_MS) return { status: 'not_applied' };
+      return { status: 'unknown', message: 'the quote owner has no binding for this key yet, but the last attempt could still commit' };
+    }
+    const quote = await quotes.getQuote(binding.quoteId, { signal: context.signal });
+    const operation = binding.operationId ? await quotes.getOperation(binding.operationId, { signal: context.signal }) : null;
+    return await settle(deps, record, quote, operation, true, context);
+  } catch (error) {
+    if (error instanceof DomainError) return { status: 'unknown', message: `quote reconciliation incomplete: ${error.message}` };
+    throw error;
+  }
 }
 
 type Prepared = { readonly status: 'prepared'; readonly request: QuoteV2CreateRequest } | Extract<WriteExecutionResult<never>, { status: 'rejected' }>;
@@ -297,7 +305,7 @@ async function prepareRequest(deps: QuoteV2CapabilityDeps, input: QuoteCreateV2I
  * formally issued quote whose identity, totals, validity and document
  * manifest match what R4 approved; `issuing` is never success.
  */
-async function settle(deps: QuoteV2CapabilityDeps, record: QuoteV2RequestRecord, quote: QuoteV2Quote, operation: QuoteV2Operation | null, replayed: boolean, context: WriteHandlerContext): Promise<WriteExecutionResult<QuoteCreateV2Output>> {
+export async function settle(deps: Pick<QuoteV2CapabilityDeps, 'store' | 'quotes'>, record: QuoteV2RequestRecord, quote: QuoteV2Quote, operation: QuoteV2Operation | null, replayed: boolean, context: WriteHandlerContext): Promise<WriteExecutionResult<QuoteCreateV2Output>> {
   const { store, quotes } = deps;
   const ref = `quote ${quote.quoteNumber ?? quote.quoteId}`;
   if (quote.quoteNumber && quote.issuance) {
@@ -364,7 +372,7 @@ async function settle(deps: QuoteV2CapabilityDeps, record: QuoteV2RequestRecord,
 }
 
 /** A failed POST. Only "never sent" or an owner refusal before binding is a known outcome. */
-function classifySend(error: unknown): WriteExecutionResult<QuoteCreateV2Output> {
+export function classifySend(error: unknown): WriteExecutionResult<QuoteCreateV2Output> {
   if (!(error instanceof DomainError)) throw error;
   const details = { category: error.category, ownerCode: error.code, ...error.details };
   if (error.outcomeUnknown || error.category === 'contract_violation' || error.category === 'not_found') return { status: 'unknown', message: `quote owner outcome unknown (${error.code}): ${error.message}` };

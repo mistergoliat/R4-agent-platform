@@ -105,10 +105,10 @@ const fetchText = async (url: string, init: Parameters<typeof fetch>[1]) => {
   return { status: response.status, text: () => response.text() };
 };
 
-/** The real owner bindings of sales-production@4 (fail closed on incomplete configuration). Nothing is called here. */
+/** The real owner bindings of the canary profile, sales-production@4 or @5 (fail closed on incomplete configuration). Nothing is called here. */
 function realBindings(env: NodeJS.ProcessEnv, canary: CanaryEnvironment, logger: ReturnType<typeof createLogger>) {
   const allowNetwork = canary.production.config.allowNetwork;
-  if (quoteModeOf(env) !== 'real') throw new ProductionConfigError('production_config_incomplete', 'R4_QUOTE_MODE must be "real" for sales-production@4');
+  if (quoteModeOf(env) !== 'real') throw new ProductionConfigError('production_config_incomplete', `R4_QUOTE_MODE must be "real" for ${canary.production.config.policyProfile}`);
   const catalog = new HttpCatalogAdapter({ config: loadCatalogHttpConfig(env, { allowNetwork }), fetch: fetchText, onCall: (event) => logger.info({ event: 'catalog.call', ...event }, 'catalog call') });
   const shipping = new ProductionShippingAdapter({ config: loadShippingHttpConfig(env, { allowNetwork }), fetch: fetchText, onEvent: (event) => logger.info({ event: `shipping.${event.kind}`, ...event }, 'shipping call') });
   const quotes = new QuoteV2HttpClient({ config: loadQuoteHttpConfig(env, { allowNetwork }), fetch: (url, init) => fetch(url, init), onCall: (event) => logger.info({ event: 'quote.call', ...event }, 'quote call') });
@@ -200,7 +200,7 @@ async function run(canary: CanaryEnvironment, env: NodeJS.ProcessEnv, logger: Re
     logger,
   });
   runtime.start();
-  io.out(JSON.stringify({ canaryId: runtime.canaryId, profile: 'sales-production@4', workerId: worker.workerId, schedulerId: scheduler.owner, capture: runtime.capture.file, stop: 'SIGINT or SIGTERM' }, null, 2));
+  io.out(JSON.stringify({ canaryId: runtime.canaryId, profile: canary.production.config.policyProfile, workerId: worker.workerId, schedulerId: scheduler.owner, capture: runtime.capture.file, stop: 'SIGINT or SIGTERM' }, null, 2));
   return new Promise<number>((done) => {
     let stopping = false;
     const stop = (code: number) => {

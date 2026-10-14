@@ -82,7 +82,7 @@ function answerOf(taskId: string, executionKey: string, result: StoredWorkspaceR
   return { status: 'applied', result: outputOf(result.version, result.operations, result.state), resourceRef: `sales-workspace:${taskId}@v${result.version}`, externalOperationRef: executionKey, replayed };
 }
 
-function outputOf(version: number, operations: number, state: WorkspaceState): WorkspaceUpdateOutput {
+export function outputOf(version: number, operations: number, state: WorkspaceState): WorkspaceUpdateOutput {
   return {
     workspaceVersion: version,
     operationsApplied: operations,

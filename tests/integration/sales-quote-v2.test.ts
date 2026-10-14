@@ -25,7 +25,7 @@ let pool: Pool;
 beforeAll(async () => {
   db = await createMigratedTestDatabase();
   pool = openPool(db.url);
-  expect((await migrateSales(pool)).applied).toEqual(['0006_sales_reference_application', '0007_sales_quote_v2_issuance']);
+  expect((await migrateSales(pool)).applied).toEqual(['0006_sales_reference_application', '0007_sales_quote_v2_issuance', '0008_sales_autonomous_quote_decisions', '0009_sales_quote_intent_evidence']);
 });
 
 afterAll(async () => {

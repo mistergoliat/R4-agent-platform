@@ -55,7 +55,7 @@ describe('Core stays Sales-free', () => {
     const core = files(join(ROOT, 'packages/persistence-postgres/migrations'), '.sql').map((f) => readFileSync(f, 'utf8')).join('\n');
     expect(core).not.toMatch(/\bsales\b/i);
     const pack = files(join(ROOT, 'agents/sales/migrations'), '.sql');
-    expect(pack.map(rel)).toEqual(['agents/sales/migrations/0006_sales_reference_application.sql', 'agents/sales/migrations/0007_sales_quote_v2_issuance.sql']);
+    expect(pack.map(rel)).toEqual(['agents/sales/migrations/0006_sales_reference_application.sql', 'agents/sales/migrations/0007_sales_quote_v2_issuance.sql', 'agents/sales/migrations/0008_sales_autonomous_quote_decisions.sql', 'agents/sales/migrations/0009_sales_quote_intent_evidence.sql']);
     const sql = readFileSync(pack[0]!, 'utf8');
     // Sales tables are in their own schema and never reference an R4 runtime table.
     expect(sql).not.toMatch(/references\s+(public\.)?(agent_tasks|agent_runs|observations|action_\w+|goals|memory_entries)/i);
@@ -79,11 +79,11 @@ describe('Sales Agent Pack boundary', () => {
   });
 
   it('carries no provider, model, endpoint or secret in its definition; no subagents', () => {
-    for (const file of ['agents/sales/sales.agent.json', 'agents/sales/sales.v4.agent.json']) expect(readFileSync(join(ROOT, file), 'utf8'), file).not.toMatch(/api[_-]?key|base[_-]?url|https?:\/\/|openai|deepseek|anthropic|gpt|llama|vllm|\bR4_MODEL/i);
+    for (const file of ['agents/sales/sales.agent.json', 'agents/sales/sales.v4.agent.json', 'agents/sales/sales.v5.agent.json', 'agents/sales/sales.v6.agent.json']) expect(readFileSync(join(ROOT, file), 'utf8'), file).not.toMatch(/api[_-]?key|base[_-]?url|https?:\/\/|openai|deepseek|anthropic|gpt|llama|vllm|\bR4_MODEL/i);
     expect(definition.delegationPolicy).toEqual({ mode: 'none', allowedAgentIds: [] });
     expect(definition.budgets.maxDelegations).toBe(0);
     const agentFiles = files(join(ROOT, 'agents'), '.agent.json').map(rel).sort();
-    expect(agentFiles).toEqual(['agents/platform-probe/platform-probe.agent.json', 'agents/sales/sales.agent.json', 'agents/sales/sales.v4.agent.json']);
+    expect(agentFiles).toEqual(['agents/platform-probe/platform-probe.agent.json', 'agents/sales/sales.agent.json', 'agents/sales/sales.v4.agent.json', 'agents/sales/sales.v5.agent.json', 'agents/sales/sales.v6.agent.json']);
   });
 
   it('instructions set criteria, not a scripted sequence or an intent router', () => {

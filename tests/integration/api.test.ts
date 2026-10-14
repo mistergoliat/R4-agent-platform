@@ -39,7 +39,7 @@ describe('health and readiness', () => {
   it('GET /ready reports dependency readiness', async () => {
     const res = await platform.app.inject({ method: 'GET', url: '/ready' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ status: 'ready', checks: { database: { ok: true, pendingMigrations: [] }, agentDefinitions: { ok: true, loaded: 3 } } }); // platform-probe + the sales pack (v3 and v4, R4-J2D)
+    expect(res.json()).toMatchObject({ status: 'ready', checks: { database: { ok: true, pendingMigrations: [] }, agentDefinitions: { ok: true, loaded: 5 } } }); // platform-probe + the sales pack (v3 and v4, R4-J2D; v5, R4-J3E; v6, R4-J3E-B)
   });
 
   it('refuses to boot against a database without the current schema', async () => {

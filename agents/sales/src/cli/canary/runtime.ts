@@ -28,21 +28,30 @@ import { SALES_AGENT_DIR, SALES_MIGRATIONS_DIR } from '../../definition.js';
 import { SALES_AGENT_ID } from '../../ids.js';
 import { migrateSales } from '../../migrate.js';
 import { composeSalesProductionWorker, salesConversationTaskFactory } from '../../production/composition.js';
-import { SALES_PRODUCTION_PROFILE_V4, salesProductionAgentVersion } from '../../production/profile-v4.js';
+import { SALES_PRODUCTION_PROFILE_V4 } from '../../production/profile-v4.js';
+import { SALES_PRODUCTION_PROFILE_V5, isAutonomousQuoteProfile } from '../../production/profile-v5.js';
+import { SALES_PRODUCTION_PROFILE_V6, isConfirmedIntentProfile, salesProductionAgentVersion } from '../../production/profile-v6.js';
+import { loadAutonomousQuoteLimits, loadAutonomousQuoteLimitsV6, type AutonomousQuoteLimits, type AutonomousQuoteLimitsV6 } from '../../capabilities/autonomy-limits.js';
 import type { ApprovalInspection } from '../../production/approvals.js';
 import { openApprovalInspection } from '../approval-inspection.js';
 import { CaptureOutboundAdapter, SYNTHETIC_ACCOUNT, syntheticConversationRef, syntheticInbound } from './channel.js';
 import { CANARY_ACTOR, CanaryAdmission, SYNTHETIC_CHANNEL, assertIsolatedCanaryDatabase, foreignTraffic, markCanaryDatabase, readCanaryDatabase } from './isolation.js';
 
-/** The only profile the canary runs: the one J3D must accept before any deployment of it. */
+/** The governed-approval profile the canary was built for (J3D). */
 export const CANARY_PROFILE: ProductionProfile = SALES_PRODUCTION_PROFILE_V4;
+/** Profiles the canary may run: v4 (human approval, J3D), v5 (autonomous issuance, R4-J3E) and v6 (confirmed intent, R4-J3E-B). Never one a production worker runs today. */
+export const CANARY_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_PRODUCTION_PROFILE_V4, SALES_PRODUCTION_PROFILE_V5, SALES_PRODUCTION_PROFILE_V6]);
 
 const DATABASE_URL = /^postgres(ql)?:\/\//;
 
-/** A proven canary environment: production declaration for sales-production@4 plus a dedicated database. */
+/** A proven canary environment: production declaration for sales-production@4, @5 or @6 plus a dedicated database. */
 export interface CanaryEnvironment {
   readonly databaseUrl: string;
   readonly production: { readonly config: ProductionConfig; readonly secrets: ProductionSecrets };
+  /** The canary profile the environment declared (R4_PROD_POLICY_PROFILE). */
+  readonly profile: ProductionProfile;
+  /** (R4-J3E) The configured limits of autonomous issuance; present exactly for an autonomous profile (v5; v6 with total units and the confirmation window). */
+  readonly autonomousQuoteLimits: AutonomousQuoteLimits | AutonomousQuoteLimitsV6 | null;
 }
 
 function sameDatabase(a: string, b: string): boolean {
@@ -64,15 +73,24 @@ function sameDatabase(a: string, b: string): boolean {
 export function loadCanaryEnvironment(env: Readonly<Record<string, string | undefined>>): CanaryEnvironment {
   if (declaredExecutionMode(env) !== 'production') throw new ProductionConfigError('production_mode_not_declared', 'the canary composes the production Sales worker: R4_EXECUTION_MODE must be "production"');
   const production = loadProductionConfig(env);
-  if (production.config.policyProfile !== profileLabel(CANARY_PROFILE)) {
-    throw new ProductionConfigError('invalid_production_config', `the Sales canary runs ${profileLabel(CANARY_PROFILE)} only (R4_PROD_POLICY_PROFILE=${production.config.policyProfile})`);
+  const profile = CANARY_PROFILES.find((p) => profileLabel(p) === production.config.policyProfile);
+  if (!profile) {
+    throw new ProductionConfigError('invalid_production_config', `the Sales canary runs ${CANARY_PROFILES.map(profileLabel).join(' or ')} only (R4_PROD_POLICY_PROFILE=${production.config.policyProfile})`);
+  }
+  let autonomousQuoteLimits: AutonomousQuoteLimits | AutonomousQuoteLimitsV6 | null = null;
+  if (isAutonomousQuoteProfile(profile)) {
+    try {
+      autonomousQuoteLimits = isConfirmedIntentProfile(profile) ? loadAutonomousQuoteLimitsV6(env) : loadAutonomousQuoteLimits(env);
+    } catch (error) {
+      throw new ProductionConfigError('production_config_incomplete', (error as Error).message);
+    }
   }
   const databaseUrl = env.R4_CANARY_DATABASE_URL;
   if (!databaseUrl || !DATABASE_URL.test(databaseUrl)) throw new ProductionConfigError('production_config_incomplete', 'R4_CANARY_DATABASE_URL (postgres://) of the dedicated canary database is required');
   if (env.R4_DATABASE_URL && sameDatabase(env.R4_DATABASE_URL, databaseUrl)) {
     throw new ProductionConfigError('canary_shares_production_database', 'R4_CANARY_DATABASE_URL names the same database as R4_DATABASE_URL; the canary needs its own database');
   }
-  return { databaseUrl, production };
+  return { databaseUrl, production, profile, autonomousQuoteLimits };
 }
 
 function canaryPool(canary: CanaryEnvironment, logger: Logger, name: string): Pool {
@@ -155,8 +173,8 @@ export async function sendSynthetic(canary: CanaryEnvironment, message: { readon
       adapters: [],
       // The synthetic channel has no provider, hence no provider status notifications.
       delivery: { applyProviderStatus: () => Promise.reject(new PlatformError('precondition', 'synthetic_channel_has_no_provider', 'the synthetic channel has no provider status')) },
-      config: canary.production.config, secrets: canary.production.secrets, profile: CANARY_PROFILE,
-      taskFactory: salesConversationTaskFactory(pool, salesProductionAgentVersion(CANARY_PROFILE)), ids, logger,
+      config: canary.production.config, secrets: canary.production.secrets, profile: canary.profile,
+      taskFactory: salesConversationTaskFactory(pool, salesProductionAgentVersion(canary.profile)), ids, logger,
     });
     const outcome = await ingress.ingest(syntheticInbound({ ...message, canaryId }), `sales-canary:${canaryId}:${randomUUID()}`);
     return { ...outcome, conversationKey: key };
@@ -196,8 +214,8 @@ export interface CanaryRuntime {
 
 /**
  * The canary processes in one: the real production Sales worker
- * composition for sales-production@4 (model, Catalog, Shipping, Quote V2,
- * SALES_PRODUCTION_ACTION_POLICY, ActionExecutor, persistence, recovery),
+ * composition for the canary profile — sales-production@4, @5 or @6 — (model,
+ * Catalog, Shipping, Quote V2, the profile's action policy, ActionExecutor, persistence, recovery),
  * the generic scheduler, and the real delivery owner whose only adapter
  * captures to a local file. Every component points at the canary database
  * only; the worker's admission re-proves isolation before each claim.
@@ -214,7 +232,7 @@ export async function startCanaryRuntime(canary: CanaryEnvironment, options: Can
     const canaryId = await assertIsolatedCanaryDatabase(pool);
     await assertCurrentSchema(pool);
     const store = new PostgresProductionStore(pool);
-    const composed = composeSalesProductionWorker({ pool, store, production: canary.production, modelProvider: options.modelProvider, logger, catalog: options.catalog, shipping: options.shipping, quotes: options.quotes });
+    const composed = composeSalesProductionWorker({ pool, store, production: canary.production, modelProvider: options.modelProvider, logger, catalog: options.catalog, shipping: options.shipping, quotes: options.quotes, ...(canary.autonomousQuoteLimits ? { autonomousQuoteLimits: canary.autonomousQuoteLimits } : {}) });
     worker = await createWorkerPlatform(options.worker, { ...composed.bindings, admission: new CanaryAdmission(pool, composed.controls) }, { logger });
     scheduler = options.scheduler ? await createSchedulerPlatform(options.scheduler, { logger }) : null;
     const capture = new CaptureOutboundAdapter(typeof options.captureFile === 'string' ? options.captureFile : options.captureFile(canaryId));

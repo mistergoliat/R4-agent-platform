@@ -59,6 +59,42 @@ export const workspaceUpdateInputSchema = z.strictObject({
 });
 export type WorkspaceUpdateInput = z.infer<typeof workspaceUpdateInputSchema>;
 
+/** A Quote-owner commercial snapshot id: lowercase SHA-256 hex (R4-J3E). */
+export const previewIdSchema = z.string().regex(/^[0-9a-f]{64}$/, 'a quote.preview previewId');
+const ownerLabel = z.string().trim().min(1).max(120);
+
+/**
+ * (R4-J3E) Operations only `sales.workspace.update@2` accepts — sales-production@5.
+ * Version 1 keeps its exact schema: `workspaceOperationSchema` is unchanged.
+ *
+ * - select_shipping_offer: the customer's choice among the offers shipping.quote
+ *   (basis=order) returned for the CURRENT selection and destination. The
+ *   capability re-quotes the Shipping owner and refuses an offer it does not
+ *   make now. It is cleared by any later change of items, quantities or destination.
+ * - exclude_shipping: the customer explicitly wants no delivery (no destination recorded).
+ * - record_quote_request: the customer asked for the quote shown by quote.preview,
+ *   in their own words. It binds the request to that exact commercial snapshot.
+ */
+export const workspaceOperationV2Schema = z.discriminatedUnion('op', [
+  ...workspaceOperationSchema.options,
+  z.strictObject({ op: z.literal('select_shipping_offer'), carrierName: ownerLabel, serviceType: ownerLabel, ownerNetClp: z.int().min(0).max(100_000_000) }),
+  z.strictObject({ op: z.literal('exclude_shipping') }),
+  z.strictObject({ op: z.literal('record_quote_request'), previewId: previewIdSchema, customerWords: z.string().trim().min(2).max(300) }),
+]);
+export type WorkspaceOperationV2 = z.infer<typeof workspaceOperationV2Schema>;
+
+export const workspaceUpdateV2InputSchema = z.strictObject({
+  operations: z.array(workspaceOperationV2Schema).min(1).max(10),
+  expectedVersion: z.int().min(0).optional(),
+});
+export type WorkspaceUpdateV2Input = z.infer<typeof workspaceUpdateV2InputSchema>;
+
+/** Operations that change what would be quoted: they invalidate a shipping choice and a quote request. */
+const COMMERCIAL_OPS: ReadonlySet<string> = new Set(['set_delivery_destination', 'clear_delivery_destination', 'add_item', 'remove_item', 'set_item_quantity', 'replace_item']);
+export function changesCommercialSelection(input: WorkspaceUpdateV2Input): boolean {
+  return input.operations.some((op) => COMMERCIAL_OPS.has(op.op));
+}
+
 export type FactValue = z.infer<typeof factValueSchema>;
 
 export interface WorkspaceFact {
@@ -84,10 +120,32 @@ export interface WorkspaceDelivery {
   readonly updatedAt: string;
 }
 
+/**
+ * (R4-J3E) What the customer chose for delivery: one owner offer for the
+ * destination (the agreed owner NET it was offered at), or explicitly none.
+ * A label of the owner's offer, never a price the workspace vouches for:
+ * quote.preview re-quotes it and refuses a changed or vanished offer.
+ */
+export type WorkspaceShipping =
+  | { readonly kind: 'selected'; readonly commune: string; readonly carrierName: string; readonly serviceType: string; readonly agreedOwnerNetClp: number; readonly sinceVersion: number; readonly updatedAt: string }
+  | { readonly kind: 'excluded'; readonly sinceVersion: number; readonly updatedAt: string };
+
+/** (R4-J3E) The customer's request for one exact quote preview, in their words (as the agent recorded them). */
+export interface WorkspaceQuoteRequest {
+  readonly previewId: string;
+  readonly customerWords: string;
+  readonly sinceVersion: number;
+  readonly updatedAt: string;
+}
+
 export interface WorkspaceState {
   readonly facts: Readonly<Record<string, WorkspaceFact>>;
   readonly delivery: WorkspaceDelivery | null;
   readonly items: readonly WorkspaceItem[];
+  /** (R4-J3E, workspace.update@2 only) Absent in states written by version 1. */
+  readonly shipping?: WorkspaceShipping | null;
+  /** (R4-J3E, workspace.update@2 only) Absent in states written by version 1. */
+  readonly quoteRequest?: WorkspaceQuoteRequest | null;
 }
 
 export interface Workspace {
@@ -103,9 +161,23 @@ export interface Workspace {
 export type WorkspaceChange =
   | { readonly kind: 'fact'; readonly key: string; readonly from: WorkspaceFact | null; readonly to: WorkspaceFact | null }
   | { readonly kind: 'delivery'; readonly from: WorkspaceDelivery | null; readonly to: WorkspaceDelivery | null }
-  | { readonly kind: 'item'; readonly productId: string; readonly from: WorkspaceItem | null; readonly to: WorkspaceItem | null };
+  | { readonly kind: 'item'; readonly productId: string; readonly from: WorkspaceItem | null; readonly to: WorkspaceItem | null }
+  | { readonly kind: 'shipping'; readonly from: WorkspaceShipping | null; readonly to: WorkspaceShipping | null }
+  | { readonly kind: 'quote_request'; readonly from: WorkspaceQuoteRequest | null; readonly to: WorkspaceQuoteRequest | null };
 
-export const WORKSPACE_REJECTION_CODES = ['version_conflict', 'item_already_selected', 'item_not_selected', 'fact_not_recorded', 'unknown_product', 'no_change'] as const;
+export const WORKSPACE_REJECTION_CODES = [
+  'version_conflict',
+  'item_already_selected',
+  'item_not_selected',
+  'fact_not_recorded',
+  'unknown_product',
+  'no_change',
+  // R4-J3E (workspace.update@2)
+  'no_delivery_destination',
+  'delivery_destination_set',
+  'shipping_selection_not_alone',
+  'shipping_offer_not_offered',
+] as const;
 export type WorkspaceRejectionCode = (typeof WORKSPACE_REJECTION_CODES)[number];
 
 export type WorkspaceApplication =
@@ -122,7 +194,7 @@ export function emptyWorkspace(taskId: string): Workspace {
  * Pure: applies a batch to a workspace, all-or-nothing. `nextVersion` is the
  * version the changes are stamped with; `now` the instant.
  */
-export function applyOperations(workspace: Workspace, input: WorkspaceUpdateInput, now: string): WorkspaceApplication {
+export function applyOperations(workspace: Workspace, input: WorkspaceUpdateInput | WorkspaceUpdateV2Input, now: string): WorkspaceApplication {
   if (input.expectedVersion !== undefined && input.expectedVersion !== workspace.version) {
     return { kind: 'rejected', code: 'version_conflict', message: `the workspace is at version ${workspace.version}, not ${input.expectedVersion}`, operationIndex: null };
   }
@@ -130,12 +202,54 @@ export function applyOperations(workspace: Workspace, input: WorkspaceUpdateInpu
   const facts: Record<string, WorkspaceFact> = { ...workspace.state.facts };
   let delivery = workspace.state.delivery;
   const items = [...workspace.state.items];
+  // R4-J3E fields: carried only when the state already has them or a v2 operation sets them,
+  // so a version-1 command over a version-1 state produces exactly the state it always did.
+  let shipping = workspace.state.shipping;
+  let quoteRequest = workspace.state.quoteRequest;
   const changes: WorkspaceChange[] = [];
   const reject = (code: WorkspaceRejectionCode, message: string, index: number): WorkspaceApplication => ({ kind: 'rejected', code, message, operationIndex: index });
   const indexOf = (productId: string) => items.findIndex((i) => i.productId === productId);
+  const operations = input.operations as readonly WorkspaceOperationV2[];
+  const commercial = operations.some((op) => COMMERCIAL_OPS.has(op.op));
+  /** What would be quoted changed: an earlier delivery choice and quote request no longer apply. */
+  const invalidate = (what: { shipping: boolean }) => {
+    if (what.shipping && shipping) {
+      changes.push({ kind: 'shipping', from: shipping, to: null });
+      shipping = null;
+    }
+    if (quoteRequest) {
+      changes.push({ kind: 'quote_request', from: quoteRequest, to: null });
+      quoteRequest = null;
+    }
+  };
 
-  for (const [index, op] of input.operations.entries()) {
+  for (const [index, op] of operations.entries()) {
+    if (COMMERCIAL_OPS.has(op.op)) invalidate({ shipping: true });
     switch (op.op) {
+      case 'select_shipping_offer': {
+        // A choice is made for one exact selection and destination: never in the same batch that changes them.
+        if (commercial) return reject('shipping_selection_not_alone', 'choose the shipping offer in its own update, after the items and destination are final', index);
+        if (!delivery) return reject('no_delivery_destination', 'set the delivery destination before choosing a shipping offer', index);
+        invalidate({ shipping: false });
+        const to: WorkspaceShipping = { kind: 'selected', commune: delivery.commune, carrierName: op.carrierName, serviceType: op.serviceType, agreedOwnerNetClp: op.ownerNetClp, sinceVersion: since, updatedAt: now };
+        changes.push({ kind: 'shipping', from: shipping ?? null, to });
+        shipping = to;
+        break;
+      }
+      case 'exclude_shipping': {
+        if (delivery) return reject('delivery_destination_set', 'a delivery destination is recorded: clear it before excluding delivery', index);
+        invalidate({ shipping: false });
+        const to: WorkspaceShipping = { kind: 'excluded', sinceVersion: since, updatedAt: now };
+        changes.push({ kind: 'shipping', from: shipping ?? null, to });
+        shipping = to;
+        break;
+      }
+      case 'record_quote_request': {
+        const to: WorkspaceQuoteRequest = { previewId: op.previewId, customerWords: op.customerWords, sinceVersion: since, updatedAt: now };
+        changes.push({ kind: 'quote_request', from: quoteRequest ?? null, to });
+        quoteRequest = to;
+        break;
+      }
       case 'record_fact': {
         const from = facts[op.key] ?? null;
         const to: WorkspaceFact = { value: op.value, statedBy: op.statedBy, note: op.note ?? null, sinceVersion: since, updatedAt: now };
@@ -197,11 +311,18 @@ export function applyOperations(workspace: Workspace, input: WorkspaceUpdateInpu
       }
     }
   }
-  return { kind: 'applied', state: { facts, delivery, items }, changes };
+  const state: WorkspaceState = {
+    facts,
+    delivery,
+    items,
+    ...(shipping !== undefined ? { shipping } : {}),
+    ...(quoteRequest !== undefined ? { quoteRequest } : {}),
+  };
+  return { kind: 'applied', state, changes };
 }
 
 /** Product ids a batch would introduce (the capability verifies them with the Catalog owner first). */
-export function introducedProducts(input: WorkspaceUpdateInput): string[] {
+export function introducedProducts(input: WorkspaceUpdateInput | WorkspaceUpdateV2Input): string[] {
   return [...new Set(input.operations.flatMap((op) => (op.op === 'add_item' ? [op.productId] : op.op === 'replace_item' ? [op.withProductId] : [])))];
 }
 

@@ -23,7 +23,9 @@ import { describeWhatsAppConfig, loadWhatsAppCloudConfig } from '@r4-adapters/wh
 import { adminDatabaseUrl } from '../harness/database.js';
 import { configuredModelProvider } from '../model.js';
 import { composeSalesGateway, composeSalesProductionWorker, selectedSalesProductionProfile } from '../production/composition.js';
-import { salesProductionAgentVersion } from '../production/profile-v4.js';
+import { isAutonomousQuoteProfile } from '../production/profile-v5.js';
+import { isConfirmedIntentProfile, salesProductionAgentVersion } from '../production/profile-v6.js';
+import { loadAutonomousQuoteLimits, loadAutonomousQuoteLimitsV6 } from '../capabilities/autonomy-limits.js';
 import { salesShippingPlan } from '../production/shipping-plan.js';
 import { SALES_DOMAINS, SALES_PRODUCTION_PROFILE } from '../production/profile.js';
 import { SALES_PRODUCTION_PROCESSES, schedulerConfigurationStatus } from '../production/topology.js';
@@ -123,13 +125,21 @@ function productionQuotes(production: ReturnType<typeof loadProductionConfig>, l
   return new QuoteV2HttpClient({ config, fetch: quoteFetch, ...(logger ? { onCall: (event) => logger.info({ event: 'quote.call', ...event }, 'quote call') } : {}) });
 }
 
+/** (R4-J3E) The autonomous issuance limits, read only when the selected profile issues quotes autonomously (v5); fails closed without them. */
+function autonomousLimits(production: ReturnType<typeof loadProductionConfig>) {
+  const profile = selectedSalesProductionProfile(production.config);
+  if (!isAutonomousQuoteProfile(profile)) return {};
+  // (R4-J3E-B) @6 also requires the total-units limit and the confirmation window.
+  return { autonomousQuoteLimits: isConfirmedIntentProfile(profile) ? loadAutonomousQuoteLimitsV6(process.env) : loadAutonomousQuoteLimits(process.env) };
+}
+
 function composition() {
   const noStore = { readControls: () => Promise.reject(new Error('plan only')) } as never;
   const production = loadProductionConfig(process.env);
   const catalog = productionCatalog(production);
   const shipping = productionShipping(production);
   const quotes = productionQuotes(production);
-  return composeSalesProductionWorker({ pool: { query: () => Promise.reject(new Error('plan only')) } as never, store: noStore, production, modelProvider: { providerId: 'plan', invoke: () => Promise.reject(new Error('plan only')) }, logger: createLogger({ service: 'plan', level: 'silent' }), ...(catalog ? { catalog } : {}), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}) });
+  return composeSalesProductionWorker({ pool: { query: () => Promise.reject(new Error('plan only')) } as never, store: noStore, production, modelProvider: { providerId: 'plan', invoke: () => Promise.reject(new Error('plan only')) }, logger: createLogger({ service: 'plan', level: 'silent' }), ...(catalog ? { catalog } : {}), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production) });
 }
 
 async function plan(production: ReturnType<typeof loadProductionConfig>): Promise<void> {
@@ -230,7 +240,7 @@ async function worker(production: ReturnType<typeof loadProductionConfig>): Prom
   const catalog = productionCatalog(production, logger);
   const shipping = productionShipping(production, logger);
   const quotes = productionQuotes(production, logger);
-  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...(catalog ? { catalog } : {}), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}) });
+  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...(catalog ? { catalog } : {}), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production) });
   logger.info({ event: 'service.composed', profile: composed.report.profile, profileFingerprint: composed.report.profileFingerprint }, 'production worker composed');
   await runWorkerProcess(config, composed.bindings, { logger });
 }
