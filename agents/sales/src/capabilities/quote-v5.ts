@@ -64,7 +64,7 @@ export function quoteCreateV5Capability(deps: QuoteV5CapabilityDeps): WriteCapab
       capabilityId: CAPABILITY_IDS.quoteCreate,
       version: 5,
       description:
-        'Issues the formal quote (Quote owner V2) previewed by quote.preview, without a human approval, once the customer has explicitly confirmed the exact offer Sales wrote. Before proposing: quote.preview returned status=ready and issuable=true, your LAST message to the customer was presentation.offerMessage exactly as given (nothing added, removed or changed), and the customer\'s reply is an explicit confirmation. The only argument is the previewId. The platform reads the customer\'s confirmation from their own message and compares your message with the offer Sales rendered, never from you. Refused, with nothing issued, when the customer\'s last message is not an explicit, unconditional confirmation (reply again with presentation.offerMessage exactly), when your message was not exactly the current offerMessage or anything changed since (offer_not_presented, preview_stale: preview again and reply with the new offerMessage), when the confirmation came too late, when an autonomy limit would be exceeded, when the same quote was already issued, or when autonomous operation is disabled (autonomy_disabled: nothing was sent; say the quote cannot be issued right now). Quote numbers, totals and validity come only from the result of an issued quote.',
+        'Issues the formal quote (Quote owner V2) previewed by quote.preview, without a human approval, once the customer has explicitly confirmed the exact offer Sales wrote. Before proposing: quote.preview returned status=ready and issuable=true, your LAST message to the customer was presentation.offerMessage exactly as given (nothing added, removed or changed), and the customer\'s reply is an explicit confirmation. The only argument is the previewId. The platform reads the customer\'s confirmation from their own message and compares your message with the offer Sales rendered, never from you. Refused, with nothing issued, when the customer\'s last message is not an explicit, unconditional confirmation (reply again with presentation.offerMessage exactly), when your message was not exactly the current offerMessage or anything changed since (offer_not_presented, preview_stale: preview again and reply with the new offerMessage), when the confirmation came too late, when an autonomy limit would be exceeded, when the same quote was already issued, or when autonomous operation is disabled (autonomy_disabled: nothing was sent; say the quote cannot be issued right now). When the outcome is uncertain because the quote owner did not answer or was unavailable, the platform keeps reconciling the same issuance under the same key: tell the customer it is pending and will be confirmed, and do not present the offer again or propose another issuance. Quote numbers, totals and validity come only from the result of an issued quote.',
       owner: 'quote',
       riskClass: 'IRREVERSIBLE_WRITE',
       requiredScopes: [SCOPES.quoteCreate],
@@ -106,6 +106,8 @@ export function quoteCreateV5Capability(deps: QuoteV5CapabilityDeps): WriteCapab
       } catch (error) {
         // The guarded port refused before calling the owner (the switch was engaged after the check above).
         if (error instanceof DomainError && error.code === QUOTE_WRITES_BLOCKED) return sendHeld('autonomy_disabled');
+        // (GAP-16) The owner is temporarily unavailable: held on this key like a kill-switch stop, never failed.
+        if (error instanceof DomainError && error.category === 'temporarily_unavailable') return ownerUnavailableHeld(error);
         return classifySend(error);
       }
       return settle(deps, record, result.quote, result.operation, result.replayed, context, { strict: true });
@@ -125,6 +127,16 @@ function writesBlocked(reason: string): WriteExecutionResult<QuoteCreateV2Output
  */
 function sendHeld(reason: string): WriteExecutionResult<QuoteCreateV2Output> {
   return { status: 'unknown', message: `${QUOTE_WRITES_BLOCKED} (${reason}): the authorized quote was not sent to the quote owner; it is held on this execution key and sent once autonomy is enabled` };
+}
+
+/**
+ * (R4-J3 GAP-16) The owner answered "temporarily unavailable" to the authorized, frozen body. `classifySend` makes
+ * that `failed` (definitive), which strands the authorization exactly like a kill-switch stop would; quote.create@2–@4
+ * keep that behavior. Here it is `unknown`: the platform reconciles by this key (the owner's not-found window still
+ * applies, because the send was recorded) and replays the same key and body under the declared backoff.
+ */
+function ownerUnavailableHeld(error: DomainError): WriteExecutionResult<QuoteCreateV2Output> {
+  return { status: 'unknown', message: `quote owner temporarily unavailable (${error.code}): the authorized quote is held on this execution key; it is reconciled by its key and sent again with the same key and body` };
 }
 
 type Decision = { readonly status: 'authorized' } | { readonly status: 'refused'; readonly result: WriteExecutionResult<QuoteCreateV2Output> };

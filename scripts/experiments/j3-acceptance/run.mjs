@@ -116,6 +116,7 @@ function owners() {
     catalogDown: () => base.availability.set({ mode: 'down' }),
     shippingDown: () => shipping.availability.set({ mode: 'down' }),
     quoteDown: () => quotes.availability.set({ mode: 'down' }),
+    quoteUp: () => quotes.availability.set({ mode: 'up' }),
     /** The owner changes a price: every later read (search, product, item) sees it. */
     setPrice: (productKey, gross) => {
       base = new FixtureCatalog({ products: FIXTURE_PRODUCTS.map((p) => (p.productKey === productKey ? { ...p, regularGross: gross, finalGross: gross } : p)) });
@@ -171,6 +172,11 @@ const SCENARIOS = {
   // S7 at issuance: Shipping (re-read by quote.create@5) or Quote V2 goes down after the offer; the customer confirms.
   'shipping-down': outageAtIssuance((o) => o.shippingDown()),
   'quote-down': outageAtIssuance((o) => o.quoteDown()),
+  // GAP-16: Quote V2 fails the send and is back 30 s later (real time); the held issuance must complete on its key.
+  'quote-blip': outageAtIssuance((o) => {
+    o.quoteDown();
+    void sleep(30_000).then(() => o.quoteUp());
+  }),
   // S1 as stated by the owner (San Bernardo), against a Shipping owner whose commune catalog does not know it.
   'unknown-commune': {
     first: 'Hola, quiero cotizar una rack con despacho a San Bernardo.',
@@ -246,9 +252,9 @@ for (const id of args.scenarios.split(',')) {
   });
   const probe = new pg.Pool({ connectionString: dbUrl, max: 1 });
   const pendingRetries = async (task) => Number((await probe.query("select count(*)::int as n from schedules where task_id = $1 and kind in ('action_retry', 'reconciliation') and status in ('pending', 'claimed', 'dispatched', 'in_progress')", [task])).rows[0].n);
-  /** One customer turn: step worker, scheduler and delivery until nothing is runnable and no retry is pending (max 6 min). */
+  /** One customer turn: step worker, scheduler and delivery until nothing is runnable and no retry is pending (max 9 min). */
   const settle = async (task) => {
-    const until = Date.now() + 360_000;
+    const until = Date.now() + 540_000;
     while (Date.now() < until) {
       const fired = (await runtime.scheduler.scheduler.runOnce()).kind === 'fired';
       const cycle = await runtime.worker.worker.runOnce();
@@ -258,7 +264,7 @@ for (const id of args.scenarios.split(',')) {
         await sleep(1_000);
       }
     }
-    throw new Error('turn did not settle within 6 minutes');
+    throw new Error('turn did not settle within 9 minutes');
   };
   const conversation = `j3acc-${id}`;
   const captured = () => (existsSync(captureFile) ? readFileSync(captureFile, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);

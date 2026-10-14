@@ -33,7 +33,7 @@ const LIMITS = {
   R4_AUTONOMOUS_QUOTE_MAX_GROSS_CLP: '500000', R4_AUTONOMOUS_QUOTE_MAX_LINES: '3', R4_AUTONOMOUS_QUOTE_MAX_UNITS_PER_LINE: '5', R4_AUTONOMOUS_QUOTE_MAX_TOTAL_UNITS: '5',
   R4_AUTONOMOUS_QUOTE_MAX_PER_CONVERSATION: '1', R4_AUTONOMOUS_QUOTE_MAX_PER_HOUR: '20', R4_AUTONOMOUS_QUOTE_CONFIRMATION_WINDOW_SECONDS: '900',
 };
-const CONVERSATIONS = ['do-exact', 'do-own-summary', 'do-kill-switch', 'do-held-customer-writes', 'do-held-resume', 'do-held-budget'];
+const CONVERSATIONS = ['do-exact', 'do-own-summary', 'do-kill-switch', 'do-held-customer-writes', 'do-held-resume', 'do-held-budget', 'do-lost-answer', 'do-owner-down', 'do-owner-down-long'];
 
 function canaryEnv(): Record<string, string> {
   const base = {
@@ -393,6 +393,165 @@ describe('sales-production@7 kill switch: what happens to the issuance, lifecycl
     } finally {
       await restoreTemporalClock(pool);
       await set(true);
+      await pool.end();
+      await runtime.close();
+    }
+  });
+});
+
+/** Real time until the latest send of this key is older than `ageMs` (database clock, which a test cannot move). */
+async function untilSendOlderThan(pool: Pool, executionKey: string, ageMs: number): Promise<void> {
+  for (;;) {
+    const r = await pool.query<{ age: string }>('select (extract(epoch from (clock_timestamp() - max(sent_at))) * 1000)::bigint as age from sales.quote_v2_sends where execution_key = $1', [executionKey]);
+    if (Number(r.rows[0]!.age) >= ageMs) return;
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+}
+
+/** Freezes r4_now one second after the latest action_retry falls due, never behind the real clock. */
+async function fireNextRetry(pool: Pool, taskId: string): Promise<void> {
+  const due = (await latestRetryDue(pool, taskId)).getTime() + 1_000;
+  await freezeTemporalClock(pool, new Date(Math.max(due, Date.now() + 1_000)));
+}
+
+/**
+ * R4-J3 GAP-16: the quote owner fails AFTER quote.create@5 authorized and froze the body — through the platform
+ * lifecycle (worker, kernel, ActionRuntime + ActionExecutor, durable action_retry, scheduler), never the handler.
+ */
+describe('sales-production@7 quote owner failures after the authorization (GAP-16), lifecycle end to end', () => {
+  it('the owner commits but its answer is lost: unknown, reconciled by the SAME key, and settled as the quote it already issued — one POST, one quote', async () => {
+    const canary = loadCanaryEnvironment(canaryEnv());
+    const router = new Router();
+    const owned = owners();
+    let lose = true;
+    owned.quotes.faults.afterCommit = () => {
+      const mode = lose ? 'timeout' : 'answer';
+      lose = false;
+      return mode;
+    };
+    const runtime = await canaryRuntime(canary, router, owned, 'sales-canary:test:do-lost-answer', { scheduler: true });
+    const pool = openPool(canaryDb.url);
+    try {
+      const taskId = await converse(canary, runtime, router, 'do-lost-answer', [...TURN_1, ...CHOOSE_AND_PREVIEW, EXACT_OFFER, propose, outcome], OFFER_TURNS);
+      await sendSynthetic(canary, { conversation: 'do-lost-answer', text: 'Sí, emítela.' }, logger);
+      await drain(runtime);
+      const lost = await quoteLedger(pool, taskId);
+      expect(lost).toMatchObject({ executions: ['executing'], attempts: ['1:execute:unknown:domain_unknown'], receipts: [], retries: ['pending'], decisions: ['authorized:eligible'], sends: 1 });
+      // The owner did commit: its quote exists and is bound to the command's key, but R4 never saw the answer.
+      expect(owned.quotes.createCalls).toBe(1);
+      expect(owned.quotes.quotes).toHaveLength(1);
+      expect((await owned.quotes.lookupIdempotency(lost.key!))?.quoteId).toBe(owned.quotes.quotes[0]!.quoteId);
+
+      await fireNextRetry(pool, taskId);
+      await drain(runtime);
+      expect(await quoteLedger(pool, taskId)).toEqual({
+        key: lost.key,
+        executions: ['succeeded'],
+        attempts: ['1:execute:unknown:domain_unknown', '2:reconcile:applied:-'],
+        receipts: [{ status: 'succeeded', error_code: null, execution_key: lost.key }],
+        retries: ['fired'],
+        decisions: ['authorized:eligible'],
+        sends: 1,
+      });
+      // Settled by the lookup: no second POST, no second quote.
+      expect(owned.quotes.createCalls).toBe(1);
+      expect(owned.quotes.quotes).toHaveLength(1);
+      expect((await pool.query('select document_verification from sales.quote_v2_issued where task_id = $1', [taskId])).rows).toEqual([{ document_verification: 'verified' }]);
+      expect(captured(runtime).at(-1)!.text).toBe('Cotización PC-000001 emitida.');
+    } finally {
+      await restoreTemporalClock(pool);
+      await pool.end();
+      await runtime.close();
+    }
+  });
+
+  it('the owner is unavailable at the send: held on its key (not failed); after the owner not-found window the reconciliation establishes "not applied" and the SAME key replays once', async () => {
+    const canary = loadCanaryEnvironment(canaryEnv());
+    const router = new Router();
+    const owned = owners();
+    // The hold path takes about 5 minutes of platform time (reconciliations at 20, 60 and 140 s, replay 160 s later), and
+    // over 2 minutes of real time here: inside the default 15-minute run budget, not this file's 60 s one.
+    const runtime = await canaryRuntime(canary, router, owned, 'sales-canary:test:do-owner-down', { scheduler: true, maxRunDurationMs: 900_000 });
+    const pool = openPool(canaryDb.url);
+    try {
+      const taskId = await converse(canary, runtime, router, 'do-owner-down', [...TURN_1, ...CHOOSE_AND_PREVIEW, EXACT_OFFER, propose, outcome], OFFER_TURNS);
+      const repliesBefore = captured(runtime).length;
+      owned.quotes.availability.set({ mode: 'down' });
+      await sendSynthetic(canary, { conversation: 'do-owner-down', text: 'Sí, emítela.' }, logger);
+      await drain(runtime);
+      const held = await quoteLedger(pool, taskId);
+      expect(held).toMatchObject({ executions: ['executing'], attempts: ['1:execute:unknown:domain_unknown'], receipts: [], retries: ['pending'], decisions: ['authorized:eligible'], sends: 1 });
+      expect(owned.quotes.createCalls).toBe(0);
+      expect(captured(runtime)).toHaveLength(repliesBefore);
+
+      owned.quotes.availability.set({ mode: 'up' });
+      // Inside the owner window (90 + 30 s after the send), a missing binding is not final: the attempt could still commit.
+      await fireNextRetry(pool, taskId);
+      await drain(runtime);
+      expect(await quoteLedger(pool, taskId)).toMatchObject({ attempts: ['1:execute:unknown:domain_unknown', '2:reconcile:unknown:domain_unknown'], retries: ['fired', 'pending'], receipts: [] });
+      expect(owned.quotes.createCalls).toBe(0);
+
+      await untilSendOlderThan(pool, held.key!, 121_000);
+      await fireNextRetry(pool, taskId);
+      await drain(runtime);
+      expect(await quoteLedger(pool, taskId)).toMatchObject({ attempts: ['1:execute:unknown:domain_unknown', '2:reconcile:unknown:domain_unknown', '3:reconcile:not_applied:-'], retries: ['fired', 'fired', 'pending'], receipts: [] });
+      expect(owned.quotes.createCalls).toBe(0);
+
+      await fireNextRetry(pool, taskId);
+      await drain(runtime);
+      expect(await quoteLedger(pool, taskId)).toEqual({
+        key: held.key,
+        executions: ['succeeded'],
+        attempts: ['1:execute:unknown:domain_unknown', '2:reconcile:unknown:domain_unknown', '3:reconcile:not_applied:-', '4:replay:applied:-'],
+        receipts: [{ status: 'succeeded', error_code: null, execution_key: held.key }],
+        retries: ['fired', 'fired', 'fired'],
+        decisions: ['authorized:eligible'],
+        sends: 2,
+      });
+      expect(owned.quotes.createCalls).toBe(1);
+      expect(owned.quotes.quotes).toHaveLength(1);
+      expect((await owned.quotes.lookupIdempotency(held.key!))?.quoteId).toBe(owned.quotes.quotes[0]!.quoteId);
+      // The same run resumed and replied: the customer is told the number, without a second confirmation.
+      expect(captured(runtime).at(-1)!.text).toBe('Cotización PC-000001 emitida.');
+      expect((await pool.query('select status, termination_code from agent_runs where task_id = $1 order by sequence desc limit 1', [taskId])).rows).toEqual([{ status: 'suspended', termination_code: 'waiting' }]);
+    } finally {
+      await restoreTemporalClock(pool);
+      await pool.end();
+      await runtime.close();
+    }
+  }, 240_000);
+
+  it('the owner stays unavailable through every in-run reconciliation: never failed, never a new key — the command is left needing reconciliation and nothing is claimed to the customer', async () => {
+    const canary = loadCanaryEnvironment(canaryEnv());
+    const router = new Router();
+    const owned = owners();
+    const runtime = await canaryRuntime(canary, router, owned, 'sales-canary:test:do-owner-down-long', { scheduler: true, maxRunDurationMs: 900_000 });
+    const pool = openPool(canaryDb.url);
+    try {
+      const taskId = await converse(canary, runtime, router, 'do-owner-down-long', [...TURN_1, ...CHOOSE_AND_PREVIEW, EXACT_OFFER, propose, outcome], OFFER_TURNS);
+      owned.quotes.availability.set({ mode: 'down' });
+      await sendSynthetic(canary, { conversation: 'do-owner-down-long', text: 'Sí, emítela.' }, logger);
+      await drain(runtime);
+      for (let i = 0; i < 3; i += 1) {
+        await fireNextRetry(pool, taskId);
+        await drain(runtime);
+      }
+      const ledger = await quoteLedger(pool, taskId);
+      expect(ledger).toMatchObject({ executions: ['needs_reconciliation'], receipts: [], decisions: ['authorized:eligible'], sends: 1 });
+      expect(ledger.attempts[0]).toBe('1:execute:unknown:domain_unknown');
+      expect(ledger.attempts.slice(1).every((a) => /^\d+:reconcile:unknown:/.test(a))).toBe(true);
+      expect(owned.quotes.createCalls).toBe(0);
+      expect(owned.quotes.quotes).toHaveLength(0);
+      // Retries exhausted (ADR-037 proposal): the run stops on the uncertain write and the task waits for reconciliation.
+      // The scheduler keeps reconciling under its policy (exhausted here, owner still down); a later "not applied" settles
+      // the command without a replay, so a long outage needs an operator. Nothing reached the model or the customer.
+      expect((await pool.query('select status, termination_code from agent_runs where task_id = $1 order by sequence desc limit 1', [taskId])).rows).toEqual([{ status: 'suspended', termination_code: 'write_outcome_uncertain' }]);
+      expect((await pool.query('select status from agent_tasks where task_id = $1', [taskId])).rows).toEqual([{ status: 'blocked' }]);
+      expect((await pool.query("select kind from schedules where task_id = $1 and kind = 'reconciliation'", [taskId])).rows).toEqual([{ kind: 'reconciliation' }]);
+      expect((await pool.query("select count(*)::int as n from observations where task_id = $1 and capability_id = 'quote.create'", [taskId])).rows).toEqual([{ n: 0 }]);
+      expect(captured(runtime).at(-1)!.text).toMatch(/^Cotización lista para emitir/);
+    } finally {
+      await restoreTemporalClock(pool);
       await pool.end();
       await runtime.close();
     }
