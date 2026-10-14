@@ -37,7 +37,7 @@ Clases (mandato del owner, §8):
 | GAP-13 | Los gates de `@7` no se hacen cumplir en código | J7-PRODUCTION-GATE | P1 | J7 |
 | GAP-14 | Ningún perfil con cotización pasó por WhatsApp real | J7-PRODUCTION-GATE | P0 para J7 | J7 |
 | GAP-15 | Higiene: test de recovery obsoleto; definición v7 menciona `customer.get_context` | FUTURE-ENHANCEMENT | P3 | — |
-| GAP-16 | Emisión autorizada varada si Quote V2 no está disponible al enviar | **J3-FUNCTIONAL-BLOCKER** | P0 | J3 (antes del canary) |
+| GAP-16 | Emisión autorizada varada si Quote V2 no está disponible al enviar | **J3-FUNCTIONAL-BLOCKER** → **corregido** en `quote.create@5` (límites remanentes en ADR-037) | P0 | J3 (antes del canary) |
 | GAP-17 | Dos salidas mal formadas seguidas → handoff → el cliente queda sin respuesta | J7-PRODUCTION-GATE | P0 para J7 | J7 |
 | GAP-18 | La oferta actualizada tras un cambio de precio no se marca como cambiada | FUTURE-ENHANCEMENT | P2 | Posterior |
 | GAP-19 | Pedidos genéricos resueltos por suposición en vez de pregunta | FUTURE-ENHANCEMENT | P2 | Posterior |
@@ -242,6 +242,8 @@ Las cuatro últimas surgieron de las conversaciones con el modelo real de esta a
 | Hito | — |
 
 ### GAP-16 — Emisión autorizada varada si Quote V2 no está disponible al enviar
+
+**Estado: corregido** (decisión del owner del 2026-10-14; aceptación §14). `quote.create@5` retiene en su clave una emisión autorizada cuando el owner responde no disponible; la plataforma reconcilia y reproduce la misma clave. Verificado en el runtime real (3 tests, mutación detectada) y con el modelo real en tiempo real (PC-000001 emitida ≈ 5,5 min después de la confirmación, sin segunda confirmación). Lo que no resuelve queda en ADR-037 (L1–L4): espera de ≈ 5 min, silencio durante la retención y cortes más largos que las reconciliaciones del run (≈ 140 s), que requieren un operador.
 
 | Campo | Contenido |
 |---|---|

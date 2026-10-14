@@ -14,8 +14,8 @@ J3_CUSTOMER_IDENTITY_REQUIREMENT=RESOLVED
 J3_DUPLICATE_ISSUANCE=PREVENTED
 J3_PRODUCTION_ROLLOUT=NOT_AUTHORIZED
 J3_FINAL_STATUS=CONDITIONAL
-J3_MINIMUM_REMAINING_WORK=(1) GAP-16: retener en su clave una emisión ya autorizada cuando Quote V2 no está disponible (solo Sales, patrón C1 §6.2, con E2E en el runtime real); (2) canary EC2 de @7 ya autorizado (1 cotización, multiproducto, San Bernardo); (3) J3F: entrega del PDF oficial en la misma conversación autenticada y mensaje de emisión renderizado por Sales (harness + ADR)
-J3_NEXT_MILESTONE=J3F, cierre de J3 (GAP-16, canary @7, entrega documental). J7 recién después de CLOSED
+J3_MINIMUM_REMAINING_WORK=(1) canary EC2 de @7, con la corrección de GAP-16, por un operador con acceso legítimo (1 cotización, multiproducto, San Bernardo); (2) J3F: entrega del PDF oficial en la misma conversación autenticada y mensaje de emisión renderizado por Sales (harness + ADR). GAP-16: corregido (§14)
+J3_NEXT_MILESTONE=Canary EC2 de @7 y J3F, cierre de J3. J7 recién después de CLOSED
 ```
 
 **Respuesta corta.**
@@ -370,7 +370,7 @@ Objetivo: entregar **el PDF oficial de una cotización emitida en esa misma conv
 
 | ID | Bloqueo | Clase | Qué lo cierra | Cómo se comprueba |
 |---|---|---|---|---|
-| GAP-16 | Emisión autorizada varada si Quote V2 no está disponible al enviar | **J3-FUNCTIONAL-BLOCKER** (no compromete corrección: no hay cotización errónea, duplicada ni anunciada en falso; impide completar la cotización) | Sales: `unknown` en vez de `failed` cuando el cuerpo ya está congelado (patrón C1 §6.2) | E2E en el runtime real: owner caído → retenida → owner arriba → una sola cotización con la misma clave; el agente informa "pendiente", no re-presenta la oferta |
+| GAP-16 | Emisión autorizada varada si Quote V2 no está disponible al enviar (**corregido**, §14) | **J3-FUNCTIONAL-BLOCKER** (no compromete corrección: no hay cotización errónea, duplicada ni anunciada en falso; impide completar la cotización) | Sales: `unknown` en vez de `failed` cuando el cuerpo ya está congelado (patrón C1 §6.2) | E2E en el runtime real: owner caído → retenida → owner arriba → una sola cotización con la misma clave; el agente informa "pendiente", no re-presenta la oferta |
 | GAP-01 | Entrega del PDF oficial en la conversación autenticada | **J3-FUNCTIONAL-BLOCKER** | Slice J3F (§8.3), con autorización de harness y ADR | E2E canary: emisión → documento capturado con SHA-256 = manifiesto, destinatario = binding, un solo envío; test de no filtración entre conversaciones |
 | GAP-02 | Canary EC2 de `@7` (modelo real, Catalog, Shipping y Quote V2 reales) | **J3-FUNCTIONAL-BLOCKER** (evidencia pendiente). No es bloqueo técnico: lo nuevo de `@7` falla cerrado (§9.2); lo que falta demostrar es que el cliente obtiene la emisión contra el owner desplegado | El canary aislado ya autorizado, **una** cotización, multiproducto con despacho a San Bernardo | §6.2: recibo `succeeded`, liquidación estricta sin `unknown`, PDF `verified`, `offer_text_sha256` = renderización, producción intacta |
 | GAP-03 | Mensaje de emisión renderizado por Sales | J3-FUNCTIONAL (dentro de J3F) | `quote.create` (nueva versión) devuelve `issuedMessage` renderizado (número, totales, validez) y el agente lo copia; mismo patrón B2 | Mutación: un número o total alterado en el texto no se entrega como confirmación de emisión |
@@ -443,7 +443,7 @@ No es DONE. La integración técnica es satisfactoria (13.1) y las brechas funci
 
 | # | Falta | Alcance | Cómo se comprueba el cierre |
 |---|---|---|---|
-| 1 | GAP-16: emisión autorizada retenida en su clave si Quote V2 no está disponible | Solo Sales, sin harness ni migración | E2E en el runtime real: owner caído → retenida → owner arriba → una cotización con la misma clave; el agente no re-presenta la oferta ni pide otra confirmación |
+| 1 | GAP-16: emisión autorizada retenida en su clave si Quote V2 no está disponible (**hecho**, §14) | Solo Sales, sin harness ni migración | E2E en el runtime real: owner caído → retenida → owner arriba → una cotización con la misma clave; el agente no re-presenta la oferta ni pide otra confirmación |
 | 2 | Canary EC2 de `@7` (con la corrección 1; ya autorizado, una cotización) | Operación | §6.2: `succeeded`, liquidación estricta sin `unknown`, PDF `verified`, producción en `@3` intacta |
 | 3 | J3F: entrega del PDF en la conversación autenticada + mensaje de emisión renderizado por Sales | Harness + Sales, con ADR | §8.3, GAP-01 y GAP-03: documento capturado con SHA-256 = manifiesto, destinatario = binding, un solo envío, sin filtración entre conversaciones |
 
@@ -472,3 +472,91 @@ Con los tres, J3 pasa a **CLOSED**; los gates J7 (§11) pueden seguir pendientes
    - la corrección de GAP-16 (Sales);
    - el canary de `@7` (§6.2);
    - el slice J3F (§8.3), que toca el harness.
+
+## 14. Corrección de GAP-16 (decisión del owner del 2026-10-14)
+
+**Decisión del owner:**
+- J3 sigue **CONDITIONAL**.
+- Corregir GAP-16 **en `quote.create@5`**, sin crear `@6`, antes del canary.
+- La nueva política de recuperación queda aislada en `@5`, sin cambiar la semántica de `@2–@4`.
+- Probar también la respuesta perdida (el owner ejecuta, la respuesta HTTP se pierde).
+- Verificar con ActionRuntime, ActionExecutor y scheduler, nunca invocando el handler.
+- ADR-037 como propuesta, sin cambios de harness.
+- Sin merge a `main` ni promoción productiva.
+
+### 14.1 Cambio (SOURCE, `agents/sales/src/capabilities/quote-v5.ts`)
+
+- Después de la rama del kill switch, un `DomainError` del owner con categoría `temporarily_unavailable` devuelve `ownerUnavailableHeld`: resultado `unknown`, retenido en su clave. Ese camino solo existe cuando el cuerpo ya está autorizado y congelado. Antes de decidir, nada cambia.
+- `classifySend` **no cambia**: `quote.create@2–@4` siguen devolviendo `failed quote_service_unavailable` (lo fijan `tests/integration/sales-autonomous-quote.test.ts:380` y `tests/integration/sales-quote-v2.test.ts:366`).
+- La descripción de `quote.create@5` suma una frase: con un resultado incierto, decir al cliente que está pendiente y no re-presentar la oferta ni proponer otra emisión.
+- Sin migración, sin harness, sin versiones nuevas.
+
+### 14.2 Tests en el ciclo de vida real (LOCAL)
+
+`tests/integration/sales-deterministic-offer-canary.test.ts`, bloque "quote owner failures after the authorization (GAP-16)": ChannelIngress sintético, worker, kernel, ActionRuntime, ActionExecutor, `action_retry` durable y scheduler. Ninguno invoca el handler.
+
+| Caso | Secuencia verificada en PostgreSQL | Owner |
+|---|---|---|
+| **Respuesta perdida**: el owner emite y la respuesta se pierde (timeout) | `1:execute:unknown` → `action_retry` → `2:reconcile:applied`; recibo `succeeded`; PDF `verified`; respuesta "Cotización PC-000001 emitida." | 1 POST, 1 cotización: la reconciliación encuentra la cotización por la clave y no reenvía |
+| **Owner no disponible y luego disponible** | `1:execute:unknown` (retenida, sin recibo ni respuesta) → `2:reconcile:unknown` (dentro de la ventana de 90 + 30 s) → `3:reconcile:not_applied` (ventana cumplida: **121 s reales**, porque la mide el reloj de la base) → `4:replay:applied`; **misma clave**; recibo `succeeded`; 2 filas de envío; el mismo run responde "Cotización PC-000001 emitida." sin otra confirmación | 1 cotización, encontrada por la clave |
+| **Owner caído en todas las reconciliaciones del run** | `needs_reconciliation`; ningún recibo; el run termina `write_outcome_uncertain` y la tarea queda `blocked`; reconciliación programada; ninguna observación ni mensaje al cliente | 0 llamadas, 0 cotizaciones; nunca `failed` ni una clave nueva |
+
+**Mutación:** con la rama de GAP-16 comentada, fallan los dos casos de owner no disponible (`1:execute:failed:quote_service_unavailable`). El de respuesta perdida sigue pasando, porque ese camino ya funcionaba.
+
+El test de owner no disponible usa un presupuesto de run de 15 min, el valor por defecto (`apps/worker/src/config.ts:26`). Con el de 60 s del archivo, la cotización se emite pero el run se agota antes de responder: es el caso 4 de C1 (ADR-037 L4).
+
+### 14.3 Modelo real en tiempo real (REAL-MODEL, owners fixture)
+
+Escenarios nuevos `quote-blip` y `quote-down` de `scripts/experiments/j3-acceptance/run.mjs`. Salida en `artifacts/j3-acceptance/gap16/`.
+
+| Escenario | Qué pasó |
+|---|---|
+| `quote-blip`: Quote V2 rechaza el envío y vuelve 30 s después | "Sí, emítela." 19:53:01 → autorizada y primer envío (503) 19:53:04 → `execute:unknown`, `reconcile:unknown` ×2, `reconcile:not_applied`, `replay:applied` (segundo envío 19:58:08, misma clave) → el agente responde 19:58:29: "¡Listo! La cotización quedó emitida. N° de cotización: PC-000001 … Total: $142.973 …". **≈ 5,5 min** después de la confirmación, sin segunda confirmación. 1 cotización, PDF `verified`. 10 llamadas, 0 no parseables |
+| `quote-down`: Quote V2 no vuelve | `execute:unknown` y 6 reconciliaciones `unknown` (3 del run y 3 del scheduler) → `needs_reconciliation`, run `write_outcome_uncertain`, tarea `blocked`, 0 cotizaciones, **sin `failed` ni clave nueva**. El cliente no recibe mensaje después de confirmar (ADR-037 L3). 9 llamadas |
+
+Costo: 19 llamadas, cota superior ≈ US$0,09. Total del experimento: 147 llamadas, ≈ US$0,91.
+
+SHA-256:
+
+| Archivo | SHA-256 |
+|---|---|
+| `gap16/calls.jsonl` | `6523aebc4f6213153bd6e65d20c27a1f4b63fd9de9157700305b7c4a094d332d` |
+| `gap16/quote-blip.json` | `65b1578f901b2e8ac62c6e121c506e065c7bc2606f61b7fe64ea5d3f80de2780` |
+| `gap16/quote-down.json` | `80cbab5cea7c0d6affc19373f3b24efc293598ae4cb1eab2b933779c7fc7d13d` |
+| `gap16/summary.json` | `c3e8f16e8a6536721d777ee1c38346c43f15e5c1b2d25230f333726d0321e229` |
+
+### 14.4 Lo que la corrección no resuelve (ADR-037)
+
+| Límite | Efecto | Hito |
+|---|---|---|
+| L1: solo se registra el inicio de cada envío | Tras un 503 inmediato, el cliente espera ≈ 5 min | Mejora posible (migración Sales) |
+| L2: la reconciliación del scheduler no reproduce | Un corte de más de ≈ 140 s deja la tarea `blocked` y, al volver el owner, `failed/write_not_applied` con la autorización varada | J7: runbook y operador; opción de harness |
+| L3: silencio durante la retención | El cliente no recibe "pendiente" mientras se reintenta | J7: alerta; opción de harness |
+| L4: presupuesto del run | Debe superar el camino de retención (≈ 300 s de plataforma); el valor por defecto es 15 min | J7: verificar en el despliegue |
+
+### 14.5 Regresión tras la corrección (LOCAL)
+
+| Paso | Resultado |
+|---|---|
+| `build`, `lint`, `typecheck` | exit 0 |
+| `test:unit` | 73 archivos; 1 025 passed, 1 skipped (preexistente) |
+| `test:contract` | 26 archivos; 329 passed (sin cambios: la huella de `@7` y los contratos fijados no dependen de la descripción) |
+| `test:integration --no-file-parallelism` | Corrida completa: 33 archivos pasan, 1 skipped; **4 tests fallan por timeout** (30 s) en `agent-registry`, `sales-autonomous-canary` (`@5`) y `sales-reference` (`sales@3`), más un `Connection terminated unexpectedly`. La corrida duró 1 680 s (antes 654 s), con la **CPU de la estación al 100 %** por otras aplicaciones abiertas. **Re-ejecución de esos 3 archivos: 20/20.** El archivo del cambio (`sales-deterministic-offer-canary`) pasó 9/9 en la corrida completa y por separado. Total: 483 tests (+3 de GAP-16), 12 skipped preexistentes |
+| `test:sales` | Corrida completa: 7 timeouts (60 s) en escenarios del pack de referencia, en la misma ventana de CPU saturada. **Re-ejecución: 29/29** |
+| `test:shadow` | 5/5 |
+| `test:recovery` | 17 passed, 1 fallo preexistente (`production-bootstrap-process.test.ts:48`, GAP-15) |
+
+Los fallos de la corrida completa son de entorno, no del cambio:
+- ningún test fallido toca `quote.create@5`;
+- todos pasan al re-ejecutarse con la CPU por debajo del 60 %.
+
+El handoff ya documenta timeouts de integración por contención (§4).
+
+### 14.6 Estado
+
+- **GAP-16: corregido.**
+- **J3 sigue CONDITIONAL.** Falta:
+  1. el canary EC2 de `@7`, con esta corrección, por un operador con acceso legítimo o en una sesión con el permiso concedido explícitamente;
+  2. J3F (entrega del PDF y mensaje de emisión renderizado por Sales).
+- **ADR-037:** propuesto (`docs/adr/ADR-037-authorized-commercial-write-semantics.md`). No bloquea el canary; debe aceptarse antes de J7.
+- **Producción:** `@3`, sin cambios. Sin merge.
