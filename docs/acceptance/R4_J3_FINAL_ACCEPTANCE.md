@@ -20,6 +20,8 @@ J3_DOCUMENT_DELIVERY=DEFERRED
 J3_CUSTOMER_JOURNEY_FULL=INCOMPLETE
 J3F_DISPOSITION=DEFERRED_TO_R4_MEDIA
 ADR_038_STATUS=PROPOSED_DEFERRED
+GAP_03_DISPOSITION=J7_PRODUCTION_GATE_P0             (Sales Response Integrity; emisión protegida antes del outbound)
+J3_PRODUCTION_UNCHANGED=NOT_VERIFIED
 J3_CANARY_EC2=BLOCKED                                (sin acceso SSH legítimo desde esta estación; 0 emisiones)
 J3_PRODUCTION_ROLLOUT=NOT_AUTHORIZED
 J3_FINAL_STATUS=CONDITIONAL
@@ -626,7 +628,7 @@ Esta sección **modifica explícitamente** el criterio de §1. Antes, el mandato
   - La migración `0011`, los cambios de harness y las versiones Sales que propone **no están autorizados**.
   - Ese diseño reemplaza la propuesta de §8.3: la entrega la decide la plataforma, no una capacidad invocada por el modelo.
 - **GAP-01:** `DEFERRED_TO_R4_MEDIA`. **Se mantiene como requisito verificable** antes de cualquier rollout comercial que prometa PDFs al cliente (roadmap §4.2). No se presenta como resuelto.
-- **GAP-03:** su vehículo era J3F. Queda **pendiente de decisión del owner**; la propuesta es J7-PRODUCTION-GATE (registro de brechas).
+- **GAP-03:** `GAP_03_DISPOSITION=J7_PRODUCTION_GATE_P0` (decisión del owner, 2026-10-14). Sale de J3 y no forma parte de R4 Media: pertenece a *Sales Response Integrity*. Antes del outbound, la emisión comunicada al cliente debe estar protegida mediante validación o composición determinista.
 - **Terminología oficial:** *capacidad de plataforma* o *capability del harness*. Una skill agéntica puede usarlas; no implementa transporte, persistencia ni entrega.
 
 ### 15.3 Erratas de este documento (se conservan; aquí se indica su estado vigente)
@@ -636,6 +638,7 @@ Esta sección **modifica explícitamente** el criterio de §1. Antes, el mandato
 | "Respuesta corta" | "si Quote V2 cae justo al emitir, la conversación queda trabada" | Corregido (§14, GAP-16) |
 | §5.4 | "Corrección mínima (no implementada)" | Implementada en `quote.create@5` (§14) |
 | §10, §13.3 | J3F como trabajo restante de J3 | Diferido (§15.2) |
+| §9.3, §10 | GAP-03 como J3-FUNCTIONAL dentro de J3F | J7-PRODUCTION-GATE, P0 (Sales Response Integrity, §15.2) |
 | §11 | "ADR-037: No existe" | Existe, **propuesto** (§14.6) |
 | §6.2, GAP-02 | "transferencia por bundle incremental (sin publicar la rama)" | La rama está publicada en `origin` (`d19bffe`) |
 

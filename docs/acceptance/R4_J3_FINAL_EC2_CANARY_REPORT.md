@@ -147,7 +147,7 @@ No puede, sin embargo, afirmar el estado actual de producción. Lo verifica el o
 
 1. **Prueba contra owners reales con `@7`: pendiente** (GAP-02). La parte nueva de `@7` falla **cerrado**, sin éxito falso ni segunda cotización. Lo que falta demostrar es que el cliente obtiene la emisión contra los owners desplegados. Incluye la liquidación estricta por línea, despacho, `exemptNet` y tipo de correlación, y la cobertura de San Bernardo en Shipping real.
 2. **Entrega documental: DEFERRED** (`J3F_DISPOSITION=DEFERRED_TO_R4_MEDIA`). El cliente recibe número, totales y validez en texto; no recibe el PDF. No es un fallo del canary de emisión.
-3. **Mensaje de emisión redactado por el modelo** (GAP-03). Su disposición la decide el owner.
+3. **Mensaje de emisión redactado por el modelo** (GAP-03): `GAP_03_DISPOSITION=J7_PRODUCTION_GATE_P0` (Sales Response Integrity). Antes del outbound, la emisión comunicada al cliente debe protegerse mediante validación o composición determinista. No bloquea el cierre de J3.
 4. Las limitaciones operacionales de §13.
 5. Los gates J7 del registro de brechas siguen abiertos (GAP-06 a GAP-14 y GAP-17).
 
