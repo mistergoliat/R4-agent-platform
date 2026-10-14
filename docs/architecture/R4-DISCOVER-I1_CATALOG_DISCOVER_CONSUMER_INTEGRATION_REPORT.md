@@ -2,10 +2,10 @@
 
 Integración **no productiva** de `catalog.discover` (owner: catalog-service) en el Sales Agent de R4.
 
-- Fecha: 2026-10-10.
-- Repositorio principal: R4 (`r4-j3d-ec2-acceptance-evidence` @ `d94b122`).
-- Dependencia: `MS-pesaschile-catalog-service` @ `6dd4b5d` (`feat/catalog-discover-c2`), solo lectura.
-- Sin commits, push ni deploy. Catalog no fue modificado: `git status` limpio antes y después.
+- Fecha: 2026-10-10. **Revisión R2: 2026-10-13** (ver §S).
+- Repositorio principal: R4. La implementación original se hizo sobre `r4-j3d-ec2-acceptance-evidence` @ `d94b122` y hoy está en la rama `r4-discover-i1-catalog-discover` @ `0f200e2` (base `ef5a354` = `main`). R2 trabaja sobre esa rama en un worktree aparte (§S.1).
+- Dependencia: `MS-pesaschile-catalog-service` @ `6dd4b5d` (`feat/catalog-discover-c2`), solo lectura. Es el mismo commit en la implementación original y en R2.
+- R2 no hizo commits, push ni deploy; sus cambios quedan sin commitear en el worktree. Catalog no fue modificado: `git status` limpio antes y después.
 
 ## A. Resumen
 
@@ -28,7 +28,7 @@ R4 obtiene una capacidad model-visible `catalog.discover`, de solo lectura y no 
 
 **Pruebas:**
 
-- 159 tests nuevos en 8 suites, incluido el caso de cinco turnos sobre el proceso real de R4 con PostgreSQL.
+- 165 tests nuevos en 8 suites (159 originales + 6 de R2), incluido el caso de cinco turnos sobre el proceso real de R4 con PostgreSQL.
 - Un test entre procesos contra la app HTTP real del owner con catálogo sintético.
 - La regresión completa de R4 se resume en §N: 1.834 PASS; los 2 fallos intermitentes no tocan Discover y pasan aislados.
 
@@ -89,9 +89,10 @@ Los hashes completos están en `adapters/domains/catalog/http/fixtures/discover/
 
 **Decisión R4:**
 
-- Acepta `catalog-discover-v1b2` y `catalog-discover-v1b1` (`CATALOG_DISCOVER_KNOWN_REVISIONS`). Los tres campos B1 son **opcionales** en R4.
+- Consume **solo** `catalog-discover-v1b2` y `catalog-discover-v1b1` (`CATALOG_DISCOVER_VERIFIED_REVISIONS`). v1b1 entra en esa lista **porque** su compatibilidad con v1b2 quedó resuelta con la evidencia de esta sección, no por compartir `schemaVersion`. Los tres campos B1 son **opcionales** en R4.
 - Sin `requirements` (productor v1b2), un `VERIFIED_MATCH` deriva sus requisitos como SATISFIED, porque es la definición contractual de VERIFIED. Cualquier otra disposición es `UNKNOWN`/`NOT_EVALUATED`, nunca satisfecha.
-- Una etiqueta desconocida con `schemaVersion` 1 se parsea, pero se marca `contract.recognized=false`.
+- **(R2) Cualquier otra revisión se rechaza** con `schemaVersion` 1 o sin él: `CONTRACT_VIOLATION` / `unverified_contract_revision`, no reintentable y sin vista ni claims. Esto incluye una revisión posterior, la histórica `catalog-discover-v1a`, una etiqueta malformada o ausente. Una revisión nueva se usa solo después de verificarla y agregarla a la lista. Antes de R2, una etiqueta desconocida se parseaba y solo se marcaba `contract.recognized=false`, lo que equivalía a consumirla automáticamente.
+- **(R2)** `lineage.contractVersion` distinto de `contractVersion` → `CONTRACT_VIOLATION` / `contract_revision_mismatch`.
 - `schemaVersion` ≠ 1 se rechaza.
 
 **Pruebas:**
@@ -185,7 +186,7 @@ Los hashes completos están en `adapters/domains/catalog/http/fixtures/discover/
 **Salida (vista):**
 
 - `request` enviado.
-- `contract` (revisión, `recognized`).
+- `contract` (`schemaVersion`, revisión verificada; R2 eliminó `recognized` porque toda vista proviene de una revisión verificada).
 - `status`.
 - `interpretation`: `required`, `preferred`, `notVerifiable`, `unrecognized`, `structuredApplied`, ambigüedades con lecturas y candidatos, `selection`.
 - `candidates`: hechos comerciales del owner, más `reading` por candidato.
@@ -235,6 +236,7 @@ Lee estados, nunca texto. Todo lo no establecido positivamente por el owner es i
 | Plazo local / señal del llamador | `TIMEOUT` | timeout | sí |
 | Red | `UNREACHABLE` | temporarily_unavailable | sí |
 | 200 no JSON, `schemaVersion` ≠ 1, `FAILED` con 200, violación de invariantes | `CONTRACT_VIOLATION` | contract_violation | no |
+| 200 con revisión no verificada (`unverified_contract_revision`) o `lineage` de otra revisión (`contract_revision_mismatch`) — R2 | `CONTRACT_VIOLATION` | contract_violation | no |
 | **200 `COMPLETE` / `PARTIAL` / `DEGRADED`** | **respuesta**, no error | — | `degradation[].retryable` |
 
 **Reglas:**
@@ -260,11 +262,11 @@ Se separan cuatro niveles. Ninguna prueba simulada se declara end-to-end.
 | Nivel | Suite | Tests | Qué cubre |
 |---|---|---|---|
 | 1. Unitarios con fixtures | `tests/unit/catalog-http/discover-adapter.test.ts` | 19 | Forma del request; sin campos ajenos; validación local; 401/403 sin filtrar la clave; saturación + `Retry-After` sin reintento; 503 distintos; 500/502; timeout propio y abort del llamador; red; telemetría sin texto; configuración (OFF por defecto, plazo, clave dedicada, red) |
-| | `tests/unit/sales/catalog-discover-capability.test.ts` | 46 | Input (8 rechazos: identidad, contacto, conversación, acción, límite…); guardas y no falsos positivos; coherencia del presupuesto; lecturas de los escenarios 4, 8–21 y 23; ventana del owner en la Observation; fallos tipados como Observations; registro y frontera de producción |
+| | `tests/unit/sales/catalog-discover-capability.test.ts` | 47 | Input (8 rechazos: identidad, contacto, conversación, acción, límite…); guardas y no falsos positivos; coherencia del presupuesto; lecturas de los escenarios 4, 8–21 y 23; ventana del owner en la Observation; fallos tipados como Observations, incluida (R2) una revisión no verificada; registro y frontera de producción |
 | | `tests/unit/sales/catalog-discover-variants.test.ts` | 4 | Resolución de variantes (§K) |
 | | `tests/unit/sales/evaluation/claims-offerability.test.ts` | 15 | Claims checker (§L), con negativos explícitos |
 | | `tests/unit/sales/fixture-commercial-budget.test.ts` | 5 | Fixture comercial (§M) |
-| 2. Contrato Catalog/R4 | `tests/contract/catalog-discover-contract.test.ts` | 63 | Manifest (hashes, procedencia, revisión); enums cerrados = owner; **24 escenarios** leídos por el adaptador y la política reales de R4 contra las expectativas del consumidor de referencia; tamaño < 16 KB; compatibilidad v1b2/v1b1; 12 cambios incompatibles rechazados; aditivos aceptados; matriz de errores completa |
+| 2. Contrato Catalog/R4 | `tests/contract/catalog-discover-contract.test.ts` | 68 | Manifest (hashes, procedencia, revisión); enums cerrados = owner; **24 escenarios** leídos por el adaptador y la política reales de R4 contra las expectativas del consumidor de referencia; tamaño < 16 KB; compatibilidad v1b2/v1b1; (R2) solo revisiones verificadas: posterior, v1a, malformada y ausente rechazadas, `lineage` discordante rechazado; 12 cambios incompatibles rechazados; aditivos aceptados; matriz de errores completa |
 | 3. Integración con el proceso real de R4 | `tests/sales/catalog-discover-multiturn.test.ts` | 1 | Cinco turnos con API, worker, kernel, compilador de contexto, invoker, escrituras gobernadas del workspace y PostgreSQL (§J) |
 | 3b. Entre procesos (owner real, catálogo sintético) | `tests/integration/catalog-discover-owner-process.test.ts` | 6 | App Fastify real del owner (auth, allowlist, flag, runtime, servicio, owner J1 v2) por TCP. Ejecutada con `R4_DISCOVER_OWNER_REPO`; sin esa variable se reporta skipped |
 | 4. E2E con Catalog real | — | — | `NOT_RUN`: no hay Catalog desplegado autorizado con Discover habilitado |
@@ -406,6 +408,21 @@ Quote@2 sigue re-verificando la unidad (`sellable`, stock, precio) antes de emit
 | Re-export de fixtures | 32/32 idénticos |
 | Catalog `git status` | limpio |
 
+**R2 (2026-10-13, worktree en `0f200e2` + cambios R2, Catalog `6dd4b5d`):**
+
+| Ejecución | Resultado |
+|---|---|
+| Baseline de la rama antes de R2: `tsc -b`, `tsc --noEmit`, `eslint` | PASS (en un worktree nuevo, `tsc --noEmit` requiere antes `tsc -b`, porque los subpaths de `@r4-sales/agent` resuelven a `dist/`) |
+| Baseline de las 8 suites Discover antes de R2 | 153 PASS, 6 skipped (sin `R4_DISCOVER_OWNER_REPO`) |
+| Re-export de fixtures desde Catalog `6dd4b5d` | 33/33 idénticos (32 archivos fijados + `MANIFEST.json`); difiere solo `README.md`, que es de R4 |
+| `tsc -b`, `tsc --noEmit`, `eslint . --max-warnings=0` después de R2 | PASS |
+| Suites Discover después de R2 (con `R4_DISCOVER_OWNER_REPO`) | **165/165 PASS**, 8 archivos, incluido el nivel 3b entre procesos |
+| Mutación: compuerta de revisión desactivada (cualquier etiqueta aceptada, `lineage` sin comparar) | 6 tests fallan; restaurado, 115/115 PASS |
+| Regresión completa después de R2 (con `R4_DISCOVER_OWNER_REPO`) | 138 archivos: **1.835 PASS, 7 FAIL, 13 skipped** (1.855) |
+| Los 7 FAIL re-ejecutados aislados (`agent-registry`, `live-ops-hardening`, `live-ops-reference`, `production-bootstrap`, `production-control`, `sales-canary`, `worker-readiness`) | 7 archivos, **118/118 PASS** |
+
+Los 7 FAIL son timeouts de 30 s en suites que no tocan Discover, el fixture ni el checker. Es el patrón descrito en §O.10.
+
 ## O. Limitaciones
 
 1. **Sin Catalog desplegado.** Todo usa el catálogo **sintético** del owner. Latencias, plazos (4,5 s) y saturación no están medidos con MariaDB (`REAL_MARIADB_VALIDATION=NOT_RUN` también en Catalog).
@@ -417,7 +434,9 @@ Quote@2 sigue re-verificando la unidad (`sellable`, stock, precio) antes de emit
 7. **Ausencia por `catalog.search` con filtros.** El checker previo no ve los filtros de Search (la vista no los repite). Es una brecha existente, no corregida aquí: para Discover sí se aplicó la regla de presupuesto.
 8. **`maxUnitPriceClp` = presupuesto vigente exacto.** Un tope por unidad derivado (p. ej. repartir un presupuesto total) debe registrarse antes como hecho (`statedBy: agent`).
 9. **Ambigüedad** que conserva el término ambiguo sigue sin resolverse en el léxico V0.2 (limitación del owner, B2 §I).
-10. **Suites de integración sensibles a temporización.** Ninguna suite que falló toca Discover, el fixture ni el checker (`run-failure-recovery`, `worker-readiness`, `live-ops-*`, `production-*`); todas pasan aisladas. Aun así, en las corridas completas posteriores a I1 aparecieron fallos intermitentes (timeouts, carreras de recuperación y readiness), mientras que el baseline previo pasó completo en una sola corrida. No se pudo descartar del todo una interacción de carga, por ejemplo los 159 tests nuevos alargando la corrida.
+10. **Suites de integración sensibles a temporización.** Ninguna suite que falló toca Discover, el fixture ni el checker (`run-failure-recovery`, `worker-readiness`, `live-ops-*`, `production-*`); todas pasan aisladas. Aun así, en las corridas completas posteriores a I1 aparecieron fallos intermitentes (timeouts, carreras de recuperación y readiness), mientras que el baseline previo pasó completo en una sola corrida. No se pudo descartar del todo una interacción de carga, por ejemplo los 159 tests nuevos alargando la corrida. En R2 se repitió: 7 timeouts en la corrida completa y 118/118 aislados. Además, el PostgreSQL local es compartido con el checkout principal de R4, donde trabaja otro proceso.
+
+11. **(R2) Integración con R4-J3E pendiente.** La rama I1 parte de `ef5a354`. J3E, en curso sin commitear, cambia `ids.ts`, `index.ts` y `production/composition.ts` y agrega `profile-v5`. El test de frontera de producción («ningún perfil lista `catalog.discover`») debe volver a correrse sobre la integración.
 
 ## P. Dependencias de Catalog
 
@@ -460,10 +479,86 @@ DEPLOY_PERFORMED=NO
 
 **Disposición: `R4_DISCOVER_I1_ACCEPTED_WITH_LIMITATIONS`.** Es aceptación de integración no productiva; las limitaciones están en §O y los gates pendientes en §Q.
 
+## S. Revisión R2 (2026-10-13)
+
+**S.1 Preflight.**
+
+- Checkout principal de R4: `E:/dev/codex/R4-agent-platform`, rama `r4-j3e-autonomous-quote-issuance` @ `ef5a354`. El `ef5a354` sigue vigente y es igual a `origin/main`.
+- Ese checkout tiene trabajo sin commitear de otro proceso (R4-J3E, emisión autónoma de cotizaciones), activo durante R2. Al inicio había un solo archivo modificado, `agents/sales/src/workspace/model.ts`. Al cierre había 27 modificados y 9 nuevos (`profile-v5`, `quote-v3`, `workspace-v2`…). Es código, no documentación. **No se tocó nada**, tampoco `stash@{0}`.
+- J3E modifica también `agents/sales/src/ids.ts`, `index.ts` y `production/composition.ts`, que I1 toca. Habrá que resolver conflictos al integrar ambas ramas, y entonces revisar que `catalog.discover` siga fuera de todo perfil de producción, incluido `profile-v5`. Ver §O.11.
+- Ese proceso comparte con R2 el PostgreSQL local y la CPU, lo que es compatible con los timeouts de §N.
+- Los documentos modificados por terceros que menciona Catalog V1-B1 §M ya no figuran como modificados en ese checkout.
+- La implementación I1 original quedó **commiteada** en `r4-discover-i1-catalog-discover`: 5 commits, `b580e85..0f200e2`, de 2026-10-11, autor `MisterGoli`. Ese registro previo decía que quedaba sin commitear.
+- Para no alterar el trabajo en curso, R2 se hizo en un worktree aparte: `E:/dev/codex/R4-agent-platform-discover-i1`, sobre esa rama. Allí se ejecutaron `npm ci` y `tsc -b`.
+- Catalog: `feat/catalog-discover-c2` @ `6dd4b5d`, limpio. Sigue siendo `DISCOVER_CONTRACT_VERSION = catalog-discover-v1b1`, con `DISCOVER_CONTRACT_REVISIONS = [v1a, v1b2, v1b1]`.
+- Los hashes LF del `MANIFEST.json` siguen vigentes: el re-export dio fixtures idénticos.
+
+**S.2 Hallazgo y corrección.**
+
+La consigna exige no usar `catalog-discover-v1b1` automáticamente mientras no se resuelva su compatibilidad con v1b2. La compatibilidad v1b1 ↔ v1b2 sí estaba resuelta (§C). El problema era otro: la compuerta efectiva era solo `schemaVersion` 1.
+
+- Antes de R2, cualquier otra etiqueta con `schemaVersion` 1 (por ejemplo, una v1b3 futura o la histórica v1a) se parseaba y producía claims completos. Solo quedaba marcada `contract.recognized=false`, algo que ni la política de lectura ni el checker consultaban.
+- R2 convierte la lista de revisiones en una compuerta de consumo:
+  - `CATALOG_DISCOVER_VERIFIED_REVISIONS` reemplaza a `CATALOG_DISCOVER_KNOWN_REVISIONS`.
+  - `isVerifiedDiscoverRevision` decide qué revisiones se aceptan.
+  - El adaptador HTTP rechaza las demás como `CONTRACT_VIOLATION`, con código `unverified_contract_revision` o `contract_revision_mismatch`.
+  - El esquema de cable fija `contractVersion` como enum, y el tipo del port lo refleja.
+  - La vista ya no tiene `recognized`.
+
+**S.3 Archivos tocados por R2** (sin commitear):
+
+- `adapters/domains/src/catalog/discover.ts`
+- `adapters/domains/catalog/http/src/discover.ts`
+- `adapters/domains/catalog/http/src/discover-schemas.ts`
+- `agents/sales/src/capabilities/discover.ts`
+- `tests/contract/catalog-discover-contract.test.ts` (+5 tests netos)
+- `tests/unit/sales/catalog-discover-capability.test.ts` (+1)
+- Este informe.
+
+**S.4 Revisión del resto de la consigna contra la rama.** Sin cambios necesarios en:
+
+- Herramienta e input (§F).
+- Errores tipados (§H). «Respuesta válida pero degradada» es un 200 `DEGRADED`/`PARTIAL` con `COMMERCIAL_TRUTH_DEGRADED`/`RETRY_LATER`, no un fallo.
+- Semántica de consumo (§G).
+- Fixture comercial (§M).
+- Claims checker (§L).
+- Multi-turn (§J).
+- Variantes (§K).
+- Frontera de producción.
+
+**S.5 Consecuencia operativa.** Una revisión nueva publicada por Catalog hace fallar Discover en R4 con `CONTRACT_VIOLATION` hasta que alguien:
+
+1. re-exporta los fixtures;
+2. revisa el diff del contrato ejecutable;
+3. la agrega a `CATALOG_DISCOVER_VERIFIED_REVISIONS`;
+4. vuelve a correr las pruebas de contrato.
+
+Es intencional: falla cerrado, sin claims, y no se lee como «no hay productos».
+
+## T. Preservación de la rama (2026-10-14)
+
+Antes de cambiar de computador, la rama se publicó en `origin` **sin merge a `main`**. No hubo cambios funcionales.
+
+- Los 5 commits I1 (`b580e85..0f200e2`) se conservan tal cual.
+- Los 7 archivos de R2 (§S.3) se revisaron y quedaron en dos commits: código y tests, luego este informe. Todos pertenecen a Discover I1 (R2); no había cambios ajenos ni archivos sin seguimiento.
+- Sin secretos: solo claves de prueba sintéticas (`r4-discover-*-key-*`). El escenario 22 usa datos personales ficticios (`example.com`) para probar su rechazo.
+- Sin cambios del harness (`packages/`, `apps/`) respecto de `ef5a354`. Catalog no se modificó: `6dd4b5d`, limpio antes y después.
+
+Validación sobre el árbol commiteado (Catalog `6dd4b5d`, `R4_DISCOVER_OWNER_REPO` definido):
+
+| Ejecución | Resultado |
+|---|---|
+| `tsc -b`, `tsc --noEmit`, `eslint . --max-warnings=0` | PASS |
+| 8 suites Discover, incluido el nivel 3b entre procesos | **165/165 PASS** |
+
+Disposición sin cambios: **`R4_DISCOVER_I1_ACCEPTED_WITH_LIMITATIONS`** (§O, §Q). La regresión completa no se volvió a correr. La última (§N, R2) dio 7 FAIL por timeouts de 30 s en suites ajenas a Discover, y 118/118 PASS al aislarlas (§O.10).
+
+**Actualización de §O.11.** J3E-A y J3E-B ya están en `origin/main` (`092715e`), así que la integración de I1 ahora parte de ese commit, no de trabajo sin commitear. Los conflictos esperados siguen siendo `agents/sales/src/ids.ts`, `index.ts` y `production/composition.ts`. En la revisión de integración hay que comprobar que `catalog.discover` no aparezca en ningún perfil de producción, incluidos `profile-v5` y `profile-v6`, y repetir la regresión completa sobre el resultado.
+
 ## Reproducción
 
 ```sh
-# R4 (Postgres local: npm run db:up)
+# R4 (Postgres local: npm run db:up). En un checkout/worktree nuevo: npm ci && npx tsc -b tsconfig.build.json
 npx tsc -p tsconfig.json --noEmit && npx eslint . --max-warnings=0
 npx vitest run --project unit --project contract --project integration --project sales --project shadow
 # Entre procesos (owner real, catálogo sintético)
