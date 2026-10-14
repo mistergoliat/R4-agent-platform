@@ -1,6 +1,35 @@
 # R4-J3E-B — Independent Customer Intent Verification Report
 
-Date: 2026-10-14 · Branch: `r4-j3e-b-independent-intent` (from J3E `4fc071a`), **not pushed, not merged, not deployed** · Decision: ADR-035 (proposed)
+Date: 2026-10-14 · Branch: `r4-j3e-b-independent-intent`, commit **`a841adb3e25cc7395b96212cc6dfb44ef16c0f1e`** (from J3E `4fc071a`), **not pushed, not merged, not deployed to production** · Decision: ADR-035, **accepted for canary only**
+
+**Final flags (after the owner-authorized EC2 canary, §11):**
+
+```
+R4_J3EB_COMMIT=a841adb3e25cc7395b96212cc6dfb44ef16c0f1e
+ADR_035=ACCEPTED_FOR_CANARY
+R4_EC2_CANARY_6=PASS                     (scenarios A and B and read/replay C; one format-failure retry disclosed, §11.4)
+R4_REAL_MODEL_USED=YES                   (openai-compatible.deepseek-v4-flash, 31 calls)
+R4_REAL_QUOTES_ISSUED=1                  (PC-000005; Quote V2 5 → 6 quotes, 4 → 5 issuance operations)
+R4_INTENT_EVIDENCE=THREAD_VERIFIED       (confirmation inputId = the customer's last real input; offer stepId = the delivered offer)
+R4_INPUT_PROVENANCE=TOPOLOGY_GATED       (canary inputs only from the operator's synthetic ingress; proves nothing about real WhatsApp)
+R4_CONFIRMATION_SINGLE_USE=PASS          (unique index present; one evidence row; replay = duplicate; reuse refusal covered LOCAL D1/D3)
+R4_PDF_SHA256=PASS                       (f18d92a0…: manifest = stored artifact = R4 receipt, 29 605 bytes)
+R4_TOTAL_UNITS_LIMIT=PASS                (LOCAL E1; canary configured with total 5; the scenario used 1 unit)
+R4_HARNESS_MODIFIED=NO
+R4_PRODUCTION_PROFILE=@3
+R4_PRODUCTION_DB_UNCHANGED=YES           (ledger fingerprint f9c22251… unchanged; no Sales 0008/0009 in production)
+R4_WHATSAPP_UNCHANGED=YES                (0 production outbound during the canary)
+QUOTE_GMAIL_DISABLED=YES
+CUSTOMER_ROLLOUT_AUTHORIZED=NO
+```
+
+**Production blockers still open:**
+1. Contractual provenance of customer messages (input actor not exposed by `ProductionStore.thread`).
+2. Integrity of every commercial condition presented to the customer (Sales verifies only reference and total; §11.6).
+3. Validation of production limits (the canary limits are not production limits).
+4. Operational acceptance and observability of `@6`, including the structured-output failures at the offer step (§11.4).
+
+The sections below up to §10 describe the implementation and the local validation.
 
 Evidence labels: **SOURCE** = verified in code; **LOCAL** = executed on the workstation (Docker PostgreSQL, fixture owners, scripted model, the real canary runtime); **EC2 (read-only)** = existing J3E canary records read without running anything; **NOT RUN**.
 
@@ -219,3 +248,163 @@ Modified (Sales pack only):
 - Pinned lists in existing tests (migrations, definitions, profiles).
 
 Harness, Quote V2, Catalog, Shipping: **0 changes**.
+
+## 11. EC2 canary of sales-production@6 (owner authorization of 2026-10-14)
+
+### 11.1 Code preflight and commit
+
+- **Diff vs J3E-A (`4fc071a`):**
+  - 0 files under `packages/`, `apps/` or `adapters/`;
+  - no change to `package.json` or `package-lock.json`;
+  - no `.env`, credential or private file (pattern scan: no matches).
+- **Regression:** green (§5), except the pre-existing recovery test, which fails identically on `main`.
+- **ADR-035:** status set to "accepted for experimentation and canary only".
+- **Commit:** **`a841adb3e25cc7395b96212cc6dfb44ef16c0f1e`**. Not pushed.
+
+### 11.2 Provenance gate (`single-input-producer`), checked before the run
+
+| Check | Finding |
+|---|---|
+| Who can reach the canary database | `r4-sales-canary-postgres` publishes `5432` only on `127.0.0.1:55434`. There is one login role (`r4canary`) and no other client was connected. Credentials exist only in `~/.config/r4-canary/*` (0600, `ec2-user`); `production.env` does not reference the canary. |
+| Processes that could create inputs | No R4 API process runs on the host (no `apps/api`). The production gateway, worker and scheduler use the production database. The canary runtime (worker, scheduler, delivery) creates no inputs. During the run, the **only** producer was the operator's `sales:canary send` (real `ChannelIngress`, synthetic channel). |
+| Existing inputs | All `channel:r4-synthetic`, actor kind `user` |
+| Model | The `@6` composition registers no capability that creates inputs, and no agent decision type does |
+| Conversation ↔ task | One binding per synthetic conversation (`channel_conversation_bindings`, profile `sales-production@6`) |
+
+The gate held for the canary. **This canary proves nothing about real WhatsApp message provenance**; contractual provenance remains a production prerequisite.
+
+### 11.3 Infrastructure
+
+**Before:**
+- PM2 `r4-*` online (16/11/0 restarts); `@3`, rollout 0 %, 1 allowlisted key, `/ready` `sales-production@3`.
+- Production checkout `ef5a354`, clean; production ledger `f9c22251…` (11 migrations).
+- Quote V2 ready; the R4 principal can read PC-000004 (200); Gmail disabled.
+- The previous canary was stopped, with no open execution, human request, schedule or outbound, and every frozen request issued.
+
+**Reuse.**
+- The J3E-A evidence (run log and capture) was copied to the workstation and hashed.
+- The stopped checkout `~/r4-j3e-canary` was moved to `a841adb` with an incremental git bundle and rebuilt (no dependency change, no second install).
+- **767 MB free** after preparation (≥ 700); 764 MB at the end.
+
+**Canary database.** `sales:canary init` with `@6` applied **only** `0009_sales_quote_intent_evidence` and registered **only** `sales@6`. Isolation verified.
+
+**Environment.** `~/.config/r4-canary/canary-j3eb.env` (0600):
+- the seven approved canary limits;
+- per-hour limit **1**;
+- `sales-production@6`;
+- its own capture file;
+- synthetic conversation keys only;
+- no WhatsApp keys.
+
+Effective profile at start: `sales-production@6`. Quote V2 baseline: **5 quotes** (latest PC-000004), 4 issuance operations, 7 idempotency bindings, 1 delivery.
+
+### 11.4 Scenarios (real model DeepSeek V4 Flash, real Catalog, Shipping and Quote V2)
+
+**A. Explicit negation.**
+
+| Attempt | What happened |
+|---|---|
+| A-1 (`j3eb-neg-1`) | Turn 1 was fine. In turn 2, after `quote.preview`, the model twice returned non-JSON text instead of a decision (`invalid_structured_output`, `finishReason: stop`, 1 165 and 1 638 output tokens). ADR-028 recovery failed again, so the task was **handed to humans** (`handoff` human request; task `blocked`). No offer was sent and nothing could be issued. |
+| A-2 (`j3eb-neg-2`, one retry) | The offer was presented with lines, quantities, shipping, net, VAT, total and `Q-5F57B2-2`. The customer said "No confirmo. Todavía lo estoy pensando." The model **did not propose** issuance and replied appropriately. 0 `quote.create` proposals, 0 decisions, Quote V2 unchanged. |
+
+The capability-level refusal of a negation was not exercised by the real model, because it never proposed. It is covered by the scripted canary E2E and the local matrix (B1).
+
+**B. Ambiguity, then natural confirmation (`j3eb-pos-1`).**
+1. Request, then the shipping choice. The offer showed reference `Q-5F57B2-2`, total $52.980, 1 × Par Mancuernas Hexagonales 12.5kg | HWM®, and Pesas Chile – Despacho Directo to Ñuñoa.
+2. "Sí." The model **proposed** `quote.create`. Policy decided `allow/autonomous`, and the **capability refused** it with `customer_confirmation_not_explicit` (`not_a_confirmation`); receipt `rejected`; Quote V2 unchanged. The model then re-presented the full offer (reference and total) and asked for an explicit confirmation.
+3. "Sí, emítela." The model proposed `quote.create {previewId}`. Policy decided `allow/autonomous`; `quote.create@4` read the thread and authorized; the request was frozen and sent once; **PC-000005** was issued and replied. The canary was stopped right after.
+
+**C. Recovery and duplicates (no second write).**
+- The read-only Quote V2 idempotency lookup with the same execution key returns `state: bound` with quote `f73c3b4c…` (PC-000005). Reconciliation would settle to the same quote without a POST.
+- Replay of the confirming provider event with the **original** id → `duplicate` (`duplicate_deliveries = 1`); no new input, no new evidence.
+- The unique index `quote_intent_evidence_confirmation_input_id_key` is present.
+- A real reuse refusal (`customer_confirmation_used`) or an ambiguous `unknown` would need a second write or a real ambiguity; they stay covered locally (D1, D3, D4).
+
+**Operator error (disclosed).**
+- My first replay attempt passed the event id already prefixed (`synthetic:…`). `sendSynthetic` adds the prefix itself, so the ingress correctly treated `synthetic:synthetic:…` as a **new** event: one extra synthetic input "Sí, emítela." in `j3eb-pos-1`, and the task became runnable.
+- The canary runtime was already stopped: no run executed, no proposal, no decision, Quote V2 unchanged.
+- It cannot issue even if the canary restarts: the per-conversation limit (1) is used and the snapshot is already authorized.
+- **Recommendation:** cancel that canary task before any future canary run.
+
+### 11.5 Evidence (canary database and Quote V2)
+
+| Required evidence | Value |
+|---|---|
+| Profile and definition | binding `r4-synthetic` / `sales-production@6`; task `01a138aa-b3f9-797d-981f-20eea3a9273c` on `sales@6` |
+| Policy | `quote.create@4` → `allow` / `autonomous` (twice: the refused and the authorized command), `sales-production-autonomous-policy@1`, hash `515ce98f…` |
+| Executions | `r4x_01a138ab…` → `rejected` (attempt 1 `rejected`, receipt error `customer_confirmation_not_explicit`); `r4x_01a138ac41f67821a65d8a44f617973c` → `succeeded` (1 attempt `applied`, receipt `PC-000005`, `replayed: false`) |
+| Decisions (0008) | `rejected:customer_confirmation_not_explicit`; then `authorized:eligible` (gross 52 980, 1 line, 1 unit, commercial version 2, 0 in the last hour, 0 in the conversation, confirmation not used) |
+| **Intent evidence (0009)** | `confirmation_input_id 01a138ac-1f8f-70e2-a98f-f98e9574710b` = the task's **last real input**, whose platform text is "Sí, emítela.". `offer_ref 01a138ab-e32d-76c3-af15-b79433f2fa8c` = the agent step of the re-presented offer, outbound `accepted` (same outbound id). Offer 04:29:11.340, confirmation 04:29:26.797 (15 s, window 900 s). Reference `Q-5F57B2-2`, presented gross 52 980, rule `affirmation=si;courtesy=none`. |
+| Totals | snapshot = request = owner = receipt: 44 521 / 8 459 / 52 980 |
+| Idempotency | 1 send; Quote V2: 1 binding (`r4-sales-integration`, `quote.create_and_issue`), 1 operation `succeeded` |
+| Quote V2 counts | quotes 5 → **6**, operations 4 → 5, bindings 7 → 8, deliveries 1 → 1 (0 for PC-000005) |
+| PDF | manifest `f18d92a0203510c654c3b88bf38285c810b667e1e9a6d303c1d80e831de183dc`, 29 605 bytes; stored artifact re-hashes identically; R4 `verified` |
+| Human intervention | **0** human requests in the issuing task. The only one in the canary database is the `handoff` of A-1 (format failure, §11.4). No approval request exists. |
+| External contact | all canary outbound `r4-synthetic`/`accepted` (15); production outbound in the window **0**; Gmail disabled |
+| Production | ledger `f9c22251…` unchanged (no Sales `0008`/`0009`); `@3`; PM2 counters unchanged; checkout `ef5a354` clean |
+| Canary | stopped |
+
+### 11.6 Offer audit (observational, §7)
+
+Both offer messages of `j3eb-pos-1` (the first one and the re-presented one the customer confirmed) were compared with the preview snapshot:
+
+| Element | Offer text | Snapshot | Match |
+|---|---|---|---|
+| Line | 1 × Par Mancuernas Hexagonales 12.5kg \| HWM® — $47.990 (IVA incluido) | quantity 1, description identical, line gross 47 990 | yes |
+| Shipping | Pesas Chile – Despacho Directo (Ñuñoa, Metropolitana de Santiago) — $4.990 (IVA incluido) | Pesas Chile / Despacho Directo / Ñuñoa / Metropolitana de Santiago, gross 4 990 (net 4 193) | yes |
+| Net / VAT | $44.521 / $8.459 | 44 521 / 8 459 | yes |
+| Total | Total: $52.980 (IVA incluido) | 52 980 | yes |
+| Reference | Q-5F57B2-2 | Q-5F57B2-2 | yes |
+
+**No discrepancy in this canary.** Sales still verifies only the reference and the total, so the match of lines and shipping is observed here, **not** guaranteed by code.
+
+### 11.7 Performance (vs J3E-A)
+
+| Metric | J3E-A (`@5`, 3 scenarios) | J3E-B (`@6`, 3 conversations) |
+|---|---|---|
+| Model calls | 34 | 31 |
+| Model time | 270 s (p50 5.4, p90 17.0, max 40.1) | 159 s (p50 4.2, p90 8.0, max 14.5) |
+| Format errors | 1 (recovered) | 2 consecutive in A-1 (task handed off); 0 in A-2 and B |
+| Positive conversation | 13 calls, ~166k in / 10k out, 3 turns (19.5 / 26.2 / 25.8 s) | 12 calls, 150k in / 11k out, 4 turns (17.2 / 15.4 / **31.9** / **13.9** s) |
+| Confirmation turn | 4 calls, 25.8 s (preview re-read, `record_quote_request`, create, respond) | **2 calls, 13.9 s** (create, respond) |
+| Capability invocations (reads) | — | 13 |
+| First message → issued quote | ~3 min (with operator pauses) | ~1 min 47 s (with an extra ambiguity turn) |
+
+The ambiguity turn (31.9 s) carries the refused proposal plus the re-presented offer. The confirmation turn halved, as intended. **Correctness was not traded**: the snapshot is still recomputed at issuance. The format failures concentrate on the call that writes the long offer message.
+
+## 12. Proposals (not implemented; each needs independent approval)
+
+### 12.1 Deterministic offer rendering (production blocker 2)
+
+Make Sales the author of the commercial content the customer confirms.
+
+1. `quote.preview@3` returns `presentation.offerText`: a fixed, versioned template (`r4-sales-offer-es-v1`) rendered from the snapshot. It contains every line (description, quantity, unit and line gross), shipping (carrier, service, destination, gross) or "sin despacho", net, VAT, total, validity policy and the reference. Sales also records the SHA-256 of that rendered text.
+2. The agent must include `offerText` **verbatim** as one block. It may add its own words before or after it, never inside.
+3. `quote.create@5` checks that the offer message contains the exact rendered block (or its normalized hash). That guarantees lines, quantities, shipping and total, not only reference and total.
+4. Fallback if the model fails to copy the block: refuse with `offer_not_presented`, and the agent presents again.
+
+Dependencies: new preview and capability versions, a template contract test, an instruction version, and a UX review of the fixed block.
+
+### 12.2 Fewer model calls and tokens (bounded)
+
+| Proposal | Expected effect | Correctness |
+|---|---|---|
+| The deterministic offer block (12.1) also removes the long free-form offer generation, which is where every format failure happened | Fewer `invalid_structured_output` failures; ~1 000 fewer output tokens per offer | Improves |
+| Provider JSON mode for the decision envelope (`R4_MODEL_EXTRA_BODY`), validated on a canary | Fewer format failures | Neutral |
+| Provider prompt or context caching (≈ 90 % of input repeats across a turn's calls) | Lower input cost | Neutral |
+| Instruction: skip `catalog.get_product_context` when `catalog.search` already returned the exact item key and price (turn 1: 5 → 4 calls) | −1 call per conversation | Neutral (the snapshot reads Catalog anyway) |
+| Record `finishReason` and the parse failure class on `invalid_structured_output` | Diagnosis of the A-1 failure mode | Harness logging change; separate decision |
+
+None was activated during this canary: no JSON mode and no model change.
+
+### 12.3 State left on EC2
+
+- **Canary runtime:** stopped.
+- **Checkout `~/r4-j3e-canary`:** at `a841adb`.
+- **`canary-j3eb.env`:** 0600, kept.
+- **Logs:** `~/r4-j3d/j3eb-canary-run.log` and `j3eb-canary-outbound.jsonl`.
+- **Canary database:**
+  - `0008`, `0009`, `sales@5`/`sales@6`;
+  - the `j3eb-neg-1` task blocked with a handoff;
+  - the `j3eb-pos-1` task runnable after the disclosed replay error (cancel before any future run).
+- **PC-000005:** in the Quote V2 integration deployment (synthetic-only, Gmail disabled).
