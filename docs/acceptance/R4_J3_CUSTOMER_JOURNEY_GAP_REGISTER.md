@@ -2,6 +2,14 @@
 
 Fecha: 2026-10-14 · Rama `r4-j3e-c-deterministic-commercial-offer` (`7783a08`, sin publicar) · Base `origin/main` `092715e` · Documento hermano: [`R4_J3_FINAL_ACCEPTANCE.md`](R4_J3_FINAL_ACCEPTANCE.md).
 
+> **Re-delimitación de J3 (decisión del owner, 2026-10-14).** J3 pasa a ser *Quote Integration & Autonomous Issuance* y excluye explícitamente la entrega del PDF (aceptación §15).
+>
+> - **GAP-01:** pasa a `DEFERRED_TO_R4_MEDIA`. Deja de bloquear J3, pero sigue siendo requisito verificable antes de cualquier rollout comercial que prometa PDFs al cliente.
+> - **GAP-03:** queda sin vehículo (iba dentro de J3F); su disposición la decide el owner.
+> - **GAP-02:** sigue abierto. El canary EC2 de `@7` del 2026-10-14 quedó **BLOCKED** por acceso SSH ([informe](R4_J3_FINAL_EC2_CANARY_REPORT.md)).
+>
+> Las clasificaciones anteriores se conservan tachadas o en las filas "Disposición" como historia.
+
 Cada brecha cita la evidencia que la sostiene. Etiquetas:
 - **SOURCE**: código de la rama, con archivo y línea;
 - **LOCAL**: ejecutado en esta estación;
@@ -22,9 +30,9 @@ Clases (mandato del owner, §8):
 
 | ID | Brecha | Clase | Prioridad | Hito |
 |---|---|---|---|---|
-| GAP-01 | El cliente no recibe el PDF oficial | **J3-FUNCTIONAL-BLOCKER** | P0 | J3 (slice J3F) |
-| GAP-02 | `@7` sin canary EC2 contra owners reales | **J3-FUNCTIONAL-BLOCKER** (evidencia pendiente) | P0 | J3 |
-| GAP-03 | El mensaje de emisión lo redacta el modelo | J3-FUNCTIONAL (se resuelve dentro de J3F) | P1 | J3 (slice J3F) |
+| GAP-01 | El cliente no recibe el PDF oficial | ~~J3-FUNCTIONAL-BLOCKER~~ → **DEFERRED_TO_R4_MEDIA** (2026-10-14). Requisito previo a un rollout que prometa PDFs | P0 para ese rollout | ~~J3 (slice J3F)~~ → R4 Media & Communications |
+| GAP-02 | `@7` sin canary EC2 contra owners reales | **J3-FUNCTIONAL-BLOCKER** (evidencia pendiente). Canary 2026-10-14: **BLOCKED** (sin acceso SSH legítimo desde esta estación) | P0 | J3 |
+| GAP-03 | El mensaje de emisión lo redacta el modelo | ~~J3-FUNCTIONAL (se resuelve dentro de J3F)~~ → **disposición pendiente del owner** (propuesta: J7-PRODUCTION-GATE) | P1 | ~~J3 (slice J3F)~~ → a decidir |
 | GAP-04 | Productos con peso solo por variante no cotizan despacho | FUTURE-ENHANCEMENT (se reclasifica tras medir) | P2 | J1/J2 |
 | GAP-05 | La cotización no identifica al cliente (invitado anónimo) | FUTURE-ENHANCEMENT | P2 | J4 / posterior |
 | GAP-06 | Procedencia contractual de los inputs (ADR-036) | J7-PRODUCTION-GATE | P0 para J7 | J7 |
@@ -57,7 +65,8 @@ Las cuatro últimas surgieron de las conversaciones con el modelo real de esta a
 | Resolución mínima | Slice `R4-J3F — Quote Document Delivery` (aceptación §8.3): capacidad `quote.share_document@1` `{quoteNumber}` sin destinatario; envío solo por el dueño de entrega al `recipient_ref` del binding; clave `r4-doc:<quoteId>`; re-verificación del SHA-256 antes de subir; `type: document` por WhatsApp. |
 | Dependencias | Autorización de cambio de harness y ADR (política autónoma `@2` o envío automático por la plataforma); límites de medios de Meta (desconocidos); ventana de 24 h. No depende de J4. |
 | Test de aceptación | E2E en el canal sintético: emisión → un envío de documento capturado con SHA-256 = manifiesto y destinatario = binding; repetir la petición no crea un segundo envío; `mismatch` → 0 llamadas al proveedor; dos conversaciones con cotizaciones → cada PDF solo a su conversación. En J7: estado `delivered` del proveedor en el número dedicado. |
-| Hito | **J3** |
+| Hito | **J3** (histórico) |
+| Disposición (2026-10-14) | **DEFERRED_TO_R4_MEDIA** por decisión del owner (`J3F_DISPOSITION`).<br><br>El diseño se conserva sin implementar en la rama `r4-j3f-document-delivery-design` (commit local `19928db`): `ADR-038-governed-document-outbound.md` (`PROPOSED_DEFERRED`), `R4_J3F_DOCUMENT_DELIVERY_DESIGN.md` y `R4_J3F_IMPLEMENTATION_PLAN.md`. Ese diseño reemplaza la "Resolución mínima" de arriba: entrega automática por la plataforma, sin capacidad invocada por el modelo.<br><br>La evidencia de que S10 falló no se reescribe (aceptación §4, §8). **Requisito que se mantiene:** ningún rollout comercial que prometa PDFs al cliente sin cumplir el "Test de aceptación" de esta fila (roadmap §4.2). |
 
 ### GAP-02 — `@7` sin canary EC2 contra owners reales
 
@@ -71,6 +80,7 @@ Las cuatro últimas surgieron de las conversaciones con el modelo real de esta a
 | Dependencias | Acceso SSH a EC2 permitido en la sesión; transferencia del commit por bundle incremental (sin publicar la rama); ≥ 700 MB libres; cancelar `j3eb-pos-1`. |
 | Test de aceptación | Recibo `succeeded`; decisión `authorized:eligible`; `offer_text_sha256` = renderización Sales; liquidación estricta sin `unknown`; PDF `verified`; 1 binding de idempotencia y 1 operación en Quote V2; producción en `@3` sin cambios; 0 outbound fuera del canal sintético. |
 | Hito | **J3** |
+| Estado (2026-10-14, canary final autorizado) | **BLOCKED** ([informe](R4_J3_FINAL_EC2_CANARY_REPORT.md)).<br><br>Esta estación no tiene el alias SSH `Master`, y el host documentado rechazó su identidad (`Permission denied (publickey)`). Se detuvo sin buscar llaves.<br><br>0 cotizaciones emitidas; producción no verificada. El informe contiene el procedimiento para un operador con acceso legítimo. |
 
 ### GAP-03 — El mensaje de emisión lo redacta el modelo
 
@@ -83,7 +93,8 @@ Las cuatro últimas surgieron de las conversaciones con el modelo real de esta a
 | Resolución mínima | Mismo patrón B2 que la oferta: la nueva versión de `quote.create` devuelve `issuedMessage` renderizado por Sales (número, líneas, totales, validez, aviso del documento) y la definición pide copiarlo. Va dentro de J3F, porque el mensaje anunciará el PDF. |
 | Dependencias | J3F (texto del aviso del documento). |
 | Test de aceptación | Unit: golden de la plantilla. Integración: mutar número o total del texto entregado se detecta (no se registra como confirmación de emisión). Fidelidad de copia medida con el modelo real. |
-| Hito | **J3** (dentro de J3F) |
+| Hito | **J3** (dentro de J3F), histórico |
+| Disposición (2026-10-14) | **Pendiente de decisión del owner.** Con J3F diferido, esta brecha queda sin vehículo. La lista de exclusiones de J3 (aceptación §15) no la nombra.<br><br>Lo que hay hoy:<br>- La evidencia REAL-MODEL (§5.3) mostró copias correctas.<br>- No hay garantía de código.<br>- La emisión no depende del texto: la cotización es correcta aunque el mensaje la cite mal.<br><br>**Propuesta:** clasificarla J7-PRODUCTION-GATE (antes de clientes reales). La solución diseñada (caption determinista con el PDF) vive en el diseño J3F §9.3. Una plantilla de emisión sin documento sería un cambio solo de Sales, sin harness, pero no se inicia sin autorización. |
 
 ### GAP-04 — Productos con peso solo por variante no cotizan despacho
 

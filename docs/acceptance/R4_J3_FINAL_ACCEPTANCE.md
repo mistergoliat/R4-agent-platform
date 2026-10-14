@@ -4,6 +4,30 @@ Fecha: 2026-10-14 · Rama `r4-j3e-c-deterministic-commercial-offer`, commit `778
 
 **Pregunta de aceptación:** si un cliente escribe a PesasChile por WhatsApp y pide una cotización, ¿puede R4 atenderlo, construir bien la propuesta, obtener su confirmación, emitir la cotización con Quote V2 y entregarle un resultado utilizable?
 
+### Estado vigente (2026-10-14, tras la re-delimitación del owner y el intento de canary final)
+
+El alcance se re-delimitó a *Quote Integration & Autonomous Issuance* (§15). El canary EC2 final de `@7` quedó **BLOCKED** (§16; [`R4_J3_FINAL_EC2_CANARY_REPORT.md`](R4_J3_FINAL_EC2_CANARY_REPORT.md)). El bloque histórico de abajo se conserva sin cambios.
+
+```
+J3_SCOPE=QUOTE_INTEGRATION_AND_AUTONOMOUS_ISSUANCE   (re-delimitado 2026-10-14, §15)
+J3_TECHNICAL_ACCEPTANCE=PASS                         (LOCAL @7; EC2 @5/@6)
+J3_AUTONOMOUS_ISSUANCE=PASS en LOCAL/REAL-MODEL @7 y EC2 @5/@6 · EC2 @7: NOT_RUN
+J3_REAL_MODEL_E2E=PASS                               (EC2-DOC @6; REAL-MODEL @7 con owners fixture)
+J3_REAL_QUOTE_V2_E2E=PASS para @5/@6 · NOT_RUN para @7 (canary BLOCKED)
+J3_OFFER_INTEGRITY=PASS                              (LOCAL @7: igualdad byte a byte, mutaciones)
+J3_DOCUMENT_VERIFICATION=PASS                        (SHA-256: EC2 @5/@6, LOCAL @7)
+J3_DOCUMENT_DELIVERY=DEFERRED
+J3_CUSTOMER_JOURNEY_FULL=INCOMPLETE
+J3F_DISPOSITION=DEFERRED_TO_R4_MEDIA
+ADR_038_STATUS=PROPOSED_DEFERRED
+J3_CANARY_EC2=BLOCKED                                (sin acceso SSH legítimo desde esta estación; 0 emisiones)
+J3_PRODUCTION_ROLLOUT=NOT_AUTHORIZED
+J3_FINAL_STATUS=CONDITIONAL
+J3_MINIMUM_REMAINING_WORK=canary EC2 de @7 por un operador con acceso legítimo (procedimiento en el informe del canary, §17)
+```
+
+### Estado anterior (histórico, antes de la re-delimitación; no vigente)
+
 ```
 J3_TECHNICAL_ACCEPTANCE=PASS
 J3_CUSTOMER_JOURNEY_ACCEPTANCE=INCOMPLETE
@@ -560,3 +584,84 @@ El handoff ya documenta timeouts de integración por contención (§4).
   2. J3F (entrega del PDF y mensaje de emisión renderizado por Sales).
 - **ADR-037:** propuesto (`docs/adr/ADR-037-authorized-commercial-write-semantics.md`). No bloquea el canary; debe aceptarse antes de J7.
 - **Producción:** `@3`, sin cambios. Sin merge.
+
+## 15. Re-delimitación del alcance de J3 (decisión del owner, 2026-10-14)
+
+Esta sección **modifica explícitamente** el criterio de §1. Antes, el mandato exigía la entrega documental (S10) para aceptar completo el recorrido del cliente. Ahora la entrega queda fuera de J3. Nada de lo anterior se borra: S10 sigue registrado como **FAIL — no implementado** (§4, §8), y esa evidencia es la base de la deuda que aquí se difiere.
+
+### 15.1 Definición final propuesta
+
+**J3 — Quote Integration & Autonomous Issuance.**
+
+| Incluye | Evidencia |
+|---|---|
+| Integración Quote V2 | §2, §3, §7 |
+| Construcción comercial con Catalog y Shipping | §3, §4 S1–S3 |
+| Oferta determinista | §3; C1 |
+| Confirmación explícita | §3; §4 S4–S5 |
+| Emisión autónoma gobernada | §3; ADR-034/035 |
+| Idempotencia | §3; §4 S8 |
+| Reconciliación | §3; §14 (GAP-16) |
+| Controles de escritura | §3 (kill switch, política, límites) |
+| Verificación documental (SHA-256 del PDF) | §3; §7 |
+| Pruebas con el modelo real | §5.3, §14.3 |
+| **Prueba final contra owners reales** (`@7`) | **Pendiente**: canary BLOCKED (§16) |
+
+| Excluye explícitamente |
+|---|
+| Envío del PDF por WhatsApp |
+| Envío automático por email |
+| Recepción de archivos |
+| Recepción de audios |
+| Interpretación de imágenes |
+| Templates de campañas |
+| Rollout comercial real |
+
+### 15.2 Disposición de J3F y de las brechas afectadas
+
+- **J3F:**
+  - `J3F_DISPOSITION=DEFERRED_TO_R4_MEDIA`. Su destino es la iniciativa transversal **R4 Media & Communications — Governed Multimodal Capabilities**, por fases independientes.
+  - El diseño se conserva sin implementar en la rama `r4-j3f-document-delivery-design` (commit local `19928db`, sin merge).
+  - Documentos: ADR-038 (`PROPOSED_DEFERRED`), `R4_J3F_DOCUMENT_DELIVERY_DESIGN.md` y `R4_J3F_IMPLEMENTATION_PLAN.md`.
+  - La migración `0011`, los cambios de harness y las versiones Sales que propone **no están autorizados**.
+  - Ese diseño reemplaza la propuesta de §8.3: la entrega la decide la plataforma, no una capacidad invocada por el modelo.
+- **GAP-01:** `DEFERRED_TO_R4_MEDIA`. **Se mantiene como requisito verificable** antes de cualquier rollout comercial que prometa PDFs al cliente (roadmap §4.2). No se presenta como resuelto.
+- **GAP-03:** su vehículo era J3F. Queda **pendiente de decisión del owner**; la propuesta es J7-PRODUCTION-GATE (registro de brechas).
+- **Terminología oficial:** *capacidad de plataforma* o *capability del harness*. Una skill agéntica puede usarlas; no implementa transporte, persistencia ni entrega.
+
+### 15.3 Erratas de este documento (se conservan; aquí se indica su estado vigente)
+
+| Lugar | Texto histórico | Estado vigente |
+|---|---|---|
+| "Respuesta corta" | "si Quote V2 cae justo al emitir, la conversación queda trabada" | Corregido (§14, GAP-16) |
+| §5.4 | "Corrección mínima (no implementada)" | Implementada en `quote.create@5` (§14) |
+| §10, §13.3 | J3F como trabajo restante de J3 | Diferido (§15.2) |
+| §11 | "ADR-037: No existe" | Existe, **propuesto** (§14.6) |
+| §6.2, GAP-02 | "transferencia por bundle incremental (sin publicar la rama)" | La rama está publicada en `origin` (`d19bffe`) |
+
+## 16. Canary EC2 final de `@7` (mandato del owner, 2026-10-14): **BLOCKED**
+
+Informe completo: [`R4_J3_FINAL_EC2_CANARY_REPORT.md`](R4_J3_FINAL_EC2_CANARY_REPORT.md).
+
+**Git (LOCAL).** Verificado:
+- SHA remoto completo `d19bffe63f5ca112f22a6fc29f8cdb7a49b2c8ad` = local;
+- `git fsck` limpio;
+- 0 cambios de harness vs `main`;
+- 0 migraciones nuevas;
+- GAP-16 incluido (`ab6f55d`; `quote-v5.ts:110,138`);
+- build y typecheck en verde.
+
+**EC2.** Esta estación no tiene acceso SSH legítimo:
+- el alias documentado `Master` no existe aquí;
+- el host documentado rechazó su identidad (`Permission denied (publickey)`).
+
+Se detuvo sin buscar llaves ni tocar la configuración SSH (mandato §3).
+
+**Resultado:**
+- **0** cotizaciones reales nuevas;
+- ningún comando ejecutado en EC2;
+- estado de producción **NOT_VERIFIED**.
+
+**GAP-16 (LOCAL, owner fixture, ciclo de vida real).** `tests/integration/sales-deterministic-offer-canary.test.ts`: **9/9** en 194,8 s, incluidos los tres casos de GAP-16 (detalle en el informe §13). Las limitaciones operacionales (silencio, presupuesto del run, intervención humana, sin caducidad comercial) se registran sin declararlas resueltas.
+
+**Estado:** `J3_FINAL_STATUS=CONDITIONAL`. Dentro del alcance re-delimitado (§15), lo único que falta es el canary EC2 de `@7`, por un operador con acceso legítimo, según el procedimiento del informe §17.

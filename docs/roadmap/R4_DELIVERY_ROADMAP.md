@@ -710,3 +710,10 @@ canal (sin credenciales del número canary en este entorno) — ver §4.
 | (I) Reconciliación automática de `unknown` sin id del proveedor (p. ej. `biz_opaque_callback_data`) | No verificado en la documentación oficial; no se inventa | atención + resolución del operador |
 | (I) Recuperabilidad genérica de `capability_failure` | Sin evidencia real nueva (sin owners reales en I) | `runFailureDisposition` |
 | (I) Adjuntos multimodales | Sin seam multimodal; se clasifican `unsupported` y van a humano | `content.kind = unsupported` |
+
+### 4.2 Diferido desde R4-J3 (re-delimitación del owner, 2026-10-14)
+
+| Tema | Por qué se difiere | Seam / referencia |
+|---|---|---|
+| (J3 → R4 Media) Entrega del PDF oficial de la cotización al cliente (GAP-01; `J3F_DISPOSITION=DEFERRED_TO_R4_MEDIA`) | J3 se re-delimitó a *Quote Integration & Autonomous Issuance*. La entrega requiere capabilities del harness para archivos salientes (ADR-038, `PROPOSED_DEFERRED`). **Requisito verificable antes de cualquier rollout comercial que prometa PDFs al cliente:** documento enviado una vez por cotización a la conversación autenticada que la pidió; SHA-256 = manifiesto del owner; destinatario = binding; sin filtración entre conversaciones; sin reenvío ante un resultado incierto; estado `delivered` del proveedor en el número real. Ningún perfil ni texto al cliente puede prometer el PDF antes de eso | Diseño en la rama `r4-j3f-document-delivery-design`; criterios AC-1…AC-13 del diseño J3F §12; GAP-01 |
+| (J3 → R4 Media) Iniciativa **R4 Media & Communications — Governed Multimodal Capabilities**: audio entrante, transcripción, imágenes, comprensión multimodal, documentos entrantes, archivos salientes, transporte de medios por canal, autorización, idempotencia de comunicaciones, estados de entrega | Transversal. Fases independientes; entregar un PDF no exige completar el resto. Terminología: *capacidad de plataforma* o *capability del harness* (una skill agéntica las usa, no las implementa) | `content.kind = unsupported` (entrada); `OutboundChannelAdapter` (salida) |
