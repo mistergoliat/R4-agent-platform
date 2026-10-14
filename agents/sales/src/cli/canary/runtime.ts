@@ -30,7 +30,8 @@ import { migrateSales } from '../../migrate.js';
 import { composeSalesProductionWorker, salesConversationTaskFactory } from '../../production/composition.js';
 import { SALES_PRODUCTION_PROFILE_V4 } from '../../production/profile-v4.js';
 import { SALES_PRODUCTION_PROFILE_V5, isAutonomousQuoteProfile } from '../../production/profile-v5.js';
-import { SALES_PRODUCTION_PROFILE_V6, isConfirmedIntentProfile, salesProductionAgentVersion } from '../../production/profile-v6.js';
+import { SALES_PRODUCTION_PROFILE_V6, isConfirmedIntentProfile } from '../../production/profile-v6.js';
+import { SALES_PRODUCTION_PROFILE_V7, salesProductionAgentVersion } from '../../production/profile-v7.js';
 import { loadAutonomousQuoteLimits, loadAutonomousQuoteLimitsV6, type AutonomousQuoteLimits, type AutonomousQuoteLimitsV6 } from '../../capabilities/autonomy-limits.js';
 import type { ApprovalInspection } from '../../production/approvals.js';
 import { openApprovalInspection } from '../approval-inspection.js';
@@ -39,18 +40,18 @@ import { CANARY_ACTOR, CanaryAdmission, SYNTHETIC_CHANNEL, assertIsolatedCanaryD
 
 /** The governed-approval profile the canary was built for (J3D). */
 export const CANARY_PROFILE: ProductionProfile = SALES_PRODUCTION_PROFILE_V4;
-/** Profiles the canary may run: v4 (human approval, J3D), v5 (autonomous issuance, R4-J3E) and v6 (confirmed intent, R4-J3E-B). Never one a production worker runs today. */
-export const CANARY_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_PRODUCTION_PROFILE_V4, SALES_PRODUCTION_PROFILE_V5, SALES_PRODUCTION_PROFILE_V6]);
+/** Profiles the canary may run: v4 (human approval, J3D), v5 (autonomous issuance, R4-J3E), v6 (confirmed intent, R4-J3E-B) and v7 (deterministic offer, R4-J3E-C1). Never one a production worker runs today. */
+export const CANARY_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_PRODUCTION_PROFILE_V4, SALES_PRODUCTION_PROFILE_V5, SALES_PRODUCTION_PROFILE_V6, SALES_PRODUCTION_PROFILE_V7]);
 
 const DATABASE_URL = /^postgres(ql)?:\/\//;
 
-/** A proven canary environment: production declaration for sales-production@4, @5 or @6 plus a dedicated database. */
+/** A proven canary environment: production declaration for sales-production@4 to @7 plus a dedicated database. */
 export interface CanaryEnvironment {
   readonly databaseUrl: string;
   readonly production: { readonly config: ProductionConfig; readonly secrets: ProductionSecrets };
   /** The canary profile the environment declared (R4_PROD_POLICY_PROFILE). */
   readonly profile: ProductionProfile;
-  /** (R4-J3E) The configured limits of autonomous issuance; present exactly for an autonomous profile (v5; v6 with total units and the confirmation window). */
+  /** (R4-J3E) The configured limits of autonomous issuance; present exactly for an autonomous profile (v5; v6 and v7 with total units and the confirmation window). */
   readonly autonomousQuoteLimits: AutonomousQuoteLimits | AutonomousQuoteLimitsV6 | null;
 }
 
@@ -214,7 +215,7 @@ export interface CanaryRuntime {
 
 /**
  * The canary processes in one: the real production Sales worker
- * composition for the canary profile — sales-production@4, @5 or @6 — (model,
+ * composition for the canary profile — sales-production@4 to @7 — (model,
  * Catalog, Shipping, Quote V2, the profile's action policy, ActionExecutor, persistence, recovery),
  * the generic scheduler, and the real delivery owner whose only adapter
  * captures to a local file. Every component points at the canary database

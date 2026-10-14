@@ -59,16 +59,16 @@ export const SALES_PRODUCTION_AUTONOMOUS_ACTION_POLICY: ActionPolicyConfiguratio
 
 /**
  * Profiles whose quote issuance is autonomous (they compose quote.preview and workspace.update@2 and the
- * autonomous action policy): @5 (quote.create@3, model-attested request) and @6 (R4-J3E-B: quote.create@4,
- * customer confirmation read from the conversation).
+ * autonomous action policy): @5 (quote.create@3, model-attested request), @6 (R4-J3E-B: quote.create@4,
+ * customer confirmation read from the conversation) and @7 (R4-J3E-C1: quote.create@5, the exact Sales-rendered offer).
  */
-export const SALES_AUTONOMOUS_QUOTE_PROFILES: ReadonlySet<string> = new Set(['sales-production@5', 'sales-production@6']);
+export const SALES_AUTONOMOUS_QUOTE_PROFILES: ReadonlySet<string> = new Set(['sales-production@5', 'sales-production@6', 'sales-production@7']);
 
 export function isAutonomousQuoteProfile(profile: ProductionProfile): boolean {
   return SALES_AUTONOMOUS_QUOTE_PROFILES.has(profileLabel(profile));
 }
 
-/** The action policy a profile runs: the autonomous one only for @5 and @6; every earlier profile keeps SALES_PRODUCTION_ACTION_POLICY (same object, same hash). */
+/** The action policy a profile runs: the autonomous one only for @5, @6 and @7; every earlier profile keeps SALES_PRODUCTION_ACTION_POLICY (same object, same hash). */
 export function salesProductionActionPolicy(profile: ProductionProfile): ActionPolicyConfigurationInput {
   return isAutonomousQuoteProfile(profile) ? SALES_PRODUCTION_AUTONOMOUS_ACTION_POLICY : SALES_PRODUCTION_ACTION_POLICY;
 }
@@ -84,4 +84,4 @@ export const SALES_PRODUCTION_PROFILE_V5_GATE = Object.freeze([
   { id: 'explicit-authorization', blocking: true, requirement: 'explicit user authorization to deploy and select sales-production@5' },
 ] as const);
 
-// The selectable profile registry (v1–v6) and the pinned definition versions live in profile-v6.ts (R4-J3E-B).
+// The selectable profile registry (v1–v7) and the pinned definition versions live in profile-v7.ts (R4-J3E-C1).

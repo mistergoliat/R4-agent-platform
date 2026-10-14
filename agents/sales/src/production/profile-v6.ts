@@ -1,10 +1,7 @@
 import { profileLabel, type ProductionProfile } from '@r4/live-ops';
 import { AUTONOMOUS_QUOTE_LIMIT_ENV_V6 } from '../capabilities/autonomy-limits.js';
-import type { SalesAgentDefinitionVersion } from '../definition.js';
-import { SALES_DOMAINS, SALES_PRODUCTION_PROFILE } from './profile.js';
-import { SALES_PRODUCTION_PROFILE_V2_CANDIDATE } from './profile-v2.js';
-import { SALES_PRODUCTION_PROFILE_V3 } from './profile-v3.js';
-import { QUOTE_CONTRACT_REF, SALES_PRODUCTION_PROFILE_V4 } from './profile-v4.js';
+import { SALES_DOMAINS } from './profile.js';
+import { QUOTE_CONTRACT_REF } from './profile-v4.js';
 import { SALES_PRODUCTION_PROFILE_V5 } from './profile-v5.js';
 
 /**
@@ -32,8 +29,11 @@ export const SALES_PRODUCTION_PROFILE_V6: ProductionProfile = Object.freeze({
   unsupportedContent: 'handoff',
 } satisfies ProductionProfile);
 
-/** Profiles that issue only on a customer confirmation read from the conversation (quote.create@4, quote.preview@2). */
-export const SALES_CONFIRMED_INTENT_PROFILES: ReadonlySet<string> = new Set(['sales-production@6']);
+/**
+ * Profiles that issue only on a customer confirmation read from the conversation and need the v6 limits:
+ * @6 (quote.create@4, quote.preview@2) and @7 (R4-J3E-C1: quote.create@5, quote.preview@3, the exact offer).
+ */
+export const SALES_CONFIRMED_INTENT_PROFILES: ReadonlySet<string> = new Set(['sales-production@6', 'sales-production@7']);
 
 export function isConfirmedIntentProfile(profile: ProductionProfile): boolean {
   return SALES_CONFIRMED_INTENT_PROFILES.has(profileLabel(profile));
@@ -50,39 +50,4 @@ export const SALES_PRODUCTION_PROFILE_V6_GATE = Object.freeze([
   { id: 'explicit-authorization', blocking: true, requirement: 'explicit user authorization to deploy and select sales-production@6' },
 ] as const);
 
-/** The Sales production profiles a deployment may select with R4_PROD_POLICY_PROFILE. */
-export const SALES_PRODUCTION_PROFILES: readonly ProductionProfile[] = Object.freeze([
-  SALES_PRODUCTION_PROFILE,
-  SALES_PRODUCTION_PROFILE_V2_CANDIDATE,
-  SALES_PRODUCTION_PROFILE_V3,
-  SALES_PRODUCTION_PROFILE_V4,
-  SALES_PRODUCTION_PROFILE_V5,
-  SALES_PRODUCTION_PROFILE_V6,
-]);
-
-/** The Sales production profile declared by `label` (`sales-production@1..6`), or null. */
-export function salesProductionProfile(label: string): ProductionProfile | null {
-  return SALES_PRODUCTION_PROFILES.find((profile) => profileLabel(profile) === label) ?? null;
-}
-
-/**
- * The Sales definition version each production profile runs. Production
- * pins it: a conversation task is created for exactly this version, so
- * registering a newer definition never switches an existing profile (the
- * registry otherwise resolves the latest). Kept outside the profile objects
- * so the deployed fingerprints are unchanged.
- */
-export const SALES_PRODUCTION_AGENT_VERSIONS: Readonly<Record<string, SalesAgentDefinitionVersion>> = Object.freeze({
-  'sales-production@1': 3,
-  'sales-production@2': 3,
-  'sales-production@3': 4,
-  'sales-production@4': 4,
-  'sales-production@5': 5,
-  'sales-production@6': 6,
-});
-
-export function salesProductionAgentVersion(profile: ProductionProfile): SalesAgentDefinitionVersion {
-  const version = SALES_PRODUCTION_AGENT_VERSIONS[profileLabel(profile)];
-  if (version === undefined) throw new Error(`no Sales definition version is pinned for ${profileLabel(profile)}`);
-  return version;
-}
+// The selectable profile registry (v1–v7) and the pinned definition versions live in profile-v7.ts (R4-J3E-C1).

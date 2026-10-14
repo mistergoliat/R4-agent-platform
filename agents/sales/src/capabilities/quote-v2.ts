@@ -8,8 +8,10 @@ import {
   canonicalJson,
   canonicalTaxRate,
   normalizeCommuneName,
+  quoteV2ChargeAmounts,
   quoteV2Totals,
   type CatalogPort,
+  type QuoteV2Amounts,
   type QuoteV2CreateRequest,
   type QuoteV2CreateResult,
   type QuoteV2LineInput,
@@ -181,7 +183,7 @@ export function quoteCreateV2Capability(deps: QuoteV2CapabilityDeps): WriteCapab
  * quote.create@2 and @3): never resends; asks the owner's idempotency lookup
  * for the binding of the frozen body and settles from the owner's state.
  */
-export async function reconcileQuoteV2Command(deps: Pick<QuoteV2CapabilityDeps, 'store' | 'quotes'>, context: WriteHandlerContext): Promise<WriteReconciliationResult<QuoteCreateV2Output>> {
+export async function reconcileQuoteV2Command(deps: Pick<QuoteV2CapabilityDeps, 'store' | 'quotes'>, context: WriteHandlerContext, options: SettleOptions = {}): Promise<WriteReconciliationResult<QuoteCreateV2Output>> {
   const { store, quotes } = deps;
   const record = await store.quoteV2Request(context.executionKey);
   // The command died before its body was frozen: nothing can have been sent for this key.
@@ -196,7 +198,7 @@ export async function reconcileQuoteV2Command(deps: Pick<QuoteV2CapabilityDeps, 
     }
     const quote = await quotes.getQuote(binding.quoteId, { signal: context.signal });
     const operation = binding.operationId ? await quotes.getOperation(binding.operationId, { signal: context.signal }) : null;
-    return await settle(deps, record, quote, operation, true, context);
+    return await settle(deps, record, quote, operation, true, context, options);
   } catch (error) {
     if (error instanceof DomainError) return { status: 'unknown', message: `quote reconciliation incomplete: ${error.message}` };
     throw error;
@@ -305,7 +307,20 @@ async function prepareRequest(deps: QuoteV2CapabilityDeps, input: QuoteCreateV2I
  * formally issued quote whose identity, totals, validity and document
  * manifest match what R4 approved; `issuing` is never success.
  */
-export async function settle(deps: Pick<QuoteV2CapabilityDeps, 'store' | 'quotes'>, record: QuoteV2RequestRecord, quote: QuoteV2Quote, operation: QuoteV2Operation | null, replayed: boolean, context: WriteHandlerContext): Promise<WriteExecutionResult<QuoteCreateV2Output>> {
+/**
+ * (R4-J3E-C1) `strict` (quote.create@5) also compares every amount the owner
+ * returns with the frozen request under the Quote V2 arithmetic: each line's
+ * net/tax/gross by position, the shipping amounts, the exempt net and the
+ * correlation type. The owner returns no product, quantity, carrier or
+ * destination, so those stay bound by the frozen body and the
+ * Idempotency-Key (a different body under the same key is a 409). Off by
+ * default: quote.create@2–@4 settle exactly as before.
+ */
+export interface SettleOptions {
+  readonly strict?: boolean;
+}
+
+export async function settle(deps: Pick<QuoteV2CapabilityDeps, 'store' | 'quotes'>, record: QuoteV2RequestRecord, quote: QuoteV2Quote, operation: QuoteV2Operation | null, replayed: boolean, context: WriteHandlerContext, options: SettleOptions = {}): Promise<WriteExecutionResult<QuoteCreateV2Output>> {
   const { store, quotes } = deps;
   const ref = `quote ${quote.quoteNumber ?? quote.quoteId}`;
   if (quote.quoteNumber && quote.issuance) {
@@ -330,6 +345,7 @@ export async function settle(deps: Pick<QuoteV2CapabilityDeps, 'store' | 'quotes
     (quote.externalCorrelation.sourceSystem !== QUOTE_V2_CORRELATION.sourceSystem || quote.externalCorrelation.externalReference !== record.taskId) && 'external correlation differs',
     quote.lines.length !== record.request.lines.length && 'line count differs',
     (quote.shipping === null) !== (record.request.shipping === undefined) && 'shipping presence differs',
+    ...(options.strict ? strictProblems(record.request, quote) : []),
   ].filter((p): p is string => typeof p === 'string');
   // Issued, but not as approved or not provably formal: never reported as success.
   if (problems.length > 0) return { status: 'unknown', message: `${ref} is issued but does not match the approved snapshot: ${problems.join('; ')}` };
@@ -380,6 +396,19 @@ export function classifySend(error: unknown): WriteExecutionResult<QuoteCreateV2
   if (error.category === 'unauthorized') return { status: 'failed', code: 'quote_owner_unauthorized', message: error.message, details: { ...details, retryable: false } };
   // validation (422 arithmetic_mismatch / validation_error, 400) and conflict (409): refused, nothing bound for this body.
   return { status: 'rejected', code: `quote_${error.code}`.replace(/[^a-z0-9_.]/g, '_'), message: error.message, details };
+}
+
+/** What the owner returned that differs from the frozen request (strict settlement); empty when everything it exposes matches. */
+function strictProblems(request: QuoteV2CreateRequest, quote: QuoteV2Quote): string[] {
+  const same = (a: QuoteV2Amounts, b: QuoteV2Amounts) => a.net === b.net && a.tax === b.tax && a.gross === b.gross;
+  const problems = request.lines.flatMap((line, index) => {
+    const owned = quote.lines.filter((l) => l.position === index + 1);
+    return owned.length === 1 && same(owned[0]!.amounts, quoteV2ChargeAmounts(line.unitPrice, line.quantity.value)) ? [] : [`line ${index + 1} amounts differ`];
+  });
+  if (request.shipping && quote.shipping && !same(quote.shipping.amounts, quoteV2ChargeAmounts(request.shipping.amount, '1'))) problems.push('shipping amounts differ');
+  if (quote.totals.exemptNet !== quoteV2Totals(request).exemptNet) problems.push('exempt net differs');
+  if (quote.externalCorrelation.externalReferenceType !== request.externalCorrelation.externalReferenceType) problems.push('external correlation type differs');
+  return problems;
 }
 
 /** Owner text as-is (trimmed), or null when it cannot be printed (control characters, empty, too long). */

@@ -11,6 +11,7 @@ import {
   assertProductionComposition,
   assertProductionMode,
   capabilityAvailability,
+  guardProductionWrites,
   profileLabel,
   type ConversationTaskFactory,
   type ProductionCompositionReport,
@@ -28,13 +29,15 @@ import { SalesWorkspaceContextSource } from '../workspace/context-source.js';
 import { PostgresSalesStore } from '../workspace/store.js';
 import { SALES_DOMAINS } from './profile.js';
 import { isAutonomousQuoteProfile, salesProductionActionPolicy } from './profile-v5.js';
-import { SALES_PRODUCTION_PROFILES, isConfirmedIntentProfile, salesProductionAgentVersion, salesProductionProfile } from './profile-v6.js';
+import { isConfirmedIntentProfile } from './profile-v6.js';
+import { SALES_PRODUCTION_PROFILES, isDeterministicOfferProfile, salesProductionAgentVersion, salesProductionProfile } from './profile-v7.js';
 import { catalogCapabilities } from '../capabilities/catalog.js';
 import { shippingCapability } from '../capabilities/shipping.js';
 import { quoteCreateV2Capability } from '../capabilities/quote-v2.js';
 import { quoteCreateV3Capability } from '../capabilities/quote-v3.js';
-import { quotePreviewCapability, quotePreviewV2Capability } from '../capabilities/quote-preview.js';
+import { quotePreviewCapability, quotePreviewV2Capability, quotePreviewV3Capability } from '../capabilities/quote-preview.js';
 import { quoteCreateV4Capability } from '../capabilities/quote-v4.js';
+import { quoteCreateV5Capability, quoteWritesBlockedError } from '../capabilities/quote-v5.js';
 import { workspaceCapabilityV2 } from '../capabilities/workspace-v2.js';
 import type { AutonomousQuoteLimits, AutonomousQuoteLimitsV6 } from '../capabilities/autonomy-limits.js';
 
@@ -95,8 +98,9 @@ export interface SalesProductionWorker {
  * instructions, same kernel/runtimes as F–H: production only changes what is
  * plugged into the worker's public seams —
  *   capabilities  only those the profile makes AVAILABLE (UNAVAILABLE owners' capabilities are not registered)
- *   actionPolicy  SALES_PRODUCTION_ACTION_POLICY (R4-D governs every proposal); v5 only:
+ *   actionPolicy  SALES_PRODUCTION_ACTION_POLICY (R4-D governs every proposal); v5–v7:
  *                 SALES_PRODUCTION_AUTONOMOUS_ACTION_POLICY (ADR-034)
+ *   quote writes  v7 only: Quote V2 createAndIssue behind the kill switch (killSwitchGuardedQuotes)
  *   admission     the durable kill switch, asked before every claim
  *   context       + the delivery state of earlier responses (honest: sent ≠ received)
  *   presence      production mode + the profile version (execution-contract compatibility)
@@ -153,8 +157,15 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
       if (isConfirmedIntentProfile(profile)) {
         // (R4-J3E-B, ADR-035) v6: the customer's confirmation is read from the conversation the platform recorded (ProductionStore.thread).
         if (!isV6Limits(limits)) throw new Error(`refusing production composition: ${profileLabel(profile)} needs the total-units limit and the confirmation window (R4_AUTONOMOUS_QUOTE_MAX_TOTAL_UNITS, R4_AUTONOMOUS_QUOTE_CONFIRMATION_WINDOW_SECONDS)`);
-        if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV2Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now() }));
-        if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV4Capability({ store: sales, quotes: options.quotes, catalog, shipping: options.shipping, limits, conversation: options.store, now: () => clock.now() }));
+        if (isDeterministicOfferProfile(profile)) {
+          // (R4-J3E-C1) v7: the offer message is rendered by Sales and must be presented exactly; Quote V2 writes stop with the kill switch.
+          const quotes = killSwitchGuardedQuotes(options.quotes, controls, options.logger);
+          if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV3Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now() }));
+          if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV5Capability({ store: sales, quotes, catalog, shipping: options.shipping, limits, conversation: options.store, admission: controls, now: () => clock.now() }));
+        } else {
+          if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV2Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now() }));
+          if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV4Capability({ store: sales, quotes: options.quotes, catalog, shipping: options.shipping, limits, conversation: options.store, now: () => clock.now() }));
+        }
       } else {
         if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewCapability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now() }));
         if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV3Capability({ store: sales, quotes: options.quotes, catalog, shipping: options.shipping, limits, now: () => clock.now() }));
@@ -231,6 +242,26 @@ export function composeSalesGateway(options: SalesGatewayOptions): { bindings: G
       taskFactory: salesConversationTaskFactory(options.pool, salesProductionAgentVersion(profile)),
     },
   };
+}
+
+/**
+ * (R4-J3E-C1) Quote V2 with its only mutation, createAndIssue, behind the kill switch: the guard re-reads the
+ * durable autonomy controls immediately before every call (never cached; unreadable = engaged) and refuses with
+ * "definitely not sent" instead of calling the owner. The reads (idempotency lookup, quote, operation, document)
+ * stay open, so reconciliation and document verification keep working while the switch is engaged.
+ *
+ * The port is first adapted to plain functions: guardProductionWrites returns non-write methods unbound, so a
+ * port that keeps its state in private class fields (QuoteV2HttpClient) would fail on every read through it.
+ */
+export function killSwitchGuardedQuotes(quotes: QuoteV2Service, controls: AutonomyControls, logger: Logger): QuoteV2Service {
+  const port: QuoteV2Service = {
+    createAndIssue: (...a) => quotes.createAndIssue(...a),
+    getQuote: (...a) => quotes.getQuote(...a),
+    getOperation: (...a) => quotes.getOperation(...a),
+    lookupIdempotency: (...a) => quotes.lookupIdempotency(...a),
+    getDocument: (...a) => quotes.getDocument(...a),
+  };
+  return guardProductionWrites(port, { domain: SALES_DOMAINS.quote, writeOperations: ['createAndIssue'], controls, logger, blocked: () => quoteWritesBlockedError() });
 }
 
 function isV6Limits(limits: AutonomousQuoteLimits | AutonomousQuoteLimitsV6): limits is AutonomousQuoteLimitsV6 {

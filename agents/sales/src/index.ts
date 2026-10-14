@@ -19,6 +19,7 @@ export * from './capabilities/autonomy-limits.js';
 export * from './capabilities/quote-preview.js';
 export * from './capabilities/quote-v3.js';
 export * from './capabilities/quote-v4.js';
+export * from './capabilities/quote-v5.js';
 export * from './capabilities/confirmation-grammar.js';
 export * from './capabilities/offer-presentation.js';
 export * from './capabilities/quote.js';
