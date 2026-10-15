@@ -3,7 +3,8 @@
 - **Estado:** **Propuesto — revisado por el owner: `ACCEPTED_WITH_REQUIRED_CHANGES`** (R4-J4-R1A-REVIEW-01, 2026-10-15). Las correcciones exigidas están aplicadas en esta versión. Pasa a **Aceptado (interno de R4)** cuando el owner confirme esas correcciones.
   - La aceptación interna cubre solo las decisiones de R4: D3, D4 (parte R4), D5 y D8.
   - **No** cubre ni declara resueltas las dependencias externas: D1 (autoridad de identidad), D2 (autorización individual) y D6 (identificador de producto) siguen pendientes de sus owners. D7 sigue como gate de datos reales y de producción.
-- **Fecha:** 2026-10-15. Versión entregada sin correcciones: commit `b680b2c`.
+  - **Corrección documental R4-J4-R1C (2026-10-15):** aplica las posiciones de R4 AP-01 a AP-11 y D6 del [registro de decisiones compartidas](../architecture/R4-J4-R1C_SHARED_DECISION_REGISTER.md) (§1, §5, §6, §7 y Pendiente). No cambia el estado de esta ADR: sigue Propuesta.
+- **Fecha:** 2026-10-15. Versión entregada sin correcciones: commit `b680b2c`. Versión revisada en R1A: `2890a9c`.
 - **Alcance:** cómo el pack Sales (y cualquier pack futuro) obtiene la identidad de cliente de una conversación y lee datos del cliente sin que el modelo elija a quién consulta. No modifica `packages/`, `apps/` ni `adapters/`; no crea migraciones, perfiles ni dependencias.
 - **No cubre:** datos declarados por el cliente (GAP-05); entrega documental (R4 Media); corrección de la `identityAssurance` del harness (J7); retención y purga de observaciones (D7, plataforma/J7).
 - **Autoridad superior:** Constitución ("model output is untrusted", "do not add infrastructure without demonstrated need"); AGENTS.md (Customer fuera de Core; sin acceso a tablas internas de CRM); ADR-005, ADR-011, ADR-013, ADR-016, ADR-030, ADR-036.
@@ -13,6 +14,8 @@
   - [requisitos a Customer Profile](../architecture/R4-J4-R1_CUSTOMER_PROFILE_AUTHORIZATION_REQUIREMENTS.md);
   - [informe de diseño](../architecture/R4-J4-R1_DESIGN_REPORT.md);
   - [informe de revisión](../architecture/R4-J4-R1A_REVIEW_01_REPORT.md);
+  - [registro de decisiones compartidas R4 ↔ CP](../architecture/R4-J4-R1C_SHARED_DECISION_REGISTER.md) (R1C);
+  - [decisión sobre la autoridad de identidad](../architecture/ID-AUTHORITY-DECISION-01_CUSTOMER_IDENTITY_AUTHORITY.md);
   - evidencia de partida en [R4-J4-R0](../architecture/R4_J4_R0_INTEGRATION_PREFLIGHT_REPORT.md).
 
 ## Contexto
@@ -23,14 +26,15 @@ Hechos verificados (las rutas de R4 se citan con línea; las externas, por repos
 |---|---|
 | R4 solo conoce una **identidad de canal**: el `wa_id` de un webhook autenticado por la firma de Meta, guardado como `recipientRef` del binding. Solo la ingress abre bindings | `adapters/channels/whatsapp-cloud/src/inbound.ts:105-112`; `packages/live-ops/src/ingress.ts:192-197` |
 | R4 no resuelve clientes: producción escribe `customerRef: null` y Customer es `UNAVAILABLE` en `@1`–`@7` | `agents/sales/src/production/composition.ts:214-216`; `production/profile.ts:31` |
-| `customer.get_context@1` no recibe argumentos y toma el cliente del binding de la conversación | `agents/sales/src/capabilities/customer.ts:8,41-44` |
+| `customer.get_context@1` no recibe argumentos y toma el cliente de `sales.conversations.customer_ref` (el `customerRef` de la conversación Sales, siempre `null` en producción). **No** usa el binding de canal de `ProductionStore` que usará `@2` (§3) | `agents/sales/src/capabilities/customer.ts:8,41-44` |
 | La `identityAssurance` del harness describe al principal de la tarea (en producción, el servicio de ingress), no al cliente | `packages/task-runtime/src/action-runtime.ts:288-298`; `packages/contracts/src/capability.ts:139-145` |
 | `ProductionStore.bindingByTask` devuelve el binding (con `recipientRef`) de una tarea | `packages/live-ops/src/ports.ts:311` |
 | Vigencia de observaciones, contexto y persistencia (ADR-030) | §6 de esta ADR, verificado en código y con tests |
 | Customer Profile (CP) autentica principales por Bearer y scope, pero **cualquier principal con scope lee cualquier `customerId`** | EXT-CP `45b28a3`: `src/http/auth/route-families.ts:60-92`; `docs/reviews/CP_J4_SECURITY_01_VALIDATION_REPORT.md:278` |
 | CP no resuelve identidad de canal | EXT-CP `45b28a3` |
+| CP tiene un contrato **candidato** `customer-profile.sales-context` v1 (schema, 23 fixtures sintéticos, 147 tests), sin productor ni ruta. Commits solo en una rama local sin upstream | EXT-CP `f631f32`: `docs/contracts/customer-sales-context-v1/` |
 | CRM decide niveles L0–L3 solo para su propio agente. Su L2 no comprueba `is_verified` y vincula automáticamente por teléfono | EXT-CRM `8298723`: `evaluate.ts:45-70`; `native-whatsapp/service.ts:325-336` |
-| La autoridad documentada de creación y vinculación es Customer Service. **No auditado** | EXT-CRM `docs/data/customer-creation-linking-authority-contract.md:124` |
+| La autoridad documentada de creación y vinculación es Customer Service. Auditado después: es `pc-users` y **no** ofrece resolución ni vinculación de identidades | EXT-CRM `docs/data/customer-creation-linking-authority-contract.md:124`; [ID-AUTHORITY-DECISION-01](../architecture/ID-AUTHORITY-DECISION-01_CUSTOMER_IDENTITY_AUTHORITY.md) §1 |
 
 Problema: para dar al agente contexto e historial de cliente sin crear acceso horizontal, R4 necesita tres cosas que hoy no existen:
 1. una autoridad que diga qué cliente verificado corresponde a una identidad de canal autenticada;
@@ -44,7 +48,7 @@ Problema: para dar al agente contexto e historial de cliente sin crear acceso ho
 | Concepto | Autoridad | Estado |
 |---|---|---|
 | Identidad de canal (quién escribe en esta conversación) | **R4 ChannelIngress**, a partir de la firma del proveedor | Vigente |
-| Identidad de cliente (qué cliente comercial verificado corresponde a esa identidad) | Autoridad de identidad externa. **Candidato:** Customer Service | **D1 BLOCKED**, pendiente de su auditoría |
+| Identidad de cliente (qué cliente comercial verificado corresponde a esa identidad) | Autoridad de identidad externa. **Recomendada:** Customer Identity Authority (CIA), servicio dedicado con owner por designar (ID-AUTHORITY-DECISION-01). Customer Service (`pc-users`) no ofrece esa capacidad | **D1 BLOCKED**, pendiente de la designación del owner y de un contrato publicado |
 | Autorización individual | Emitida por la autoridad de identidad; **aplicada por CP** | **D2 PROPOSED**, pendiente de CP y de la autoridad |
 | Hechos de cliente | **Customer Profile** | Datos vigentes; contrato para R4 pendiente; significado comercial pendiente de la aceptación de CP-J4-CONTEXT |
 | Qué ve el modelo | **Pack Sales**, mediante capacidades READ con esquema estricto | Esta ADR (D4) |
@@ -60,6 +64,10 @@ R4 **no** es autoridad de identidad de cliente, no lee tablas de CRM y no usa lo
 ### 3. Resolución perezosa mediante `bindingByTask` — D3 **ACCEPTED**
 
 En cada invocación, el handler obtiene el sujeto con `bindingByTask(execution.taskId)` y pide la resolución. No hay llamadas externas ni vinculación estática en la ingress, y `sales.conversations.customer_ref` sigue `null`.
+
+Son dos bindings distintos:
+- `@1` lee `sales.conversations.customer_ref`, una referencia de cliente ya resuelta y guardada en la conversación;
+- `@2` y `get_purchase_history@1` leen el **sujeto de canal** (`channel`, `accountRef`, `recipientRef`) de `ProductionStore.bindingByTask` y obtienen el `customerRef` de la autoridad en cada invocación. Ese `customerRef` vive solo en la memoria de la invocación.
 
 Consecuencias:
 - una vinculación o revocación surte efecto en la siguiente invocación;
@@ -89,6 +97,11 @@ La alternativa B (CP consulta en línea a la autoridad) y el modelo de amenazas 
 
 **El hash del sujeto no es prueba de autenticidad.** Si el grant incluye un hash del sujeto de canal, ese hash deriva de lo que R4 afirma. CP no recibe el sujeto ni puede verificarlo. Sirve para auditoría y correlación forense, **no** como prueba independiente de que el cliente escribió por ese canal.
 
+**`authorizationBasis` (R1C, AP-05).** CP declara en cada respuesta si leyó con `service_scope_only` o con `customer_grant_verified`. Es **evidencia declarada** de su configuración, nunca una autorización individual suficiente:
+- ninguna lectura privada real de J4 se habilita con `service_scope_only`;
+- `customer_grant_verified` es necesaria, pero no suficiente: además hace falta D2 acordada, implementada y verificada en CP (I4);
+- D2 sigue abierta hasta que la autoridad de identidad y CP aprueben el grant.
+
 ### 6. Vigencia, nuevas invocaciones y observaciones anteriores — D5 **ACCEPTED_WITH_CONDITIONS**
 
 Comportamiento del runtime vigente, verificado en código y con `owner-freshness.test.ts`, `compiler.test.ts` y `context-config.test.ts` (54/54 PASS, 2026-10-15):
@@ -113,18 +126,26 @@ Decisión:
 - **Condición 1.** La vigencia controla qué es **verdad vigente**, no qué ve el modelo ni qué se borra (F8). La privacidad no puede apoyarse en la expiración: se apoya en la minimización (§7, D4). La eliminación es D7.
 - **Condición 2.** El valor desplegado de `R4_CONTEXT_EXPIRED_EVIDENCE` no está verificado en EC2. Antes de J4-R5 se decide si el canary de `@8` usa `exclude`. Es configuración de despliegue, no harness, y afecta a todas las capacidades.
 - **Condición 3.** Un grant con `expiresAt ≤ ahora` de R4 al recibirlo se trata como `contract_violation` (`incoherent_grant`). Un `CP.validUntil ≤ observedAt` se registra ya vencido (ADR-030 regla 4): entra solo como historia.
+- **Condición 4 (R1C).** La observación persiste solo la **salida proyectada** de la capacidad (frontera C, §7). El adaptador no persiste ni registra la respuesta de CP (frontera B). Vencer no borra: la observación sigue persistida y, con `include`, visible como historia hasta que exista D7.
 
-### 7. Minimización — D4 **corregida**
+### 7. Minimización — D4 **corregida** (R1A) y **ampliada** (R1C, AP-03)
 
-- **CP → R4.** CP solo debe emitir, en las rutas R4:
-  - estado de la respuesta;
-  - antigüedad del cliente (mes);
-  - indicador de historial;
-  - ítems del historial: nombre de producto, clave Catalog o `null`, fecha de última compra, cantidades;
-  - `validUntil`;
-  - `schemaVersion`.
-  - **No emite** nombre, email, teléfono, RUT, dirección, montos, referencias de pedido ni datos predictivos.
-- **R4 → modelo.** Solo los campos de la especificación §10. `displayName` **no forma parte** de la salida de `customer.get_context@2`. Agregarlo en el futuro requiere una nueva versión de la capacidad y una nueva decisión D4.
+Tres fronteras distintas. Cada una tiene su autoridad y su control:
+
+| Frontera | Qué es | Autoridad | Regla |
+|---|---|---|---|
+| **A. Dominio de CP** | Lo que CP necesita para representar fielmente los hechos comerciales | CP (y negocio) | J4 no la restringe. CP conserva montos, componentes de gasto, derivados e ids para otros productos y consumidores legítimos |
+| **B. Cable CP → R4** | Lo que CP transmite a R4 | Acuerdo CP + R4; el owner de datos decide la legitimidad del propósito | Una ruta con `purpose` (AP-01). CP compone solo lo que el propósito necesita |
+| **C. Observación del modelo** | La salida de la capacidad | R4 (pack Sales) | Allowlist de proyección y esquemas estrictos (especificación §6, §10) |
+
+- **B en J4.** Lo que necesita cada propósito está en el [registro](../architecture/R4-J4-R1C_SHARED_DECISION_REGISTER.md) §3 (AP-01):
+  - en ambos: estado, ciclo de vida, vigencia, estado primario de la cuenta y eco de `customerRef`;
+  - `sales_context`: un indicador de historial;
+  - `purchase_history`: por ítem, nombre histórico (o `null`), `catalogKey` (`null` mientras D6 esté diferida), unidades brutas, órdenes, día de última compra y tipo de línea.
+  - **No viajan:** nombre, email, teléfono, RUT, dirección, **montos ni componentes monetarios**, referencias de pedido, ids de PrestaShop, SKU, antigüedad del cliente ni datos predictivos.
+- **Un dato que el modelo no ve no queda justificado en B por eso.** Cada campo de B necesita un uso en C o en una decisión del adaptador (filtrar, retener, fijar precisión, controlar el gate).
+- **Control en B:** composición por propósito en CP (primario) y, en R4, validación con un esquema estructurado por propósito. Un componente monetario o predictivo en una respuesta J4 da `contract_violation`. **No** se usa una lista de prefijos de clave.
+- **C.** Solo los campos de la especificación §6. `displayName` **no forma parte** de la salida de `customer.get_context@2`. Agregarlo en el futuro requiere una nueva versión de la capacidad y una nueva decisión D4.
 - **Nunca llegan al modelo ni a logs:** `customerRef`, `wa_id`, grant, `masterCustomerId` ni ids PrestaShop.
 
 ### 8. Revocación, reutilización y eliminación — D7 **PROPOSED_PRODUCTION_BLOCKER**
@@ -197,9 +218,9 @@ Normativos. Sus pruebas de aceptación están en la especificación del consumid
 
 | ID | Estado | Responsable |
 |---|---|---|
-| D1 | BLOCKED | Customer Service + owner de R4 |
-| D2 | PROPOSED | Customer Profile + owner de identidad |
-| D6 | BLOCKED | Catalog + Customer Profile |
+| D1 | BLOCKED | Negocio (designación del owner de la CIA) + owner de la CIA |
+| D2 | PROPOSED. La verificación individual no existe; `authorizationBasis` no la sustituye | Customer Profile + owner de identidad |
+| D6 | DEFERRED_WITH_NULL (no aceptada): `catalogKey: null` hasta que exista un contrato verificado de Catalog y CP haga el mapeo | Catalog + Customer Profile |
 | D7 | PROPOSED_PRODUCTION_BLOCKER | Plataforma R4 (J7) |
 
-La matriz completa D1–D8 está en el [informe de diseño](../architecture/R4-J4-R1_DESIGN_REPORT.md) §3.
+La matriz completa D1–D8 está en el [informe de diseño](../architecture/R4-J4-R1_DESIGN_REPORT.md) §3. Las conformidades externas de AP-01 a AP-11 están en el [registro de decisiones compartidas](../architecture/R4-J4-R1C_SHARED_DECISION_REGISTER.md).
