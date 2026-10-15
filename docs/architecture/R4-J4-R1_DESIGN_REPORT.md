@@ -2,106 +2,82 @@
 
 | Campo | Valor |
 |---|---|
-| Fecha | 2026-10-15 |
-| Autorización | R4-J4-R1 `APPROVED_WITH_RESTRICTIONS` (solo documentación y contratos propuestos) |
-| Preflight | [R4-J4-R0](R4_J4_R0_INTEGRATION_PREFLIGHT_REPORT.md): `READY_WITH_BLOCKERS` |
-| Resultado | **`J4_R1A_DESIGN_READY_WITH_EXTERNAL_BLOCKERS`** (§6) |
-| Cambios realizados | Solo cinco documentos nuevos (§2), sin commit. Sin código, harness, dependencias, migraciones, perfiles, EC2 ni despliegues. El worktree de CP no se tocó |
+| Fecha | 2026-10-15. Revisado en R4-J4-R1A-REVIEW-01 (versión previa: commit `b680b2c`) |
+| Autorización | R4-J4-R1 `APPROVED_WITH_RESTRICTIONS`; revisión del owner `ACCEPTED_WITH_REQUIRED_CHANGES` |
+| Preflight | [R4-J4-R0](R4_J4_R0_INTEGRATION_PREFLIGHT_REPORT.md): `READY_WITH_BLOCKERS`, conservado sin cambios |
+| Revisión | [R4-J4-R1A-REVIEW-01](R4-J4-R1A_REVIEW_01_REPORT.md): correcciones, evidencia Git y dependencias abiertas |
+| Estado | **`J4_R1A=DESIGN_ACCEPTED_CONDITIONALLY`**; J4-R1B abierto (§6) |
 
-Etiquetas: **R4** = verificado en este repositorio · **EXT-CP / EXT-CRM** = verificado en checkouts locales de solo lectura (no necesariamente lo desplegado) · **DOC** = documentado, sin verificar en código · **PROPUESTA** = diseño no aceptado.
+Etiquetas: **R4** = verificado en este repositorio · **EXT-CP / EXT-CRM** = checkouts locales de solo lectura · **DOC** = documentado, sin verificar en código · **PROPUESTA** = diseño no aceptado.
 
-## 1. Preparación
+## 1. Preparación (al iniciar J4-R1)
 
 | Verificación | Resultado |
 |---|---|
-| HEAD de R4 | `99ea7ee`, rama `r4-j3-closure-record`. Único cambio en el árbol: el informe J4-R0 sin seguimiento |
-| `main` / `origin/main` | Ambos en `b5fd288`, tras `git fetch` sin novedades |
-| ¿`99ea7ee` en `main`? | **No.** Tampoco está en `origin/main`, y la rama `r4-j3-closure-record` no existe en el remoto (`git ls-remote` vacío) |
-| ¿Cierre administrativo de J3 integrado? | **No.** El registro `docs/acceptance/R4_J3_CLOSURE_RECORD.md` y las correcciones de estado del roadmap y del gap register existen solo en la rama local. El cierre técnico (`b5fd288`) sí está en `main` |
-| Evidencia J4-R0 | Conservada sin cambios: `docs/architecture/R4_J4_R0_INTEGRATION_PREFLIGHT_REPORT.md`, SHA-256 `46bfab8ef87f6e20aa702fec86959d82d17a7b4b4abd8a3d2dd6132e0e484d39`, sin seguimiento. Las diferencias de diseño respecto de R0 están en §4, no editadas en R0 |
-| Trabajo concurrente de CP (EXT-CP) | `45b28a3` en `feat/cp-j4-security-01-resilience-01`. Hay 5 archivos modificados y 6 sin seguimiento, entre ellos `CP_J4_CONTEXT_02A_VALIDATION_REPORT.md` ("Pendiente de revisión", sin commit), que normaliza `product_reference` en blanco a `null`. SECURITY-01 y RESILIENCE-01 no están en `main` de CP ni en ninguna rama remota. **No se modificó** el worktree y **D6 no se congeló** contra esa versión |
-| ADR-039 | Número libre. ADR-038 existe solo en la rama no fusionada `r4-j3f-document-delivery-design` |
-| J1–J3 y perfiles históricos | Sin cambios (no se tocó código) |
-
-Pasos de Git recomendados (**requieren autorización**, no ejecutados):
-1. Integrar `99ea7ee` en `main` (merge o PR) y publicarlo.
-2. Crear una rama J4 desde ese `main` y versionar en ella los documentos de R0 y R1.
+| Rama inicial | `r4-j3-closure-record` en `99ea7ee`, con `main` = `origin/main` = `b5fd288` |
+| Cierre administrativo de J3 | En ese momento **no** estaba en `main`. Se integró después, con autorización, en `80f39fd` (informe de revisión §3) |
+| Evidencia J4-R0 | Conservada sin cambios (SHA-256 `46bfab8e…`), versionada en `b680b2c` |
+| Trabajo concurrente de CP | Sin commit (CONTEXT-02A y documentos CP-J4-CONTEXT). No se modificó ni se usó como base |
+| ADR-039 | Número libre. ADR-038 solo existe en la rama no fusionada `r4-j3f-document-delivery-design` |
 
 ## 2. Entregables
 
 | # | Entregable | Documento |
 |---|---|---|
-| 1 | ADR-039 en estado propuesto | [`docs/adr/ADR-039-customer-identity-and-profile-consumption.md`](../adr/ADR-039-customer-identity-and-profile-consumption.md) |
-| 2 | Especificación del consumidor Customer de R4 (DRAFT) | [`R4-J4-R1_CUSTOMER_CONSUMER_SPECIFICATION.md`](R4-J4-R1_CUSTOMER_CONSUMER_SPECIFICATION.md) |
-| 3 | Requerimiento de identidad para Customer Service | [`R4-J4-R1_CUSTOMER_SERVICE_IDENTITY_REQUIREMENTS.md`](R4-J4-R1_CUSTOMER_SERVICE_IDENTITY_REQUIREMENTS.md) |
-| 4 | Requisitos de autorización y contratos para Customer Profile | [`R4-J4-R1_CUSTOMER_PROFILE_AUTHORIZATION_REQUIREMENTS.md`](R4-J4-R1_CUSTOMER_PROFILE_AUTHORIZATION_REQUIREMENTS.md) |
-| 5 | Matriz D1–D8 | §3 de este informe |
-| 6 | Plan J4-R1A / J4-R1B y dependencias de J4-R2 a J4-R6 | §5 de este informe |
-| 7 | Invariantes de seguridad y pruebas de aceptación | ADR-039, "Invariantes" (I1–I12); especificación §11 (prueba por invariante) |
+| 1 | ADR-039 | [`docs/adr/ADR-039-customer-identity-and-profile-consumption.md`](../adr/ADR-039-customer-identity-and-profile-consumption.md) |
+| 2 | Especificación del consumidor (DRAFT) | [`R4-J4-R1_CUSTOMER_CONSUMER_SPECIFICATION.md`](R4-J4-R1_CUSTOMER_CONSUMER_SPECIFICATION.md) |
+| 3 | Requerimiento para Customer Service | [`R4-J4-R1_CUSTOMER_SERVICE_IDENTITY_REQUIREMENTS.md`](R4-J4-R1_CUSTOMER_SERVICE_IDENTITY_REQUIREMENTS.md) |
+| 4 | Requisitos para Customer Profile | [`R4-J4-R1_CUSTOMER_PROFILE_AUTHORIZATION_REQUIREMENTS.md`](R4-J4-R1_CUSTOMER_PROFILE_AUTHORIZATION_REQUIREMENTS.md) |
+| 5 | Matriz D1–D8 | §3 |
+| 6 | Plan J4-R1A / J4-R1B → J4-R6 | §5 |
+| 7 | Invariantes y pruebas | ADR-039 (I1–I12); especificación §11 |
 
-## 3. Matriz de decisiones D1–D8
+## 3. Matriz de decisiones D1–D8 (estado tras la revisión del owner)
 
-Estados:
-- **PROPOSED:** hay una recomendación y falta aceptación.
-- **ACCEPTED:** aceptada por todos los owners responsables. Ninguna lo está todavía.
-- **BLOCKED:** no se puede decidir hasta que exista un hecho externo.
-
-Las decisiones de R4 (D3, D4 en su parte R4, D5, D8) pasan a ACCEPTED con la revisión de ADR-039 por el owner de R4. Esta auditoría no las da por aceptadas.
-
-| ID | Decisión propuesta | Owner responsable | Alternativas | Evidencia disponible | Estado | Para cerrarla |
+| ID | Decisión | Owner responsable | Alternativas | Evidencia | Estado | Para cerrarla |
 |---|---|---|---|---|---|---|
-| **D1** Autoridad de identidad | Customer Service como autoridad de resolución verificada canal → cliente (**candidato**) | Customer Service; owner de R4 | CRM (descartado: L2 sin `is_verified`, vínculo automático por teléfono, AGENTS.md, retiro); CP como fachada (contradice su principio "nunca resuelve wa_id"); servicio propio de R4 (fuera de este hito) | DOC: CRM nombra a CS "única autoridad de creación y vinculación". EXT-CRM: su `/v1/customers/resolve` es una búsqueda por coincidencia que devuelve un maestro, sin nivel. CS **no auditado** | **BLOCKED** | Respuestas A1–A12 con evidencia del repositorio CS, aceptación de CS y contrato CS-01 a CS-11 (doc. CS §6) |
-| **D2** Autorización individual | **A:** grant firmado, corto (≤ 10 min), ligado a cliente, sujeto, consumidor, audiencia y propósito; verificado por CP | Customer Profile; autoridad de identidad | B: verificación en línea de CP contra la autoridad; solo token de servicio (descartado, I4) | EXT-CP: sin control por cliente (informe SECURITY-01 :278). El PRD de CP exige un grant. La comparación A/B está en el doc. CP §3 | **PROPOSED** (su cierre depende de D1) | Aceptación de CP y de la autoridad, formato del grant, publicación y rotación de claves, CP-03 implementado |
-| **D3** Momento de resolución | Perezosa, en el handler, en cada invocación, desde `bindingByTask` | R4 | Resolver en `afterOpen` y escribir `customer_ref` (propuesta CP §2) | R4: `ports.ts:311`; `bindConversation` insert-once (`workspace/store.ts:140-147`); `afterOpen` dentro de la ingress (`ingress.ts:225`) | **PROPOSED** (decisión R4) | Aceptación de ADR-039 |
-| **D4** Minimización | El modelo ve `displayName` (≤ 80), `customerSince` (mes), indicador de historial y productos comprados (nombre, clave Catalog, día, cantidades). Nunca email, teléfono, RUT, dirección, montos, refs ni ids. `displayName` redactado ante jueces | R4 (qué ve el modelo); CP (qué devuelve, CP-06) | Sin `displayName`; incluir email para entregas (descartado: entrega diferida a R4 Media) | R4: `redactKeys` = email, phone, rut, address (`evaluations/definition.ts:54`); el test de privacidad permite el nombre (`privacy-regression.test.ts:33`) | **PROPOSED** | Decisión de privacidad del owner de R4; CP-06 |
-| **D5** Frescura y revocación | TTL de runtime 10 min, acotado por `validUntil` = mín(frescura de CP, expiración del grant) vía ADR-030; nueva resolución en cada invocación; sin caché | R4; autoridad de identidad (TTL del grant) | Caché por tarea; TTL de 60 min (el actual de v1) | R4: ADR-030; `invoker.ts:98-100` | **PROPOSED** | ADR-039 aceptado; CS-05, CS-09 y CP-14 |
-| **D6** Identificador de producto | `catalogKey` desde un mapeo publicado por Catalog, o `null`. R4 no deriva claves ni usa el SKU | Catalog; Customer Profile | CP devuelve un SKU (descartado: puede ser nulo y no es clave Catalog); R4 deriva `P{id}-V{attr}` (descartado: regla de negocio de Catalog) | EXT-CP: ids numéricos; CONTEXT-02A **sin commit** cambia el tratamiento de `product_reference` | **BLOCKED** | CONTEXT-02A revisado e integrado en CP; pronunciamiento de Catalog sobre el mapeo |
-| **D7** Retención de observaciones con datos de cliente | En J4: la minimización como mitigación. La política de retención y purga se define en la plataforma (J7) antes de habilitar producción | Plataforma R4 | Retención específica en el pack (no hay mecanismo sin harness); bloquear J4-R2 a R4 (innecesario con minimización) | R4: no hay código de retención ni purga en `packages/`, `apps/` ni `agents/sales/src` | **PROPOSED** (la habilitación productiva queda bloqueada hasta J7) | Política aprobada de retención; plan de limpieza de la base de canary antes de J4-R5 |
-| **D8** Datos declarados por el cliente en J4 | No: J4 solo usa datos verificados. GAP-05 sigue aparte | R4 / producto | Incluir `guest.displayName` declarado | R4: gap register GAP-05 | **PROPOSED** | Aceptación de ADR-039 |
+| **D1** Autoridad de identidad | Customer Service como autoridad de resolución verificada (**candidato**) | Customer Service; owner de R4 | CRM (L2 sin `is_verified`, vínculo automático por teléfono, AGENTS.md, retiro); CP como fachada (contradice su principio); servicio propio de R4 (fuera de este hito) | DOC: CRM nombra a CS como autoridad de vinculación. EXT-CRM: `/v1/customers/resolve` es búsqueda por coincidencia, sin nivel. CS **no auditado** | **BLOCKED** | Auditoría A1–A12 y contrato CS-01 a CS-12 (doc. CS §6). **Próxima prioridad de J4** |
+| **D2** Autorización individual | **A:** grant firmado, corto, ligado a cliente, consumidor, audiencia y propósito; verificado por CP | Customer Profile; autoridad de identidad | B (verificación en línea); solo token de servicio (descartado) | EXT-CP: sin control por cliente. Modelo de amenazas T1–T7 (doc. CP §4) | **PROPOSED** | Aceptación de CP y de la autoridad; formato del grant; claves; CP-03 |
+| **D3** Momento de resolución | Perezosa, en el handler, desde `bindingByTask`; sin vinculación estática en la ingress | R4 | Resolver en `afterOpen` | R4: `ports.ts:311`; `workspace/store.ts:140-147`; `ingress.ts:225` | **ACCEPTED** (owner, revisión) | — |
+| **D4** Minimización | Sin `displayName` ni datos personales. El modelo ve solo: estado de identidad, indicador de historial, `validUntil` e ítems de historial (nombre de producto, clave Catalog, día, cantidades). Lista de lo que CP puede emitir frente a lo que llega al modelo en especificación §10 | R4 (modelo); CP (CP-04, CP-06) | Con `displayName` (rechazado por el owner) | Revisión del owner | **REQUIRES_CHANGE → corregida**, pendiente de confirmación | Confirmación del owner de las correcciones (ADR-039 §7) |
+| **D5** Vigencia | `verified`: `min(10 min, CP.validUntil, grant.expiresAt)`, con `validUntil` de salida siempre no nulo; `unavailable`: 10 min; fallos: sin vigencia | R4; autoridad (TTL del grant) | Caché por tarea; TTL de 60 min | R4: F1–F8 verificados en código y con 54/54 tests (ADR-039 §6) | **ACCEPTED_WITH_CONDITIONS** | Condiciones de ADR-039 §6: la privacidad no depende de la expiración; decidir `R4_CONTEXT_EXPIRED_EVIDENCE` del canary antes de J4-R5; tratamiento de grants vencidos |
+| **D6** Identificador de producto | `catalogKey` desde un mapeo de Catalog, o `null`; ni SKU ni derivación | Catalog; Customer Profile | SKU de CP; derivar `P{id}-V{attr}` | EXT-CP: ids numéricos; CONTEXT-02A sin commit | **BLOCKED** | CONTEXT-02A integrado; pronunciamiento de Catalog |
+| **D7** Retención y eliminación | Se distinguen revocación, reutilización y eliminación (ADR-039 §8). J4-R5 solo con datos sintéticos. Habilitación real o productiva bloqueada hasta una política aprobada | Plataforma R4 (J7) | Retención en el pack (sin mecanismo); bloquear J4-R2 a J4-R4 (innecesario) | R4: no hay retención ni purga; observaciones por tarea, con payload, visibles como historia (F7, F8) | **PROPOSED_PRODUCTION_BLOCKER** | Política aprobada de retención y purga; controles implementados |
+| **D8** Datos declarados en J4 | No: J4 solo usa datos verificados; GAP-05 aparte | R4 / producto | Incluir `guest.displayName` declarado | Gap register GAP-05 | **ACCEPTED** (owner, revisión) | — |
 
-Ninguna recomendación de esta matriz es una decisión aceptada por los owners externos.
+Ninguna recomendación de esta matriz es una decisión de un owner externo.
 
-## 4. Cambios de diseño respecto de J4-R0
+## 4. Cambios de diseño
 
-R0 se conserva intacto. Estas precisiones lo **sustituyen** en el diseño vigente:
-
-| R0 | R1 | Motivo |
-|---|---|---|
-| La caída del owner se responde como `identity: unavailable, reason: owner_unavailable` | La caída es una **observación fallida** (`temporarily_unavailable` o `timeout`) | Una respuesta exitosa quedaría vigente durante el TTL y ocultaría la caída. Además, es el patrón existente de `domainRead` |
-| `not_authorized` como razón genérica | `not_authorized` solo cuando la autoridad **niega el grant** por política. 401/403 son fallos `unauthorized` | I5 |
-| Estados `ambiguous` y `conflicted` sin destino definido | Llegan al modelo como `not_verified`; la telemetría conserva el detalle | El modelo no necesita, ni debe revelar, conflictos de identidad |
-| TTL sugerido de 10 min | TTL de 10 min **acotado por `validUntil`** (frescura de CP y expiración del grant), vía ADR-030 | Revocación acotada sin mecanismo nuevo |
-| Historial con `productRef` y sin semántica de fecha | `catalogKey` (D6) o `null`; fecha con precisión de día; sin `catalogStatus` ni montos | Minimización e I8: Catalog es la autoridad de la vigencia del producto |
-| Una variable de configuración por servicio | Variables separadas para el resolver y para CP | Son owners distintos |
-| Grant para ambos propósitos | Cada capacidad pide **solo su propósito** | Mínimo privilegio |
+- **Respecto de J4-R0:** R0 se conserva intacto. Las precisiones de R1 que lo sustituyen están en la versión `b680b2c` de este informe, §4: fallo en vez de `owner_unavailable`, `not_authorized` frente a 401/403, `ambiguous` → `not_verified`, vigencia acotada, historial minimizado, configuración separada y mínimo privilegio por propósito.
+- **Respecto de la versión `b680b2c`:** ver la matriz de correcciones del [informe de revisión](R4-J4-R1A_REVIEW_01_REPORT.md) §2.
 
 ## 5. Plan revisado
 
 | Fase | Contenido | Depende de | Cierre verificable |
 |---|---|---|---|
-| **J4-R1A — Diseño del consumidor** (esta entrega) | ADR-039 propuesto; especificación DRAFT; requerimientos para CS y CP; matriz D1–D8; invariantes y pruebas | — | Revisión del owner de R4 sobre ADR-039 y los documentos; aceptación de las decisiones de R4 (D3, D4-R4, D5, D8). `git diff` limitado a `docs/` |
-| **J4-R1B — Contratos externos** | Auditoría y contrato de CS (D1); autorización y rutas de CP (D2, CP-01 a CP-15); mapeo de producto (D6) | Respuesta de CS, CP y Catalog | Cada contrato con owner, versión, JSON Schema aprobado, fixtures y SHA del repositorio. D1, D2 y D6 en ACCEPTED (o D6 diferida explícitamente con `catalogKey: null`). La especificación pasa de DRAFT a v1 |
-| **J4-R2 — Adaptador CP** | `adapters/domains/customer/http` (parte CP), puerto `CustomerProfilePort`, fixtures del owner, sin binding productivo | R1B-CP (CP-03, CP-04, CP-05, CP-13 y el header del grant) | Pruebas de la especificación §11 para I5, I6, I12, topes y errores. Mutaciones. `core-purity` verde |
-| **J4-R3 — Resolver de identidad** | Adaptador del resolver (parte CS) y resolución perezosa en el pack | R1B-CS (D1 aceptada, CS-01 a CS-05, CS-10) | Pruebas de I1, I2, I10 e I11. Ninguna llamada externa desde la ingress |
-| **J4-R4 — Capacidades y perfil** | `customer.get_context@2`, `customer.get_purchase_history@1`, definición v8 (resuelve GAP-15), `sales-production@8` **no desplegado**, composición fail-closed | R2, R3; D4 aceptada; D6 cerrada o diferida | Pruebas de I3, I7 (local), I8 e I9. Topes de salida. Huellas `@1`–`@7` sin cambios |
-| **J4-R5 — Integración y canary aislado** | E2E contra los despliegues de integración de CS y CP; canary en EC2 sin canal real ni producción | CP-01, CP-12 y CS desplegados en integración; plan de limpieza de datos del canary (D7); **autorización EC2 explícita** | I4 (lado CP) e I7 con servicios reales. Evidencia etiquetada; ningún fixture se presenta como evidencia productiva |
-| **J4-R6 — Aceptación y rollback** | Ensayo `@8 → @7`; registro de aceptación; actualización del gap register | R5 PASS | Rollback sin ejecuciones Customer huérfanas; regresión completa con resultados reales. **Sin rollout productivo** (J7, D7) |
+| **J4-R1A — Diseño del consumidor** | ADR-039, especificación, requerimientos, matriz, invariantes | — | **DESIGN_ACCEPTED_CONDITIONALLY** (owner). Las correcciones de la revisión están aplicadas; falta la confirmación del owner para la aceptación interna de ADR-039 |
+| **J4-R1B — Contratos externos** | Auditoría y contrato de CS (D1); autorización y rutas de CP (D2, CP-01 a CP-20); CP-J4-CONTEXT aceptado; mapeo de producto (D6) | CS (primero), CP, Catalog | Cada contrato con owner, versión, JSON Schema aprobado, fixtures y SHA. D1, D2 y D6 cerradas (o D6 diferida explícitamente con `catalogKey: null`). La especificación pasa a v1 |
+| **J4-R2 — Adaptador CP** | `adapters/domains/customer/http` (CP), `CustomerProfilePort`, fixtures del owner | R1B-CP; **autorización posterior** (hoy `NOT_AUTHORIZED`) | Pruebas de la especificación §11 (I5, I6, I12, D4, contrato). Mutaciones. `core-purity` verde |
+| **J4-R3 — Resolver de identidad** | Adaptador del resolver (CS) y resolución perezosa | R1B-CS | Pruebas de I1, I2, I10 e I11. Ninguna llamada externa desde la ingress |
+| **J4-R4 — Capacidades y perfil** | `get_context@2`, `get_purchase_history@1`, definición v8, `sales-production@8` **no desplegado** | R2, R3; D6 cerrada o diferida | Pruebas de I3, I7 (local), I8, I9 y D5. Huellas `@1`–`@7` sin cambios |
+| **J4-R5 — Integración y canary aislado** | E2E contra la integración de CS y CP; canary en EC2 sin canal real ni producción. **Solo identidades y datos sintéticos** (D7) | CP-01, CP-12, CP-20, CS-12; decisión sobre `R4_CONTEXT_EXPIRED_EVIDENCE`; plan de limpieza de la base del canary; **autorización EC2 explícita** | I4 e I7 con servicios reales. 0 clientes reales procesados (verificado). Evidencia etiquetada como sintética |
+| **J4-R6 — Aceptación y rollback del canary** | Ensayo de rollback **del canary** `@8 → @7`; registro de aceptación | R5 PASS | Rollback sin ejecuciones Customer huérfanas; regresión completa. **Producción no se toca:** sigue en `sales-production@3` (`ef5a354`). Un rollout productivo de `@8` partiría de `@3`, con rollback propio, y pertenece a J7 (no autorizado) |
 
-Ruta crítica: **D1 → D2 → J4-R1B → J4-R3 → J4-R4**. J4-R2 puede adelantarse en cuanto CP publique su contrato, incluido el formato del grant. Para eso basta con que D2 tenga la forma acordada; no exige que CS haya terminado su auditoría.
+Ruta crítica: **auditoría de CS (D1) → D2 → J4-R1B → J4-R3 → J4-R4**. La auditoría de Customer Service es la próxima prioridad: su resultado determina si se aprovecha una autoridad existente o si hay que corregir una carencia más profunda en la gestión de identidades de PesasChile.
 
-## 6. Resultado
+## 6. Estado
 
 ```text
-J4_R1A_STATUS=J4_R1A_DESIGN_READY_WITH_EXTERNAL_BLOCKERS
-J4_R1A_PENDING=revisión del owner de R4 (ADR-039 y especificación)
-J4_R1B_STATUS=OPEN (D1 BLOCKED, D2 PROPOSED, D6 BLOCKED)
-ADR_039=PROPOSED
-CONSUMER_SPEC=DRAFT
-IDENTITY_OWNER=NOT_CONFIRMED (candidato: Customer Service, no auditado)
-INDIVIDUAL_AUTHORIZATION=NOT_RESOLVED
-CUSTOMER_INTEGRATION=NOT_ENABLED
-J3_ADMIN_CLOSURE_IN_MAIN=NO (99ea7ee solo local)
-CODE_HARNESS_MIGRATIONS_PROFILES_EC2=UNCHANGED
+J4_R1A=DESIGN_ACCEPTED_CONDITIONALLY
+ADR_039=ACCEPTED_WITH_REQUIRED_CHANGES (correcciones aplicadas; aceptación interna pendiente de confirmación)
+D1=BLOCKED  D2=PROPOSED  D3=ACCEPTED  D4=REQUIRES_CHANGE→CORREGIDA  D5=ACCEPTED_WITH_CONDITIONS
+D6=BLOCKED  D7=PROPOSED_PRODUCTION_BLOCKER  D8=ACCEPTED
+J4_R1B=OPEN
+J4_R2=NOT_AUTHORIZED
+J4_R5_REAL_CUSTOMER_DATA=NOT_AUTHORIZED
+CUSTOMER_IDENTITY_OWNER=UNCONFIRMED
+CUSTOMER_AUTHORIZATION=NOT_IMPLEMENTED
+PRODUCTION_PROFILE=sales-production@3
+PRODUCTION_ROLLOUT=NOT_AUTHORIZED
 ```
-
-J4 no está completo. La integración no está habilitada y la autorización individual no está resuelta. El diseño del consumidor está listo para revisión. Todo lo que sigue depende de contratos que Customer Service, Customer Profile y Catalog aún no han publicado.

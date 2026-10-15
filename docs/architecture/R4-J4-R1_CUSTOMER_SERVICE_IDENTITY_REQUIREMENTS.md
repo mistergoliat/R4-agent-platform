@@ -5,7 +5,7 @@
 | Destinatario | Equipo de Customer Service |
 | Emisor | R4 (J4 — Customer Profile Integration) |
 | Fecha | 2026-10-15 |
-| Estado | **Solicitud abierta.** Customer Service es el **candidato prioritario** a autoridad de identidad para R4, **no un owner confirmado** (D1) |
+| Estado | **Solicitud abierta**, revisada en R4-J4-R1A-REVIEW-01 (versión previa: commit `b680b2c`). Customer Service es el **candidato prioritario** a autoridad de identidad para R4, **no un owner confirmado**: D1 sigue BLOCKED. Para R4, esta auditoría es la **próxima prioridad** de J4 |
 | Marco | [ADR-039](../adr/ADR-039-customer-identity-and-profile-consumption.md) (propuesta); [especificación del consumidor](R4-J4-R1_CUSTOMER_CONSUMER_SPECIFICATION.md) §4 |
 
 ## 1. Por qué se pide
@@ -70,23 +70,24 @@ Si Customer Service se apoya hoy en la misma evidencia, los mismos puntos aplica
 
 | ID | Requisito |
 |---|---|
-| CS-01 | **Operación de resolución de solo lectura.** Entrada: `{ schemaVersion, channel, accountRef, subjectRef, purposes[] }`. **No acepta** teléfono, email ni ids de cliente como entrada |
+| CS-01 | **Operación de resolución de solo lectura** (`POST` sin efectos). Entrada en el **cuerpo JSON**: `{ schemaVersion, channel, accountRef, subjectRef, purposes[] }`. **No acepta** teléfono, email ni ids de cliente como entrada. Ningún identificador va en la ruta ni en la query, para que no aparezca en access logs ni en proxies |
 | CS-02 | Salida con `status ∈ { verified, not_linked, not_verified, ambiguous, conflicted, not_authorized }`, `resolvedAt` y, solo si `verified`, `customerRef = prestashop_customer:<id>` y un grant (CS-05). **Sin PII.** Sin `masterCustomerId` hacia R4 |
 | CS-03 | `verified` exige un vínculo verificado con método y momento registrados, y válido para el sujeto **actual** (A6). Coincidencia de teléfono o email nunca es `verified` |
 | CS-04 | Las respuestas de dominio van en 200 con `status`. 400 = validación, 401/403 = credenciales, 429/5xx = disponibilidad. Cuerpo de error `{ error: { code, retryable } }`, sin mensajes libres |
-| CS-05 | Si D2 = A: emitir un grant firmado (formato a acordar con Customer Profile) con claims de emisor, cliente (`prestashop_customer:<id>`), audiencia (`customer-profile`), consumidor (`r4-sales`), propósitos, hash del sujeto de canal, emisión, expiración (≤ 10 min) e identificador único. Claves publicadas para su verificación (con `kid` y rotación). Además, devolver `expiresAt` y `purposes` como campos legibles de la respuesta |
+| CS-05 | Si D2 = A: emitir un grant firmado (formato a acordar con Customer Profile) con claims de emisor, cliente (`prestashop_customer:<id>`), audiencia (`customer-profile`), consumidor (`r4-sales`), propósitos, emisión, expiración (≤ 10 min) e identificador único. Opcionalmente, un hash del sujeto de canal **solo para auditoría**: deriva de lo que R4 afirma y CP no puede verificarlo, así que **no es prueba de autenticidad**. Claves publicadas para su verificación (con `kid` y rotación) y custodia de la clave de firma (su compromiso permite fabricar grants). Además, devolver `expiresAt` y `purposes` como campos legibles de la respuesta |
 | CS-06 | **Mínimo privilegio por propósito:** solo se incluyen en el grant los propósitos pedidos y permitidos |
 | CS-07 | **Consumidor acotado:** el principal `r4-sales` solo puede resolver `channel = whatsapp` y `accountRef` dentro de una allowlist. Debe tener límite de tasa |
-| CS-08 | **Auditoría:** cada resolución queda registrada con consumidor, propósito, `status`, `correlationId` (`x-correlation-id` entrante) y un hash del sujeto. Sin PII en claro |
+| CS-08 | **Auditoría y detección:** cada resolución queda registrada con consumidor, propósito, `status`, `correlationId` (`x-correlation-id` entrante) y un hash del sujeto, sin PII en claro. Alertas ante volúmenes o patrones anómalos del consumidor `r4-sales` (por ejemplo, muchos sujetos distintos por hora). Es la principal mitigación ante un R4 comprometido, que podría pedir resoluciones de `wa_id` arbitrarios (ADR-039 §5) |
 | CS-09 | **Revocación:** revocar un vínculo hace que las resoluciones siguientes no devuelvan `verified`. Los grants emitidos expiran por su TTL. Si se requiere revocación inmediata, se aplica D2-B o una lista de revocación (a acordar) |
 | CS-10 | Contrato publicado con `schemaVersion` entero, JSON Schema, fixtures para cada `status` y error, y SHA de repositorio. Cambios rompientes = versión nueva |
 | CS-11 | Objetivos de servicio declarados (latencia p95 ≤ 1 000 ms sugerida, disponibilidad) y comportamiento ante caídas de sus fuentes (respuesta `5xx` o `503` tipada, nunca un `not_linked` falso) |
+| CS-12 | **Identidades sintéticas para integración.** Un entorno de integración con sujetos de canal y clientes sintéticos que cubran cada `status` (incluidos `verified` y `not_authorized`). Mientras R4 no tenga controles de retención (D7), J4-R5 **solo** puede usar datos sintéticos |
 
 ## 6. Qué cierra D1
 
 D1 pasa a **ACCEPTED** solo cuando existan:
 1. respuestas a A1–A12 con evidencia del repositorio de Customer Service;
 2. la aceptación explícita de Customer Service como autoridad de identidad para R4 (o la designación de otro owner);
-3. un contrato publicado que cumpla CS-01 a CS-11, o desviaciones aceptadas por el owner de R4.
+3. un contrato publicado que cumpla CS-01 a CS-12, o desviaciones aceptadas por el owner de R4.
 
 Si Customer Service no puede dar la garantía, J4 enriquecido se difiere y Sales sigue operando como hoy, con clientes `guest`. **R4 no creará un servicio de identidad propio** en este hito.

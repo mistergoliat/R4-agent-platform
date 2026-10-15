@@ -1,136 +1,161 @@
 # ADR-039 — Consumo de identidad y perfil de cliente en R4
 
-- **Estado:** **Propuesto** (R4-J4-R1A, 2026-10-15). Pendiente de revisión del owner de R4. Las responsabilidades atribuidas a Customer Service y Customer Profile son **propuestas a esos owners**, no decisiones: Customer Service no fue auditado y Customer Profile no ha aceptado ningún contrato para R4.
-- **Fecha:** 2026-10-15
+- **Estado:** **Propuesto — revisado por el owner: `ACCEPTED_WITH_REQUIRED_CHANGES`** (R4-J4-R1A-REVIEW-01, 2026-10-15). Las correcciones exigidas están aplicadas en esta versión. Pasa a **Aceptado (interno de R4)** cuando el owner confirme esas correcciones.
+  - La aceptación interna cubre solo las decisiones de R4: D3, D4 (parte R4), D5 y D8.
+  - **No** cubre ni declara resueltas las dependencias externas: D1 (autoridad de identidad), D2 (autorización individual) y D6 (identificador de producto) siguen pendientes de sus owners. D7 sigue como gate de datos reales y de producción.
+- **Fecha:** 2026-10-15. Versión entregada sin correcciones: commit `b680b2c`.
 - **Alcance:** cómo el pack Sales (y cualquier pack futuro) obtiene la identidad de cliente de una conversación y lee datos del cliente sin que el modelo elija a quién consulta. No modifica `packages/`, `apps/` ni `adapters/`; no crea migraciones, perfiles ni dependencias.
-- **No cubre:** datos declarados por el cliente (GAP-05), entrega documental (R4 Media), corrección de `identityAssurance` del harness (J7), retención de observaciones (J7, D7).
-- **Autoridad superior:** Constitución ("model output is untrusted", "writes require governed execution", "do not add infrastructure without demonstrated need"); AGENTS.md (Customer fuera de Core; sin acceso a tablas internas de CRM); ADR-005, ADR-011, ADR-013, ADR-016, ADR-030, ADR-036.
-- **Evidencia:** [`R4_J4_R0_INTEGRATION_PREFLIGHT_REPORT.md`](../architecture/R4_J4_R0_INTEGRATION_PREFLIGHT_REPORT.md) §3–§4; [`R4-J4-R1_CUSTOMER_CONSUMER_SPECIFICATION.md`](../architecture/R4-J4-R1_CUSTOMER_CONSUMER_SPECIFICATION.md).
+- **No cubre:** datos declarados por el cliente (GAP-05); entrega documental (R4 Media); corrección de la `identityAssurance` del harness (J7); retención y purga de observaciones (D7, plataforma/J7).
+- **Autoridad superior:** Constitución ("model output is untrusted", "do not add infrastructure without demonstrated need"); AGENTS.md (Customer fuera de Core; sin acceso a tablas internas de CRM); ADR-005, ADR-011, ADR-013, ADR-016, ADR-030, ADR-036.
+- **Documentos asociados:**
+  - [especificación del consumidor](../architecture/R4-J4-R1_CUSTOMER_CONSUMER_SPECIFICATION.md);
+  - [requerimiento a Customer Service](../architecture/R4-J4-R1_CUSTOMER_SERVICE_IDENTITY_REQUIREMENTS.md);
+  - [requisitos a Customer Profile](../architecture/R4-J4-R1_CUSTOMER_PROFILE_AUTHORIZATION_REQUIREMENTS.md);
+  - [informe de diseño](../architecture/R4-J4-R1_DESIGN_REPORT.md);
+  - [informe de revisión](../architecture/R4-J4-R1A_REVIEW_01_REPORT.md);
+  - evidencia de partida en [R4-J4-R0](../architecture/R4_J4_R0_INTEGRATION_PREFLIGHT_REPORT.md).
 
 ## Contexto
 
-Hechos verificados en J4-R0 (las rutas de R4 se citan con línea; las externas, por repositorio y SHA):
+Hechos verificados (las rutas de R4 se citan con línea; las externas, por repositorio y SHA):
 
 | Hecho | Evidencia |
 |---|---|
-| R4 solo conoce una **identidad de canal**: el `wa_id` de un webhook autenticado por firma de Meta, guardado como `recipientRef` del binding que únicamente la ingress abre | `adapters/channels/whatsapp-cloud/src/inbound.ts:105-112`; `packages/live-ops/src/ingress.ts:192-197` |
-| R4 no resuelve clientes: producción escribe `customerRef: null`; Customer es `UNAVAILABLE` en `@1`–`@7` | `agents/sales/src/production/composition.ts:214-216`; `production/profile.ts:31` |
+| R4 solo conoce una **identidad de canal**: el `wa_id` de un webhook autenticado por la firma de Meta, guardado como `recipientRef` del binding. Solo la ingress abre bindings | `adapters/channels/whatsapp-cloud/src/inbound.ts:105-112`; `packages/live-ops/src/ingress.ts:192-197` |
+| R4 no resuelve clientes: producción escribe `customerRef: null` y Customer es `UNAVAILABLE` en `@1`–`@7` | `agents/sales/src/production/composition.ts:214-216`; `production/profile.ts:31` |
 | `customer.get_context@1` no recibe argumentos y toma el cliente del binding de la conversación | `agents/sales/src/capabilities/customer.ts:8,41-44` |
 | La `identityAssurance` del harness describe al principal de la tarea (en producción, el servicio de ingress), no al cliente | `packages/task-runtime/src/action-runtime.ts:288-298`; `packages/contracts/src/capability.ts:139-145` |
 | `ProductionStore.bindingByTask` devuelve el binding (con `recipientRef`) de una tarea | `packages/live-ops/src/ports.ts:311` |
-| La vigencia de una observación puede acotarla el owner (`ownerValidUntil`) | ADR-030; `packages/capability-runtime/src/invoker.ts:98-100` |
+| Vigencia de observaciones, contexto y persistencia (ADR-030) | §6 de esta ADR, verificado en código y con tests |
 | Customer Profile (CP) autentica principales por Bearer y scope, pero **cualquier principal con scope lee cualquier `customerId`** | EXT-CP `45b28a3`: `src/http/auth/route-families.ts:60-92`; `docs/reviews/CP_J4_SECURITY_01_VALIDATION_REPORT.md:278` |
-| CP no resuelve identidad de canal | EXT-CP `45b28a3`: lectores por `id_customer` |
-| CRM decide niveles L0–L3 solo para su propio agente. Otorga L2 sin comprobar `is_verified` y vincula automáticamente por teléfono con `isVerified: false` | EXT-CRM `8298723`: `lib/domains/customer-identity-verification/evaluate.ts:45-70`; `lib/brain/native-whatsapp/service.ts:325-336` |
-| La autoridad documentada de creación y vinculación es Customer Service. Su repositorio no fue auditado | EXT-CRM `docs/data/customer-creation-linking-authority-contract.md:124` |
+| CP no resuelve identidad de canal | EXT-CP `45b28a3` |
+| CRM decide niveles L0–L3 solo para su propio agente. Su L2 no comprueba `is_verified` y vincula automáticamente por teléfono | EXT-CRM `8298723`: `evaluate.ts:45-70`; `native-whatsapp/service.ts:325-336` |
+| La autoridad documentada de creación y vinculación es Customer Service. **No auditado** | EXT-CRM `docs/data/customer-creation-linking-authority-contract.md:124` |
 
-Problema: para dar al agente contexto de cliente e historial sin crear un acceso horizontal, R4 necesita tres cosas que hoy no existen:
+Problema: para dar al agente contexto e historial de cliente sin crear acceso horizontal, R4 necesita tres cosas que hoy no existen:
 1. una autoridad que diga qué cliente verificado corresponde a una identidad de canal autenticada;
-2. una autorización **por cliente** que Customer Profile haga cumplir;
-3. un contrato de consumo que minimice datos y degrade sin afectar la venta.
+2. una autorización **por cliente** que CP haga cumplir;
+3. un contrato de consumo mínimo que degrade sin afectar la venta.
 
-## Decisión propuesta
+## Decisión
 
 ### 1. Autoridades
 
 | Concepto | Autoridad | Estado |
 |---|---|---|
 | Identidad de canal (quién escribe en esta conversación) | **R4 ChannelIngress**, a partir de la firma del proveedor | Vigente |
-| Identidad de cliente (qué cliente comercial verificado corresponde a esa identidad de canal) | **Autoridad de identidad externa**. Candidato prioritario: Customer Service | **Propuesta** (D1; requisitos en [`R4-J4-R1_CUSTOMER_SERVICE_IDENTITY_REQUIREMENTS.md`](../architecture/R4-J4-R1_CUSTOMER_SERVICE_IDENTITY_REQUIREMENTS.md)) |
-| Autorización individual (este consumidor puede leer los datos de este cliente para este propósito) | Emitida por la autoridad de identidad y **aplicada por Customer Profile** | **Propuesta** (D2; requisitos en [`R4-J4-R1_CUSTOMER_PROFILE_AUTHORIZATION_REQUIREMENTS.md`](../architecture/R4-J4-R1_CUSTOMER_PROFILE_AUTHORIZATION_REQUIREMENTS.md)) |
-| Hechos de cliente (perfil, compras) | **Customer Profile** | Vigente como datos; contrato para R4 pendiente |
-| Qué ve el modelo | **Pack Sales**, mediante capacidades READ con esquema estricto | Esta ADR |
+| Identidad de cliente (qué cliente comercial verificado corresponde a esa identidad) | Autoridad de identidad externa. **Candidato:** Customer Service | **D1 BLOCKED**, pendiente de su auditoría |
+| Autorización individual | Emitida por la autoridad de identidad; **aplicada por CP** | **D2 PROPOSED**, pendiente de CP y de la autoridad |
+| Hechos de cliente | **Customer Profile** | Datos vigentes; contrato para R4 pendiente; significado comercial pendiente de la aceptación de CP-J4-CONTEXT |
+| Qué ve el modelo | **Pack Sales**, mediante capacidades READ con esquema estricto | Esta ADR (D4) |
 
-R4 **no** es autoridad de identidad de cliente, no lee tablas de CRM y no usa directamente los niveles L2/L3 de CRM mientras sus comprobaciones sean insuficientes.
+R4 **no** es autoridad de identidad de cliente, no lee tablas de CRM y no usa los niveles L2/L3 de CRM mientras sus comprobaciones sean insuficientes.
 
 ### 2. Identidad de canal ≠ identidad de cliente
 
-- Un binding de canal prueba que los mensajes llegan desde un `wa_id`. **No prueba la titularidad de una cuenta comercial**: el número puede estar reciclado o compartido, o vinculado solo por coincidencia de teléfono.
-- R4 trata el `wa_id` como **sujeto de canal** y solo lo usa para pedir una resolución a la autoridad.
-- Solo una resolución con `assurance: verified`, emitida por la autoridad, produce una referencia de cliente utilizable.
+- Un binding prueba que los mensajes llegan desde un `wa_id`. **No prueba la titularidad de una cuenta comercial**: el número puede estar reciclado o compartido, o vinculado solo por coincidencia de teléfono.
+- R4 trata el `wa_id` como sujeto de canal y solo lo usa para pedir una resolución a la autoridad.
+- Solo `assurance: verified` con un grant válido produce una referencia de cliente utilizable.
 
-### 3. Resolución perezosa mediante `bindingByTask` (decisión de R4, D3)
+### 3. Resolución perezosa mediante `bindingByTask` — D3 **ACCEPTED**
 
-1. El handler de la capacidad obtiene el sujeto con `bindingByTask(context.execution.taskId)`, usando `channel`, `accountRef` y `recipientRef`.
-2. Con ese sujeto, pide la resolución a la autoridad **en cada invocación**.
-3. Ninguna llamada externa ocurre en la ingress (`afterOpen`), y `sales.conversations.customer_ref` sigue `null`.
+En cada invocación, el handler obtiene el sujeto con `bindingByTask(execution.taskId)` y pide la resolución. No hay llamadas externas ni vinculación estática en la ingress, y `sales.conversations.customer_ref` sigue `null`.
 
 Consecuencias:
-- una caída de la autoridad no deja inbound sin liquidar;
-- una vinculación posterior durante la conversación surte efecto en la siguiente lectura;
-- una revocación surte efecto en la siguiente resolución;
-- no se requiere migración.
-
-El costo es una llamada adicional por lectura. Esta ADR no agrega caché: se agregará si la latencia medida en J4-R5 lo justifica.
+- una vinculación o revocación surte efecto en la siguiente invocación;
+- no hay migración;
+- cada lectura tiene el costo de una resolución, sin caché, hasta que J4-R5 mida que la necesita.
 
 ### 4. Autenticación de servicio ≠ autorización individual
 
-- El token de servicio de R4 frente a Customer Profile solo identifica al consumidor (`r4-sales`) y limita **qué rutas** puede usar.
-- **No** autoriza a leer un cliente concreto.
-- Cada lectura de datos privados exige además un **grant individual** ligado a:
-  - cliente;
-  - sujeto de canal;
-  - consumidor;
-  - audiencia;
-  - propósito;
-  - expiración.
-- Customer Profile lo verifica y rechaza cualquier discrepancia.
+- Los tokens de servicio de R4 frente a la autoridad y frente a CP solo identifican al consumidor (`r4-sales`) y limitan las rutas que puede usar. **No** autorizan un cliente concreto.
+- Toda lectura de datos de cliente exige un **grant individual**, ligado a: cliente, consumidor, audiencia, propósito y expiración.
 
-### 5. Modelo de grants (D2) — recomendación, no decisión cerrada
+### 5. Modelo de grants — D2 **PROPOSED**
 
-**Recomendada: alternativa A.** La autoridad de identidad emite un grant firmado, de vida corta (≤ 10 min), junto con la resolución. R4 lo transporta sin interpretarlo y Customer Profile lo verifica localmente (firma, audiencia, consumidor, cliente, propósito, expiración).
+**Recomendación (no decisión): alternativa A.** La autoridad emite un grant firmado y corto (≤ 10 min) junto con la resolución. R4 lo transporta sin interpretarlo y CP lo verifica localmente.
 
-**Alternativa B:** Customer Profile consulta en línea a la autoridad en cada lectura.
+La alternativa B (CP consulta en línea a la autoridad) y el modelo de amenazas completo están en el documento de requisitos de CP, §3 y §4. Hallazgos del modelo de amenazas que esta ADR fija como límites:
 
-La comparación completa está en el documento de requisitos de CP §3. Se recomienda A por cuatro razones:
-- aísla la disponibilidad de CP de la autoridad;
-- no obliga a CP a recibir el `wa_id`;
-- da auditoría en ambos extremos;
-- su ventana de revocación está acotada por la expiración.
+| Compromiso | Efecto con A | Mitigación | Residuo |
+|---|---|---|---|
+| **R4 comprometido** (worker o host con sus credenciales) | Puede pedir resoluciones para `wa_id` arbitrarios y leer cualquier cliente verificado cuyo número conozca. Ni A ni B lo evitan | Consumidor limitado a canal y cuentas, límites de tasa, auditoría y alertas de volumen en la autoridad | **Alto**, inherente a que R4 termina el canal |
+| **Token de servicio de CP** solo | Inútil sin un grant emitido para `r4-sales` | Mantenerlo sin logs; rotación | Bajo |
+| **Credencial del resolver** sola | Obtiene grants, pero no puede usarlos sin el token de CP | Credenciales separadas por destino; rotación | Medio |
+| **Ambas credenciales de R4** | Equivale a "R4 comprometido" | Las mismas | Alto |
+| **Un grant filtrado** | Lectura de un cliente, un propósito, ≤ TTL, solo junto con el token de CP | No registrar grants; TTL corto | Bajo |
+| **Clave de firma de la autoridad** | Permite fabricar grants para cualquier cliente (requiere además el token de CP) | Custodia y rotación con `kid` | Alto, fuera de R4 |
+| **Modelo / prompt injection** | No cambia a quién se consulta (I1). Solo puede repetir lecturas del mismo cliente | Esquemas estrictos | Bajo |
 
-D2 queda **PROPUESTA** hasta que la acepten Customer Profile y el owner de identidad.
+**El hash del sujeto no es prueba de autenticidad.** Si el grant incluye un hash del sujeto de canal, ese hash deriva de lo que R4 afirma. CP no recibe el sujeto ni puede verificarlo. Sirve para auditoría y correlación forense, **no** como prueba independiente de que el cliente escribió por ese canal.
 
-**Límite que ninguna alternativa elimina.** La autoridad confía en que R4 presenta un sujeto de canal auténtico. Un R4 comprometido podría pedir resoluciones para otros `wa_id`. Esto se acota, sin eliminarse, mediante:
-- un consumidor restringido a un canal y a `accountRef` permitidos;
-- límites de tasa;
-- auditoría por resolución.
+### 6. Vigencia, nuevas invocaciones y observaciones anteriores — D5 **ACCEPTED_WITH_CONDITIONS**
 
-### 6. Revocación, expiración y fallos
+Comportamiento del runtime vigente, verificado en código y con `owner-freshness.test.ts`, `compiler.test.ts` y `context-config.test.ts` (54/54 PASS, 2026-10-15):
 
-- **Vigencia:** cada observación Customer vence en `min(runtime TTL, grant.expiresAt)` (ADR-030 `ownerValidUntil`). Al vencer, el modelo debe volver a leer, lo que provoca una nueva resolución.
-- **Revocación:** la exposición máxima tras revocar es la vida del grant. Los datos ya observados quedan en la observación persistida (§7).
-- **Respuestas de identidad** (`anonymous`, `not_linked`, `not_verified`, `not_authorized`, `ambiguous`): son **respuestas**, no fallos.
-- **Fallos del owner** (caída, timeout, 5xx, 429): son **observaciones fallidas** con categoría `temporarily_unavailable` o `timeout`. No se convierten en una respuesta "sin cliente", porque esa respuesta quedaría vigente durante el TTL y ocultaría la caída.
-- **401/403:** son fallos `unauthorized` y no se reintentan. Nunca se presentan como `not_found` ni como `unavailable`.
-- **Respuesta fuera de contrato:** es `contract_violation`, sin reparación.
+| # | Comportamiento | Evidencia |
+|---|---|---|
+| F1 | `runtimeValidUntil = observedAt + freshnessTtlMs`, con `observedAt` tomado **al terminar** el handler | `packages/capability-runtime/src/invoker.ts:91-96` |
+| F2 | `validUntil = min(runtimeValidUntil, ownerValidUntil)`. El owner solo acorta, nunca extiende | `invoker.ts:97-98`; test `owner-freshness.test.ts:42,50` |
+| F3 | `ownerValidUntil(output)` puede devolver `null`, y entonces rige el runtime. Si devuelve algo que no es un instante, o lanza, la invocación **falla** con `invalid_capability_output` | `registry.ts:31-38`; `invoker.ts:202-214`; tests `:57,93` |
+| F4 | Las observaciones fallidas o rechazadas tienen `validUntil: null`. El compilador las clasifica `unknown`, nunca `expired`, y siguen en el contexto | `invoker.ts:98`; `context-compiler/src/freshness.ts:22-28`; test `:124` |
+| F5 | Reinvocar con el mismo `invocationId` devuelve la observación registrada, sin recalcular ni extender | `invoker.ts:84-85`; test `:100` |
+| F6 | Una invocación nueva crea otra observación con su propia vigencia. Las anteriores no cambian | `invoker.ts:103-133` |
+| F7 | El contexto de cada run incluye **todas** las observaciones **de la tarea**, de cualquier run, con su payload completo. Nunca las de otras tareas | `task-runtime/src/execution-runtime.ts:412`; `persistence-postgres/src/observation-store.ts:27-28`; `context-compiler/src/sources/platform.ts:268-297` |
+| F8 | Una observación vencida sale de lo "vigente". Con `R4_CONTEXT_EXPIRED_EVIDENCE=include` (**default**) **sigue visible como historia, con payload**. Con `exclude` sale del contexto. En ambos casos sigue persistida | `context-compiler/src/compiler.ts:326-329`; `apps/worker/src/config.ts:39,103`; test `compiler.test.ts:169` |
 
-### 7. Minimización y persistencia
+Decisión:
 
-- El modelo nunca ve:
-  - email, teléfono, RUT, dirección o montos;
-  - referencias de pedido;
-  - ids de PrestaShop o del maestro;
-  - `customerRef`, `wa_id` o grant.
-- Lo que sí ve está en la especificación del consumidor §6.
-- Las salidas Customer se persisten como observaciones. R4 no tiene hoy retención ni purga de observaciones (J4-R0, riesgo R3). La minimización es la mitigación en J4. La retención (D7) es plataforma y bloquea la habilitación productiva (J7), no las fases J4-R2 a J4-R4.
-- El grant y la referencia de cliente viven solo en memoria durante la invocación. No se persisten ni se registran en logs.
+- **Expiración efectiva de una lectura Customer exitosa:** `min(observedAt + 10 min, ownerBound)`.
+  - Para una respuesta `verified`, el handler calcula `ownerBound = min(CP.validUntil si no es nulo, grant.expiresAt)` y lo expone como `validUntil`, un campo **siempre presente y no nulo** en esa variante.
+  - El extractor `ownerValidUntil` devuelve ese campo para `verified` y `null` para `unavailable`, que queda acotada por el runtime (10 min).
+  - Así se corrige la incompatibilidad de la versión entregada, donde `validUntil: null` del puerto chocaba con un `validUntil` obligatorio en la salida.
+- **Condición 1.** La vigencia controla qué es **verdad vigente**, no qué ve el modelo ni qué se borra (F8). La privacidad no puede apoyarse en la expiración: se apoya en la minimización (§7, D4). La eliminación es D7.
+- **Condición 2.** El valor desplegado de `R4_CONTEXT_EXPIRED_EVIDENCE` no está verificado en EC2. Antes de J4-R5 se decide si el canary de `@8` usa `exclude`. Es configuración de despliegue, no harness, y afecta a todas las capacidades.
+- **Condición 3.** Un grant con `expiresAt ≤ ahora` de R4 al recibirlo se trata como `contract_violation` (`incoherent_grant`). Un `CP.validUntil ≤ observedAt` se registra ya vencido (ADR-030 regla 4): entra solo como historia.
 
-### 8. Degradación independiente
+### 7. Minimización — D4 **corregida**
+
+- **CP → R4.** CP solo debe emitir, en las rutas R4:
+  - estado de la respuesta;
+  - antigüedad del cliente (mes);
+  - indicador de historial;
+  - ítems del historial: nombre de producto, clave Catalog o `null`, fecha de última compra, cantidades;
+  - `validUntil`;
+  - `schemaVersion`.
+  - **No emite** nombre, email, teléfono, RUT, dirección, montos, referencias de pedido ni datos predictivos.
+- **R4 → modelo.** Solo los campos de la especificación §10. `displayName` **no forma parte** de la salida de `customer.get_context@2`. Agregarlo en el futuro requiere una nueva versión de la capacidad y una nueva decisión D4.
+- **Nunca llegan al modelo ni a logs:** `customerRef`, `wa_id`, grant, `masterCustomerId` ni ids PrestaShop.
+
+### 8. Revocación, reutilización y eliminación — D7 **PROPOSED_PRODUCTION_BLOCKER**
+
+Son tres cosas distintas:
+
+| Concepto | Qué ocurre hoy | Qué controla |
+|---|---|---|
+| **Revocación** | La autoridad deja de emitir `verified` y grants. Los grants ya emitidos valen hasta `expiresAt` (≤ 10 min). La siguiente invocación de R4 recibe `unavailable` | Nuevas lecturas |
+| **Reutilización de observaciones** | Dentro de **la misma tarea**, las observaciones anteriores reaparecen en cada run: como vigentes hasta su `validUntil` y después como historia, con payload (F7, F8). No se reutilizan entre tareas | Qué ve el modelo durante la conversación |
+| **Eliminación** | **No existe** en R4: no hay retención ni purga de observaciones (J4-R0, R3). Las copias en artefactos de evaluación pasan por la proyección de privacidad, que no elimina | Qué queda persistido |
+
+Mientras no existan controles de retención aprobados:
+- **J4-R5 queda restringido a identidades y datos sintéticos**: no se procesa ningún cliente real;
+- la habilitación con clientes reales o productiva queda **bloqueada** hasta J7.
+
+### 9. Degradación independiente
 
 - Customer es una lectura opcional: ninguna capacidad de Catalog, Shipping o Quote la invoca ni depende de ella.
-- `quote.create@5` sigue emitiendo `customer: { kind: 'guest' }`.
-- Si Customer no está configurado, la composición de un perfil que lo declara `REAL` se niega a arrancar, como con Catalog. El rollback es volver al perfil anterior.
-- Una vez compuesto, cualquier fallo Customer degrada solo esa lectura.
+- `quote.create@5` sigue emitiendo `customer: { kind: 'guest' }` (I7).
+- Un perfil que declare Customer `REAL` no compone sin su configuración. En ejecución, cualquier fallo Customer degrada solo esa lectura.
 
-### 9. Compatibilidad con versiones históricas
+### 10. Compatibilidad y rollback
 
-- `customer.get_context@1`, `CustomerDirectory`, `FixtureCustomerDirectory`, las definiciones v3–v7 y los perfiles `@1`–`@7` **no cambian**. Sus huellas y hashes siguen fijados en `tests/contract/`.
-- La composición de referencia, el shadow y la evaluación siguen usando v1 con el fixture.
-- Lo nuevo (puertos, `get_context@2`, `get_purchase_history@1`, definición v8, `sales-production@8`) es aditivo y solo se compone en un perfil nuevo. Esa implementación está **fuera** de esta ADR y de J4-R1.
+- `customer.get_context@1`, `CustomerDirectory`, el fixture, las definiciones v3–v7 y los perfiles `@1`–`@7` **no cambian** (I9). Lo nuevo es aditivo y solo se compone en un perfil nuevo (`@8`), fuera de esta ADR.
+- **Rollback del canary:** `@8 → @7`, en el runtime de canary aislado. Es el que se ensaya en J4-R6.
+- **Producción:** está en **`sales-production@3`** (`ef5a354`), no en `@7`. J4 no despliega ni modifica producción, y su rollout no está autorizado. Un futuro paso a `@8` en producción partiría de `@3` y tendría su propio rollback (a `@3` o al perfil vigente entonces), definido en J7.
 
 ## Invariantes de seguridad
 
-Normativos para cualquier implementación. Sus pruebas de aceptación están en la especificación del consumidor §10.
+Normativos. Sus pruebas de aceptación están en la especificación del consumidor §11.
 
 | ID | Invariante |
 |---|---|
@@ -139,7 +164,7 @@ Normativos para cualquier implementación. Sus pruebas de aceptación están en 
 | I3 | Solo identidad verificada **y** autorización individual permiten acceder a historial privado |
 | I4 | Customer Profile aplica la autorización por cliente; no confía exclusivamente en el token de servicio |
 | I5 | Una respuesta `not_found` nunca sustituye silenciosamente a un rechazo 401/403 |
-| I6 | Los grants y datos sensibles no aparecen en logs ni telemetría |
+| I6 | Los grants y datos sensibles no aparecen en logs, telemetría ni URLs |
 | I7 | La ausencia de Customer Profile nunca impide una cotización `guest` |
 | I8 | Los datos históricos de compra no demuestran propiedad actual ni compatibilidad con otros productos |
 | I9 | Los perfiles Sales anteriores conservan sus contratos y hashes |
@@ -151,29 +176,30 @@ Normativos para cualquier implementación. Sus pruebas de aceptación están en 
 
 | Alternativa | Motivo |
 |---|---|
-| Resolver en `afterOpen` y escribir `customer_ref` (propuesta CP §2) | Acopla la ingress a un servicio externo. Congela la identidad al inicio: `bindConversation` es insert-once (`workspace/store.ts:140-147`). Una revocación no surtiría efecto durante la conversación |
-| Usar niveles L2/L3 de CRM vía su base o su endpoint de contexto | Viola AGENTS.md (tablas CRM). L2 no comprueba `is_verified`. El endpoint es de operador. CRM está en retiro |
-| Confiar en el token de servicio de R4 frente a CP | Acceso horizontal a cualquier cliente (I4) |
+| Resolver en `afterOpen` y escribir `customer_ref` | Acopla la ingress a un servicio externo y congela la identidad: `bindConversation` es insert-once (`workspace/store.ts:140-147`) |
+| Niveles L2/L3 de CRM | Viola AGENTS.md; L2 no comprueba `is_verified`; CRM en retiro |
+| Confiar en el token de servicio frente a CP | Acceso horizontal a cualquier cliente (I4) |
 | Que el modelo pase `customerRef` o un cursor | Viola I1 |
-| Usar `identityAssurance` del harness como evidencia de identidad | En producción vale `provisional` para todo cliente (describe al servicio de ingress) |
-| Modificar `customer.get_context@1` | Las definiciones son inmutables (I9). v1 sigue sirviendo a referencia y evaluación |
-| Responder `unavailable` ante la caída del owner | Una respuesta exitosa quedaría vigente durante el TTL y ocultaría la caída. Se usa observación fallida |
+| Usar la `identityAssurance` del harness | En producción vale `provisional` para todo cliente |
+| Modificar `customer.get_context@1` | Las definiciones son inmutables (I9) |
+| Responder `unavailable` ante la caída del owner | Una respuesta exitosa queda vigente y oculta la caída. Se usa observación fallida |
+| Apoyar la privacidad en la expiración | Las observaciones vencidas siguen visibles como historia y persistidas (F8) |
+| `displayName` en la salida por defecto | Sin necesidad demostrada; minimización estricta (D4) |
 
 ## Consecuencias
 
-- R4 depende de dos contratos externos (resolución con grant y lectura con grant) que aún no existen. J4-R2 a J4-R6 quedan condicionados a su publicación (J4-R1B).
-- Cada lectura Customer cuesta una resolución más una lectura. El presupuesto se fija en la especificación §8.
-- Sin retención de observaciones, los datos minimizados de clientes verificados persisten en R4 hasta que J7 defina la política.
-- El riesgo de un R4 comprometido que fabrique sujetos de canal se acota con controles en el consumidor, pero no se elimina.
+- R4 depende de dos contratos externos que no existen: la resolución con grant y la lectura con grant. J4-R2 a J4-R6 quedan condicionadas a J4-R1B.
+- El significado de "compra" (órdenes válidas, cancelaciones, devoluciones, unidades, fechas y zona horaria) depende de la aceptación de CP-J4-CONTEXT. No se congela antes.
+- Mientras D7 no se resuelva, solo se usan datos sintéticos.
+- El riesgo de un R4 comprometido se acota, pero no se elimina.
 
-## Pendiente de decisión
+## Pendiente
 
-| ID | Pregunta | Responsable |
+| ID | Estado | Responsable |
 |---|---|---|
-| D1 | Owner de identidad: confirmar Customer Service tras su auditoría | Customer Service + owner de R4 |
-| D2 | Alternativa A o B, formato del grant y gestión de claves | Customer Profile + owner de identidad |
-| D4 | Si `displayName` es visible para el modelo y para los jueces de evaluación | Owner de R4 (privacidad) |
-| D6 | Identificador de producto del historial (clave Catalog o nulo) | Catalog / Customer Profile |
-| D7 | Retención de observaciones con datos de cliente | Plataforma R4 (J7) |
+| D1 | BLOCKED | Customer Service + owner de R4 |
+| D2 | PROPOSED | Customer Profile + owner de identidad |
+| D6 | BLOCKED | Catalog + Customer Profile |
+| D7 | PROPOSED_PRODUCTION_BLOCKER | Plataforma R4 (J7) |
 
-La matriz completa D1–D8 está en [`R4-J4-R1_DESIGN_REPORT.md`](../architecture/R4-J4-R1_DESIGN_REPORT.md) §3.
+La matriz completa D1–D8 está en el [informe de diseño](../architecture/R4-J4-R1_DESIGN_REPORT.md) §3.
