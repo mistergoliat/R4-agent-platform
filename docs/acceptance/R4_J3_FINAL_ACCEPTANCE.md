@@ -4,28 +4,30 @@ Fecha: 2026-10-14 · Rama `r4-j3e-c-deterministic-commercial-offer`, commit `778
 
 **Pregunta de aceptación:** si un cliente escribe a PesasChile por WhatsApp y pide una cotización, ¿puede R4 atenderlo, construir bien la propuesta, obtener su confirmación, emitir la cotización con Quote V2 y entregarle un resultado utilizable?
 
-### Estado vigente (2026-10-14, tras la re-delimitación del owner y el intento de canary final)
+### Estado vigente (2026-10-15, tras la re-delimitación del owner y el canary EC2 final de `@7`)
 
-El alcance se re-delimitó a *Quote Integration & Autonomous Issuance* (§15). El canary EC2 final de `@7` quedó **BLOCKED** (§16; [`R4_J3_FINAL_EC2_CANARY_REPORT.md`](R4_J3_FINAL_EC2_CANARY_REPORT.md)). El bloque histórico de abajo se conserva sin cambios.
+El alcance se re-delimitó a *Quote Integration & Autonomous Issuance* (§15). El canary EC2 de `@7` pasó el 2026-10-15 y emitió **PC-000006** contra los owners reales ([informe §20](R4_J3_FINAL_EC2_CANARY_REPORT.md)). Los bloques históricos se conservan.
 
 ```
 J3_SCOPE=QUOTE_INTEGRATION_AND_AUTONOMOUS_ISSUANCE   (re-delimitado 2026-10-14, §15)
-J3_TECHNICAL_ACCEPTANCE=PASS                         (LOCAL @7; EC2 @5/@6)
-J3_AUTONOMOUS_ISSUANCE=PASS en LOCAL/REAL-MODEL @7 y EC2 @5/@6 · EC2 @7: NOT_RUN
-J3_REAL_MODEL_E2E=PASS                               (EC2-DOC @6; REAL-MODEL @7 con owners fixture)
-J3_REAL_QUOTE_V2_E2E=PASS para @5/@6 · NOT_RUN para @7 (canary BLOCKED)
-J3_OFFER_INTEGRITY=PASS                              (LOCAL @7: igualdad byte a byte, mutaciones)
-J3_DOCUMENT_VERIFICATION=PASS                        (SHA-256: EC2 @5/@6, LOCAL @7)
+J3_TECHNICAL_ACCEPTANCE=PASS
+J3_AUTONOMOUS_ISSUANCE=PASS                          (EC2 @7: PC-000006; LOCAL/REAL-MODEL @7; EC2 @5/@6)
+J3_REAL_MODEL_E2E=PASS                               (EC2 @7 con DeepSeek real y owners reales)
+J3_REAL_QUOTE_V2_E2E=PASS                            (@5/@6 PC-000004/5; @7 PC-000006)
+J3_OFFER_INTEGRITY=PASS                              (EC2 @7: SHA-256 del texto capturado = render Sales; LOCAL: mutaciones)
+J3_DOCUMENT_VERIFICATION=PASS                        (PC-000006: manifiesto = artefacto = recibo, 31 669 bytes)
+J3_REAL_QUOTE_V2_ISSUANCES=1                         (canary final; Quote V2 de integración)
+J3_STATUS_HISTORY=canary 2026-10-14 BLOCKED (SSH) → FAIL (límite de 60 s por llamada) → 2026-10-15 PASS (timeouts del canary autorizados)
 J3_DOCUMENT_DELIVERY=DEFERRED
 J3_CUSTOMER_JOURNEY_FULL=INCOMPLETE
 J3F_DISPOSITION=DEFERRED_TO_R4_MEDIA
 ADR_038_STATUS=PROPOSED_DEFERRED
 GAP_03_DISPOSITION=J7_PRODUCTION_GATE_P0             (Sales Response Integrity; emisión protegida antes del outbound)
 J3_PRODUCTION_UNCHANGED=YES                          (verificado antes y después del canary, solo lectura)
-J3_CANARY_EC2=FAIL                                   (2 conversaciones: timeouts del modelo > 60 s ⇒ handoff; 0 emisiones; ver informe §18. Antes: BLOCKED por SSH)
+J3_CANARY_EC2=PASS                                   (informe §20)
 J3_PRODUCTION_ROLLOUT=NOT_AUTHORIZED
-J3_FINAL_STATUS=CONDITIONAL
-J3_MINIMUM_REMAINING_WORK=canary EC2 de @7 que llegue a la emisión (informe §17; opciones de §18.7: límite por llamada del modelo o ventana de latencia normal)
+J3_FINAL_STATUS=READY_TO_CLOSE_RESCOPED              (propuesta; el cierre formal lo aprueba el owner)
+J3_MINIMUM_REMAINING_WORK=ninguno dentro del alcance re-delimitado; pendiente la aprobación del owner y el merge (no autorizado)
 ```
 
 ### Estado anterior (histórico, antes de la re-delimitación; no vigente)

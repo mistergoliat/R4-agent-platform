@@ -8,7 +8,25 @@
 | Rama de ejecución | `r4-j3e-c-deterministic-commercial-offer` |
 | Documentos hermanos | [`R4_J3_FINAL_ACCEPTANCE.md`](R4_J3_FINAL_ACCEPTANCE.md) §15–§16 y [`R4_J3_CUSTOMER_JOURNEY_GAP_REGISTER.md`](R4_J3_CUSTOMER_JOURNEY_GAP_REGISTER.md) |
 
-**Estado vigente (§18, ejecución del 2026-10-14, 22:23–23:10 UTC, con la identidad SSH autorizada por el owner):**
+**Estado vigente (§20, ejecución del 2026-10-15 con timeouts del canary autorizados): PASS.**
+
+```text
+J3_CANARY_EC2=PASS
+J3_REAL_QUOTE_V2_ISSUANCES=1              (PC-000006, Quote V2 de integración)
+J3_PRODUCTION_UNCHANGED=YES               (verificado antes y después, solo lectura)
+J3_TECHNICAL_ACCEPTANCE=PASS
+J3_AUTONOMOUS_ISSUANCE=PASS
+J3_REAL_MODEL_E2E=PASS
+J3_REAL_QUOTE_V2_E2E=PASS                 (@7 contra Catalog, Shipping y Quote V2 reales)
+J3_OFFER_INTEGRITY=PASS
+J3_DOCUMENT_VERIFICATION=PASS
+J3_DOCUMENT_DELIVERY=DEFERRED
+J3_CUSTOMER_JOURNEY_FULL=INCOMPLETE
+J3_PRODUCTION_ROLLOUT=NOT_AUTHORIZED
+J3_FINAL_STATUS=READY_TO_CLOSE_RESCOPED   (propuesta; el cierre formal lo aprueba el owner)
+```
+
+**Intento del 2026-10-14 (§18, histórico): FAIL** por el límite de 60 s por llamada.
 
 ```text
 J3_CANARY_EC2=FAIL                         (latencia del proveedor del modelo frente al límite de 60 s por llamada de R4; no es un fallo de seguridad ni de integridad)
@@ -419,3 +437,165 @@ J3_REAL_QUOTE_V2_ISSUANCES=0
 J3_PRODUCTION_UNCHANGED=YES
 J3_FINAL_STATUS=CONDITIONAL
 ```
+
+## 20. Canary con timeouts del canary autorizados (2026-10-15, 15:42–17:12 UTC): **PASS**
+
+**Autorización del owner:**
+
+```text
+CANARY_RETRY=AUTHORIZED
+R4_MODEL_TIMEOUT_MS=180000
+R4_EXEC_MODEL_CALL_TIMEOUT_MS=195000
+CONFIG_EFFECTIVE_VERIFICATION=REQUIRED
+MODEL_PROFILE=UNCHANGED, THINKING=ENABLED, CATALOG_DEPLOYMENT=UNCHANGED
+PRODUCTION_CHANGES=FORBIDDEN
+MAX_NEW_QUOTE_ISSUANCES=1
+```
+
+### 20.1 Cambio aplicado (solo en el canary)
+
+- `~/.config/r4-canary/canary-j3e7.env` (0600), con respaldo `canary-j3e7.env.bak-20261015T154247Z` (0600):
+  - `R4_MODEL_TIMEOUT_MS` 120000 → 180000;
+  - `R4_EXEC_MODEL_CALL_TIMEOUT_MS` agregado, 195000.
+- La única otra modificación es la clave sintética de cada conversación nueva en la allowlist del canary.
+- `production.env`, el checkout productivo y PM2 no se tocaron.
+- **Corrección de un dato del mandato:** antes no se había aplicado ningún valor de 135 s. El corte a 60 s era el default de `R4_EXEC_MODEL_CALL_TIMEOUT_MS`, que el entorno nunca definía.
+
+### 20.2 Verificación de la configuración efectiva (exigida antes de ejecutar)
+
+| Exigencia | Evidencia |
+|---|---|
+| Archivo de entorno del worker aislado | El proceso se inicia con `bash -c 'set -a; . ~/.config/r4-canary/canary-j3e7.env; set +a; exec node agents/sales/dist/cli/canary.js run'`. La CLI lee solo `process.env`, nunca un `.env` (`command.ts:19-28`) |
+| Precedencia | La sesión SSH no define ninguna variable `R4_*`, así que manda el archivo. El worker recibe `{...env, R4_DATABASE_URL: <canary>}` (`command.ts:191-192`) |
+| Valores en el proceso vivo | `/proc/<pid>/environ` del `node … canary.js run`: `R4_EXEC_MODEL_CALL_TIMEOUT_MS=195000`, `R4_MODEL_TIMEOUT_MS=180000`, `R4_PROD_POLICY_PROFILE=sales-production@7` |
+| El executor usa 195 000 ms | Script de solo lectura con los mismos cargadores (`loadWorkerConfig`, `resolveExecutionLimits`, `modelCallTimeout`): `modelCallTimeoutMs=195000`; timeout de la primera llamada 195 000 y con 5 min consumidos 195 000 |
+| DeepSeek usa 180 000 ms | `loadOpenAICompatibleConfig`: `timeoutMs=180000` (validador: 1 000–600 000). Perfil `deepseek-v4-flash`, *thinking* `enabled`, sin `maxOutputTokens` |
+| Ningún timeout inferior en la cadena | Kernel: `min(modelCallTimeoutMs, maxRunDurationMs − elapsed)` (`budget.ts:133`). Gateway: `limits.timeoutMs` (`gateway.ts:79`). Proveedor: `AbortSignal.timeout(180000)` (`provider.ts:90`). Transporte: Node v22.23.1 con undici 6.27.0, dispatcher por defecto (`headersTimeout`/`bodyTimeout` 300 000 ms) y sin `setGlobalDispatcher` ni `Agent` propio. Lease de 30 s con heartbeat de 10 s, que se renueva durante la llamada |
+| Presupuesto total del run | **Corrección:** el run efectivo es de **600 000 ms (10 min)**, no 15. La definición `sales@7` declara `budgets.maxDurationMs=600000` y el kernel aplica el más estricto (`resolveExecutionLimits`). También 40 llamadas al modelo y 40 lecturas por run. No se cambió, porque las definiciones son inmutables. Cada turno es un run propio |
+
+### 20.3 Preflight (solo lectura)
+
+- **Producción:** `ef5a354`, limpio, `@3`, rollout 0 %. `/ready` `ready` con WhatsApp REAL y `pendingMigrations: []`. 11 migraciones (sin Sales `0008`/`0009`). PM2 11/16/0. 0 outbound productivos en 24 h.
+- **Canary:**
+  - `c46d6c3`, limpio;
+  - `isolation: verified`, tráfico ajeno 0/0/0;
+  - 0 ejecuciones, schedules u outbound abiertos; 0 sesiones ajenas;
+  - límites sin cambios;
+  - Quote V2 6/5/8/1, Gmail `disabled`;
+  - 733 MB libres.
+
+### 20.4 Conversación `j3-final-4` (task `01a1403b-9da2-71db-aadf-36d4a299cf31`, `sales@7`, binding `sales-production@7` `allowlisted`)
+
+| # | Cliente (sintético) | Agente (DeepSeek real) |
+|---|---|---|
+| 1 | "Hola, necesito cotizar una rack, una barra olímpica y discos con despacho a San Bernardo. Es para entrenar fuerza en mi casa y busco lo más económico: mi presupuesto máximo es 240 mil pesos con despacho incluido." | Rack más económico del Catalog real: Squat Rack Delta (HWM) $109.990. Pregunta el peso de discos y el tipo de rack. La primera run agotó sus 10 min tras 14 búsquedas; la run de recuperación (ADR-028) respondió |
+| 2 | "Me sirve el Squat Rack Delta. En discos necesito poco, unos 20 kilos en total, lo más económico. Y una barra olímpica económica." | 3 líneas del Catalog ($195.970 en productos). `shipping.quote` real a San Bernardo con dos alternativas: Pesas Chile Despacho Directo **$1** (dato del owner, ver §20.7) y Blue Express EXPRESS $17.654. Primera run otra vez agotada a los 10 min; la recuperación respondió |
+| 3 | "Prefiero Blue Express. Prepárame la cotización de todo el conjunto, por favor." | **Oferta determinista Sales** `r4-sales-offer-es-v1`, ref. `Q-DDEB47-2`: líneas, despacho, neto $179.516, IVA $34.108, total $213.624, "¿Emito esta cotización? Puedes responder: Sí, emítela." |
+| 4 | "Sí." | Propone `quote.create@5`. Política `allow/autonomous`. **La capability rechaza** `customer_confirmation_not_explicit` (`not_a_confirmation`). Re-presenta la oferta idéntica |
+| 5 | "Sí, emítela." | `quote.create@5` → `authorized:eligible` → 1 envío → **PC-000006 emitida**, recibo `succeeded`. Respuesta: número, líneas, despacho, totales y validez hasta el 19-10-2026; "El documento fue generado y verificado correctamente". No afirma haber entregado el PDF al cliente |
+
+### 20.5 Evidencia
+
+**Oferta**
+
+| Ítem | Valor |
+|---|---|
+| Productos (Catalog) | P1536 `HWM-DT50-SR-N` Squat Rack Delta 1 × $109.990 · P28 `BORC` Barra Olímpica 8.5kg Eco Serie 1 × $39.990 · P573 `DOBL25` Par Discos Olímpicos 25lb 1 × $45.990. Sin variantes (`variantRef` nulo) |
+| Despacho (Shipping real) | Blue Express EXPRESS, San Bernardo, Metropolitana: neto 14 835, IVA 2 819, bruto 17 654 |
+| Totales | Neto 179 516 · IVA 34 108 · bruto 213 624. Iguales en el snapshot, el cuerpo congelado, el owner y el recibo |
+| Render y SHA-256 del mensaje presentado | `r4-sales-offer-es-v1`. `offer_text_sha256` (`0009`) = `offerMessageSha256` (`0008`) = SHA-256 del texto capturado en el canal sintético = `693e27f64989972927818982ddded86ab0db9bc92bec70c9c94733a2b96f14af` |
+
+**Confirmación**
+
+| Ítem | Valor |
+|---|---|
+| "Sí." | Decisión `0008` `rejected:customer_confirmation_not_explicit`; recibo `rejected`; 0 llamadas al owner |
+| "Sí, emítela." | Decisión `0008` `authorized:eligible`: bruto 213 624, 3 líneas, 3 unidades, versión comercial 2, 0 en la última hora, 0 en la conversación. Gramática `r4-sales-confirmation-es-v1`, regla `affirmation=si;courtesy=none` |
+| Evidencia `0009` | `confirmation_input_id 01a1408c-36c0-…`; confirmación 17:11:33.3 posterior a la oferta re-presentada (17:11:14.2; outbound `accepted`); `confirmation_text_sha256 5cad1a42…` |
+
+**Política**
+- 4 decisiones `allow/autonomous` con `sales-production-autonomous-policy@1`, hash `515ce98f…`, `r4.policy-engine.v1`, identidad `provisional`:
+  - 2 para `sales.workspace.update@2`;
+  - 2 para `quote.create@5`.
+- 0 solicitudes humanas.
+
+**Quote V2**
+
+| Ítem | Valor |
+|---|---|
+| Emisión | **PC-000006**, `quote_id 1d2d66e9-f05b-4f75-80f1-798c03ad0761`, `issued` 2026-10-15T17:11:38.974Z. Correlación `r4-sales` / `r4-task` / `01a1403b-…` (la task). Cliente `guest` |
+| Validez | `cl-retail-5-calendar-days-v1`, hasta 2026-10-19 (`valid_until_exclusive` 2026-10-20T03:00Z) |
+| Liquidación estricta | Recibo `succeeded` con liquidación estricta. Por línea y en despacho, owner = snapshot (92 429/17 561/109 990 · 33 605/6 385/39 990 · 38 647/7 343/45 990 · 14 835/2 819/17 654); `exemptNet` 0; tipo de correlación `r4-task` |
+| Idempotencia | `execution_key r4x_01a1408c4b2970488e90b067b5deb532` = `Idempotency-Key`. 1 binding `r4-sales-integration`/`quote.create_and_issue` → esta cotización. 1 operación `quote.issue` `succeeded` (1 intento). 1 fila de envío (`0007`). Recibo `replayed: false` |
+| Conteos del owner | Cotizaciones 6 → **7**, operaciones 5 → 6, bindings 8 → 9, entregas 1 → **1**, documentos 5 → 6 |
+
+**PDF**
+
+| Ítem | Valor |
+|---|---|
+| Manifiesto del owner | `application/pdf`, SHA-256 `1913c9d93b2156ce99814d97f48b81e2098b311db01e444eb0cd460c905ca2e2`, 31 669 bytes, `quote-pdf-template-v5` |
+| Artefacto y R4 | `artifact_ref sha256:1913c9d9…` = `sales.quote_v2_issued.pdf_sha256` = recibo `document.pdfSha256`. Verificación `verified` |
+
+**Recibos y resto**
+
+| Ítem | Valor |
+|---|---|
+| Recibos de la task | `workspace.update@2` ×2 `succeeded`; `quote.create@5` `rejected` (Sí.); `quote.create@5` `succeeded` (`quote:1d2d66e9…`, `PC-000006`, 1 intento `execute`, `applied`) |
+| Outbound | 5 mensajes de `j3-final-4`, todos `r4-synthetic`/`accepted`, a `synthetic:j3-final-4`. 0 WhatsApp. 0 email (proveedor `disabled`; entregas del owner 1 → 1). Ningún texto afirma que el PDF fue entregado al cliente |
+| Producción, después | `ef5a354` limpio; `/ready` `sales-production@3` y `pendingMigrations: []`; 11 migraciones; PM2 11/16/0; 0 outbound productivos en 6 h |
+
+### 20.6 Modelo y eficiencia (para medir después; no se optimiza dentro de J3)
+
+| Métrica | Valor |
+|---|---|
+| Llamadas | 56: 54 completadas, 2 cortadas por el **presupuesto de 10 min del run**, no por el timeout de DeepSeek |
+| Latencia de las completadas | p50 26,0 s, p90 49,2 s, **máximo 77,4 s**. Esa llamada habría fallado con el límite anterior de 60 s |
+| Tokens | ≈ 2,74 M de entrada y 271 k de salida; salida máxima por llamada 13 395 |
+| Lecturas | 44 (`catalog.search`, `catalog.get_product_context`, `shipping.quote`). En los turnos 1 y 2, la primera run agotó los 10 min (14 y 16 lecturas) y ADR-028 los recuperó (2 de 2) |
+| Tiempo total | Primer mensaje → emisión: ≈ 88 min de reloj. Incluye ≈ 60 min de espera del lado del operador entre el turno 1 y el 2; el cliente sintético respondió tarde. Turnos 3–5: ≈ 2 min |
+
+Coincide con la lectura del owner: el timeout era insuficiente (resuelto en el canary), pero además el agente hace búsquedas repetitivas que agotan el presupuesto del run. Es un problema de eficiencia del agente, distinto del timeout. Se mide aquí y no se desarrolla dentro de J3.
+
+### 20.7 Observaciones
+
+1. **Tarifa de $1 de Shipping.** Shipping real ofreció "Pesas Chile – Despacho Directo" a $1 hacia San Bernardo. Es un dato del owner que el agente transmitió tal cual, sin inventarlo, y el cliente no lo eligió. Hay que revisarlo con el owner de Shipping antes de clientes reales.
+2. **Recuperación en cada turno largo.** Los turnos 1 y 2 completaron gracias a la recuperación de ADR-028 tras agotar el presupuesto del run. Funcionó, pero duplica latencia y costo; queda como entrada para la medición de eficiencia.
+3. **GAP-03.** El mensaje de emisión, redactado por el modelo, coincidió con el recibo (número, líneas, totales, validez). Es una coincidencia observada, sin garantía de código (J7 P0).
+4. **Estado que queda en EC2:**
+   - runtime del canary detenido;
+   - `canary-j3e7.env` con los timeouts autorizados (respaldo disponible);
+   - tareas `j3-final-1/2/3` `blocked` con handoff; `j3-final-4` `waiting`;
+   - logs `~/r4-j3d/j3e7-canary-run.log` y captura `j3e7-canary-outbound.jsonl`;
+   - PC-000006 en Quote V2 de integración (solo sintético, Gmail deshabilitado).
+
+### 20.8 Decisión de aceptación propuesta
+
+Todos los gates de §17.5 cumplen:
+- exactamente 1 cotización real;
+- producción idéntica;
+- todo el outbound en el canal sintético;
+- "Sí." no autoriza y "Sí, emítela." sí;
+- oferta byte a byte;
+- liquidación estricta;
+- PDF verificado;
+- idempotencia y recibos coherentes.
+
+```text
+J3_CANARY_EC2=PASS
+J3_REAL_QUOTE_V2_ISSUANCES=1
+J3_PRODUCTION_UNCHANGED=YES
+J3_TECHNICAL_ACCEPTANCE=PASS
+J3_AUTONOMOUS_ISSUANCE=PASS
+J3_REAL_MODEL_E2E=PASS
+J3_REAL_QUOTE_V2_E2E=PASS
+J3_OFFER_INTEGRITY=PASS
+J3_DOCUMENT_VERIFICATION=PASS
+J3_DOCUMENT_DELIVERY=DEFERRED
+J3_CUSTOMER_JOURNEY_FULL=INCOMPLETE
+J3F_DISPOSITION=DEFERRED_TO_R4_MEDIA
+GAP_03_DISPOSITION=J7_PRODUCTION_GATE_P0
+J3_PRODUCTION_ROLLOUT=NOT_AUTHORIZED
+J3_FINAL_STATUS=READY_TO_CLOSE_RESCOPED
+```
+
+El cierre formal de J3 lo aprueba el owner al revisar este informe.

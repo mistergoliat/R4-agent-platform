@@ -31,7 +31,7 @@ Clases (mandato del owner, §8):
 | ID | Brecha | Clase | Prioridad | Hito |
 |---|---|---|---|---|
 | GAP-01 | El cliente no recibe el PDF oficial | ~~J3-FUNCTIONAL-BLOCKER~~ → **DEFERRED_TO_R4_MEDIA** (2026-10-14). Requisito previo a un rollout que prometa PDFs | P0 para ese rollout | ~~J3 (slice J3F)~~ → R4 Media & Communications |
-| GAP-02 | `@7` sin canary EC2 contra owners reales | **J3-FUNCTIONAL-BLOCKER** (evidencia pendiente). Canary 2026-10-14: **BLOCKED** (sin acceso SSH legítimo desde esta estación) | P0 | J3 |
+| GAP-02 | `@7` sin canary EC2 contra owners reales | ~~J3-FUNCTIONAL-BLOCKER~~ → **CERRADA** (2026-10-15): canary EC2 PASS, PC-000006 ([informe §20](R4_J3_FINAL_EC2_CANARY_REPORT.md)). Historia: 2026-10-14 BLOCKED (SSH) y luego FAIL (límite de 60 s por llamada) | — | J3 |
 | GAP-03 | El mensaje de emisión lo redacta el modelo | ~~J3-FUNCTIONAL (se resuelve dentro de J3F)~~ → **J7-PRODUCTION-GATE** (`GAP_03_DISPOSITION=J7_PRODUCTION_GATE_P0`) | ~~P1~~ → **P0 para J7** | ~~J3 (slice J3F)~~ → J7 (Sales Response Integrity) |
 | GAP-04 | Productos con peso solo por variante no cotizan despacho | FUTURE-ENHANCEMENT (se reclasifica tras medir) | P2 | J1/J2 |
 | GAP-05 | La cotización no identifica al cliente (invitado anónimo) | FUTURE-ENHANCEMENT | P2 | J4 / posterior |
