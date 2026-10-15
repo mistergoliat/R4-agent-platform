@@ -2,7 +2,7 @@
 title: R4 — Delivery Roadmap
 status: active
 owner: architecture
-last_reviewed: 2026-09-24
+last_reviewed: 2026-10-15
 source: ../architecture/R4_AGENTIC_PLATFORM_PRD_AND_ROADMAP.md §40
 ---
 
@@ -25,13 +25,26 @@ requiere autorización explícita (AGENTS.md).
 | R4-G | Quality & Learning | Completado (sobre R4-F LIVE-VALIDATED BASELINE `001b7a8`) |
 | R4-H | Shadow / E2E (PRD §40: "Shadow Production") | Cerrado (R4-H BASELINE `80a1733`) |
 | R4-I | Governed Production | **En progreso** — implementado sobre R4 POST-H RECOVERY BASELINE `dd06a68`; pendiente de auditoría (§3.11) |
-| R4-J | Sales Autonomy | No iniciado |
+| R4-J | Sales Autonomy | **En progreso**: J3 cerrado (2026-10-15, `main` `b5fd288`); hitos en §1.1 |
 | R4-K | Platform Generalization Test (Marketing Analyst) | No iniciado |
 | R4-L | Extended Platform | No iniciado |
 
 **Post-H Architecture Gap Review** (gate humano, **no** una fase): GAP-H-001
 confirmado y **resuelto** (ADR-028, §3.10; publicado en `dd06a68`). No se abrió
 R4-H.5 ni ninguna fase nueva.
+
+### 1.1 Hitos de R4-J vigentes tras el cierre de J3 (owner, 2026-10-15)
+
+Sin fechas. Cada hito requiere autorización explícita; ninguno se inicia
+automáticamente.
+
+| Hito | Estado | Alcance |
+|---|---|---|
+| J3 — Quote Integration & Autonomous Issuance | **CLOSED** (`CLOSED_WITH_RESCOPED_ACCEPTANCE`) | Integración comercial y emisión autónoma. [Registro de cierre](../acceptance/R4_J3_CLOSURE_RECORD.md) |
+| J4 — Customer Profile | **NEXT** (no iniciado) | Perfil de cliente |
+| J4.5 — Catalog | **PLANNED** | Optimización e integración de Catalog; después se reevalúa la eficiencia del agente (aceptación J3 §17) |
+| R4 Media & Communications | **DEFERRED** | Capacidades multimedia y entrega de documentos (J3F, §4.2) |
+| J7 — Production Readiness | **NOT PRODUCTION READY** | Gobernanza operacional y habilitación de clientes reales (gates del registro de brechas J3) |
 
 ## 2. R4-B — criterios de salida
 

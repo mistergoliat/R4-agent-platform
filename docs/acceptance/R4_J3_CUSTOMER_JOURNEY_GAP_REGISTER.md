@@ -2,11 +2,13 @@
 
 Fecha: 2026-10-14 · Rama `r4-j3e-c-deterministic-commercial-offer` (`7783a08`, sin publicar) · Base `origin/main` `092715e` · Documento hermano: [`R4_J3_FINAL_ACCEPTANCE.md`](R4_J3_FINAL_ACCEPTANCE.md).
 
+**Estado vigente (2026-10-15): J3 `CLOSED_WITH_RESCOPED_ACCEPTANCE`** (aceptación §17; registro de cierre [`R4_J3_CLOSURE_RECORD.md`](R4_J3_CLOSURE_RECORD.md)). GAP-02 y GAP-16 cerradas; GAP-01 diferida a R4 Media; las brechas con hito J7 siguen abiertas. El bloque siguiente es historia del 2026-10-14.
+
 > **Re-delimitación de J3 (decisión del owner, 2026-10-14).** J3 pasa a ser *Quote Integration & Autonomous Issuance* y excluye explícitamente la entrega del PDF (aceptación §15).
 >
 > - **GAP-01:** pasa a `DEFERRED_TO_R4_MEDIA`. Deja de bloquear J3, pero sigue siendo requisito verificable antes de cualquier rollout comercial que prometa PDFs al cliente.
 > - **GAP-03:** `GAP_03_DISPOSITION=J7_PRODUCTION_GATE_P0` (decisión del owner, 2026-10-14). Sale de J3 y no forma parte de R4 Media: pertenece a *Sales Response Integrity*.
-> - **GAP-02:** sigue abierto. El canary EC2 de `@7` del 2026-10-14 quedó **BLOCKED** por acceso SSH ([informe](R4_J3_FINAL_EC2_CANARY_REPORT.md)).
+> - **GAP-02:** sigue abierto. El canary EC2 de `@7` del 2026-10-14 quedó **BLOCKED** por acceso SSH ([informe](R4_J3_FINAL_EC2_CANARY_REPORT.md)). *(Superado: cerrada el 2026-10-15, canary PASS con PC-000006, informe §20.)*
 >
 > Las clasificaciones anteriores se conservan tachadas o en las filas "Disposición" como historia.
 
@@ -80,6 +82,7 @@ Las cuatro últimas surgieron de las conversaciones con el modelo real de esta a
 | Dependencias | Acceso SSH a EC2 permitido en la sesión; transferencia del commit por bundle incremental (sin publicar la rama); ≥ 700 MB libres; cancelar `j3eb-pos-1`. |
 | Test de aceptación | Recibo `succeeded`; decisión `authorized:eligible`; `offer_text_sha256` = renderización Sales; liquidación estricta sin `unknown`; PDF `verified`; 1 binding de idempotencia y 1 operación en Quote V2; producción en `@3` sin cambios; 0 outbound fuera del canal sintético. |
 | Hito | **J3** |
+| Estado (2026-10-15, vigente) | **CERRADA: PASS** ([informe §20](R4_J3_FINAL_EC2_CANARY_REPORT.md)), con timeouts del canary autorizados por el owner.<br><br>- PC-000006 emitida una sola vez contra Catalog, Shipping y Quote V2 reales (multiproducto, San Bernardo).<br>- Recibo `succeeded` con liquidación estricta; PDF `verified`; oferta = render Sales (SHA-256).<br>- Producción en `@3` / `ef5a354`, sin cambios antes y después. 0 outbound fuera del canal sintético. |
 | Estado (2026-10-14, ejecución con la identidad SSH autorizada) | **FAIL, sin emisión** ([informe §18](R4_J3_FINAL_EC2_CANARY_REPORT.md)).<br><br>- Preflight y aislamiento en verde; producción intacta, verificada antes y después.<br>- En dos conversaciones, dos llamadas seguidas al modelo superaron el límite de 60 s por llamada de R4 (`R4_EXEC_MODEL_CALL_TIMEOUT_MS`, default). Resultado: handoff, sin oferta.<br>- 0 cotizaciones.<br>- Evidencia adicional para GAP-17. |
 | Estado (2026-10-14, primer intento) | **BLOCKED** ([informe](R4_J3_FINAL_EC2_CANARY_REPORT.md)).<br><br>Esta estación no tiene el alias SSH `Master`, y el host documentado rechazó su identidad (`Permission denied (publickey)`). Se detuvo sin buscar llaves.<br><br>0 cotizaciones emitidas; producción no verificada. El informe contiene el procedimiento para un operador con acceso legítimo. |
 
