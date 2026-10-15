@@ -1,9 +1,17 @@
 # ADR-039 — Consumo de identidad y perfil de cliente en R4
 
-- **Estado:** **Propuesto — revisado por el owner: `ACCEPTED_WITH_REQUIRED_CHANGES`** (R4-J4-R1A-REVIEW-01, 2026-10-15). Las correcciones exigidas están aplicadas en esta versión. Pasa a **Aceptado (interno de R4)** cuando el owner confirme esas correcciones.
+- **Estado:** **Aceptado (interno de R4)**, 2026-10-15 (mandato CP-J4-F2), con las precisiones del owner que siguen. Antes: Propuesto, revisado por el owner como `ACCEPTED_WITH_REQUIRED_CHANGES` (R4-J4-R1A-REVIEW-01), con las correcciones de R1A y R1C aplicadas.
+  - **Precisiones del owner (RI-09), incorporadas en la especificación del consumidor:**
+    - `withheld` aceptado como `reason` de la información retenida;
+    - cuentas guest e inactivas retenidas de forma provisional;
+    - salida máxima de 8 KiB UTF-8, con pruebas de límite y sin persistencia de respuestas parciales;
+    - `quantityBasis` describe unidades brutas, no netas de devoluciones;
+    - `datePrecision` no atribuye una precisión horaria ni un margen cuantitativo no demostrado;
+    - códigos internos de error aceptados.
   - La aceptación interna cubre solo las decisiones de R4: D3, D4 (parte R4), D5 y D8.
   - **No** cubre ni declara resueltas las dependencias externas: D1 (autoridad de identidad), D2 (autorización individual) y D6 (identificador de producto) siguen pendientes de sus owners. D7 sigue como gate de datos reales y de producción.
-  - **Corrección documental R4-J4-R1C (2026-10-15):** aplica las posiciones de R4 AP-01 a AP-11 y D6 del [registro de decisiones compartidas](../architecture/R4-J4-R1C_SHARED_DECISION_REGISTER.md) (§1, §5, §6, §7 y Pendiente). No cambia el estado de esta ADR: sigue Propuesta.
+  - **Corrección documental R4-J4-R1C (2026-10-15):** aplica las posiciones de R4 AP-01 a AP-11 y D6 del [registro de decisiones compartidas](../architecture/R4-J4-R1C_SHARED_DECISION_REGISTER.md) (§1, §5, §6, §7 y Pendiente).
+  - La aceptación interna **no** levanta las dependencias externas: D1, D2, D6 y D7 conservan sus bloqueos.
 - **Fecha:** 2026-10-15. Versión entregada sin correcciones: commit `b680b2c`. Versión revisada en R1A: `2890a9c`.
 - **Alcance:** cómo el pack Sales (y cualquier pack futuro) obtiene la identidad de cliente de una conversación y lee datos del cliente sin que el modelo elija a quién consulta. No modifica `packages/`, `apps/` ni `adapters/`; no crea migraciones, perfiles ni dependencias.
 - **No cubre:** datos declarados por el cliente (GAP-05); entrega documental (R4 Media); corrección de la `identityAssurance` del harness (J7); retención y purga de observaciones (D7, plataforma/J7).
@@ -127,6 +135,7 @@ Decisión:
 - **Condición 2.** El valor desplegado de `R4_CONTEXT_EXPIRED_EVIDENCE` no está verificado en EC2. Antes de J4-R5 se decide si el canary de `@8` usa `exclude`. Es configuración de despliegue, no harness, y afecta a todas las capacidades.
 - **Condición 3.** Un grant con `expiresAt ≤ ahora` de R4 al recibirlo se trata como `contract_violation` (`incoherent_grant`). Un `CP.validUntil ≤ observedAt` se registra ya vencido (ADR-030 regla 4): entra solo como historia.
 - **Condición 4 (R1C).** La observación persiste solo la **salida proyectada** de la capacidad (frontera C, §7). El adaptador no persiste ni registra la respuesta de CP (frontera B). Vencer no borra: la observación sigue persistida y, con `include`, visible como historia hasta que exista D7.
+- **Condición 5 (CP-J4-F2).** Una salida que supere su tope (8 KiB UTF-8 para una página de historial) hace fallar la invocación. No se recortan ítems para que quepa, y la observación fallida no contiene ninguna respuesta parcial.
 
 ### 7. Minimización — D4 **corregida** (R1A) y **ampliada** (R1C, AP-03)
 

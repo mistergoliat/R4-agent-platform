@@ -83,7 +83,7 @@ Actores: R4 (consumidor), la autoridad de identidad, CP, y un atacante que obtie
 | CP-06 | **Minimización en el cable (frontera B, AP-03):** sin datos personales, montos, componentes monetarios, derivados ni datos predictivos en los propósitos J4. Sin ids de PrestaShop ni SKU mientras D6 esté diferida. CP los conserva en su dominio y en sus otras rutas. R4 valida por estructura (`purpose_minimization_violated`) y no por prefijos de clave | El candidato 02B emite `spend.*`, `derived.*`, `productId` y `productAttributeId` |
 | CP-07 | **Hardening independiente (AP-04-H):** sacar `commercial-profile` de `customer.facts.read`, previo inventario de impacto de los consumidores existentes. No es gate de J4: CP-02 basta para `r4-sales` | Hallazgo en `route-families.ts:66` |
 | CP-08 | Cliente desconocido = 200 con `status: not_found`. **401/403 nunca se convierten en 404** ni en `not_found` | Ya en la propuesta de CP |
-| CP-09 | Errores tipados: 400, 405, 413, 415; 401/403; 429 con límite por principal; 503/504. **Cuerpo plano de CP aceptado** (`{"error":"<code>"}`; AP-06). R4 clasifica por status HTTP y código. Corregir `requiredScope: null` en el 403 (H-15) | RESILIENCE-01 tipa 503. El cuerpo plano ya es el de CP |
+| CP-09 | Errores tipados: 400, 405, 413, 415; 401/403; 429 con límite por principal; 503/504. **Cuerpo plano de CP aceptado** (`{"error":"<code>"}`; AP-06). R4 clasifica por status HTTP y código. **H-15 (gate G-07 corregido en CP-J4-F2):** el contrato admite `requiredScope: null` **solo** en el 403 de una ruta no clasificada, que se deniega siempre; una ruta clasificada declara su scope; el middleware no cambia en F2. R4 no usa ese campo como autoridad de seguridad | RESILIENCE-01 tipa 503. El cuerpo plano ya es el de CP |
 | CP-10 | `x-correlation-id` entrante, validado, registrado y devuelto | No implementado |
 | CP-11 | Logs sin grant, sin token y sin `customerRef` en claro (hash o id de grant). Ningún identificador en las URLs de las rutas R4, para que no llegue a access logs ni a proxies | Hoy `customerId` va en el path y en los logs |
 | CP-12 | Exposición de red limitada a los consumidores, sin `*:3010` público; TLS si cruza hosts | Hoy escucha en todas las interfaces |
@@ -114,7 +114,7 @@ El significado de "compra" no puede congelarse sin la aceptación de CP-J4-CONTE
 | Devoluciones | **No se leen** `ps_order_slip`, `ps_order_return` ni `product_quantity_refunded` (CTX-05) | Si las cantidades descuentan devoluciones |
 | Unidades | Brutas: incluyen servicios, regalos de precio 0 y unidades reembolsadas (CTX-12) | Qué cuenta `totalQuantity`. Hasta entonces R4 las declara **brutas** (`quantityBasis`) y nunca las presenta como netas |
 | Producto frente a variante | Historial por variante; otros agregados por producto (CTX-13) | Unidad de un ítem del historial |
-| Fechas | Creación de la orden; zona horaria sin verificar (CTX-09) | Zona y precisión de `lastPurchasedOn`. Hasta entonces, ±1 día |
+| Fechas | Creación de la orden; zona horaria sin verificar (CTX-09) | Zona y precisión de `lastPurchasedOn`. Hasta entonces, día de origen con zona sin validar (`day_timezone_unverified`), sin hora ni margen cuantitativo |
 | Referencia de producto | Corregido en CONTEXT-02A (`91b6739`): un SKU en blanco pasa a `null` | D6 (§7) |
 
 Hasta esa aceptación, R4 trata estos significados como **provisionales** (especificación §5) y no da por cerrado J4-R1B.

@@ -5,6 +5,7 @@
 | Estado | **DRAFT, revisado (R4-J4-R1A-REVIEW-01) y corregido (R4-J4-R1C).** Diseño de consumidor; **no implementado**. Los esquemas externos son lo que R4 necesita, no contratos publicados. Cambiarán cuando los owners publiquen los suyos (J4-R1B) |
 | Fecha | 2026-10-15. Versión previa a la revisión: commit `b680b2c`. Versión R1A: `2890a9c` |
 | R1C | Aplica las posiciones de R4 AP-01 a AP-11 y D6 del [registro de decisiones compartidas](R4-J4-R1C_SHARED_DECISION_REGISTER.md): §2, §3, §5–§12. La forma del cable es la del contrato de Customer Profile; los tipos de este documento son del puerto y de las capacidades de R4 |
+| CP-J4-F2 | Precisiones del owner (RI-09): `datePrecision` cualitativo (§5, §6.2); tope de 8 KiB con pruebas de límite y sin respuestas parciales (§8, §11); `quantityBasis` descrito como unidades brutas. Nombres de campo del contrato v1-rc1 de CP: `purpose`, `purchaseSummary.hasValidOrders` y `lastPurchasedSourceDate` |
 | Decisión marco | [ADR-039](../adr/ADR-039-customer-identity-and-profile-consumption.md) |
 | Destinatarios | Owner de R4; equipos de Customer Service y Customer Profile |
 
@@ -113,7 +114,7 @@ interface CustomerSalesContext {             // purpose: 'sales_context'
 interface CustomerPurchaseItem {
   readonly productName: string | null;       // nombre histórico de CP, sin tope en el puerto; null = sin nombre registrado
   readonly catalogKey: string | null;        // D6 diferida: null en J4
-  readonly lastPurchasedOn: string;          // lastPurchased.sourceDate de CP: día calendario, zona sin validar
+  readonly lastPurchasedOn: string;          // lastPurchasedSourceDate de CP: día calendario de origen, zona sin validar
   readonly totalQuantity: number;            // entero ≥ 0: unidades BRUTAS (quantityPurchasedGross), no netas de devoluciones
   readonly orderCount: number;               // entero ≥ 1: órdenes válidas con esta variante
   readonly lineKind: 'standard' | 'zero_price_line' | 'administrative_service';   // solo para el filtro AP-10
@@ -124,7 +125,7 @@ interface CustomerPurchasePage {             // purpose: 'purchase_history'
   readonly items: readonly CustomerPurchaseItem[];   // vacío si status ≠ available
   readonly hasMore: boolean;
   readonly nextOffset: number | null;                // offset + page.returned de CP, si hasMore
-  readonly datePrecision: 'day' | 'day_plus_minus_one';
+  readonly datePrecision: 'day' | 'day_timezone_unverified';   // cualitativo: sin hora ni margen cuantitativo
   readonly validUntil: string | null;
 }
 
@@ -147,7 +148,7 @@ Reglas de contrato:
 | Cuentas no divulgables | `withheld` (AP-09). El adaptador no devuelve ningún ítem ni el motivo |
 | Nombres | `null` se conserva. No se sustituye por el SKU ni por un nombre actual de Catalog. El tope de 120 es de la salida (§6.2), no del puerto |
 | Cantidades | 0 es un hecho de CP y se conserva. Son unidades **brutas**: incluyen unidades devueltas o reembolsadas (CTX-05, CTX-12) |
-| Fechas | `lastPurchasedOn = lastPurchased.sourceDate`. Mientras `timezoneStatus` sea `unverified`, `datePrecision: day_plus_minus_one`. Nunca se usa un `utcInstant` nulo ni se agrega `Z` |
+| Fechas | `lastPurchasedOn = lastPurchasedSourceDate` de CP. Mientras `timezoneStatus` sea `unverified`, `datePrecision: day_timezone_unverified`: el día puede no coincidir con el día local del cliente. **No** se atribuye hora ni un margen cuantitativo (p. ej., ±1 día) que no esté demostrado. Nunca se agrega `Z` ni se inventa una zona |
 | Tipo de línea | Un `lineKind` desconocido excluye el ítem de la salida (se registra el código) |
 | Orden | Lo declara CP y es total (hoy `last_purchased_desc_product_id_desc_attribute_id_desc`). R4 no reordena. El adaptador verifica que las fechas de la página no crezcan (`order_violation`) |
 | Ciclo de vida | Se registran `contractStatus`, `policyVersion`, `serviceBuildRef` y `authorizationBasis`. Un perfil con Customer `REAL` exige `contractStatus: approved` y `authorizationBasis: customer_grant_verified`: condición necesaria, no suficiente (AP-05). Los modos sintéticos aceptan `candidate` y `service_scope_only` |
@@ -197,7 +198,7 @@ output = union([
   strictObject({ identity: literal('verified'),
                  meaning: literal('purchased_historically_not_ownership'),
                  quantityBasis: literal('gross_units_not_net_of_returns'),
-                 datePrecision: enum(['day', 'day_plus_minus_one']),
+                 datePrecision: enum(['day', 'day_timezone_unverified']),
                  items: array(strictObject({ productName: string().min(1).max(120).nullable(),
                                              catalogKey: string().regex(CATALOG_KEY_PATTERN).nullable(),
                                              lastPurchasedOn: isoDate,
@@ -210,8 +211,8 @@ output = union([
 
 - **Alcance:** como máximo 50 ítems (offset 0–40 más limit 10). `nextOffset` viene del puerto (`offset + page.returned` de CP) cuando `hasMore` y ese valor es ≤ 40; en otro caso es `null`. `returned` cuenta los ítems mostrados.
 - **Nombres (frontera C):** un nombre de más de 120 code points se trunca de forma determinista a 119 más `…`, sin partir pares sustitutos. `null` se conserva; la descripción dice "producto sin nombre registrado". No se sustituye por el SKU ni por el nombre actual de Catalog.
-- **Cantidades:** 0 es un valor válido. `quantityBasis` declara que son unidades brutas, no netas de devoluciones.
-- **Fechas:** `datePrecision: day_plus_minus_one` mientras CP declare `timezoneStatus: unverified`. La descripción prohíbe afirmar el día exacto o la hora.
+- **Cantidades:** 0 es un valor válido. `quantityBasis` declara unidades **brutas** compradas: no descuentan devoluciones ni reembolsos. La descripción nunca las presenta como netas ni como unidades en poder del cliente.
+- **Fechas:** `datePrecision: day_timezone_unverified` mientras CP declare `timezoneStatus: unverified`. Es un valor cualitativo: no afirma hora ni un margen cuantitativo no demostrado. La descripción dice que la fecha es la registrada en origen y que puede no coincidir con el día local.
 - **Filtro (AP-10):** se excluyen `administrative_service` y los `lineKind` desconocidos: un servicio administrativo no se presenta como equipamiento adquirido. `zero_price_line` **no** se excluye: un producto físico entregado gratis puede ser relevante. La clasificación y sus excepciones requieren aceptación comercial.
 - **Por offset y no por cursor:** un cursor opaco podría transportar identidad (I1).
 - **Estabilidad:** cada página es una observación con su propio `observedAt`. Una compra nueva entre páginas puede duplicar u omitir un ítem; la descripción lo advierte.
@@ -261,7 +262,7 @@ Los fallos (casos 9–13) **nunca** se convierten en `unavailable`. `not_found` 
 | Timeout de CP | `R4_CUSTOMER_PROFILE_TIMEOUT_MS`, **3 000–5 000** (sugerido 3 000). El presupuesto de la ruta en CP debe ser ≤ este timeout − 500 ms (hoy 2 500). Son presupuestos locales, no SLO productivos (AP-11) |
 | Peor caso por invocación | ≤ 4,5 s con los valores sugeridos y ≤ 8 s con los máximos. Siempre menor que `timeoutMs` 10 000 |
 | Tope de respuesta | Resolver 16 KiB; CP 64 KiB. **Medidos en bytes UTF-8** sobre el stream, con corte al superarlos (`response_too_large`). No en caracteres JavaScript (AP-07) |
-| Tope de salida (JSON serializado, bytes UTF-8) | `get_context@2` ≤ 300 B; página de historial ≤ 8 KiB. Peor caso calculado: 10 ítems con nombres de 120 code points de 4 bytes y `catalogKey` de 64 caracteres ≈ 6,9 KB |
+| Tope de salida (JSON serializado, bytes UTF-8) | `get_context@2` ≤ 300 B; página de historial ≤ 8 KiB (8 192 B). Peor caso calculado: 10 ítems con nombres de 120 code points de 4 bytes y `catalogKey` de 64 caracteres ≈ 6,9 KB; medido con el v1-rc1 de CP (`catalogKey: null`): 6 381 B. **Pruebas de límite:** 8 192 B pasa y 8 193 B falla. Una salida que excede el tope hace **fallar** la invocación: no se recortan ítems para que quepa y la observación fallida no contiene ninguna respuesta parcial (ADR-039 §6, condición 5) |
 | Reintentos y caché | Ninguno |
 | Variables | `R4_CUSTOMER_MODE`; `R4_CUSTOMER_IDENTITY_{BASE_URL,BEARER_TOKEN,TIMEOUT_MS}`; `R4_CUSTOMER_PROFILE_{BASE_URL,BEARER_TOKEN,TIMEOUT_MS}`. Fail-closed, https fuera de loopback, `R4_PROD_ALLOW_NETWORK`, sin credenciales en la URL |
 | Headers salientes | `authorization: Bearer <servicio>`; grant (solo hacia CP); `x-correlation-id` = correlationId de la tarea; `accept`/`content-type: application/json` |
@@ -283,6 +284,7 @@ Se reutiliza `DomainErrorCategory` (`adapters/domains/src/shared/errors.ts:18`) 
 | 404, 405 y otros estados no contratados | `contract_violation` | no | `unexpected_status` |
 | 429 | `temporarily_unavailable` | sí | `rate_limited` |
 | 503 de CP (`degraded`: `prestashop_unavailable`, `prestashop_timeout`, `prestashop_schema_incompatible`) | `temporarily_unavailable` | sí | `profile_unavailable` (+ código del owner en telemetría) |
+| 403 de CP con `requiredScope` `null` (ruta no clasificada) o con un scope | `unauthorized` | no | `profile_unauthorized`. R4 **no** usa `requiredScope` como autoridad de seguridad; solo lo registra como diagnóstico |
 | 504 de CP (`request_budget_exceeded`) y otros 5xx | `temporarily_unavailable` | sí | código del owner o `*_unavailable` |
 | Historial no disponible o incompleto | `temporarily_unavailable` | sí | `history_unavailable` |
 | Red | `temporarily_unavailable` | sí | `*_unreachable` |
@@ -350,7 +352,8 @@ Tipos: **C** contract · **U** unit · **I** integración (Postgres) · **E** E2
 | — | Estados (AP-08): 503 `degraded` de CP da fallo `temporarily_unavailable`; `partial` sin indicador da `unknown`; ítems no disponibles dan `history_unavailable`; `not_found` da `not_on_file`; `not_applicable`, eliminada, operacional, estado desconocido, guest e inactiva dan `withheld` y 0 ítems | U |
 | — | `productName: null` y `totalQuantity: 0` se conservan; un nombre de más de 120 code points se trunca de forma determinista; una página con fechas crecientes da `order_violation`; los campos desconocidos no llegan a la salida ni a los logs; un eco de `customerRef` distinto da `customer_ref_mismatch` | U |
 | — | `administrative_service` y `lineKind` desconocido se excluyen de la salida; `zero_price_line` se conserva | U |
-| — | Tamaños en bytes UTF-8: las salidas serializadas respetan sus topes con 10 ítems de longitud máxima en caracteres de 4 bytes; una respuesta de CP de más de 64 KiB da `response_too_large` | U |
+| — | Tamaños en bytes UTF-8: las salidas serializadas respetan sus topes con 10 ítems de longitud máxima en caracteres de 4 bytes; límite exacto de 8 192 B (pasa) y 8 193 B (falla, sin payload parcial en la observación); una respuesta de CP de más de 64 KiB da `response_too_large` | U |
+| — | `datePrecision` es `day_timezone_unverified` con zona sin verificar, y la descripción no menciona hora ni margen cuantitativo; `quantityBasis` es siempre `gross_units_not_net_of_returns` | C, U |
 | — | Un perfil con Customer `REAL` falla con `contractStatus: candidate` (`contract_not_approved`) o `authorizationBasis: service_scope_only` (`authorization_basis_insufficient`); los modos sintéticos los aceptan | C, U |
 | — | Sondeo cruzado sin fallos sobre todos los fixtures de CP, copiados con `ownerCommit` (gate F2, G-15) | C |
 | — | `@8` no compone sin `R4_CUSTOMER_*` completo; `@7` compone sin esas variables | C |

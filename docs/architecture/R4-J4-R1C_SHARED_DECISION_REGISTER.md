@@ -6,8 +6,8 @@
 | Mandato | R4-CP-J4-F0F1-EXECUTION-01: fases F0 (decisiones) y F1 (procedencia) del roadmap coordinado |
 | Referencia | Auditoría cruzada R4-CP-J4-ALIGNMENT-01 (`R4_CP_J4_CROSS_REPOSITORY_ALIGNMENT_REPORT.md`, fuera de ambos repositorios): §4–§7 y §12 |
 | Contraparte | `MS-pesaschile-customer-profile`: `docs/reviews/CP_J4_R4_CONTRACT_ALIGNMENT.md` (DEC-01..DEC-08, AP-01..AP-11) |
-| Estado | **Posiciones de R4 registradas.** Ninguna conformidad de Customer Profile, del owner de datos, de Catalog ni de la Customer Identity Authority está registrada |
-| Alcance | Solo documentos. No congela el contrato v1-rc (F2), no inicia CP-CONTEXT-02C y no autoriza J4-R2 |
+| Estado | **Posiciones de R4 registradas.** **Actualización CP-J4-F2 (2026-10-15):** el owner de CP aceptó AP-01 a AP-08 y AP-11 (CP `7b2e7f7`); ADR-039 pasó a aceptación interna de R4 (§8); F2 se ejecutó en CP (v1-rc1, §6.3). No hay conformidad registrada del owner de datos, comercial, de Catalog ni de la CIA |
+| Alcance | Solo documentos. No inicia CP-CONTEXT-02C ni autoriza J4-R2 |
 
 Documentos de R4 que aplican este registro: [ADR-039](../adr/ADR-039-customer-identity-and-profile-consumption.md), [especificación del consumidor](R4-J4-R1_CUSTOMER_CONSUMER_SPECIFICATION.md), [requisitos a Customer Profile](R4-J4-R1_CUSTOMER_PROFILE_AUTHORIZATION_REQUIREMENTS.md) e [informe de diseño](R4-J4-R1_DESIGN_REPORT.md).
 
@@ -34,18 +34,18 @@ Documentos de R4 que aplican este registro: [ADR-039](../adr/ADR-039-customer-id
 
 | ID | Tema | R4 | Conformidad CP | Owner de datos / negocio | Catalog | CIA | Condiciones abiertas |
 |---|---|---|---|---|---|---|---|
-| AP-01 | Una ruta factual con `purpose`; dos capacidades R4 | ACEPTADA | PENDIENTE | — | — | DEPENDE: los valores de `purpose` serán los propósitos del grant (D2) | Componentes exactos de cada propósito (F2) |
-| AP-02 | `POST` de solo lectura; identificadores en el cuerpo; `no-store` | ACEPTADA | PENDIENTE | — | — | — | Códigos 400/405/413/415 (F2) |
-| AP-03 | Minimización en tres fronteras; sin montos ni predictivos en J4 | ACEPTADA | PENDIENTE (incluye enmendar el PRD CP J4-03) | **PENDIENTE**: legitimidad de los propósitos | — | — | Aprobación de negocio de los propósitos |
-| AP-04 | Scope dedicado `customer.sales_context.read` | ACEPTADA | PENDIENTE | — | — | — | — |
+| AP-01 | Una ruta factual con `purpose`; dos capacidades R4 | ACEPTADA | **ACEPTADA** (owner de CP, 2026-10-15; CP `7b2e7f7`) | — | — | DEPENDE: los valores de `purpose` serán los propósitos del grant (D2) | Componentes exactos de cada propósito (F2) |
+| AP-02 | `POST` de solo lectura; identificadores en el cuerpo; `no-store` | ACEPTADA | **ACEPTADA** (owner de CP, 2026-10-15; CP `7b2e7f7`) | — | — | — | Códigos 400/405/413/415 (F2) |
+| AP-03 | Minimización en tres fronteras; sin montos ni predictivos en J4 | ACEPTADA | **ACEPTADA** (owner de CP, 2026-10-15; CP `7b2e7f7`) | **PENDIENTE**: legitimidad de los propósitos | — | — | Aprobación de negocio de los propósitos |
+| AP-04 | Scope dedicado `customer.sales_context.read` | ACEPTADA | **ACEPTADA** (owner de CP, 2026-10-15; CP `7b2e7f7`) | — | — | — | — |
 | AP-04-H | Hardening de `commercial-profile` (hoy bajo `customer.facts.read`) | Registrado como asunto propio; no es gate de J4 | PENDIENTE: decisión e inventario de impacto | — | — | — | Inventario de consumidores. Ningún permiso existente cambia antes |
-| AP-05 | Ciclo de vida y `authorizationBasis` | ACEPTADA | PENDIENTE | — | — | DEPENDE (D2) | D2 abierta. Ninguna lectura real con `service_scope_only` |
-| AP-06 | Error plano de CP; R4 mapea a `DomainError` | ACEPTADA | PENDIENTE: corregir H-15 | — | — | — | H-15: `requiredScope: null` en el 403 |
-| AP-07 | Tamaños en bytes UTF-8; R4 pide ≤ 10 ítems | ACEPTADA | PENDIENTE: máximo explícito del propósito | — | — | — | — |
-| AP-08 | Estados del puerto sin `degraded`; `withheld` | ACEPTADA | PENDIENTE: conformidad con la lectura de sus estados | — | — | — | Codificación del componente incompleto (F2) |
+| AP-05 | Ciclo de vida y `authorizationBasis` | ACEPTADA | **ACEPTADA** (owner de CP, 2026-10-15; CP `7b2e7f7`) | — | — | DEPENDE (D2) | D2 abierta. Ninguna lectura real con `service_scope_only` |
+| AP-06 | Error plano de CP; R4 mapea a `DomainError` | ACEPTADA | **ACEPTADA** (owner de CP, 2026-10-15; CP `7b2e7f7`) | — | — | — | H-15: `requiredScope: null` en el 403 |
+| AP-07 | Tamaños en bytes UTF-8; R4 pide ≤ 10 ítems | ACEPTADA | **ACEPTADA** (owner de CP, 2026-10-15; CP `7b2e7f7`) | — | — | — | — |
+| AP-08 | Estados del puerto sin `degraded`; `withheld` | ACEPTADA | **ACEPTADA** (owner de CP, 2026-10-15; CP `7b2e7f7`) | — | — | — | Codificación del componente incompleto (F2) |
 | AP-09 | Cuentas no divulgables | ACEPTADA (regla provisional, fail-closed) | CONSULTADO | **PENDIENTE**: guest, inactiva y eliminada | — | — | Política definitiva antes de cualquier dato real |
 | AP-10 | Productos históricos y precio cero | ACEPTADA (criterio) | PENDIENTE: clasificación `lineKind` | **PENDIENTE**: aceptación comercial | — | — | Clasificación y excepciones |
-| AP-11 | Presupuesto de CP y timeout de R4 | ACEPTADA | PENDIENTE | — | — | — | p95 medido en 02C. No es un SLO |
+| AP-11 | Presupuesto de CP y timeout de R4 | ACEPTADA | **ACEPTADA** (owner de CP, 2026-10-15; CP `7b2e7f7`) | — | — | — | p95 medido en 02C. No es un SLO |
 | D6 | Mapeo de producto a Catalog | Posición registrada: **diferida** | PENDIENTE: CP realiza el mapeo | — | **DEPENDE**: autoridad de claves y contrato verificado | — | `catalogKey: null` mientras tanto |
 
 ---
@@ -178,8 +178,8 @@ Tres fronteras distintas:
 | D1 | **BLOCKED** | Ninguno. CIA recomendada, owner por designar ([ID-AUTHORITY-DECISION-01](ID-AUTHORITY-DECISION-01_CUSTOMER_IDENTITY_AUTHORITY.md)) | Negocio; owner de la CIA |
 | D2 | **PROPOSED** | `authorizationBasis` registrada como evidencia declarada, nunca suficiente (AP-05). La verificación individual sigue sin implementarse | CP + CIA |
 | D3 | ACCEPTED | Ninguno | R4 |
-| D4 | Corregida en R1A; ampliada en R1C (AP-03). Confirmación del owner pendiente | Tres fronteras; minimización por propósito en el cable | R4 (C); CP + R4 (B) |
-| D5 | ACCEPTED_WITH_CONDITIONS | Condición 4: solo se persiste la salida proyectada (ADR-039 §6) | R4 |
+| D4 | Corregida en R1A; ampliada en R1C (AP-03); **confirmada** con la aceptación interna de ADR-039 (CP-J4-F2) | Tres fronteras; minimización por propósito en el cable | R4 (C); CP + R4 (B) |
+| D5 | ACCEPTED_WITH_CONDITIONS | Condición 4: solo se persiste la salida proyectada. Condición 5 (CP-J4-F2): una salida que supera su tope falla, sin respuesta parcial (ADR-039 §6) | R4 |
 | D6 | **DEFERRED_WITH_NULL** (no aceptada) | Antes BLOCKED | Catalog + CP |
 | D7 | **PROPOSED_PRODUCTION_BLOCKER** | Ninguno | Plataforma R4 (J7) |
 | D8 | ACCEPTED | Ninguno | R4 / producto |
@@ -202,7 +202,7 @@ Tres fronteras distintas:
 | H-12 | "Antigüedad del cliente" en ADR-039 §7 | Eliminada | — |
 | H-13 | Binding de `@1` frente a sujeto de `@2` | ADR-039 (contexto) y especificación §3 distinguen ambos | — |
 | H-14 | Las rutas v1 de CP colapsan el timeout y agregan `Z` | La especificación exige `sourceDate` sin zona y acepta `prestashop_timeout` | 02C no reutiliza esas proyecciones |
-| H-15 | `requiredScope: null` en el 403 de ruta no clasificada | AP-06: R4 no depende del valor | Corrección menor (F2) |
+| H-15 | `requiredScope: null` en el 403 de ruta no clasificada | AP-06: R4 no usa el valor como autoridad de seguridad. G-07 corregido (CP-J4-F2): `null` admitido **solo** para una ruta no clasificada denegada | Resuelto por contrato en v1-rc1, sin tocar el middleware |
 | H-16 | PRD CP J4-02 frente a la recomendación de la CIA | Aparente. Sin cambio | Sin cambio |
 | H-17 | El alineamiento de CP desconoce `1f67633` | — | Corregido en el documento de CP (procedencia y fila 51) |
 
@@ -217,9 +217,9 @@ F2 es trabajo de CP. Esta sección fija lo que R4 exige para **iniciarlo** y par
 | # | Condición | Estado al cerrar F0/F1 |
 |---|---|---|
 | E-1 | Posiciones de R4 registradas y publicadas con SHA en `origin` | Este registro |
-| E-2 | Conformidad del owner de CP con las AP que cambian la forma (AP-01 a AP-07), registrada en su documento de alineamiento | **PENDIENTE** |
-| E-3 | Documento de alineamiento de CP versionado | Commit local de CP |
-| E-4 | Autorización explícita para iniciar F2 en CP | **PENDIENTE** |
+| E-2 | Conformidad del owner de CP con las AP que cambian la forma (AP-01 a AP-07), registrada en su documento de alineamiento | **CUMPLIDA**: AP-01 a AP-08 y AP-11 aceptadas, CP `7b2e7f7` (§9.1 de su documento) |
+| E-3 | Documento de alineamiento de CP versionado | Commit local de CP (`cef81c6`) |
+| E-4 | Autorización explícita para iniciar F2 en CP | **CUMPLIDA**: autorización de R4 (mandato CP-J4-F2), condicionada a E-2 |
 
 No bloquean la entrada, pero sí `contractStatus: approved` y cualquier dato real: la aprobación del owner de datos (AP-03, AP-09), la aceptación comercial (AP-10), D2 y D6.
 
@@ -227,22 +227,41 @@ No bloquean la entrada, pero sí `contractStatus: approved` y cualquier dato rea
 
 | # | Criterio | Cómo lo verifica R4 |
 |---|---|---|
-| G-01 | Schema de **petición** publicado: `POST`; `customerRef` y `purpose` obligatorios; paginación solo con `purchase_history`; sin query; propiedades desconocidas → 400; cuerpo ≤ 1 KiB | Lectura del schema y fixtures de petición |
-| G-02 | Composición por propósito declarada: cada componente es obligatorio, ausente o `null` según el `purpose` | Fixtures de ambos propósitos |
-| G-03 | Ningún componente monetario ni predictivo en las respuestas J4, impedido por **estructura** del schema | Sondeo: 0 montos en los fixtures J4 |
+| G-01 | Schema de **petición** publicado: `POST`; `customerRef` y `purpose` obligatorios; paginación solo con `purchase_history`; sin query; propiedades desconocidas → 400; cuerpo ≤ 1 KiB | Validación **directa contra el JSON Schema** de peticiones válidas y mutadas |
+| G-02 | Composición por propósito declarada: cada componente es obligatorio, ausente o `null` según el `purpose` | **Aislamiento real:** mutaciones que inyectan el componente del otro propósito, cambian el `purpose` o mezclan `facts` deben fallar contra el schema |
+| G-03 | Ningún componente monetario ni predictivo en las respuestas J4, impedido por **estructura** del schema | Mutaciones contra el schema: el componente se rechaza **también con valor `null`**, en cada posición. El schema no declara ninguna de esas propiedades |
 | G-04 | Sin `productId`, `productAttributeId` ni SKU en las respuestas J4. `catalogKey: null` (D6) | Sondeo |
-| G-05 | `schemaVersion` entero; `contractStatus` enum (`candidate`, `approved`, `deprecated`); `policyVersion` con patrón; `serviceBuildRef`; `authorizationBasis` enum | Schema |
+| G-05 | `schemaVersion` entero; `contractStatus` enum (`candidate`, `approved`, `deprecated`); `policyVersion` con patrón; `serviceBuildRef`; `authorizationBasis` enum | Mutaciones contra el schema: valores válidos aceptados, inválidos rechazados, y cada campo requerido eliminado rechazado |
 | G-06 | Estados: `available`, `not_found` y `not_applicable` en 200; `degraded` solo en 503; parcial = `available` + `completeness: partial` con `status`/`reason` por componente | Fixtures por estado y propósito |
-| G-07 | Errores planos; 401/403 iguales a los del middleware; `requiredScope` del 403 siempre string (H-15) | Fixtures de error |
+| G-07 | **Corregido en CP-J4-F2.** Errores planos; 401/403 iguales a los del middleware. `requiredScope` es `null` **exclusivamente** en el 403 de una ruta no clasificada, que se deniega siempre; una ruta clasificada declara su scope. Todas las respuestas siguen siendo 403. El middleware no se modifica en F2. El adaptador R4 no usa `requiredScope` como autoridad de seguridad | Fixtures de ambos 403 + test contra el middleware real |
 | G-08 | `purchase_history`: máximo explícito por página (≥ 10, que es lo que R4 pide), `offset` ≤ 40 aceptado, orden total declarado | Schema y fixtures |
-| G-09 | Tamaño en **bytes UTF-8**: test con caracteres de 4 bytes en el máximo del propósito, ≤ 64 KiB | Test de CP; sondeo en bytes |
+| G-09 | Tamaño en **bytes UTF-8**: test con caracteres de 4 bytes en el máximo del propósito, ≤ 64 KiB | Respuesta máxima construida (10 ítems, 255 code points de 4 bytes, todos los campos acotados al máximo), **validada contra el schema** y medida en bytes; proyección R4 ≤ 8 KiB |
 | G-10 | Fechas: `sourceDate` sin zona y `utcInstant: null` mientras `timezoneStatus: unverified`. Nunca `Z` agregada | Sondeo |
 | G-11 | Nombre histórico nullable; unidades brutas ≥ 0, descritas como brutas | Schema y fixtures |
 | G-12 | Scope `customer.sales_context.read` declarado para la ruta en el contrato | Documentación del contrato |
 | G-13 | Fixtures para cada propósito × estado y cada error, con MANIFEST y hashes. `SOURCE.json` normalizado: procedencia de generación y de incorporación, sin autorreferencia (cierra `PARTIAL_DEFERRED_TO_F2`) | Test de hashes; lectura de `SOURCE.json` |
 | G-14 | Contrato en un SHA alcanzable desde una rama remota de CP; test de contrato y typecheck verdes | `git ls-remote`; log del test |
-| G-15 | **Sondeo cruzado de R4 sin fallos** con las reglas de esta revisión sobre **todos** los fixtures J4 | Script de sondeo, resultado archivado |
+| G-15 | **Sondeo cruzado de R4 sin fallos** con las reglas de esta revisión sobre **todos** los fixtures J4. Desde CP-J4-F2 el sondeo valida con los JSON Schemas (Ajv); no se sustituye la validación de schema por expresiones regulares sobre nombres de campo | Script de sondeo, resultado archivado |
 | G-16 | Conformidad del owner de CP registrada para AP-01 a AP-08 y AP-11 | Documento de alineamiento de CP |
+
+### 6.3 Resultado de la validación de F2 desde R4 (CP-J4-F2, 2026-10-15)
+
+| Elemento | Valor |
+|---|---|
+| Contrato validado | `customer-profile.sales-context` v1, revisión v1-rc1, en CP `47db415e1ebf67b5e6770dbdcfc697880b6e5f76`. Referencia: tag anotado **local** `cp-sales-context-v1-rc1` |
+| Sondeo cruzado reforzado | `F2_GATE_PROBE=MET` (G-01 a G-13, 6 410 comprobaciones). El mismo sondeo sobre una copia alterada (`spend: null`, `catalogKey` no nulo, 403 con `customer.facts.read`) da `NOT_MET` en 8 criterios: no es vacuo |
+| Tamaños | Respuesta máxima de `purchase_history` 14 794 B (≤ 64 KiB); proyección R4 de esa página 6 381 B (≤ 8 KiB) |
+| Mapeo al puerto R4 | 22 respuestas: `verified` (11), `unavailable/not_on_file` (2), `unavailable/withheld` (6: operacional, eliminada, guest, inactiva), fallo 503 (2), fallo `history_unavailable` (1) |
+| Test de contrato de CP | 262/262; suite completa de CP 2 636 PASS / 10 skip (MariaDB opt-in); typecheck y lint verdes |
+
+| Criterio | Estado |
+|---|---|
+| G-01 a G-13 | **MET** |
+| G-14 | **PARCIAL**: SHA verificable por tag local; **sin** SHA en una rama remota (publicación no autorizada: la eligió el owner de CP) |
+| G-15 | **MET** |
+| G-16 | **MET**: CP `7b2e7f7` |
+
+**Dictamen de R4 sobre F2:** `PASS_WITH_LIMITATIONS`. Detalle y limitaciones en `CP: docs/reviews/CP_J4_F2_CONTRACT_RC_VALIDATION_REPORT.md`. **No** implica productor operativo, interoperabilidad E2E ni uso de datos reales. J4-R2 sigue `NOT_AUTHORIZED`.
 
 ---
 
@@ -250,11 +269,27 @@ No bloquean la entrada, pero sí `contractStatus: approved` y cualquier dato rea
 
 ```text
 F0_R4_DECISIONS_RECORDED
-F0_CP_OWNER_ACCEPTANCE_PENDING
+F0_CP_OWNER_ACCEPTED (AP-01..AP-08, AP-11; CP 7b2e7f7)
 F0_DATA_OWNER_ACCEPTANCE_PENDING
-F2_NOT_STARTED
+ADR_039=ACCEPTED_INTERNAL_R4
+F2=PASS_WITH_LIMITATIONS (v1-rc1, CP 47db415, tag local; G-14 parcial)
 CP_CONTEXT_02C_NOT_STARTED
 R4_J4_R2_NOT_AUTHORIZED
 D1_BLOCKED  D2_PROPOSED  D6_DEFERRED_WITH_NULL  D7_PRODUCTION_BLOCKER
 PRODUCTION_UNCHANGED (sales-production@3)
 ```
+
+---
+
+## 8. Confirmaciones del owner de R4 (RI-09, mandato CP-J4-F2)
+
+| Detalle de R1C | Confirmación | Dónde se aplica |
+|---|---|---|
+| `reason` `withheld` | Aceptado | Especificación §6.1 |
+| Guest e inactivas → `withheld` | Retenidas **provisionalmente** (la política definitiva sigue en AP-09, owner de datos) | Especificación §5, §7 |
+| Tope de 8 KiB por página | Salida máxima de 8 KiB UTF-8, con pruebas de límite y sin persistencia de respuestas parciales | Especificación §8, §11; ADR-039 §6, condición 5 |
+| `quantityBasis` | Describe unidades brutas, no netas de devoluciones | Especificación §6.2 |
+| `datePrecision` | No atribuye una precisión horaria ni un margen cuantitativo no demostrado: `day` \| `day_timezone_unverified` (reemplaza a `day_plus_minus_one`) | Especificación §5, §6.2 |
+| Códigos internos (`purpose_minimization_violated`, `history_unavailable`, `authorization_basis_insufficient`, `customer_ref_mismatch` y los demás de §9) | Aceptados | Especificación §9 |
+
+Con estas precisiones, ADR-039 pasa a **aceptación interna de R4**. D1, D2, D6 y D7 conservan sus dependencias y bloqueos.
