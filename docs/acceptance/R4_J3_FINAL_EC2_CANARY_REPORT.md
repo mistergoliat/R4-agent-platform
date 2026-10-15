@@ -377,3 +377,45 @@ J3_FINAL_STATUS=CONDITIONAL        (falta la prueba final contra owners reales c
 ```
 
 No se amplía el alcance. GAP-17 (J7) recibe esta evidencia adicional: también los timeouts del proveedor llevan a un handoff sin respuesta al cliente.
+
+## 19. Repetición del canary (2026-10-15, 15:25–15:33 UTC): **FAIL, sin emisión, con la causa precisada**
+
+Según el owner, la falla del 14 coincidió con una falla de la API de DeepSeek. Se repitió el canary con la misma configuración (sin cambiar el timeout, el modelo ni los límites) y la misma autorización (≤ 1 cotización).
+
+**Preflight, solo lectura, en verde:**
+- producción `ef5a354`, `@3`, rollout 0 %, `/ready` `ready` con WhatsApp REAL y `pendingMigrations: []`;
+- 11 migraciones (sin `0008`/`0009`); PM2 11/16/0; 0 outbound productivos en 24 h;
+- canary en `c46d6c3`, limpio, `isolation: verified`, 0 tráfico ajeno, 0 ejecuciones, schedules ni outbound abiertos;
+- Quote V2 6/5/8/1; Gmail `disabled`; 733 MB libres.
+
+**Conversación `j3-final-3`** (mismo primer mensaje que `j3-final-2`). En el turno 1, el agente hizo 11 `catalog.search` seguidos sin responder. Dos llamadas superaron 60 s, en la run original y en la de recuperación: recuperación agotada, handoff, task `blocked`, 0 mensajes al cliente. **0 propuestas `quote.create`, 0 emisiones; Quote V2 6/5/8 sin cambios.** Runtime detenido.
+
+**Causa precisada.** DeepSeek respondió con normalidad al inicio (3–9 s). Lo que crece es la salida del modelo, razonamiento incluido; la entrada se mantiene acotada:
+
+| Llamada | Latencia (ms) | Tokens de entrada | Tokens de salida |
+|---|---|---|---|
+| 1 | 2 956 | 9 433 | 316 |
+| 2 | 7 201 | 10 435 | 1 111 |
+| 3 | 9 124 | 12 162 | 1 346 |
+| 4 | 15 576 | 13 889 | 2 431 |
+| 5 | 24 237 | 15 654 | 4 056 |
+| 6 | **60 006 (timeout)** | — | — |
+| 8 (recuperación) | 54 132 | 19 164 | **8 987** |
+| … | 31 517 | 26 026 | 4 793 |
+| 13 | **60 009 (timeout)** | — | — |
+
+- La latencia escala con la salida (≈ 6 ms por token): unos 10 000 tokens de salida superan el límite de R4 de 60 s por llamada (`R4_EXEC_MODEL_CALL_TIMEOUT_MS`, default).
+- La entrada (≤ 26 k tokens) no es el factor.
+- No hay código de error de DeepSeek: el corte es de R4.
+
+**Conclusión.** Con *thinking* activado y el patrón de búsquedas sucesivas de `@7`, el límite de 60 s por llamada no es suficiente. No se repite sin una decisión del owner. Opciones de configuración del canary (sin código, sin límites comerciales, sin producción):
+1. `R4_EXEC_MODEL_CALL_TIMEOUT_MS=120000`, alineado con `R4_MODEL_TIMEOUT_MS`.
+2. Acotar la salida con `R4_MODEL_MAX_OUTPUT_TOKENS`. Riesgo: cortar una decisión válida.
+3. Desactivar *thinking*. Cambia el perfil del modelo validado; requeriría revalidar.
+
+```text
+J3_CANARY_EC2=FAIL (3 conversaciones, 0 emisiones)
+J3_REAL_QUOTE_V2_ISSUANCES=0
+J3_PRODUCTION_UNCHANGED=YES
+J3_FINAL_STATUS=CONDITIONAL
+```
