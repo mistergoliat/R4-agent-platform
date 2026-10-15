@@ -4,7 +4,7 @@ Fecha: 2026-10-14 · Rama `r4-j3e-c-deterministic-commercial-offer`, commit `778
 
 **Pregunta de aceptación:** si un cliente escribe a PesasChile por WhatsApp y pide una cotización, ¿puede R4 atenderlo, construir bien la propuesta, obtener su confirmación, emitir la cotización con Quote V2 y entregarle un resultado utilizable?
 
-### Estado vigente (2026-10-15, tras la re-delimitación del owner y el canary EC2 final de `@7`)
+### Estado vigente (2026-10-15): **J3 CERRADO con aceptación re-delimitada** (aprobación formal del owner, §17)
 
 El alcance se re-delimitó a *Quote Integration & Autonomous Issuance* (§15). El canary EC2 de `@7` pasó el 2026-10-15 y emitió **PC-000006** contra los owners reales ([informe §20](R4_J3_FINAL_EC2_CANARY_REPORT.md)). Los bloques históricos se conservan.
 
@@ -18,7 +18,8 @@ J3_OFFER_INTEGRITY=PASS                              (EC2 @7: SHA-256 del texto 
 J3_DOCUMENT_VERIFICATION=PASS                        (PC-000006: manifiesto = artefacto = recibo, 31 669 bytes)
 J3_REAL_QUOTE_V2_ISSUANCES=1                         (canary final; Quote V2 de integración)
 J3_STATUS_HISTORY=canary 2026-10-14 BLOCKED (SSH) → FAIL (límite de 60 s por llamada) → 2026-10-15 PASS (timeouts del canary autorizados)
-J3_DOCUMENT_DELIVERY=DEFERRED
+J3_EC2_CANARY=PASS
+J3_DOCUMENT_DELIVERY=DEFERRED_TO_R4_MEDIA
 J3_CUSTOMER_JOURNEY_FULL=INCOMPLETE
 J3F_DISPOSITION=DEFERRED_TO_R4_MEDIA
 ADR_038_STATUS=PROPOSED_DEFERRED
@@ -26,8 +27,8 @@ GAP_03_DISPOSITION=J7_PRODUCTION_GATE_P0             (Sales Response Integrity; 
 J3_PRODUCTION_UNCHANGED=YES                          (verificado antes y después del canary, solo lectura)
 J3_CANARY_EC2=PASS                                   (informe §20)
 J3_PRODUCTION_ROLLOUT=NOT_AUTHORIZED
-J3_FINAL_STATUS=READY_TO_CLOSE_RESCOPED              (propuesta; el cierre formal lo aprueba el owner)
-J3_MINIMUM_REMAINING_WORK=ninguno dentro del alcance re-delimitado; pendiente la aprobación del owner y el merge (no autorizado)
+J3_FINAL_STATUS=CLOSED_WITH_RESCOPED_ACCEPTANCE      (aprobación formal del owner, 2026-10-15; §17)
+J3_MINIMUM_REMAINING_WORK=ninguno dentro del alcance re-delimitado
 ```
 
 ### Estado anterior (histórico, antes de la re-delimitación; no vigente)
@@ -670,3 +671,35 @@ Se detuvo sin buscar llaves ni tocar la configuración SSH (mandato §3).
 **GAP-16 (LOCAL, owner fixture, ciclo de vida real).** `tests/integration/sales-deterministic-offer-canary.test.ts`: **9/9** en 194,8 s, incluidos los tres casos de GAP-16 (detalle en el informe §13). Las limitaciones operacionales (silencio, presupuesto del run, intervención humana, sin caducidad comercial) se registran sin declararlas resueltas.
 
 **Estado:** `J3_FINAL_STATUS=CONDITIONAL`. Dentro del alcance re-delimitado (§15), lo único que falta es el canary EC2 de `@7`, por un operador con acceso legítimo, según el procedimiento del informe §17.
+
+> **Superado por §17.** El canary de `@7` se ejecutó con la identidad SSH autorizada por el owner:
+> - 2026-10-14: FAIL por el límite de 60 s por llamada;
+> - 2026-10-15: **PASS**, con PC-000006 (informe §18–§20).
+
+## 17. Cierre administrativo de J3 (aprobación formal del owner, 2026-10-15)
+
+El owner aprueba el cierre de J3 bajo el alcance re-delimitado (§15) y autoriza integrar J3E-C1 a `main` tras la revisión final del PR.
+
+```
+J3_FINAL_STATUS=CLOSED_WITH_RESCOPED_ACCEPTANCE
+J3_EC2_CANARY=PASS
+J3_REAL_QUOTE_V2_E2E=PASS
+J3_DOCUMENT_DELIVERY=DEFERRED_TO_R4_MEDIA
+J3_CUSTOMER_JOURNEY_FULL=INCOMPLETE
+J3_PRODUCTION_ROLLOUT=NOT_AUTHORIZED
+```
+
+**Aclaraciones del owner que forman parte del cierre:**
+- **Catalog.** La ineficiencia observada en el canary (44 lecturas; dos runs recuperadas tras el presupuesto de 10 min) **no bloquea J3**.
+  - Hay una optimización de Catalog pendiente de despliegue: reduce las consultas SQL de 320 a 8 en un escenario probado de 40 productos (97,5 %).
+  - La eficiencia del agente se reevaluará **después del despliegue de Catalog previsto en J4.5**.
+  - Esa reducción **no se extrapola** a la cantidad de llamadas del agente ni a sus tokens.
+- **Shipping.** La tarifa de $1 de "Despacho Directo" observada en el canary es una política comercial legítima de marketing, condicionada por el valor de compra. **No es un defecto de Shipping.** El dato observado se conserva en el informe (§20.7).
+
+**Lo que el cierre no cambia:**
+- Producción sigue en `@3`, sin despliegue.
+- J3F permanece diferido: su rama documental no se fusiona.
+- ADR-036, ADR-037 y ADR-038 no se implementan.
+- GAP-03 sigue como J7-PRODUCTION-GATE P0.
+- Los gates J7 del registro de brechas siguen abiertos.
+- J4 no se inicia automáticamente.

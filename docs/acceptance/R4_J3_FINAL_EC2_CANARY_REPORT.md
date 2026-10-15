@@ -23,7 +23,7 @@ J3_DOCUMENT_VERIFICATION=PASS
 J3_DOCUMENT_DELIVERY=DEFERRED
 J3_CUSTOMER_JOURNEY_FULL=INCOMPLETE
 J3_PRODUCTION_ROLLOUT=NOT_AUTHORIZED
-J3_FINAL_STATUS=READY_TO_CLOSE_RESCOPED   (propuesta; el cierre formal lo aprueba el owner)
+J3_FINAL_STATUS=CLOSED_WITH_RESCOPED_ACCEPTANCE   (aprobación formal del owner, 2026-10-15; antes READY_TO_CLOSE_RESCOPED)
 ```
 
 **Intento del 2026-10-14 (§18, histórico): FAIL** por el límite de 60 s por llamada.
@@ -558,7 +558,9 @@ Coincide con la lectura del owner: el timeout era insuficiente (resuelto en el c
 
 ### 20.7 Observaciones
 
-1. **Tarifa de $1 de Shipping.** Shipping real ofreció "Pesas Chile – Despacho Directo" a $1 hacia San Bernardo. Es un dato del owner que el agente transmitió tal cual, sin inventarlo, y el cliente no lo eligió. Hay que revisarlo con el owner de Shipping antes de clientes reales.
+1. **Tarifa de $1 de Shipping (dato observado, se conserva).** Shipping real ofreció "Pesas Chile – Despacho Directo" a $1 hacia San Bernardo, y el agente la transmitió tal cual, sin inventarla; el cliente sintético eligió Blue Express.
+   - **Aclaración del owner (2026-10-15):** es una política comercial legítima de marketing, condicionada por el valor de compra. **No es un defecto de Shipping.**
+   - La recomendación anterior de "revisarlo con el owner de Shipping" queda retirada.
 2. **Recuperación en cada turno largo.** Los turnos 1 y 2 completaron gracias a la recuperación de ADR-028 tras agotar el presupuesto del run. Funcionó, pero duplica latencia y costo; queda como entrada para la medición de eficiencia.
 3. **GAP-03.** El mensaje de emisión, redactado por el modelo, coincidió con el recibo (número, líneas, totales, validez). Es una coincidencia observada, sin garantía de código (J7 P0).
 4. **Estado que queda en EC2:**
