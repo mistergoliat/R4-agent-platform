@@ -92,7 +92,7 @@ describe('B. sales-production@6', () => {
     expect(SALES_PRODUCTION_PROFILE_V6.capabilities).toEqual(SALES_PRODUCTION_PROFILE_V5.capabilities);
     expect(SALES_PRODUCTION_PROFILE_V6.channel).toEqual(SALES_PRODUCTION_PROFILE_V5.channel);
     expect(salesProductionAgentVersion(SALES_PRODUCTION_PROFILE_V6)).toBe(6);
-    expect(SALES_PRODUCTION_PROFILES.map(profileLabel)).toEqual(['sales-production@1', 'sales-production@2', 'sales-production@3', 'sales-production@4', 'sales-production@5', 'sales-production@6']);
+    expect(SALES_PRODUCTION_PROFILES.map(profileLabel)).toEqual(['sales-production@1', 'sales-production@2', 'sales-production@3', 'sales-production@4', 'sales-production@5', 'sales-production@6', 'sales-production@7']);
     expect(new Set([...Object.values(PINNED).slice(0, 5), profileFingerprint(SALES_PRODUCTION_PROFILE_V6)]).size).toBe(6);
   });
 

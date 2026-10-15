@@ -273,3 +273,6 @@ function refused(code: string, message: string, details: Readonly<Record<string,
 function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
+
+/** (R4-J3E-C1) quote.create@5 reuses the same frequency, duplicate and single-use judgement and messages. */
+export { judge as judgeConfirmedQuote, refusalMessage as confirmedQuoteRefusalMessage };

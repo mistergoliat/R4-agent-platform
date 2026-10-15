@@ -64,7 +64,7 @@ class MemoryAgentStore implements AgentDefinitionStore {
 
 describe('A. Sales definitions: v3 immutable, v4 independent', () => {
   it('v3 is byte-for-byte the deployed definition; v4 has its own version and fingerprint', () => {
-    expect(SALES_AGENT_DEFINITION_FILES).toEqual({ 3: 'sales.agent.json', 4: 'sales.v4.agent.json', 5: 'sales.v5.agent.json', 6: 'sales.v6.agent.json' });
+    expect(SALES_AGENT_DEFINITION_FILES).toEqual({ 3: 'sales.agent.json', 4: 'sales.v4.agent.json', 5: 'sales.v5.agent.json', 6: 'sales.v6.agent.json', 7: 'sales.v7.agent.json' });
     expect(loadSalesAgentDefinition(3)).toMatchObject({ agentId: 'sales', version: 3 });
     expect(loadSalesAgentDefinition(4)).toMatchObject({ agentId: 'sales', version: 4 });
     expect(definitionContentHash(loadSalesAgentDefinition(3))).toBe(SALES_V3_CONTENT_HASH);
@@ -133,9 +133,9 @@ describe('B. profile isolation', () => {
   });
 
   it('every profile pins its Sales definition: v1/v2 run v3, v3/v4 run v4 (never "latest")', () => {
-    expect(SALES_PRODUCTION_PROFILES.map(profileLabel)).toEqual(['sales-production@1', 'sales-production@2', 'sales-production@3', 'sales-production@4', 'sales-production@5', 'sales-production@6']);
-    expect(SALES_PRODUCTION_AGENT_VERSIONS).toEqual({ 'sales-production@1': 3, 'sales-production@2': 3, 'sales-production@3': 4, 'sales-production@4': 4, 'sales-production@5': 5, 'sales-production@6': 6 });
-    expect(SALES_PRODUCTION_PROFILES.map(salesProductionAgentVersion)).toEqual([3, 3, 4, 4, 5, 6]);
+    expect(SALES_PRODUCTION_PROFILES.map(profileLabel)).toEqual(['sales-production@1', 'sales-production@2', 'sales-production@3', 'sales-production@4', 'sales-production@5', 'sales-production@6', 'sales-production@7']);
+    expect(SALES_PRODUCTION_AGENT_VERSIONS).toEqual({ 'sales-production@1': 3, 'sales-production@2': 3, 'sales-production@3': 4, 'sales-production@4': 4, 'sales-production@5': 5, 'sales-production@6': 6, 'sales-production@7': 7 });
+    expect(SALES_PRODUCTION_PROFILES.map(salesProductionAgentVersion)).toEqual([3, 3, 4, 4, 5, 6, 7]);
     const pool = {} as never;
     expect(salesConversationTaskFactory(pool, 3).request({ bindingId: 'b1', channel: 'whatsapp' })).toMatchObject({ agentId: 'sales', agentVersion: 3 });
     expect(salesConversationTaskFactory(pool, 4).request({ bindingId: 'b1', channel: 'whatsapp' })).toMatchObject({ agentId: 'sales', agentVersion: 4 });

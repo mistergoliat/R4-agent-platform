@@ -178,8 +178,8 @@ afterAll(async () => {
 });
 
 describe('canary environment and database guards (nothing is changed on a refused database)', () => {
-  it('runs sales-production@4, @5 or @6 only, needs its own database URL, and never the production one', () => {
-    expect(() => loadCanaryEnvironment({ ...canaryEnv(canaryDb), R4_PROD_POLICY_PROFILE: 'sales-production@3' })).toThrow(/runs sales-production@4 or sales-production@5 or sales-production@6 only/);
+  it('runs sales-production@4 to @7 only, needs its own database URL, and never the production one', () => {
+    expect(() => loadCanaryEnvironment({ ...canaryEnv(canaryDb), R4_PROD_POLICY_PROFILE: 'sales-production@3' })).toThrow(/runs sales-production@4 or sales-production@5 or sales-production@6 or sales-production@7 only/);
     expect(() => loadCanaryEnvironment({ ...canaryEnv(canaryDb), R4_CANARY_DATABASE_URL: '' })).toThrow(/R4_CANARY_DATABASE_URL/);
     expect(() => loadCanaryEnvironment({ ...canaryEnv(canaryDb), R4_DATABASE_URL: canaryDb.url })).toThrow(expect.objectContaining({ code: 'canary_shares_production_database' }));
     expect(() => loadCanaryEnvironment({ ...canaryEnv(canaryDb), R4_EXECUTION_MODE: '' })).toThrow(expect.objectContaining({ code: 'production_mode_not_declared' }));

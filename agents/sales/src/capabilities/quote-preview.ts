@@ -1,10 +1,11 @@
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { CatalogPort, ShippingService } from '@r4-adapters/domains';
 import type { CapabilityRegistration } from '@r4/capability-runtime';
 import { AUTONOMOUS_QUOTE_CAPABILITY_IDS, SCOPES } from '../ids.js';
 import type { PostgresSalesStore } from '../workspace/store.js';
 import { snapshotLimitBreaches, type AutonomousQuoteLimits, type AutonomousQuoteLimitsV6 } from './autonomy-limits.js';
-import { formatClp, offerReference } from './offer-presentation.js';
+import { OFFER_MESSAGE_MAX_CHARS, OFFER_TEMPLATE_VERSION, formatClp, offerReference, renderOfferMessage } from './offer-presentation.js';
 import { buildCommercialSnapshot } from './commercial-snapshot.js';
 import { domainRead, readDefinition } from './common.js';
 
@@ -195,5 +196,60 @@ export function quotePreviewV2Capability(deps: { readonly store: Pick<PostgresSa
           presentation: { reference: offerReference(built.previewId, commercialVersion), commercialVersion, grossClp: gross, totalText: `Total: $${formatClp(gross)} (IVA incluido)` },
         };
       }),
+  };
+}
+
+export const quotePreviewV3Output = quotePreviewV2Output.extend({
+  /**
+   * (R4-J3E-C1) The offer exactly as the customer must receive it: Sales
+   * renders the whole message (template `r4-sales-offer-es-v1`) from the
+   * snapshot; the agent replies with `offerMessage` verbatim. Null unless ready and issuable.
+   */
+  presentation: z
+    .strictObject({
+      reference: z.string(),
+      commercialVersion: z.int().nonnegative(),
+      grossClp: z.int().nonnegative(),
+      totalText: z.string(),
+      offerTemplate: z.literal(OFFER_TEMPLATE_VERSION),
+      offerMessage: z.string(),
+      offerMessageSha256: z.string().regex(/^[0-9a-f]{64}$/),
+    })
+    .nullable(),
+});
+export type QuotePreviewV3Output = z.infer<typeof quotePreviewV3Output>;
+
+/**
+ * quote.preview@3 (R4-J3E-C1, sales-production@7 only). quote.preview@2 plus
+ * the offer message Sales renders for the snapshot. A preview names content
+ * and authorizes nothing: quote.create@5 recomputes the snapshot and the
+ * message, and issues only if the message the customer answered is
+ * byte-identical to it.
+ */
+export function quotePreviewV3Capability(deps: { readonly store: Pick<PostgresSalesStore, 'workspace' | 'commercialVersion'>; readonly catalog: CatalogPort; readonly shipping: ShippingService; readonly limits: AutonomousQuoteLimitsV6; readonly now?: () => Date }): CapabilityRegistration<QuotePreviewInput, QuotePreviewV3Output> {
+  const v2 = quotePreviewV2Capability(deps);
+  return {
+    definition: {
+      ...v2.definition,
+      description:
+        'Previews the formal quote the current Sales workspace would produce: every selected item with the catalog price for its quantity (tax included), the shipping offer the customer chose (or delivery explicitly excluded), and the net, VAT and gross totals with the Quote owner arithmetic. Takes no arguments: everything comes from the workspace and the owners now. status=blocked lists what prevents a quote; limitBreaches lists autonomy limits it exceeds (it then needs a human). presentation is present only when status=ready and issuable=true; then presentation.offerMessage is the complete offer message, written by Sales: reply to the customer with exactly that text and nothing else (no words before or after it, no character changed). The quote is issued only if the message the customer confirmed is identical to it.',
+      version: 3,
+    },
+    input: quotePreviewInput,
+    output: quotePreviewV3Output,
+    ownerValidUntil: (output) => output.evidence.validUntil,
+    handler: async (input, context) => {
+      const preview = await v2.handler(input, context);
+      // Only an issuable quote is offered: with a limit breach there is nothing the customer could confirm.
+      if (preview.status !== 'ready' || !preview.issuable || !preview.snapshot || !preview.presentation) return { ...preview, presentation: null };
+      const offerMessage = renderOfferMessage(preview.snapshot, preview.presentation.reference);
+      if (offerMessage.length > OFFER_MESSAGE_MAX_CHARS) {
+        return {
+          ...preview, status: 'blocked' as const, previewId: null, snapshot: null, limitBreaches: [], issuable: false, presentation: null,
+          blockers: [{ code: 'offer_message_too_long', message: `the offer message would exceed ${OFFER_MESSAGE_MAX_CHARS} characters: reduce the number of lines`, details: { characters: offerMessage.length, limit: OFFER_MESSAGE_MAX_CHARS } }],
+        };
+      }
+      return { ...preview, presentation: { ...preview.presentation, offerTemplate: OFFER_TEMPLATE_VERSION, offerMessage, offerMessageSha256: createHash('sha256').update(offerMessage).digest('hex') } };
+    },
   };
 }
