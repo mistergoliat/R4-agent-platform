@@ -6,7 +6,7 @@
 | Mandato | R4-CP-J4-F0F1-EXECUTION-01: fases F0 (decisiones) y F1 (procedencia) del roadmap coordinado |
 | Referencia | Auditoría cruzada R4-CP-J4-ALIGNMENT-01 (`R4_CP_J4_CROSS_REPOSITORY_ALIGNMENT_REPORT.md`, fuera de ambos repositorios): §4–§7 y §12 |
 | Contraparte | `MS-pesaschile-customer-profile`: `docs/reviews/CP_J4_R4_CONTRACT_ALIGNMENT.md` (DEC-01..DEC-08, AP-01..AP-11) |
-| Estado | **Posiciones de R4 registradas.** **Actualización CP-J4-F2 (2026-10-15):** el owner de CP aceptó AP-01 a AP-08 y AP-11 (CP `7b2e7f7`); ADR-039 pasó a aceptación interna de R4 (§8); F2 se ejecutó en CP (v1-rc1, §6.3). No hay conformidad registrada del owner de datos, comercial, de Catalog ni de la CIA |
+| Estado | **Posiciones de R4 registradas.** **Actualización CP-J4-F2 (2026-10-15):** ADR-039 pasó a aceptación interna de R4 (§8) y F2 se ejecutó en CP (v1-rc1, §6.3). **Corrección J4-GIT-PUBLISH-01:** la aceptación del owner de CP registrada en CP `7b2e7f7` se reclasificó como no formal (CP `7373302`). `R4_ARCHITECTURE_POSITION=ACCEPTED` · `CP_TECHNICAL_REVIEW=PASS_WITH_LIMITATIONS` · `CP_OWNER_FORMAL_ACCEPTANCE=PENDING`. Tampoco hay conformidad registrada del owner de datos, comercial, de Catalog ni de la CIA |
 | Alcance | Solo documentos. No inicia CP-CONTEXT-02C ni autoriza J4-R2 |
 
 Documentos de R4 que aplican este registro: [ADR-039](../adr/ADR-039-customer-identity-and-profile-consumption.md), [especificación del consumidor](R4-J4-R1_CUSTOMER_CONSUMER_SPECIFICATION.md), [requisitos a Customer Profile](R4-J4-R1_CUSTOMER_PROFILE_AUTHORIZATION_REQUIREMENTS.md) e [informe de diseño](R4-J4-R1_DESIGN_REPORT.md).
@@ -34,18 +34,18 @@ Documentos de R4 que aplican este registro: [ADR-039](../adr/ADR-039-customer-id
 
 | ID | Tema | R4 | Conformidad CP | Owner de datos / negocio | Catalog | CIA | Condiciones abiertas |
 |---|---|---|---|---|---|---|---|
-| AP-01 | Una ruta factual con `purpose`; dos capacidades R4 | ACEPTADA | **ACEPTADA** (owner de CP, 2026-10-15; CP `7b2e7f7`) | — | — | DEPENDE: los valores de `purpose` serán los propósitos del grant (D2) | Componentes exactos de cada propósito (F2) |
-| AP-02 | `POST` de solo lectura; identificadores en el cuerpo; `no-store` | ACEPTADA | **ACEPTADA** (owner de CP, 2026-10-15; CP `7b2e7f7`) | — | — | — | Códigos 400/405/413/415 (F2) |
-| AP-03 | Minimización en tres fronteras; sin montos ni predictivos en J4 | ACEPTADA | **ACEPTADA** (owner de CP, 2026-10-15; CP `7b2e7f7`) | **PENDIENTE**: legitimidad de los propósitos | — | — | Aprobación de negocio de los propósitos |
-| AP-04 | Scope dedicado `customer.sales_context.read` | ACEPTADA | **ACEPTADA** (owner de CP, 2026-10-15; CP `7b2e7f7`) | — | — | — | — |
+| AP-01 | Una ruta factual con `purpose`; dos capacidades R4 | ACEPTADA | **PENDIENTE** (aceptación formal; corrección CP `7373302`) | — | — | DEPENDE: los valores de `purpose` serán los propósitos del grant (D2) | Componentes exactos de cada propósito (F2) |
+| AP-02 | `POST` de solo lectura; identificadores en el cuerpo; `no-store` | ACEPTADA | **PENDIENTE** (aceptación formal; corrección CP `7373302`) | — | — | — | Códigos 400/405/413/415 (F2) |
+| AP-03 | Minimización en tres fronteras; sin montos ni predictivos en J4 | ACEPTADA | **PENDIENTE** (aceptación formal; corrección CP `7373302`) | **PENDIENTE**: legitimidad de los propósitos | — | — | Aprobación de negocio de los propósitos |
+| AP-04 | Scope dedicado `customer.sales_context.read` | ACEPTADA | **PENDIENTE** (aceptación formal; corrección CP `7373302`) | — | — | — | — |
 | AP-04-H | Hardening de `commercial-profile` (hoy bajo `customer.facts.read`) | Registrado como asunto propio; no es gate de J4 | PENDIENTE: decisión e inventario de impacto | — | — | — | Inventario de consumidores. Ningún permiso existente cambia antes |
-| AP-05 | Ciclo de vida y `authorizationBasis` | ACEPTADA | **ACEPTADA** (owner de CP, 2026-10-15; CP `7b2e7f7`) | — | — | DEPENDE (D2) | D2 abierta. Ninguna lectura real con `service_scope_only` |
-| AP-06 | Error plano de CP; R4 mapea a `DomainError` | ACEPTADA | **ACEPTADA** (owner de CP, 2026-10-15; CP `7b2e7f7`) | — | — | — | H-15: `requiredScope: null` en el 403 |
-| AP-07 | Tamaños en bytes UTF-8; R4 pide ≤ 10 ítems | ACEPTADA | **ACEPTADA** (owner de CP, 2026-10-15; CP `7b2e7f7`) | — | — | — | — |
-| AP-08 | Estados del puerto sin `degraded`; `withheld` | ACEPTADA | **ACEPTADA** (owner de CP, 2026-10-15; CP `7b2e7f7`) | — | — | — | Codificación del componente incompleto (F2) |
+| AP-05 | Ciclo de vida y `authorizationBasis` | ACEPTADA | **PENDIENTE** (aceptación formal; corrección CP `7373302`) | — | — | DEPENDE (D2) | D2 abierta. Ninguna lectura real con `service_scope_only` |
+| AP-06 | Error plano de CP; R4 mapea a `DomainError` | ACEPTADA | **PENDIENTE** (aceptación formal; corrección CP `7373302`) | — | — | — | H-15: `requiredScope: null` en el 403 |
+| AP-07 | Tamaños en bytes UTF-8; R4 pide ≤ 10 ítems | ACEPTADA | **PENDIENTE** (aceptación formal; corrección CP `7373302`) | — | — | — | — |
+| AP-08 | Estados del puerto sin `degraded`; `withheld` | ACEPTADA | **PENDIENTE** (aceptación formal; corrección CP `7373302`) | — | — | — | Codificación del componente incompleto (F2) |
 | AP-09 | Cuentas no divulgables | ACEPTADA (regla provisional, fail-closed) | CONSULTADO | **PENDIENTE**: guest, inactiva y eliminada | — | — | Política definitiva antes de cualquier dato real |
 | AP-10 | Productos históricos y precio cero | ACEPTADA (criterio) | PENDIENTE: clasificación `lineKind` | **PENDIENTE**: aceptación comercial | — | — | Clasificación y excepciones |
-| AP-11 | Presupuesto de CP y timeout de R4 | ACEPTADA | **ACEPTADA** (owner de CP, 2026-10-15; CP `7b2e7f7`) | — | — | — | p95 medido en 02C. No es un SLO |
+| AP-11 | Presupuesto de CP y timeout de R4 | ACEPTADA | **PENDIENTE** (aceptación formal; corrección CP `7373302`) | — | — | — | p95 medido en 02C. No es un SLO |
 | D6 | Mapeo de producto a Catalog | Posición registrada: **diferida** | PENDIENTE: CP realiza el mapeo | — | **DEPENDE**: autoridad de claves y contrato verificado | — | `catalogKey: null` mientras tanto |
 
 ---
@@ -217,9 +217,9 @@ F2 es trabajo de CP. Esta sección fija lo que R4 exige para **iniciarlo** y par
 | # | Condición | Estado al cerrar F0/F1 |
 |---|---|---|
 | E-1 | Posiciones de R4 registradas y publicadas con SHA en `origin` | Este registro |
-| E-2 | Conformidad del owner de CP con las AP que cambian la forma (AP-01 a AP-07), registrada en su documento de alineamiento | **CUMPLIDA**: AP-01 a AP-08 y AP-11 aceptadas, CP `7b2e7f7` (§9.1 de su documento) |
-| E-3 | Documento de alineamiento de CP versionado | Commit local de CP (`cef81c6`) |
-| E-4 | Autorización explícita para iniciar F2 en CP | **CUMPLIDA**: autorización de R4 (mandato CP-J4-F2), condicionada a E-2 |
+| E-2 | Conformidad del owner de CP con las AP que cambian la forma (AP-01 a AP-07), registrada en su documento de alineamiento | **PENDIENTE**. Se dio por cumplida con CP `7b2e7f7`, pero la corrección CP `7373302` retiró esa aceptación por falta de evidencia formal |
+| E-3 | Documento de alineamiento de CP versionado | CP `cef81c6` |
+| E-4 | Autorización explícita para iniciar F2 en CP | Autorización de R4 (mandato CP-J4-F2), condicionada a E-2. F2 se ejecutó técnicamente antes de que E-2 tuviera respaldo formal: su resultado técnico se conserva y queda sujeto a la aceptación formal |
 
 No bloquean la entrada, pero sí `contractStatus: approved` y cualquier dato real: la aprobación del owner de datos (AP-03, AP-09), la aceptación comercial (AP-10), D2 y D6.
 
@@ -257,11 +257,15 @@ No bloquean la entrada, pero sí `contractStatus: approved` y cualquier dato rea
 | Criterio | Estado |
 |---|---|
 | G-01 a G-13 | **MET** |
-| G-14 | **PARCIAL**: SHA verificable por tag local; **sin** SHA en una rama remota (publicación no autorizada: la eligió el owner de CP) |
+| G-14 | **PARCIAL** al validar: SHA verificable por tag local, sin SHA en una rama remota. Pasa a MET **solo** tras verificar la publicación; ver el informe J4-GIT-PUBLISH-01 |
 | G-15 | **MET** |
-| G-16 | **MET**: CP `7b2e7f7` |
+| G-16 | **PENDIENTE**: no hay aceptación formal del owner de CP (corrección CP `7373302`) |
 
-**Dictamen de R4 sobre F2:** `PASS_WITH_LIMITATIONS`. Detalle y limitaciones en `CP: docs/reviews/CP_J4_F2_CONTRACT_RC_VALIDATION_REPORT.md`. **No** implica productor operativo, interoperabilidad E2E ni uso de datos reales. J4-R2 sigue `NOT_AUTHORIZED`.
+**Dictamen de R4 sobre F2:**
+- `F2_TECHNICAL=PASS_WITH_LIMITATIONS`.
+- No puede pasar a `PASS` completo mientras falte la aceptación formal del owner de CP.
+- Detalle y limitaciones en `CP: docs/reviews/CP_J4_F2_CONTRACT_RC_VALIDATION_REPORT.md`.
+- **No** implica productor operativo, interoperabilidad E2E ni uso de datos reales. J4-R2 sigue `NOT_AUTHORIZED`.
 
 ---
 
@@ -269,10 +273,12 @@ No bloquean la entrada, pero sí `contractStatus: approved` y cualquier dato rea
 
 ```text
 F0_R4_DECISIONS_RECORDED
-F0_CP_OWNER_ACCEPTED (AP-01..AP-08, AP-11; CP 7b2e7f7)
+R4_ARCHITECTURE_POSITION=ACCEPTED
+CP_TECHNICAL_REVIEW=PASS_WITH_LIMITATIONS
+CP_OWNER_FORMAL_ACCEPTANCE=PENDING        (corrección CP 7373302; antes registrada en CP 7b2e7f7)
 F0_DATA_OWNER_ACCEPTANCE_PENDING
 ADR_039=ACCEPTED_INTERNAL_R4
-F2=PASS_WITH_LIMITATIONS (v1-rc1, CP 47db415, tag local; G-14 parcial)
+F2_TECHNICAL=PASS_WITH_LIMITATIONS        (v1-rc1, CP 47db415, tag cp-sales-context-v1-rc1; G-14 según J4-GIT-PUBLISH-01; G-16 pendiente)
 CP_CONTEXT_02C_NOT_STARTED
 R4_J4_R2_NOT_AUTHORIZED
 D1_BLOCKED  D2_PROPOSED  D6_DEFERRED_WITH_NULL  D7_PRODUCTION_BLOCKER
