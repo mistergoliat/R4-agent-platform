@@ -5,7 +5,7 @@
 | Destinatario | Equipo de Customer Service |
 | Emisor | R4 (J4 — Customer Profile Integration) |
 | Fecha | 2026-10-15 |
-| Estado | **Solicitud abierta**, revisada en R4-J4-R1A-REVIEW-01 (versión previa: commit `b680b2c`). Customer Service es el **candidato prioritario** a autoridad de identidad para R4, **no un owner confirmado**: D1 sigue BLOCKED. Para R4, esta auditoría es la **próxima prioridad** de J4 |
+| Estado | **Respondida en parte** (2026-10-15). La [auditoría](CS_R4_J4_IDENTITY_AUTHORITY_AUDIT_REPORT.md) dio `INCONCLUSIVE`, y el owner confirmó que "Customer Service" es `pc-users`, que **no** implementa el contrato de resolución y vinculación. Los requisitos CS-01 a CS-12 se mantienen y pasan a aplicar a la autoridad que se designe (recomendada: Customer Identity Authority, [ID-AUTHORITY-DECISION-01](ID-AUTHORITY-DECISION-01_CUSTOMER_IDENTITY_AUTHORITY.md)). D1 sigue BLOCKED |
 | Marco | [ADR-039](../adr/ADR-039-customer-identity-and-profile-consumption.md) (propuesta); [especificación del consumidor](R4-J4-R1_CUSTOMER_CONSUMER_SPECIFICATION.md) §4 |
 
 ## 1. Por qué se pide
