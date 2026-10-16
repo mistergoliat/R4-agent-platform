@@ -630,6 +630,7 @@ Esta sección **modifica explícitamente** el criterio de §1. Antes, el mandato
   - Documentos: ADR-038 (`PROPOSED_DEFERRED`), `R4_J3F_DOCUMENT_DELIVERY_DESIGN.md` y `R4_J3F_IMPLEMENTATION_PLAN.md`.
   - La migración `0011`, los cambios de harness y las versiones Sales que propone **no están autorizados**.
   - Ese diseño reemplaza la propuesta de §8.3: la entrega la decide la plataforma, no una capacidad invocada por el modelo.
+  - **Nota posterior (2026-10-16, `bbb3974`):** la rama se fusionó en `main` mediante el PR #9, solo con documentos. ADR-038 sigue `PROPOSED_DEFERRED`, la implementación sigue sin autorizar y J3F no reserva versiones de Sales ni la `0011`. Ver [reconciliación](../architecture/R4_J3F_DOCUMENTARY_MERGE_RECONCILIATION.md).
 - **GAP-01:** `DEFERRED_TO_R4_MEDIA`. **Se mantiene como requisito verificable** antes de cualquier rollout comercial que prometa PDFs al cliente (roadmap §4.2). No se presenta como resuelto.
 - **GAP-03:** `GAP_03_DISPOSITION=J7_PRODUCTION_GATE_P0` (decisión del owner, 2026-10-14). Sale de J3 y no forma parte de R4 Media: pertenece a *Sales Response Integrity*. Antes del outbound, la emisión comunicada al cliente debe estar protegida mediante validación o composición determinista.
 - **Terminología oficial:** *capacidad de plataforma* o *capability del harness*. Una skill agéntica puede usarlas; no implementa transporte, persistencia ni entrega.
@@ -703,3 +704,5 @@ J3_PRODUCTION_ROLLOUT=NOT_AUTHORIZED
 - GAP-03 sigue como J7-PRODUCTION-GATE P0.
 - Los gates J7 del registro de brechas siguen abiertos.
 - J4 no se inicia automáticamente.
+
+> **Nota posterior (2026-10-16, `bbb3974`).** Contra lo previsto en la primera línea, el owner fusionó la rama documental de J3F en `main` (PR #9, merge `bbb3974`) y decidió conservar el merge. Solo se incorporaron documentos. El resto de la lista sigue vigente: J3F sigue diferido y ADR-038 sigue sin implementar (`PROPOSED_DEFERRED`). Ver [reconciliación](../architecture/R4_J3F_DOCUMENTARY_MERGE_RECONCILIATION.md).

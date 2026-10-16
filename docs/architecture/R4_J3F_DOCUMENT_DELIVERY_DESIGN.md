@@ -8,6 +8,7 @@
 | Rama | `r4-j3f-document-delivery-design`, desde `origin/main` `092715e` |
 | Referencia de contratos futuros | Rama publicada `r4-j3e-c-deterministic-commercial-offer` (`d19bffe`: `quote.create@5`, `sales-production@7`, GAP-16, ADR-036/037), leída sin mezclar su código |
 | Estado | **DEFERRED** (decisión del owner, 2026-10-14). `J3F_DISPOSITION=DEFERRED_TO_R4_MEDIA`. Se conserva como insumo de la iniciativa **R4 Media & Communications — Governed Multimodal Capabilities**. J3 se re-delimita sin entrega documental (`J3_DOCUMENT_DELIVERY=DEFERRED`). Sin implementación, sin cambios de harness, Sales ni Quote V2, sin migraciones (la `0011` no está autorizada) y sin despliegue |
+| Numeración | Provisional (2026-10-16). `quote.create@6`, `sales-production@8` y la `0011` no están reservados para J3F. `@8` y la definición v8 corresponden a J4-R4. Ver [reconciliación](R4_J3F_DOCUMENTARY_MERGE_RECONCILIATION.md) §3 |
 | Decisión formal | [ADR-038](../adr/ADR-038-governed-document-outbound.md) (propuesto) |
 | Plan | [R4_J3F_IMPLEMENTATION_PLAN.md](R4_J3F_IMPLEMENTATION_PLAN.md) |
 

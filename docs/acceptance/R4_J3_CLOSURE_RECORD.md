@@ -106,6 +106,8 @@ ADR_038_STATUS=PROPOSED_DEFERRED
 - **Requisito antes de cualquier rollout que prometa PDFs:** GAP-01 (roadmap §4.2).
 - **No autorizado:** la migración `0011`, los cambios de harness y las versiones Sales propuestas por J3F.
 
+> **Nota posterior (2026-10-16, `bbb3974`).** El owner fusionó la rama en `main` mediante el PR #9 (merge `bbb3974`, padres `03080ed` y `19928db`), solo con sus 3 documentos, y decidió conservar ese merge. La disposición no cambia: `ADR_038_STATUS=PROPOSED_DEFERRED` y `J3F_DISPOSITION=DEFERRED_TO_R4_MEDIA`, y la implementación sigue sin autorizar. J3F no reserva versiones de Sales ni la migración `0011`. Ver [reconciliación](../architecture/R4_J3F_DOCUMENTARY_MERGE_RECONCILIATION.md).
+
 ## 8. Gates de producción pendientes (J7, abiertos)
 
 El cierre de J3 **no resuelve** ninguno de estos gates:
@@ -137,6 +139,8 @@ ADR-034 y ADR-035 siguen aceptados **solo para experimentación y canary**.
 | Alcance del merge | 44 archivos: `agents/sales/`, tests, docs, `scripts/experiments/`. 0 en `packages/`, `apps/` o `adapters/`; 0 migraciones; 0 cambios en `package.json` o lockfile |
 | Archivos sensibles | Ninguno. Las salidas de experimentos van a `artifacts/` (ignorado; 0 archivos versionados). La única credencial en los scripts es la de desarrollo local de `docker-compose.yml` (`r4_local_only`). `git fsck` limpio |
 | CI | No existe |
+
+> **Nota posterior (2026-10-16, `bbb3974`).** Las verificaciones de esta tabla corresponden al 2026-10-15 y se conservan. Después, la fila "J3F no incorporada" dejó de describir `main`: el PR #9 fusionó `19928db` en `bbb3974`, solo con documentos. Ver [reconciliación](../architecture/R4_J3F_DOCUMENTARY_MERGE_RECONCILIATION.md) §1.
 
 **Despliegues (EC2-DOC, canary §20.3/§20.5):**
 - **Producción:** `ef5a354`, `sales-production@3`, rollout 0 %.

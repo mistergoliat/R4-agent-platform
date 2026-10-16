@@ -19,7 +19,7 @@ Etiquetas: **R4** = verificado en este repositorio · **EXT-CP / EXT-CRM** = che
 | Cierre administrativo de J3 | En ese momento **no** estaba en `main`. Se integró después, con autorización, en `80f39fd` (informe de revisión §3) |
 | Evidencia J4-R0 | Conservada sin cambios (SHA-256 `46bfab8e…`), versionada en `b680b2c` |
 | Trabajo concurrente de CP | Sin commit (CONTEXT-02A y documentos CP-J4-CONTEXT). No se modificó ni se usó como base |
-| ADR-039 | Número libre. ADR-038 solo existe en la rama no fusionada `r4-j3f-document-delivery-design` |
+| ADR-039 | Número libre. ADR-038 solo existía entonces en la rama no fusionada `r4-j3f-document-delivery-design`. Se fusionó después en `bbb3974` (PR #9), solo como documento y en estado `PROPOSED_DEFERRED`; la reserva de `sales-production@8` y de la definición v8 para J4-R4 se mantiene ([reconciliación](R4_J3F_DOCUMENTARY_MERGE_RECONCILIATION.md) §3) |
 
 ## 2. Entregables
 

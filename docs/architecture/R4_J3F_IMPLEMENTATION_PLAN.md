@@ -5,6 +5,7 @@
 | **Fecha** | 2026-10-14 |
 | **Rama de diseño** | `r4-j3f-document-delivery-design` |
 | **Estado** | **DEFERRED** (decisión del owner, 2026-10-14; `J3F_DISPOSITION=DEFERRED_TO_R4_MEDIA`). Ningún slice está autorizado. Al retomarlo en **R4 Media & Communications**, las slices se re-planifican como fases de esa iniciativa: cada una requiere autorización explícita del owner, y A y B además autorización de cambio de harness. Las dependencias de J3 de este plan (GAP-02, cierre de J3) quedan sin efecto: J3 se cierra sin J3F |
+| **Numeración** | Provisional (2026-10-16). Este plan no reserva versiones de Sales ni la migración `0011`. `sales-production@8` y la definición v8 corresponden a J4-R4. Ver [reconciliación](R4_J3F_DOCUMENTARY_MERGE_RECONCILIATION.md) §3 |
 | **Decisión** | [ADR-038](../adr/ADR-038-governed-document-outbound.md) (propuesto) |
 | **Diseño** | [R4_J3F_DOCUMENT_DELIVERY_DESIGN.md](R4_J3F_DOCUMENT_DELIVERY_DESIGN.md) |
 

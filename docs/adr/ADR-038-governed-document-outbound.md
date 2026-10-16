@@ -7,8 +7,11 @@
   - Esa iniciativa tendrá fases independientes: audio entrante, transcripción, imágenes entrantes, comprensión multimodal, documentos entrantes, archivos salientes, PDFs de cotizaciones, transporte de medios por canales, autorización y seguridad, idempotencia de comunicaciones, estados de entrega y reconciliación.
   - Entregar un PDF no exige terminar todo el sistema multimedia.
   - **Terminología oficial:** *capacidad de plataforma* o *capability del harness*. Una skill agéntica puede usar esas capabilities, pero no implementa transporte, persistencia ni entrega.
+- **En `main` (2026-10-16):** fusionado solo como documento en `bbb3974` (PR #9), por decisión del owner de conservar ese merge. Eso **no** cambia el estado ni autoriza implementación. Ver [reconciliación](../architecture/R4_J3F_DOCUMENTARY_MERGE_RECONCILIATION.md).
 - **Fecha:** 2026-10-14 (diseño y diferimiento)
-- **Numeración:** `main` termina en ADR-035. ADR-036 y ADR-037 existen solo en la rama publicada `r4-j3e-c-deterministic-commercial-offer` (sin merge). Ninguna rama remota usa 038 (verificado el 2026-10-14). Si J3E-C1 no se fusiona antes que este ADR, 036–037 siguen reservados y 038 no cambia.
+- **Numeración:**
+  - Del ADR (2026-10-14): `main` terminaba en ADR-035, y ADR-036/037 estaban solo en la rama J3E-C1. Hoy `main` tiene ADR-036 a ADR-039; 038 no cambió.
+  - De versiones (vigente): este ADR **no reserva** versiones de Sales (perfil, definición ni `quote.create`) ni la migración `0011`. Los números que usa más abajo son provisionales. `sales-production@8` y la definición v8 corresponden a J4-R4 (reconciliación §3).
 - **Autoridad superior:** Constitución §9, §21, §25 (1–5, 11, 13, 14); PRD §6 (Artifact, ActionReceipt), §11, §12, §19, §27, §28, §31, §41, §43, §44; ADR-016, ADR-017, ADR-018, ADR-019, ADR-020, ADR-022, ADR-029; ADR-037 (propuesto).
 - **Enmienda (solo para lo que aquí se define):**
   - ADR-029: nuevo origen `platform` (con procedencia obligatoria), contenido `document` y la puerta de entrega para ese origen.
@@ -19,7 +22,7 @@
 - **Evidencia del problema:**
   - `R4_J3_FINAL_ACCEPTANCE.md` §8 y S10;
   - GAP-01 y GAP-03 del registro de brechas J3.
-  - Ambos documentos están en la rama J3E-C1.
+  - Ambos documentos estaban en la rama J3E-C1; están en `main` desde `b5fd288`.
 
 ## Contexto
 
