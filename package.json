@@ -14,6 +14,7 @@
     "adapters/domains/catalog/http",
     "adapters/domains/shipping/http",
     "adapters/domains/quote/http",
+    "adapters/domains/customer/http",
     "adapters/models/*",
     "adapters/channels/*",
     "agents/sales"

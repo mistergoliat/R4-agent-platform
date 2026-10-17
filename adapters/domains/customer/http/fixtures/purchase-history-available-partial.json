@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "contract": "customer-profile.sales-context",
+  "purpose": "purchase_history",
+  "status": "available",
+  "statusDetail": null,
+  "completeness": "partial",
+  "customerRef": "prestashop_customer:900000309",
+  "account": {
+    "primaryState": "active"
+  },
+  "facts": {
+    "meaning": "purchased_historically_not_ownership",
+    "policy": {
+      "policyVersion": "cp-sales-facts-v1-candidate",
+      "purchaseEligibility": "ps_orders.valid=1_current_state",
+      "validityIsAsOf": false,
+      "orderUnit": "ps_orders_row",
+      "splitCheckoutsMayCountMultipleTimes": true,
+      "channelPolicy": "all_shops_pending_d13",
+      "inheritsAllRowsArePaidRule": false
+    },
+    "purchasedProducts": {
+      "status": "unavailable",
+      "reason": "dependency_unavailable",
+      "items": null,
+      "page": null
+    }
+  },
+  "freshness": {
+    "asOf": "2026-10-15T12:00:00.000Z",
+    "validUntil": "2026-10-15T12:15:00.000Z",
+    "source": "live_query",
+    "cache": {
+      "hit": false,
+      "ageMs": 0
+    }
+  },
+  "provenance": {
+    "service": "customer-profile",
+    "contract": "customer-profile.sales-context",
+    "contractStatus": "candidate",
+    "serviceBuildRef": null,
+    "authorizationBasis": "service_scope_only",
+    "sources": [
+      "ps_customer",
+      "ps_orders",
+      "ps_order_detail"
+    ],
+    "policyVersions": {
+      "facts": "cp-sales-facts-v1-candidate",
+      "operationalAccounts": "operational-account-exclusion-v1",
+      "administrativeLines": "seller-service-exclusion-v1"
+    },
+    "timezoneStatus": "unverified",
+    "correlationId": "r4-fixture:ph-partial"
+  },
+  "limitations": [
+    "timezone_unverified",
+    "validity_is_current_not_as_of",
+    "split_checkouts_counted_separately",
+    "refunds_not_netted",
+    "channel_policy_pending",
+    "historical_purchase_is_not_ownership"
+  ],
+  "warnings": [
+    "partial_context"
+  ]
+}

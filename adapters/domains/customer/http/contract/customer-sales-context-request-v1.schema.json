@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pesaschile.cl/contracts/customer-profile/sales-context/v1/customer-sales-context-request-v1.schema.json",
+  "title": "Customer Profile — sales context v1 request (CANDIDATE v1-rc1)",
+  "description": "JSON body of POST /v1/capabilities/customer/sales-context (CP-J4-F2). Read-only, no transactional effect; the response carries Cache-Control: no-store. Identifiers travel ONLY in this body: no path parameter and no query string (any query is 400 unsupported_query_params). purpose is mandatory and selects the composition of the answer. Unknown properties are 400. The body is limited to 1 KiB (413 request_too_large); Content-Type must be application/json (415).",
+  "oneOf": [
+    { "$ref": "#/$defs/salesContextRequest" },
+    { "$ref": "#/$defs/purchaseHistoryRequest" }
+  ],
+  "$defs": {
+    "salesContextRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["customerRef", "purpose"],
+      "properties": {
+        "customerRef": { "$ref": "customer-sales-context-v1.schema.json#/$defs/customerRef" },
+        "purpose": { "const": "sales_context" }
+      }
+    },
+    "purchaseHistoryRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["customerRef", "purpose", "page"],
+      "properties": {
+        "customerRef": { "$ref": "customer-sales-context-v1.schema.json#/$defs/customerRef" },
+        "purpose": { "const": "purchase_history" },
+        "page": {
+          "description": "Explicit maximum for this J4 purpose: at most 10 items per page and offset 0–40 (a 50-item window).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["limit", "offset"],
+          "properties": {
+            "limit": { "type": "integer", "minimum": 1, "maximum": 10 },
+            "offset": { "type": "integer", "minimum": 0, "maximum": 40 }
+          }
+        }
+      }
+    }
+  }
+}

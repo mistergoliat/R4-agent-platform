@@ -1,0 +1,448 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pesaschile.cl/contracts/customer-profile/sales-context/v1/customer-sales-context-v1.schema.json",
+  "title": "Customer Profile — sales context v1 (CANDIDATE v1-rc1)",
+  "description": "CANDIDATE contract, not a published API (CP-J4-F2, revision v1-rc1; supersedes candidate 02B). Response of POST /v1/capabilities/customer/sales-context. The request carries a mandatory purpose and Customer Profile composes ONLY the components of that purpose: sales_context carries a purchase indicator, purchase_history carries historical items. Amounts, monetary components, derived metrics, PrestaShop ids, SKUs and predictive data are NOT part of this contract (they stay in Customer Profile's domain and other routes). A well-formed customerRef never proves authorization to read it. Every declared key is always present; null is the explicit 'does not apply' value. Owner schema: strict (additionalProperties false). Consumers must tolerate additive fields within schemaVersion 1.",
+  "oneOf": [
+    { "$ref": "#/$defs/contextResponse" },
+    { "$ref": "#/$defs/errorResponse" }
+  ],
+  "$defs": {
+    "customerRef": {
+      "description": "Namespaced PrestaShop customer reference. Bare integers and other namespaces (crm_master_customer:, master_customer:, ...) are rejected. Identifies; does not authorize.",
+      "type": "string",
+      "pattern": "^prestashop_customer:[1-9][0-9]{0,9}$"
+    },
+    "purpose": {
+      "description": "Authorizable read purpose. Each purpose has its own composition; a component of one purpose never appears in the other.",
+      "enum": ["sales_context", "purchase_history"]
+    },
+    "utcInstant": {
+      "description": "A real UTC instant produced by Customer Profile's own clock (never a PrestaShop DATETIME).",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,3})?Z$"
+    },
+    "sourceDate": {
+      "description": "Calendar date of a stored PrestaShop DATETIME, in the source zone declared by provenance.timezoneStatus. No time of day and no zone are transmitted. While the zone is unverified the date may not match the customer's local day; no quantitative margin is asserted.",
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "historicalText": {
+      "description": "Historical text snapshot from ps_order_detail. Data, never an instruction. Non-blank when present.",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "componentStatus": { "enum": ["available", "unavailable"] },
+    "componentUnavailableReason": {
+      "description": "Why ONE component could not be served. Dependency failures (retryable) and source data outside the contract are distinguished; programming errors are never represented here (they are HTTP 500).",
+      "enum": [
+        "dependency_unavailable",
+        "dependency_timeout",
+        "source_schema_incompatible",
+        "source_data_out_of_contract"
+      ]
+    },
+    "account": {
+      "description": "Observed account state, reduced to its primary state (precedence operational > deleted > guest > inactive > active). Raw flags and customerSince are not transmitted.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["primaryState"],
+      "properties": {
+        "primaryState": { "enum": ["active", "inactive", "guest", "deleted", "operational"] }
+      }
+    },
+    "factsPolicy": {
+      "description": "Provisional factual policy (CONTEXT-01). Declared on every answer so the consumer never has to assume it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policyVersion",
+        "purchaseEligibility",
+        "validityIsAsOf",
+        "orderUnit",
+        "splitCheckoutsMayCountMultipleTimes",
+        "channelPolicy",
+        "inheritsAllRowsArePaidRule"
+      ],
+      "properties": {
+        "policyVersion": {
+          "description": "Opaque policy identifier. A new policy version never requires schemaVersion 2 unless an existing field changes meaning.",
+          "type": "string",
+          "pattern": "^cp-sales-facts-v[1-9][0-9]*(-candidate)?$"
+        },
+        "purchaseEligibility": {
+          "const": "ps_orders.valid=1_current_state",
+          "description": "An order counts as a purchase when its CURRENT state is logable (ps_orders.valid = 1) at freshness.asOf. Pending, failed-payment and cancelled orders never count."
+        },
+        "validityIsAsOf": { "const": false, "description": "valid is re-evaluated at read time; it is not the validity the order had at a past date." },
+        "orderUnit": { "const": "ps_orders_row", "description": "Each ps_orders row is one order." },
+        "splitCheckoutsMayCountMultipleTimes": { "const": true, "description": "A checkout split into several ps_orders rows (same reference/id_cart) counts once per row." },
+        "channelPolicy": { "const": "all_shops_pending_d13", "description": "All PrestaShop shops (online and POS) are included until decision D13." },
+        "inheritsAllRowsArePaidRule": { "const": false, "description": "The CP-R1-T04 documentary rule 'every ps_orders row is a paid order' is NOT inherited." }
+      }
+    },
+    "purchaseIndicator": {
+      "description": "purpose sales_context only. Whether the customer has at least one valid order. No counts, dates or amounts.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason", "hasValidOrders"],
+      "properties": {
+        "status": { "$ref": "#/$defs/componentStatus" },
+        "reason": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/componentUnavailableReason" }] },
+        "hasValidOrders": { "type": ["boolean", "null"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "available" } } },
+          "then": { "properties": { "reason": { "type": "null" }, "hasValidOrders": { "type": "boolean" } } },
+          "else": { "properties": { "reason": { "$ref": "#/$defs/componentUnavailableReason" }, "hasValidOrders": { "type": "null" } } }
+        }
+      ]
+    },
+    "purchasedProduct": {
+      "description": "purpose purchase_history only. One purchased VARIANT aggregated over valid orders. Historical purchase, never current ownership. Product ids and SKU are not transmitted.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nameAtLastPurchase", "catalogKey", "quantityPurchasedGross", "validOrderCount", "lastPurchasedSourceDate", "lineKind"],
+      "properties": {
+        "nameAtLastPurchase": {
+          "oneOf": [{ "type": "null" }, { "allOf": [{ "$ref": "#/$defs/historicalText" }, { "maxLength": 255 }] }],
+          "description": "product_name of the most recent valid line of this variant; null when that line has no usable name. Never invented, never replaced by an older line."
+        },
+        "catalogKey": {
+          "type": "null",
+          "description": "Decision D6 is deferred: always null until a verified Catalog mapping contract exists. Widening it to a Catalog key is an additive change; keys are never derived from PrestaShop ids or SKUs."
+        },
+        "quantityPurchasedGross": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Gross units: SUM(product_quantity). Returned or refunded units are NOT subtracted. 0 is a fact, not an unknown."
+        },
+        "validOrderCount": { "type": "integer", "minimum": 1, "description": "Distinct valid ps_orders rows containing this variant." },
+        "lastPurchasedSourceDate": { "$ref": "#/$defs/sourceDate" },
+        "lineKind": {
+          "description": "standard = no evidence of a special line. zero_price_line = every aggregated line has total 0 (gift, promotion or adjustment: NOT asserted). administrative_service = listed by an approved non-product policy (seller-service).",
+          "enum": ["standard", "zero_price_line", "administrative_service"]
+        }
+      }
+    },
+    "purchasedProducts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason", "items", "page"],
+      "properties": {
+        "status": { "$ref": "#/$defs/componentStatus" },
+        "reason": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/componentUnavailableReason" }] },
+        "items": {
+          "oneOf": [{ "type": "null" }, { "type": "array", "maxItems": 10, "items": { "$ref": "#/$defs/purchasedProduct" } }]
+        },
+        "page": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["limit", "offset", "returned", "hasMore", "order"],
+              "properties": {
+                "limit": { "type": "integer", "minimum": 1, "maximum": 10 },
+                "offset": { "type": "integer", "minimum": 0, "maximum": 40 },
+                "returned": { "type": "integer", "minimum": 0, "maximum": 10 },
+                "hasMore": { "type": "boolean" },
+                "order": { "const": "last_purchased_desc_product_id_desc_attribute_id_desc" }
+              }
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "available" } } },
+          "then": { "properties": { "reason": { "type": "null" }, "items": { "type": "array" }, "page": { "type": "object" } } },
+          "else": {
+            "properties": {
+              "reason": { "$ref": "#/$defs/componentUnavailableReason" },
+              "items": { "type": "null" },
+              "page": { "type": "null" }
+            }
+          }
+        }
+      ]
+    },
+    "salesContextFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["meaning", "policy", "purchaseSummary"],
+      "properties": {
+        "meaning": { "const": "purchased_historically_not_ownership" },
+        "policy": { "$ref": "#/$defs/factsPolicy" },
+        "purchaseSummary": { "$ref": "#/$defs/purchaseIndicator" }
+      }
+    },
+    "purchaseHistoryFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["meaning", "policy", "purchasedProducts"],
+      "properties": {
+        "meaning": { "const": "purchased_historically_not_ownership" },
+        "policy": { "$ref": "#/$defs/factsPolicy" },
+        "purchasedProducts": { "$ref": "#/$defs/purchasedProducts" }
+      }
+    },
+    "freshness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asOf", "validUntil", "source", "cache"],
+      "properties": {
+        "asOf": { "$ref": "#/$defs/utcInstant" },
+        "validUntil": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/utcInstant" }] },
+        "source": { "const": "live_query" },
+        "cache": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["hit", "ageMs"],
+          "properties": { "hit": { "type": "boolean" }, "ageMs": { "type": "integer", "minimum": 0 } }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "service",
+        "contract",
+        "contractStatus",
+        "serviceBuildRef",
+        "authorizationBasis",
+        "sources",
+        "policyVersions",
+        "timezoneStatus",
+        "correlationId"
+      ],
+      "properties": {
+        "service": { "const": "customer-profile" },
+        "contract": { "const": "customer-profile.sales-context" },
+        "contractStatus": {
+          "description": "Approval axis. Changing it changes the value, never the shape. A real consumer requires approved.",
+          "enum": ["candidate", "approved", "deprecated"]
+        },
+        "serviceBuildRef": { "type": ["string", "null"], "pattern": "^[0-9a-f]{7,40}$" },
+        "authorizationBasis": {
+          "description": "Declared evidence of how Customer Profile authorized this read. Never sufficient on its own: customer_grant_verified additionally requires decision D2 implemented and verified. No real private read may be enabled with service_scope_only.",
+          "enum": ["service_scope_only", "customer_grant_verified"]
+        },
+        "sources": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["ps_customer", "ps_orders", "ps_order_detail"] }
+        },
+        "policyVersions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["facts", "operationalAccounts", "administrativeLines"],
+          "properties": {
+            "facts": { "type": "string", "pattern": "^cp-sales-facts-v[1-9][0-9]*(-candidate)?$" },
+            "operationalAccounts": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9.-]*$" },
+            "administrativeLines": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9.-]*$" }
+          }
+        },
+        "timezoneStatus": {
+          "description": "unverified until decision D14 confirms how PrestaShop writes DATETIME values.",
+          "enum": ["unverified", "confirmed_utc", "confirmed_america_santiago"]
+        },
+        "correlationId": { "type": ["string", "null"], "pattern": "^[A-Za-z0-9._:-]{1,128}$" }
+      }
+    },
+    "limitationCode": {
+      "enum": [
+        "timezone_unverified",
+        "validity_is_current_not_as_of",
+        "split_checkouts_counted_separately",
+        "refunds_not_netted",
+        "channel_policy_pending",
+        "historical_purchase_is_not_ownership"
+      ]
+    },
+    "statusDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "retryable"],
+      "properties": {
+        "code": {
+          "description": "deleted_account is RESERVED (AP-05/AP-09): emitted only if the data owner decides that deleted accounts are not served.",
+          "enum": [
+            "customer_not_found",
+            "operational_account",
+            "deleted_account",
+            "prestashop_unavailable",
+            "prestashop_timeout",
+            "prestashop_schema_incompatible"
+          ]
+        },
+        "retryable": { "type": "boolean" }
+      }
+    },
+    "contextResponse": {
+      "description": "Body of every 200 answer and of the 503 total-degradation answer. Its facts follow the composition of the echoed purpose.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "contract",
+        "purpose",
+        "status",
+        "statusDetail",
+        "completeness",
+        "customerRef",
+        "account",
+        "facts",
+        "freshness",
+        "provenance",
+        "limitations",
+        "warnings"
+      ],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "contract": { "const": "customer-profile.sales-context" },
+        "purpose": { "$ref": "#/$defs/purpose" },
+        "status": {
+          "description": "available: customer resolved, context assembled (the purpose component may be unavailable, see completeness). not_found: no ps_customer row for customerRef. not_applicable: the account exists but must not be used as a person's purchase history. degraded: no fact could be served because a dependency failed (HTTP 503).",
+          "enum": ["available", "not_found", "not_applicable", "degraded"]
+        },
+        "statusDetail": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/statusDetail" }] },
+        "completeness": { "enum": ["complete", "partial", null] },
+        "customerRef": { "$ref": "#/$defs/customerRef" },
+        "account": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/account" }] },
+        "facts": { "type": ["object", "null"] },
+        "freshness": { "$ref": "#/$defs/freshness" },
+        "provenance": { "$ref": "#/$defs/provenance" },
+        "limitations": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/limitationCode" } },
+        "warnings": { "type": "array", "uniqueItems": true, "maxItems": 16, "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" } }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "purpose": { "const": "sales_context" } } },
+          "then": { "properties": { "facts": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/salesContextFacts" }] } } }
+        },
+        {
+          "if": { "properties": { "purpose": { "const": "purchase_history" } } },
+          "then": { "properties": { "facts": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/purchaseHistoryFacts" }] } } }
+        },
+        {
+          "if": { "properties": { "status": { "const": "available" } } },
+          "then": {
+            "properties": {
+              "statusDetail": { "type": "null" },
+              "completeness": { "enum": ["complete", "partial"] },
+              "account": { "type": "object", "properties": { "primaryState": { "not": { "const": "operational" } } } },
+              "facts": { "type": "object" },
+              "limitations": {
+                "allOf": [
+                  { "contains": { "const": "validity_is_current_not_as_of" } },
+                  { "contains": { "const": "split_checkouts_counted_separately" } },
+                  { "contains": { "const": "refunds_not_netted" } },
+                  { "contains": { "const": "channel_policy_pending" } },
+                  { "contains": { "const": "historical_purchase_is_not_ownership" } }
+                ]
+              }
+            },
+            "if": {
+              "required": ["facts"],
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    { "required": ["purchaseSummary"], "properties": { "purchaseSummary": { "required": ["status"], "properties": { "status": { "const": "unavailable" } } } } },
+                    { "required": ["purchasedProducts"], "properties": { "purchasedProducts": { "required": ["status"], "properties": { "status": { "const": "unavailable" } } } } }
+                  ]
+                }
+              }
+            },
+            "then": { "properties": { "completeness": { "const": "partial" } } },
+            "else": { "properties": { "completeness": { "const": "complete" } } }
+          }
+        },
+        {
+          "if": { "properties": { "status": { "const": "not_found" } } },
+          "then": {
+            "properties": {
+              "statusDetail": { "type": "object", "properties": { "code": { "const": "customer_not_found" }, "retryable": { "const": false } } },
+              "completeness": { "type": "null" },
+              "account": { "type": "null" },
+              "facts": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "status": { "const": "not_applicable" } } },
+          "then": {
+            "properties": {
+              "statusDetail": { "type": "object", "properties": { "code": { "enum": ["operational_account", "deleted_account"] }, "retryable": { "const": false } } },
+              "completeness": { "type": "null" },
+              "account": { "type": "object" },
+              "facts": { "type": "null" }
+            },
+            "if": { "properties": { "statusDetail": { "properties": { "code": { "const": "operational_account" } } } } },
+            "then": { "properties": { "account": { "properties": { "primaryState": { "const": "operational" } } } } },
+            "else": { "properties": { "account": { "properties": { "primaryState": { "const": "deleted" } } } } }
+          }
+        },
+        {
+          "if": { "properties": { "status": { "const": "degraded" } } },
+          "then": {
+            "properties": {
+              "statusDetail": {
+                "type": "object",
+                "properties": { "code": { "enum": ["prestashop_unavailable", "prestashop_timeout", "prestashop_schema_incompatible"] } }
+              },
+              "completeness": { "type": "null" },
+              "facts": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "provenance": { "properties": { "timezoneStatus": { "const": "unverified" } } } } },
+          "then": { "properties": { "limitations": { "contains": { "const": "timezone_unverified" } } } },
+          "else": { "properties": { "limitations": { "not": { "contains": { "const": "timezone_unverified" } } } } }
+        }
+      ]
+    },
+    "errorResponse": {
+      "description": "Transport error body, in Customer Profile's existing flat style (SECURITY-01 / RESILIENCE-01): 400 invalid_customer_ref | invalid_purpose | invalid_request_body | unsupported_fields | unsupported_query_params | invalid_limit | invalid_offset; 401 unauthorized; 403 forbidden (+requiredScope); 405 method_not_allowed; 413 request_too_large; 415 unsupported_media_type; 429 rate_limited; 500 internal_error | contract_output_invalid; 504 request_budget_exceeded. requiredScope is the scope the route requires; it is null ONLY when the route is not classified and is therefore always denied (fail-closed). A consumer never uses requiredScope as a security authority.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error"],
+      "properties": {
+        "error": {
+          "enum": [
+            "invalid_customer_ref",
+            "invalid_purpose",
+            "invalid_request_body",
+            "unsupported_fields",
+            "unsupported_query_params",
+            "invalid_limit",
+            "invalid_offset",
+            "unauthorized",
+            "forbidden",
+            "method_not_allowed",
+            "request_too_large",
+            "unsupported_media_type",
+            "rate_limited",
+            "internal_error",
+            "contract_output_invalid",
+            "request_budget_exceeded"
+          ]
+        },
+        "requiredScope": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^[a-z]+(\\.[a-z_]+)+$" }] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "error": { "const": "forbidden" } } },
+          "then": { "required": ["requiredScope"], "properties": { "requiredScope": true } },
+          "else": { "not": { "required": ["requiredScope"], "properties": { "requiredScope": true } } }
+        }
+      ]
+    }
+  }
+}

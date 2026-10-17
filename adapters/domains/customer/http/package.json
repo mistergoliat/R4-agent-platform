@@ -1,0 +1,24 @@
+{
+  "name": "@r4-adapters/customer-http",
+  "version": "0.0.0",
+  "private": true,
+  "description": "R4-J4-R2 Customer Profile HTTP adapter of the CustomerProfilePort (MS-pesaschile-customer-profile customer-profile.sales-context v1-rc1, owner commit 47db415): one POST route with the purpose fixed by the port operation, bearer auth, deadline, UTF-8 byte cap, forbidden-field scan, allowlist projection validated against the pinned JSON Schema, lifecycle and freshness checks, typed owner errors. Transport only. Outside R4 Core.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "contract"
+  ],
+  "dependencies": {
+    "@r4-adapters/domains": "*",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
+  }
+}

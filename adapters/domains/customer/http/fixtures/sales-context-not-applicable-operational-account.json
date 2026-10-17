@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "contract": "customer-profile.sales-context",
+  "purpose": "sales_context",
+  "status": "not_applicable",
+  "statusDetail": {
+    "code": "operational_account",
+    "retryable": false
+  },
+  "completeness": null,
+  "customerRef": "prestashop_customer:900000205",
+  "account": {
+    "primaryState": "operational"
+  },
+  "facts": null,
+  "freshness": {
+    "asOf": "2026-10-15T12:00:00.000Z",
+    "validUntil": "2026-10-15T12:15:00.000Z",
+    "source": "live_query",
+    "cache": {
+      "hit": false,
+      "ageMs": 0
+    }
+  },
+  "provenance": {
+    "service": "customer-profile",
+    "contract": "customer-profile.sales-context",
+    "contractStatus": "candidate",
+    "serviceBuildRef": null,
+    "authorizationBasis": "service_scope_only",
+    "sources": [
+      "ps_customer"
+    ],
+    "policyVersions": {
+      "facts": "cp-sales-facts-v1-candidate",
+      "operationalAccounts": "operational-account-exclusion-v1",
+      "administrativeLines": "seller-service-exclusion-v1"
+    },
+    "timezoneStatus": "unverified",
+    "correlationId": "r4-fixture:sc-operational"
+  },
+  "limitations": [
+    "timezone_unverified"
+  ],
+  "warnings": []
+}
