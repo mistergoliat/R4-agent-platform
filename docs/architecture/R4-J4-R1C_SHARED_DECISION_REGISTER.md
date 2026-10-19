@@ -6,7 +6,7 @@
 | Mandato | R4-CP-J4-F0F1-EXECUTION-01: fases F0 (decisiones) y F1 (procedencia) del roadmap coordinado |
 | Referencia | Auditoría cruzada R4-CP-J4-ALIGNMENT-01 (`R4_CP_J4_CROSS_REPOSITORY_ALIGNMENT_REPORT.md`, fuera de ambos repositorios): §4–§7 y §12 |
 | Contraparte | `MS-pesaschile-customer-profile`: `docs/reviews/CP_J4_R4_CONTRACT_ALIGNMENT.md` (DEC-01..DEC-08, AP-01..AP-11) |
-| Estado | **Posiciones de R4 registradas.** **Actualización CP-J4-F2 (2026-10-15):** ADR-039 pasó a aceptación interna de R4 (§8) y F2 se ejecutó en CP (v1-rc1, §6.3). **Corrección J4-GIT-PUBLISH-01:** la aceptación del owner de CP registrada en CP `7b2e7f7` se reclasificó como no formal (CP `7373302`). `R4_ARCHITECTURE_POSITION=ACCEPTED` · `CP_TECHNICAL_REVIEW=PASS_WITH_LIMITATIONS` · `CP_OWNER_FORMAL_ACCEPTANCE=PENDING`. Tampoco hay conformidad registrada del owner de datos, comercial, de Catalog ni de la CIA |
+| Estado | **Posiciones de R4 registradas.** **Actualización CP-J4-F2 (2026-10-15):** ADR-039 pasó a aceptación interna de R4 (§8) y F2 se ejecutó en CP (v1-rc1, §6.3). **Corrección J4-GIT-PUBLISH-01:** la aceptación del owner de CP registrada en CP `7b2e7f7` se reclasificó como no formal (CP `7373302`). `R4_ARCHITECTURE_POSITION=ACCEPTED` · `CP_TECHNICAL_REVIEW=PASS_WITH_LIMITATIONS` · `CP_OWNER_FORMAL_ACCEPTANCE=PENDING`. Tampoco hay conformidad registrada del owner de datos, comercial, de Catalog ni de la CIA. **Cierre post-merge R4-J4-R2 (2026-10-19):** §9 (G-1, G-2, gates de activación) |
 | Alcance | Solo documentos. No inicia CP-CONTEXT-02C ni autoriza J4-R2 |
 
 Documentos de R4 que aplican este registro: [ADR-039](../adr/ADR-039-customer-identity-and-profile-consumption.md), [especificación del consumidor](R4-J4-R1_CUSTOMER_CONSUMER_SPECIFICATION.md), [requisitos a Customer Profile](R4-J4-R1_CUSTOMER_PROFILE_AUTHORIZATION_REQUIREMENTS.md) e [informe de diseño](R4-J4-R1_DESIGN_REPORT.md).
@@ -271,6 +271,8 @@ No bloquean la entrada, pero sí `contractStatus: approved` y cualquier dato rea
 
 ## 7. Estado
 
+Estado al cierre de F0–F2 (2026-10-15), conservado como histórico. El estado vigente de R4-J4-R2 y de CONTEXT-02C está en §9.5.
+
 ```text
 F0_R4_DECISIONS_RECORDED
 R4_ARCHITECTURE_POSITION=ACCEPTED
@@ -299,3 +301,94 @@ PRODUCTION_UNCHANGED (sales-production@3)
 | Códigos internos (`purpose_minimization_violated`, `history_unavailable`, `authorization_basis_insufficient`, `customer_ref_mismatch` y los demás de §9) | Aceptados | Especificación §9 |
 
 Con estas precisiones, ADR-039 pasa a **aceptación interna de R4**. D1, D2, D6 y D7 conservan sus dependencias y bloqueos.
+
+---
+
+## 9. Cierre post-merge de R4-J4-R2 (mandato R4-J4-R2-POSTMERGE-CLOSURE-01, 2026-10-19)
+
+Fuentes: [auditoría owner-review](R4_J4_R2_OWNER_REVIEW_REPORT.md) (dictamen `MERGE_READY_WITH_DOCUMENTARY_CHANGES`), [informe de validación R4-J4-R2](R4_J4_R2_CUSTOMER_ADAPTER_VALIDATION_REPORT.md) y Git de ambos repositorios tras `git fetch origin --prune` el 2026-10-19 (**GIT**). Las enmiendas documentales que pedía la auditoría (§8 del informe) están aplicadas en la [especificación del consumidor](R4-J4-R1_CUSTOMER_CONSUMER_SPECIFICATION.md) (§5, §6.2, §8, §9, §10, §11).
+
+### 9.1 G-1 — PR #11 fusionado antes del cierre de la auditoría owner-review
+
+| Momento (−0300) | Hecho | SHA | Fuente |
+|---|---|---|---|
+| 2026-10-16 13:02 | Base de la rama: `origin/main` | `e6105b0` | GIT |
+| 2026-10-16 23:45–23:47 | Implementación, pruebas e informe de validación, bajo OD-14 (implementación provisional sintética autorizada por el owner de R4) | `b858fe2`, `15af63e`, `76fda0f` | GIT; OD-14 según el informe de validación (DOC) |
+| 2026-10-18 22:48 | Informe con la regresión PostgreSQL completa | `3f2b216` | GIT |
+| 2026-10-18 23:10 | **Merge del PR #11** a `main` por la cuenta `mistergoliat` (interfaz de GitHub), 22 minutos después del último commit. Padres `e6105b0` + `3f2b216`; árbol idéntico al de `3f2b216` | `3e7b4ee` | GIT |
+| 2026-10-19 | Auditoría owner-review sobre `3f2b216`. Detecta el merge en su preflight y emite un dictamen **retrospectivo** | — | Informe owner-review §1, §10 |
+| 2026-10-19 | Este cierre: informe owner-review versionado y enmiendas aplicadas | Commit de este cierre | GIT |
+
+- La auditoría owner-review **no** fue un gate previo al merge: el código llegó a `main` antes de que la revisión empezara. No hay en el repositorio una autorización de merge registrada distinta del propio acto de fusión; OD-14 autorizaba la implementación provisional sintética.
+- **Aceptación retrospectiva:** sobre la base del dictamen `MERGE_READY_WITH_DOCUMENTARY_CHANGES` (sin P0 ni P1, harness sin cambios, integración sin composición ni registro, modo real inalcanzable, 38/38 artefactos contractuales íntegros), el código de R4-J4-R2 **permanece en `main` como código inactivo**. No se revierte.
+- La aceptación cubre solo el código inactivo. No autoriza registrar capacidades, componer el adaptador, J4-R3, J4-R4 ni datos reales (§9.3).
+
+```text
+G-1=RECORDED   (merge 3e7b4ee precedió a la auditoría; aceptación retrospectiva del código inactivo)
+```
+
+### 9.2 G-2 — Merge de CONTEXT-02C en Customer Profile con G-16 pendiente
+
+Inspección **solo lectura** de CP `origin/main` (`de6c04a`). No se modificó CP.
+
+| Evidencia | Resultado | Fuente |
+|---|---|---|
+| Merge | `de6c04a` = PR #25 (`feat/cp-j4-context-02c-synthetic`) a `main`, 2026-10-18 23:14:58, cuenta `mistergoliat` (interfaz de GitHub). Padres `3c1b776` + `6801a90`. Incorpora `02dc571` (F3), `d84c9ea` (productor sintético) y `6801a90` (informe 02C) | GIT |
+| Excepción registrada | `CP_J4_F3_GATE_REGULARIZATION.md` §3: `CP_J4_02C_PROVISIONAL_IMPLEMENTATION_OVERRIDE=AUTHORIZED` (mandato del 2026-10-16). Autoriza escribir el productor **en una rama de desarrollo aislada**, solo con proveedor sintético. **Fuera de alcance: "Despliegue, merge a `main`"**. Consecuencias: "La aceptación formal sigue siendo condición para `approved`, para datos reales y **para cualquier merge del productor**" | GIT (`origin/main`) |
+| G-16 | `PENDING` en el mismo documento (§2). Ningún commit posterior en CP registra la aceptación formal | GIT |
+| Informe 02C | Declara la rama "Sin merge a `main`" y lista como condición pendiente n.º 8 la "Autorización de merge y despliegue — Owner de CP". El informe forma parte del árbol fusionado y no se actualizó | GIT |
+| Otros documentos | No se encontró en CP, R4 ni en los informes de `dev/` ninguna autorización de merge de 02C ni otra excepción | GIT; búsqueda de texto |
+| PR #25 en GitHub | **No verificado**: el repositorio es privado y no hay `gh` en este equipo. El cuerpo, las revisiones y los comentarios del PR podrían contener una autorización no versionada | — |
+| Efecto técnico | Productor apagado por defecto (`CUSTOMER_PROFILE_SALES_CONTEXT_ENABLED=false`), única fuente `synthetic`, `realDataAccess: false` | Informe owner-review §2 (GIT/CODE); informe 02C §9 |
+
+**Determinación:**
+- **No existe una excepción documentada** que cubra el merge. La única excepción versionada (F3 §3) excluye expresamente el merge y lo condiciona a G-16, que sigue pendiente.
+- El merge lo hizo la cuenta que opera como owner del repositorio, igual que el PR #23, cuyo merge el owner confirmó haber hecho (informe J4-GIT-PUBLISH-01, fuera de ambos repositorios). Eso puede equivaler a una decisión del owner, pero **no está registrada** como autorización ni como regularización de la condición de F3.
+- **No se declara incumplimiento definitivo**: falta revisar el PR #25 en GitHub y el pronunciamiento del owner de CP.
+- Sin efecto técnico en R4: los 38 artefactos que R4 copia no cambiaron (informe owner-review §6.1).
+
+```text
+G-2=UNREGULARIZED_PENDING_CP_OWNER   (sin excepción documentada para el merge; pendiente: revisar PR #25 y pronunciamiento del owner de CP: aceptar G-16, registrar la excepción o revertir)
+```
+
+Acción: el owner de CP regulariza en su repositorio. R4 no la ejecuta ni la presume.
+
+### 9.3 Gates obligatorios antes de activar Customer
+
+La activación es registrar capacidades Customer o componer `CustomerProfileHttpClient` en cualquier perfil, incluido `sales-production@8` (J4-R4). **No está autorizada.** Además de la autorización explícita de fase, exige:
+
+| Gate | Origen | Condición | Pruebas | Estado |
+|---|---|---|---|---|
+| AG-1 | P2-1 (`config.ts:57-88`, `:73-76`, `:104-106`) | **Aislamiento sintético efectivo.** En modo sintético, `customerRef` restringido a la lista de identidades sintéticas aprobada por el owner (hoy `900000201`–`900000313` en CP) y allowlist de hosts, sin excepción por loopback o túnel. Proponer a CP un marcador aditivo de dataset sintético en `provenance` | Negativas: host real, loopback no autorizado, ref fuera de lista, respuesta sin marcador (especificación §11) | **ABIERTO** |
+| AG-2 | P2-2 (`client.ts:82-92`) | **Configuración validada en toda ruta de construcción**: https, `R4_PROD_ALLOW_NETWORK`, token y timeout también para una configuración inyectada, o composición solo a través del loader fijada por test. El mismo patrón existe en Quote y Shipping: se trata como propuesta transversal aparte, no se corrige en silencio | Construcción con config inválida rechazada (especificación §11) | **ABIERTO** |
+| AG-3 | P2-3 (`profile-port.ts:34-39`, `client.ts:131-133`) | **Grant de la CIA verificable**: emisor, sujeto, audiencia, propósito, vigencia y autenticidad. El tipo actual no se usa para datos reales. Depende de D1 y D2 | Grant fabricado, de otro sujeto o audiencia, de otro propósito o vencido rechazado sin llamar a CP (especificación §11) | **ABIERTO** (J4-R3, bloqueado por D1) |
+| AG-4 | P2-4 (`customer-profile-outputs.ts:175-180`) | Descripción de la capacidad con la semántica `returned`/`nextOffset` | Test de la descripción | **ABIERTO** (J4-R4) |
+| AG-5 | P2-5 (`wire.ts:118-161`) | Descripción con el nombre histórico como dato no confiable | Caso de evaluación negativo | **ABIERTO** (J4-R4) |
+
+No se implementa ninguna corrección ejecutable en este cierre. Datos reales y producción siguen además bloqueados por G-16, D1, D2 implementada y verificada, `contractStatus: approved`, fuente real autorizada en CP, D7 y AP-09/AP-10 de negocio.
+
+### 9.4 Riesgos no bloqueantes registrados
+
+| ID | Riesgo | Tratamiento |
+|---|---|---|
+| P2-6 | `now` se toma antes del fetch: desfase ≤ timeout (5 s) en la verificación de vigencia | Ninguno; la vigencia efectiva ya es `min(validUntil, grant.expiresAt)` |
+| P2-7 | Un 404 por ruta de CP deshabilitada aparece como `contract_violation/unexpected_status` | Documentado (especificación §9); runbook de composición en J4-R4 |
+| R-1 | Schema productor cerrado de CP frente a la promesa aditiva de su README | R4 valida la proyección; la aclaración corresponde a CP |
+| R-2 | Las listas de rechazo de R4 vetan nombres que una revisión aditiva de CP podría usar | Comunicadas como restricción de nombres (especificación §10) |
+| R-3 | Integración PostgreSQL, Sales y Shadow no se repitieron en la auditoría owner-review (sin Docker) | Evidencia del informe de validación (2026-10-18) sobre un árbol idéntico al de `main` |
+
+### 9.5 Estado
+
+```text
+R4_J4_R2_MERGED=3e7b4ee                (PR #11; árbol = 3f2b216)
+R4_J4_R2_OWNER_REVIEW=MERGE_READY_WITH_DOCUMENTARY_CHANGES (retrospectiva)
+R4_J4_R2_INACTIVE_CODE_ACCEPTED
+R4_J4_R2_DOCUMENTARY_AMENDMENTS=APPLIED (especificación §5, §6.2, §8–§11)
+G-1=RECORDED
+G-2=UNREGULARIZED_PENDING_CP_OWNER
+CP_CONTEXT_02C_MERGED=de6c04a          (productor sintético apagado; G-16 PENDING)
+ACTIVATION_GATES=AG-1..AG-5 OPEN
+CUSTOMER_ACTIVATION_NOT_AUTHORIZED
+J4_R3_NOT_AUTHORIZABLE                 (D1)
+D1_BLOCKED  D2_PROPOSED  D6_DEFERRED_WITH_NULL  D7_PRODUCTION_BLOCKER
+```
