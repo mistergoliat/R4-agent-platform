@@ -1,0 +1,4 @@
+{
+  "error": "forbidden",
+  "requiredScope": "customer.sales_context.read"
+}

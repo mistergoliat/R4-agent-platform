@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "contract": "customer-profile.sales-context",
+  "purpose": "purchase_history",
+  "status": "degraded",
+  "statusDetail": {
+    "code": "prestashop_timeout",
+    "retryable": true
+  },
+  "completeness": null,
+  "customerRef": "prestashop_customer:900000313",
+  "account": null,
+  "facts": null,
+  "freshness": {
+    "asOf": "2026-10-15T12:00:00.000Z",
+    "validUntil": null,
+    "source": "live_query",
+    "cache": {
+      "hit": false,
+      "ageMs": 0
+    }
+  },
+  "provenance": {
+    "service": "customer-profile",
+    "contract": "customer-profile.sales-context",
+    "contractStatus": "candidate",
+    "serviceBuildRef": null,
+    "authorizationBasis": "service_scope_only",
+    "sources": [],
+    "policyVersions": {
+      "facts": "cp-sales-facts-v1-candidate",
+      "operationalAccounts": "operational-account-exclusion-v1",
+      "administrativeLines": "seller-service-exclusion-v1"
+    },
+    "timezoneStatus": "unverified",
+    "correlationId": "r4-fixture:ph-degraded"
+  },
+  "limitations": [
+    "timezone_unverified"
+  ],
+  "warnings": []
+}

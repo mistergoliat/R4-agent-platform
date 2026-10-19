@@ -2,6 +2,7 @@ export * from './shared/errors.js';
 export * from './shared/availability.js';
 export * from './customer/port.js';
 export * from './customer/fixture.js';
+export * from './customer/profile-port.js';
 export * from './catalog/port.js';
 export * from './catalog/fixture.js';
 export * from './catalog/fixture-data.js';

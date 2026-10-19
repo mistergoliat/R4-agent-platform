@@ -1,0 +1,39 @@
+{
+  "owner": "MS-pesaschile-customer-profile",
+  "contract": "customer-profile.sales-context",
+  "schemaVersion": 1,
+  "revision": "v1-rc1",
+  "contractStatus": "candidate",
+  "publishedApi": false,
+  "provenance": {
+    "authoredOn": "7b2e7f730c47eabcc1b3228863a87a1a6edd720a",
+    "supersedes": {
+      "revision": "CP-J4-CONTEXT-02B",
+      "commit": "f631f32ae4ad5259ee66a6fa2d488d3b3f702eed"
+    },
+    "containingCommit": null,
+    "containingRef": {
+      "kind": "annotated tag",
+      "name": "cp-sales-context-v1-rc1"
+    },
+    "note": "containingCommit is null on purpose: a file cannot carry the SHA of the commit that contains it. Resolve it with `git rev-parse <containingRef.name>^{commit}`."
+  },
+  "schemas": {
+    "dialect": "https://json-schema.org/draft/2020-12/schema",
+    "response": {
+      "file": "schemas/customer-sales-context-v1.schema.json",
+      "sha256": "ff72d6b32cbf193128678567fc6f927ea1dc8933f67010c22d128d7ff3340502"
+    },
+    "request": {
+      "file": "schemas/customer-sales-context-request-v1.schema.json",
+      "sha256": "c8da52af2a393d4bc32726699d0cc21816e73d176aebee40e9a51eb1b9b8efa3"
+    }
+  },
+  "manifest": "fixtures/MANIFEST.json",
+  "manifestSha256": "33159ce0a529714a3d8058a0beef179fdec8c0209dd59efd0da0998b0d06bfff",
+  "fixtures": 34,
+  "synthetic": true,
+  "productionEvidence": "none: fixtures are synthetic; facts semantics come from docs/reviews/CP_J4_CONTEXT_01_VALIDATION_REPORT.md",
+  "decisionRecord": "docs/reviews/CP_J4_F2_CONTRACT_RC_VALIDATION_REPORT.md",
+  "validatedBy": "tests/contract/customer-sales-context-v1.contract.test.ts"
+}

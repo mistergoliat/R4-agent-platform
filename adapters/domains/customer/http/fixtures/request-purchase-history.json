@@ -1,0 +1,8 @@
+{
+  "customerRef": "prestashop_customer:900000301",
+  "purpose": "purchase_history",
+  "page": {
+    "limit": 10,
+    "offset": 0
+  }
+}

@@ -191,6 +191,9 @@ describe('domain adapters and the provider adapter stay behind their seams', () 
     expect(manifest('adapters/domains/shipping/http')).toEqual(['@r4-adapters/domains', 'zod']);
     // R4-J3B: the Quote V2 HTTP adapter likewise depends only on the domain ports and zod.
     expect(manifest('adapters/domains/quote/http')).toEqual(['@r4-adapters/domains', 'zod']);
+    // R4-J4-R2: the Customer Profile HTTP adapter depends on the domain ports and on Ajv, which
+    // validates its answers against the owner's pinned JSON Schema. Nothing from R4 Core.
+    expect(manifest('adapters/domains/customer/http')).toEqual(['@r4-adapters/domains', 'ajv', 'ajv-formats']);
     expect(salesDeps).not.toContain('@r4/task-runtime');
   });
 });

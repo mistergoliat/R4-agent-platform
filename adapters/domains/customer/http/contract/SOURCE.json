@@ -1,0 +1,289 @@
+{
+  "owner": "MS-pesaschile-customer-profile",
+  "contract": "customer-profile.sales-context",
+  "schemaVersion": 1,
+  "revision": "v1-rc1",
+  "contractStatus": "candidate",
+  "ownerCommit": "47db415e1ebf67b5e6770dbdcfc697880b6e5f76",
+  "ownerTag": {
+    "name": "cp-sales-context-v1-rc1",
+    "object": "0a5ac6718d3df4900afe86b732c00bf1e1421440"
+  },
+  "ownerRemoteRefs": [
+    "origin/main 3c1b77603bc92f3e2934715164a98cf947b36465",
+    "origin/feat/cp-j4-security-01-resilience-01 7373302a32382c9d4552c7673a81a2d5c25258c4"
+  ],
+  "copiedFrom": "git show 47db415:<ownerPath>, byte for byte (R4-J4-R2, 2026-10-16). Read-only contract evidence: never edited in R4.",
+  "hashRules": {
+    "sha256": "sha256(file bytes, LF)",
+    "contentSha256": "sha256(JSON.stringify(JSON.parse(file))), the owner MANIFEST rule"
+  },
+  "files": [
+    {
+      "file": "contract/customer-sales-context-request-v1.schema.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/schemas/customer-sales-context-request-v1.schema.json",
+      "gitBlob": "5ed606750b1e1fc03535928f16e69717e9a989df",
+      "sha256": "702fd87a1b4fde4291a9337a83f3fdb9232293185e5728ef6ffe427e7b304f8d",
+      "contentSha256": "c8da52af2a393d4bc32726699d0cc21816e73d176aebee40e9a51eb1b9b8efa3"
+    },
+    {
+      "file": "contract/customer-sales-context-v1.schema.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/schemas/customer-sales-context-v1.schema.json",
+      "gitBlob": "b8d1e42b782ba7e40ca37474fcf8375fcdef68e9",
+      "sha256": "80bf2462ce603424b95ef344e1c36f8e9ed5b4ea6e47e9ac501719f62bfa1639",
+      "contentSha256": "ff72d6b32cbf193128678567fc6f927ea1dc8933f67010c22d128d7ff3340502"
+    },
+    {
+      "file": "contract/owner-SOURCE.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/SOURCE.json",
+      "gitBlob": "382951e17273aab557371a5d18acccf55521c82c",
+      "sha256": "9c48f55ff7b99622b171e8b290d37417565a9b5bd253d9ca5535838e3da88d92",
+      "contentSha256": "f5d7ada7af56eaf126128c5f19b2f2498323792e8ba49c3305899f75d9d2959d"
+    },
+    {
+      "file": "fixtures/error-forbidden-unclassified-route.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/error-forbidden-unclassified-route.json",
+      "gitBlob": "8bc43d1db144dcd1ac64552c7a1343918084055d",
+      "sha256": "97aee998c5c915caae412cea281530bb0f77217c7124c5fac16b242a52ffbe75",
+      "contentSha256": "98f5120413c12ea256eb9ea3000479f9581c43e68c2b67c49bf827c7f5645bd6"
+    },
+    {
+      "file": "fixtures/error-forbidden.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/error-forbidden.json",
+      "gitBlob": "9d3693a2e3738c42f765bb96fe57078873cc9a78",
+      "sha256": "a5428dccc0ce939e76f8ca68fced2cca991ee700b442838c6befb06f64393403",
+      "contentSha256": "b32b9fdf7cb8f0d1532393f893057f02edd7c23a2bef5c0edc8bac6e82f387eb"
+    },
+    {
+      "file": "fixtures/error-internal.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/error-internal.json",
+      "gitBlob": "b3758647ad75273445a9def6c0f2b0fef089c0c2",
+      "sha256": "453ebbdcd84a6a443b6d2f041a700881893e13042b4c34fcea7545d34e55b518",
+      "contentSha256": "b1fd618132befbb9c0fa6847793b9a066f5b17444df3d01fe2e43699f8c1eb08"
+    },
+    {
+      "file": "fixtures/error-invalid-customer-ref.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/error-invalid-customer-ref.json",
+      "gitBlob": "b9cc0f4655a1648c856fa40f3d07968a4f9722e1",
+      "sha256": "87a3f38876c6d4c3cd1e1f3e2af6274f35968654c39dff04c3b2dd18bf833937",
+      "contentSha256": "a8b1a1345e9c5c3e6c42b8322cefc728f3159cc5f6fd9cd71d6db0bcf50c8b72"
+    },
+    {
+      "file": "fixtures/error-invalid-purpose.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/error-invalid-purpose.json",
+      "gitBlob": "f421792fee23df88ff1ff2108d36de38d47890b6",
+      "sha256": "fa09a37109f9466d4867cb25ff23346b544c86aaceb0a82a8fe0bcb534d4a5e5",
+      "contentSha256": "930e315d79a072b61b3f91ac1286f6a7c12627315f7b0a0f3001c7dab8fdf961"
+    },
+    {
+      "file": "fixtures/error-method-not-allowed.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/error-method-not-allowed.json",
+      "gitBlob": "9f7ffe7cd11a92951ffbe173417f2b490f66236d",
+      "sha256": "916bf999e0c2f3cfab248a8dcf0b4b51c7a1b82ad8d7ebfc02d0159625111793",
+      "contentSha256": "48ceae43089b9c26f0b2e5e53afe122639812aaa791c84f311d6b992f2332fef"
+    },
+    {
+      "file": "fixtures/error-request-budget-exceeded.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/error-request-budget-exceeded.json",
+      "gitBlob": "7d61635fd2faaa4a122c52486d98cc1a17bf49b1",
+      "sha256": "6be0273bf40b730b00a8d88d3662d1a81fec5ee689181b95e96c3d29a33c25ab",
+      "contentSha256": "2392d36418708ad369ac94e95251b15a53f91dfedcc63cf0c5afa65c4d71a08b"
+    },
+    {
+      "file": "fixtures/error-request-too-large.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/error-request-too-large.json",
+      "gitBlob": "b8799172e043a52606d8aa2209c5faa84c74dbb2",
+      "sha256": "6a72e5ef633e5fea9d5f4111fb6d11ea82db1150f0093c389e79976cd7a0772a",
+      "contentSha256": "76f7a2af064b631f74becc6d1ff90b907ef1999801edb4255df412c1047a838f"
+    },
+    {
+      "file": "fixtures/error-unauthorized.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/error-unauthorized.json",
+      "gitBlob": "e5220b1aaa65a9ef820c9604a924d22f704399f6",
+      "sha256": "0a05eb6e822dbfc9b9d323b586d9b93f1ba19ca59e5bc62a4ebcf0ae78a8935a",
+      "contentSha256": "782eeaa7f1915f6783146f8180751785584f0f24bd4e503165c7fc4a597da600"
+    },
+    {
+      "file": "fixtures/error-unsupported-media-type.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/error-unsupported-media-type.json",
+      "gitBlob": "df202822ff9f14983527dfae88819f79d267fd69",
+      "sha256": "993a647fc1ef0b7694f41966205a8886c0657b0fdcf025a19c29db45b4a1fdbf",
+      "contentSha256": "912e96ca3b04b5d3fff56cccfbe781f6b0b9eb0b2eeb09c6f2bd6e966805b00d"
+    },
+    {
+      "file": "fixtures/MANIFEST.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/MANIFEST.json",
+      "gitBlob": "7f3d1c71263e02f3ab35a323618ff55a048678bc",
+      "sha256": "5f1daac2f947d997979ffb45d98fa32daaee3c2cb5167e625729f2c238ead8b2",
+      "contentSha256": "33159ce0a529714a3d8058a0beef179fdec8c0209dd59efd0da0998b0d06bfff"
+    },
+    {
+      "file": "fixtures/purchase-history-available-administrative-service.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/purchase-history-available-administrative-service.json",
+      "gitBlob": "7e00c9492d2fe4d5b0100a955b2b95c68e252ee2",
+      "sha256": "08a13c7679b133abbe55d55eccafd559c3cb19fef8d5ff9d0a27c95763451049",
+      "contentSha256": "74d090ce47e012cef97fad205c9b976c6056f3a63d4e3e5b9823b5caaf6cd0e2"
+    },
+    {
+      "file": "fixtures/purchase-history-available-deleted-account.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/purchase-history-available-deleted-account.json",
+      "gitBlob": "12d06d616dc365a0b77e506e553640d732579f55",
+      "sha256": "bd5fed369b315d80f6eba34ef9d609456ef0e40e0f856acb844f8dd94371322c",
+      "contentSha256": "3120dd042c78585cfcfed272a8ebd7d1efa4a7e64345e92280f605cfeaf6ed52"
+    },
+    {
+      "file": "fixtures/purchase-history-available-has-more.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/purchase-history-available-has-more.json",
+      "gitBlob": "274a4c2a611786dc2a39d880ef5945566b0ee0b5",
+      "sha256": "f4c45fe278cd60d6ece33e430e5366d55962f1e39116482f6af38536de85b478",
+      "contentSha256": "6d0f2eefcd7fdd122d302679c2a69b3b83a23bdaf60c4ebe4a83e8cca2f769ce"
+    },
+    {
+      "file": "fixtures/purchase-history-available-no-purchases.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/purchase-history-available-no-purchases.json",
+      "gitBlob": "b68912804bcf2dd0c2769ae6c57ad6a481eb1df8",
+      "sha256": "8c95e348e9de6ea0f14f2299e4b62201bf3a1ea0c6c07be9c2b2c8f4f7912662",
+      "contentSha256": "17fb7139f11757044d3e39603a64ec8d19a3704b6b5df27787393932fe5c51a9"
+    },
+    {
+      "file": "fixtures/purchase-history-available-normal.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/purchase-history-available-normal.json",
+      "gitBlob": "6e00945e310f3a1e4420384adf4ecd7a0159b446",
+      "sha256": "42bce57bbe4cd04977896d3a10be1e1506aea05630f39b0bb3d44f2e31f06d4a",
+      "contentSha256": "04a325b5c0284d888bf96c1722db829fe3734f8b6717f8a8fd01d49947514f28"
+    },
+    {
+      "file": "fixtures/purchase-history-available-null-product-name.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/purchase-history-available-null-product-name.json",
+      "gitBlob": "a1650bda4d24fbdaa4ea25a5d6968bd3def34766",
+      "sha256": "3d858a5ddadbf665e2814bd1cad31bb47f339972d1a6a8cc6041483bb82b4993",
+      "contentSha256": "5ac711e44ba132aabdae04dcafeaf2f3a2c96aeb8babf5de69f4e9601333b27b"
+    },
+    {
+      "file": "fixtures/purchase-history-available-partial.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/purchase-history-available-partial.json",
+      "gitBlob": "ee53c813d1f8ce60cbae58eaf6df053d0602c3c8",
+      "sha256": "c10e862c4ab146b328a962e0d417737464dcefc91366f5d25bec19f374eb7bb3",
+      "contentSha256": "969455c976d4ffdfafc6678bdeb29847b397b4cc2a1ddc9d7a142e4f0a1fb1cd"
+    },
+    {
+      "file": "fixtures/purchase-history-available-timezone-confirmed.hypothetical.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/purchase-history-available-timezone-confirmed.hypothetical.json",
+      "gitBlob": "4c46385d5ddd32ea35642e49bc63f69daad74dbf",
+      "sha256": "3ad74d6035e416955fdf2a91a04c5a81a3c75021689e747c520ae09f5d7b07d6",
+      "contentSha256": "31c0f44728b85b97891380a233ae64241da18ad0a2eed044440e44808c713e85"
+    },
+    {
+      "file": "fixtures/purchase-history-available-timezone-unverified-midnight.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/purchase-history-available-timezone-unverified-midnight.json",
+      "gitBlob": "19710a1ec1071ac9f3cdff56af3ad27ba410c6f0",
+      "sha256": "541e7243e31402a9ae02cda3df2a4342a17cfb5777c404c2be53f87467aa8471",
+      "contentSha256": "08cfde887bf0139728f7f73b1f02db519d85465208936a4593771fc3e2e04a7b"
+    },
+    {
+      "file": "fixtures/purchase-history-available-zero-price-and-zero-quantity.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/purchase-history-available-zero-price-and-zero-quantity.json",
+      "gitBlob": "f39fd31c368f575dc4b0a6fd3e6f663ccd3d98ba",
+      "sha256": "f6f6e9e5a5724c622687b7e77002eebf9cf412d92b9e68e026eef407bb14543e",
+      "contentSha256": "ad4bb4f794c16e13c76715d1aa45363f361dca972a0c9dad0a505f6cce6c13e9"
+    },
+    {
+      "file": "fixtures/purchase-history-degraded.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/purchase-history-degraded.json",
+      "gitBlob": "93fb09e8cf7365a02b5c534dae980fab512e8db9",
+      "sha256": "fed5e30577610af2281ec6d713683792c0f8d779b255634ac644aa2909044eb5",
+      "contentSha256": "5bbd2828e1a73a5ad116b31e9a615309059f207efaa86b8e3c1bfab16a2e5a26"
+    },
+    {
+      "file": "fixtures/purchase-history-not-applicable-operational-account.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/purchase-history-not-applicable-operational-account.json",
+      "gitBlob": "9c24877c019a3b71c49cbbe456eec900dec18b2a",
+      "sha256": "ac04144d03c40f068161325ecf97d8bc82da98cf10d6801728ed560eabdaa01d",
+      "contentSha256": "d75ed91f65b432bd632c9c31e6b4c3ce76279d8ccfe5ac54d74cd864700bd68c"
+    },
+    {
+      "file": "fixtures/purchase-history-not-found.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/purchase-history-not-found.json",
+      "gitBlob": "d677060c6c82167ef9881bb141381319c4543378",
+      "sha256": "1daf82ac01a4cb55618d721c53fe2e77b834d7d52e7269b930ae7eb03490dee0",
+      "contentSha256": "6d5c586adead026fe5f106c1cfd845dab558be29357dcdf51e18eea1135e40c3"
+    },
+    {
+      "file": "fixtures/request-purchase-history.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/request-purchase-history.json",
+      "gitBlob": "4e8d526a47afdf9aba48b07cc7abe331ed3df4f5",
+      "sha256": "c1f565ff51a6346d9c0bb08d1e59964278b12e4dc2d36d20024b371b1a307f10",
+      "contentSha256": "36e335120a6f5110a8569285cc7f9cec10cdc1397b4fac189f5493f535eacb03"
+    },
+    {
+      "file": "fixtures/request-sales-context.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/request-sales-context.json",
+      "gitBlob": "e1148704ac3d093685929a032e3358c66e03fc3c",
+      "sha256": "8ec227a829dce54de006b330648e924b44c1f59f48604072d6018f1ac1bdaf31",
+      "contentSha256": "552c9054d2330d41766706aa58978dad16e358de539472e4b6b7a32dc3aed0c0"
+    },
+    {
+      "file": "fixtures/sales-context-available-deleted-account.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/sales-context-available-deleted-account.json",
+      "gitBlob": "076edce4dcb42697a654d31a200f7f075afcff56",
+      "sha256": "05d74ea938b373ea037d21327fa4b963f28226a5f517ed6ec10425938a456bc4",
+      "contentSha256": "94c004b5eb1bf2763fd60f65464c81454c103bdc2adf522e74d1e60e4aba2464"
+    },
+    {
+      "file": "fixtures/sales-context-available-guest-account.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/sales-context-available-guest-account.json",
+      "gitBlob": "57682600f42fd380561515d04b2d035f3c6c347d",
+      "sha256": "bde5feea9af8b98ba4da3fa391a28e7b95a965635ec9b0c4b3dc700ef3533473",
+      "contentSha256": "ff6df0c8991866dcd3a4c3ce617fdbfd7ed747135e7e99de40d65f65ecce0e5b"
+    },
+    {
+      "file": "fixtures/sales-context-available-inactive-account.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/sales-context-available-inactive-account.json",
+      "gitBlob": "71643e5ee316d95166f29e623a22f83879687fc9",
+      "sha256": "fd830bd58bad627fc03ea377eb8661f3c3745ca37af87e9d467c52ceb7c47db1",
+      "contentSha256": "34b540e5dec772c27fda7cf7c8f98ec7f104eb0903da938cffe51a5ad4d418f4"
+    },
+    {
+      "file": "fixtures/sales-context-available-no-purchases.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/sales-context-available-no-purchases.json",
+      "gitBlob": "b755b551a16edffd9630a468087fb50f14cd4c9a",
+      "sha256": "108b279a32dcfbaf3f8822d0d50cdca4280d7c2237c9ce98cb9d64a07f96641f",
+      "contentSha256": "9ad8ff869a1f014c28b45995910dbdab01a2b59b565017d017b9b281024adebb"
+    },
+    {
+      "file": "fixtures/sales-context-available-partial.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/sales-context-available-partial.json",
+      "gitBlob": "e811dc1e5886ebf9e953abb1279d284738b22d49",
+      "sha256": "4bc9389ea8c18b0f6a18405820e4ed1b1f56b5b8ef2156cdfe3c0962c7066600",
+      "contentSha256": "5ba635d7215193fc6613d8de1a4d231a05faf8f10dc363e5d7fe02a4de886c9f"
+    },
+    {
+      "file": "fixtures/sales-context-available-with-purchases.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/sales-context-available-with-purchases.json",
+      "gitBlob": "087f34c956d82ff3b9a83b420d58711dfd0949ac",
+      "sha256": "f68c1662b77dbd7aa3c4f2496a75662ad95e2c9df120badc621d1c0973598ba6",
+      "contentSha256": "c072aeb4317f9be78c51b872bd32dd58a1c4f75db59a7fd569d83163d32bfdcf"
+    },
+    {
+      "file": "fixtures/sales-context-degraded.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/sales-context-degraded.json",
+      "gitBlob": "30af3965f38eb0fc369502c4838dd4fbfcc822a9",
+      "sha256": "0b3af42f2548fc6a86eea5c5d9a75eea6efc31b19d94f67654f3d18d8f8aade5",
+      "contentSha256": "f4c10bc581044a191f6afb691e611501c0e60268133fd359c6ffef18f9e29c18"
+    },
+    {
+      "file": "fixtures/sales-context-not-applicable-operational-account.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/sales-context-not-applicable-operational-account.json",
+      "gitBlob": "57c0df9510b939fd0441486d461b1d3d0eb47bc4",
+      "sha256": "2e77c80cfc095cc593c8f744af119f8fd3d6588784e69aef679405b68f18d06e",
+      "contentSha256": "d4f0a5729123f35960a64a1f9c97b4f7f04dd010396dd183f6a6872f97784f84"
+    },
+    {
+      "file": "fixtures/sales-context-not-found.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1/fixtures/sales-context-not-found.json",
+      "gitBlob": "ee9dcfc377428b802146803f9d34fa2c74a07c6f",
+      "sha256": "622f391ac4453beb793c29c328cab969dbf5105a2ddae326f563ed05297a4778",
+      "contentSha256": "a0b5da4768ae7830865a8994ee9ccfeb3ec7a682b2d33d08edd471553c36f563"
+    }
+  ]
+}
