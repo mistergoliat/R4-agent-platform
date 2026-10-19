@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pesaschile.cl/contracts/cia/v1/verification-confirm.v1.schema.json",
+  "title": "POST /v1/identity/verifications/confirm (CANDIDATE, CIA-S0)",
+  "description": "Delivers the one-time code from the authenticated channel context. Scope identity.verification.confirm, held EXCLUSIVELY by the consumer's channel integration credential. Header idempotency-key required: a replay with the same key and body returns the first answer without consuming an attempt. A context, session or consumer that differs from the challenge answers invalid_code. Never returns an account reference or a grant.",
+  "$defs": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "context", "verificationId", "code"],
+      "properties": {
+        "schemaVersion": { "$ref": "cia-common.v1.schema.json#/$defs/schemaVersion" },
+        "context": { "$ref": "cia-common.v1.schema.json#/$defs/context" },
+        "verificationId": { "$ref": "cia-common.v1.schema.json#/$defs/verificationId" },
+        "code": { "$ref": "cia-common.v1.schema.json#/$defs/code" }
+      }
+    },
+    "response": {
+      "description": "HTTP 200.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "outcome"],
+      "properties": {
+        "schemaVersion": { "$ref": "cia-common.v1.schema.json#/$defs/schemaVersion" },
+        "outcome": { "enum": ["linked", "no_eligible_account", "ineligible_account", "ambiguous", "conflicted", "invalid_code", "expired", "locked"] },
+        "attemptsRemaining": { "type": "integer", "minimum": 0, "maximum": 4 }
+      },
+      "if": { "properties": { "outcome": { "const": "invalid_code" } } },
+      "then": { "properties": { "attemptsRemaining": { "type": "integer" } }, "required": ["attemptsRemaining"] },
+      "else": { "properties": { "attemptsRemaining": false } }
+    }
+  }
+}

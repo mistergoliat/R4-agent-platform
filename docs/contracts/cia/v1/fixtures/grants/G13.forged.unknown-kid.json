@@ -1,0 +1,15 @@
+{
+  "id": "G13",
+  "scenario": "kid not in the pinned JWKS (V-14)",
+  "token": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImNpYS11bmtub3duIiwidHlwIjoiY2lhLWdyYW50K2p3dCJ9.eyJjdiI6MSwiaXNzIjoiaHR0cHM6Ly9jaWEuc3ludGhldGljLnRlc3QiLCJhdWQiOiJjdXN0b21lci1wcm9maWxlIiwiYXpwIjoicjQtc2FsZXMiLCJzdWIiOiJwcmVzdGFzaG9wX2N1c3RvbWVyOjkwMDAwMDIwMSIsInB1cnBvc2VzIjpbInB1cmNoYXNlX2hpc3RvcnkiXSwiaWF0IjoxNzkyNDMyODAwLCJuYmYiOjE3OTI0MzI4MDAsImV4cCI6MTc5MjQzMzEwMCwianRpIjoiMDFLOFNZTlRIR1JBTlQwMDAwMDAwMDAwMDEiLCJsbmsiOiJsbmtfc3ludGhldGljXzAwMDEiLCJsdmVyIjoxLCJhbXIiOlsiZW1haWxfb3RwIl0sInZhdCI6MTc5MjQzMjIwMCwic2JoIjoiOTVsbHVCZ2ppNkpva1JxX24zWlNsZlIxNGdoMWxQSnhjdEljYVRtalFRWSJ9.f7og9rjCbeDACODluaUV6npmjOqe62YQlme1OaKOvqIHn1pcilWiB4mvKrzBQ2zAh8ICKchquGxT-jHEp6LGgQ",
+  "verifyAt": 1792432860,
+  "request": {
+    "principal": "r4-sales",
+    "customerRef": "prestashop_customer:900000201",
+    "purpose": "purchase_history"
+  },
+  "expected": {
+    "accepted": false,
+    "reason": "unknown_key"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "id": "G16",
+  "scenario": "no grant header",
+  "token": null,
+  "verifyAt": 1792432860,
+  "request": {
+    "principal": "r4-sales",
+    "customerRef": "prestashop_customer:900000201",
+    "purpose": "purchase_history"
+  },
+  "expected": {
+    "accepted": false,
+    "reason": "missing"
+  }
+}

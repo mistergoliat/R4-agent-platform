@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pesaschile.cl/contracts/cia/v1/grant.v1.schema.json",
+  "title": "CIA v1 access grant: compact JWS ES256, TTL <= 300 s (CANDIDATE, CIA-S0; D2 pending the Customer Profile owner)",
+  "description": "Decoded protected header and claims of the grant, and the rejection body proposed to the verifying service. iss, aud and azp are configuration values; sub carries a registered account namespace.",
+  "$defs": {
+    "header": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alg", "kid", "typ"],
+      "properties": {
+        "alg": { "const": "ES256" },
+        "kid": { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,64}$" },
+        "typ": { "const": "cia-grant+jwt" }
+      }
+    },
+    "claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cv", "iss", "aud", "azp", "sub", "purposes", "iat", "nbf", "exp", "jti", "lnk", "lver", "amr", "vat", "sbh"],
+      "properties": {
+        "cv": { "description": "Claims version; the verifier rejects unsupported values (unsupported_version).", "type": "integer", "minimum": 1 },
+        "iss": { "type": "string", "format": "uri" },
+        "aud": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{1,63}$" },
+        "azp": { "description": "Consumer principal; must equal the principal authenticated by the verifying service.", "type": "string", "pattern": "^[a-z][a-z0-9_-]{1,63}$" },
+        "sub": { "$ref": "cia-common.v1.schema.json#/$defs/accountRef" },
+        "purposes": { "$ref": "cia-common.v1.schema.json#/$defs/dataPurposes" },
+        "iat": { "type": "integer", "minimum": 0 },
+        "nbf": { "type": "integer", "minimum": 0 },
+        "exp": { "type": "integer", "minimum": 0 },
+        "jti": { "description": "ULID.", "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$" },
+        "lnk": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" },
+        "lver": { "type": "integer", "minimum": 1 },
+        "amr": { "type": "array", "items": { "enum": ["email_otp"] }, "minItems": 1, "uniqueItems": true },
+        "vat": { "description": "Instant of the most recent proof of control (recent-verification plane).", "type": "integer", "minimum": 0 },
+        "sbh": { "description": "Keyed hash of the channel subject: audit only, not verifiable by the verifying service.", "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }
+      }
+    },
+    "rejectionReason": {
+      "enum": ["missing", "malformed", "unsupported_alg", "unknown_key", "bad_signature", "unsupported_version", "wrong_issuer", "wrong_audience", "consumer_mismatch", "not_yet_valid", "expired", "ttl_too_long", "customer_mismatch", "purpose_not_granted", "revoked"]
+    },
+    "rejection": {
+      "description": "PROPOSED 403 body of the verifying service. Not accepted by its owner (D2).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error", "reason"],
+      "properties": {
+        "error": { "const": "grant_rejected" },
+        "reason": { "$ref": "#/$defs/rejectionReason" }
+      }
+    }
+  }
+}

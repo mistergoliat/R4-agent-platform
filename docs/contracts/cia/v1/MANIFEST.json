@@ -1,0 +1,788 @@
+{
+  "contract": "customer-identity-authority",
+  "schemaVersion": 1,
+  "revision": "v1-s0-candidate",
+  "contractStatus": "candidate",
+  "owner": "pending (D1: producer owner not designated)",
+  "synthetic": true,
+  "specification": "CIA_V1_CONTRACT.md",
+  "provenance": {
+    "mandate": "R4-J4-CIA-S0-CONTRACT-FOUNDATION-01",
+    "designBase": [
+      "docs/architecture/R4_J4_R3_CIA_OMNICHANNEL_DESIGN_REVIEW.md",
+      "docs/architecture/R4_J4_R3_CIA_CONTRACT_PROPOSAL.md",
+      "docs/architecture/R4_J4_R3_CIA_DISCOVERY_REPORT.md"
+    ],
+    "repositoryBase": "R4-agent-platform@3e7b4ee",
+    "generator": "tests/support/generate-cia-s0-fixtures.mjs",
+    "keys": "grant fixtures signed with ephemeral synthetic P-256 keys; private keys discarded; public key in fixtures/grants/verifier-config.json",
+    "data": "synthetic only: .test emails, 555-01xx fictional numbers, Customer Profile synthetic ids 900000201-900000313"
+  },
+  "hash": "sha256(JSON.stringify(JSON.parse(file)))",
+  "schemas": [
+    {
+      "file": "schemas/cia-common.v1.schema.json",
+      "sha256": "d2b6fc65295faba4b852daee583ae6cdbf9c35e055b22bb19b6dbffb6d055466"
+    },
+    {
+      "file": "schemas/error.v1.schema.json",
+      "sha256": "fdd9bb4e3001883eafcbe5c80261754d251357d417aaae424d98b8e0b82984dc"
+    },
+    {
+      "file": "schemas/grant.v1.schema.json",
+      "sha256": "ff980d917917509074b811d7f3b34bb4acbb607eab1172c799ba799f1c9db6a7"
+    },
+    {
+      "file": "schemas/link-revoke.v1.schema.json",
+      "sha256": "55c236c22fc1df2d40a3d0987538c080a70654cda6612e5805628fd6a73c9c14"
+    },
+    {
+      "file": "schemas/resolve.v1.schema.json",
+      "sha256": "027a8b23db0512755e60ab58b83bc61adde82d7fdad8bd159af1e34eafce4c2b"
+    },
+    {
+      "file": "schemas/verification-confirm.v1.schema.json",
+      "sha256": "77e59d0f9eb54b5d648d47bb89b5ab2bcbebe6a3f18e0c5ab857b7a8a5748621"
+    },
+    {
+      "file": "schemas/verification-start.v1.schema.json",
+      "sha256": "9fd05e9439921746ae4d06410213be241a760f73c42c4cfbfe52b1e1a306dc74"
+    }
+  ],
+  "scenarios": {
+    "otp_start_and_confirm": [
+      "VS01",
+      "VS02",
+      "VC01"
+    ],
+    "verification_correct": [
+      "VC10",
+      "RS10",
+      "G01"
+    ],
+    "account_nonexistent": [
+      "VC11",
+      "RS11"
+    ],
+    "account_ambiguous": [
+      "VC13",
+      "RS13"
+    ],
+    "verification_expired": [
+      "VC16",
+      "RS12"
+    ],
+    "context_unauthorized": [
+      "ER03",
+      "VC15",
+      "RS91",
+      "VS92"
+    ],
+    "revocation": [
+      "LR01",
+      "LR10",
+      "LR11"
+    ],
+    "dependency_unavailable": [
+      "ER06",
+      "ER07"
+    ],
+    "grant_issued": [
+      "G01",
+      "G02",
+      "RS10"
+    ],
+    "grant_forged_or_incompatible": [
+      "G10",
+      "G11",
+      "G12",
+      "G13",
+      "G14",
+      "G15",
+      "G16",
+      "G17",
+      "G18",
+      "G20",
+      "G21",
+      "G22",
+      "G23",
+      "G24",
+      "G25",
+      "G26",
+      "G27",
+      "G28"
+    ]
+  },
+  "fixtures": [
+    {
+      "id": "VS01",
+      "file": "fixtures/verification-start/request.valid.json",
+      "kind": "body",
+      "schema": "verification-start.v1.schema.json#/$defs/request",
+      "valid": true,
+      "httpStatus": null,
+      "scenario": "OTP start",
+      "sha256": "ab0c2035cd52b623775d1fda3cf25236daea0ba12c7352b440cadb76571fd8db"
+    },
+    {
+      "id": "VS02",
+      "file": "fixtures/verification-start/response.challenge-issued.json",
+      "kind": "body",
+      "schema": "verification-start.v1.schema.json#/$defs/response",
+      "valid": true,
+      "httpStatus": 202,
+      "scenario": "OTP start: uniform answer for any well-formed email",
+      "sha256": "9372d1ecb3a453a418143c9ba673a8e7e60fab3384ae43f5ac4a4fcf1edd3554"
+    },
+    {
+      "id": "VS90",
+      "file": "fixtures/verification-start/request.invalid.email-filter-injection.json",
+      "kind": "body",
+      "schema": "verification-start.v1.schema.json#/$defs/request",
+      "valid": false,
+      "httpStatus": null,
+      "scenario": "email with a filter metacharacter (V-23)",
+      "expectedError": {
+        "instancePath": "/email",
+        "keyword": "pattern"
+      },
+      "sha256": "d36f33d3fcf8ad7f93adde79b943c2f51edf013e77a397d9159a646929f86334"
+    },
+    {
+      "id": "VS91",
+      "file": "fixtures/verification-start/request.invalid.legacy-flat-context.json",
+      "kind": "body",
+      "schema": "verification-start.v1.schema.json#/$defs/request",
+      "valid": false,
+      "httpStatus": null,
+      "scenario": "pre-omnichannel flat fields instead of context",
+      "expectedError": {
+        "instancePath": "",
+        "keyword": "required"
+      },
+      "sha256": "c1514e2fbace6bd562d27310dc1dc9e288bc1f924507d4742d081c6d5cd56927"
+    },
+    {
+      "id": "VS92",
+      "file": "fixtures/verification-start/request.invalid.consumer-in-body.json",
+      "kind": "body",
+      "schema": "verification-start.v1.schema.json#/$defs/request",
+      "valid": false,
+      "httpStatus": null,
+      "scenario": "consumer identity in the body (it is the bearer principal)",
+      "expectedError": {
+        "instancePath": "",
+        "keyword": "additionalProperties"
+      },
+      "sha256": "9a61072e2402e2e869a7054ff2bbb93379d36ef8d593bc6824e0f3bcb36310d5"
+    },
+    {
+      "id": "VS93",
+      "file": "fixtures/verification-start/request.invalid.verification-purpose-as-data-purpose.json",
+      "kind": "body",
+      "schema": "verification-start.v1.schema.json#/$defs/request",
+      "valid": false,
+      "httpStatus": null,
+      "scenario": "verification purpose mixed into data purposes",
+      "expectedError": {
+        "instancePath": "",
+        "keyword": "required"
+      },
+      "sha256": "5740f33d08e4f7a1bd53698e73a37383085da0b6403dff5ba3bc766b04ec9ffd"
+    },
+    {
+      "id": "VC01",
+      "file": "fixtures/verification-confirm/request.valid.json",
+      "kind": "body",
+      "schema": "verification-confirm.v1.schema.json#/$defs/request",
+      "valid": true,
+      "httpStatus": null,
+      "scenario": "OTP confirmation",
+      "sha256": "9cd39e0780ec37dea3d326629ee98255c71fcdc11d5394dcfed23d61e7c42ab0"
+    },
+    {
+      "id": "VC10",
+      "file": "fixtures/verification-confirm/response.linked.json",
+      "kind": "body",
+      "schema": "verification-confirm.v1.schema.json#/$defs/response",
+      "valid": true,
+      "httpStatus": 200,
+      "scenario": "correct verification: exactly one eligible account",
+      "sha256": "0c7e1cb733aa77b77a36bde4724cc1b6f8701141c2e170a629dce2a5af03c81c"
+    },
+    {
+      "id": "VC11",
+      "file": "fixtures/verification-confirm/response.no-eligible-account.json",
+      "kind": "body",
+      "schema": "verification-confirm.v1.schema.json#/$defs/response",
+      "valid": true,
+      "httpStatus": 200,
+      "scenario": "nonexistent account (or only deleted)",
+      "sha256": "72f17e361b2c4f9971656e7bba10a804f0a190261a7d7b2ef989631a780ad663"
+    },
+    {
+      "id": "VC12",
+      "file": "fixtures/verification-confirm/response.ineligible-account.json",
+      "kind": "body",
+      "schema": "verification-confirm.v1.schema.json#/$defs/response",
+      "valid": true,
+      "httpStatus": 200,
+      "scenario": "only guest or inactive accounts",
+      "sha256": "f1be0de328b39b53ed571a2bb14889106fc4a4c5e4573904cc3f826bbed4f09e"
+    },
+    {
+      "id": "VC13",
+      "file": "fixtures/verification-confirm/response.ambiguous.json",
+      "kind": "body",
+      "schema": "verification-confirm.v1.schema.json#/$defs/response",
+      "valid": true,
+      "httpStatus": 200,
+      "scenario": "ambiguous account: several eligible",
+      "sha256": "484e85a41885f1a02eddfa5d89b44d62cb75cd0510af49fea0c8ac745adfbf56"
+    },
+    {
+      "id": "VC14",
+      "file": "fixtures/verification-confirm/response.conflicted.json",
+      "kind": "body",
+      "schema": "verification-confirm.v1.schema.json#/$defs/response",
+      "valid": true,
+      "httpStatus": 200,
+      "scenario": "subject already linked to another account",
+      "sha256": "7fbdaf626d47b7cc6aac2af1569cba1b6d6b9baf16cce4ada2a12e63894d262a"
+    },
+    {
+      "id": "VC15",
+      "file": "fixtures/verification-confirm/response.invalid-code.json",
+      "kind": "body",
+      "schema": "verification-confirm.v1.schema.json#/$defs/response",
+      "valid": true,
+      "httpStatus": 200,
+      "scenario": "wrong code, or context/session/consumer differs from the challenge (V-11, N-02)",
+      "sha256": "4c14d8b8351aea983a0554a2584343914a6ec4194ca926aafcf0ea3e86c8d12c"
+    },
+    {
+      "id": "VC16",
+      "file": "fixtures/verification-confirm/response.expired.json",
+      "kind": "body",
+      "schema": "verification-confirm.v1.schema.json#/$defs/response",
+      "valid": true,
+      "httpStatus": 200,
+      "scenario": "expired verification (V-08)",
+      "sha256": "13f9b6e19954a97d19a42659cd2101553f8c90aa51de8eb48ea39bc2a7fbc663"
+    },
+    {
+      "id": "VC17",
+      "file": "fixtures/verification-confirm/response.locked.json",
+      "kind": "body",
+      "schema": "verification-confirm.v1.schema.json#/$defs/response",
+      "valid": true,
+      "httpStatus": 200,
+      "scenario": "attempts exhausted (V-10)",
+      "sha256": "25491d2f66feeb8479e8f64d3b04bc2da38a44179c4bfca054dba4e0915626c9"
+    },
+    {
+      "id": "VC90",
+      "file": "fixtures/verification-confirm/request.invalid.code-not-normalized.json",
+      "kind": "body",
+      "schema": "verification-confirm.v1.schema.json#/$defs/request",
+      "valid": false,
+      "httpStatus": null,
+      "scenario": "code not normalized by the channel integration",
+      "expectedError": {
+        "instancePath": "/code",
+        "keyword": "pattern"
+      },
+      "sha256": "b32d2fcd2d2cdd9f2544ae4b2b8861e8ef38107c9f5fa9878782ce8224e49b21"
+    },
+    {
+      "id": "VC91",
+      "file": "fixtures/verification-confirm/request.invalid.missing-session.json",
+      "kind": "body",
+      "schema": "verification-confirm.v1.schema.json#/$defs/request",
+      "valid": false,
+      "httpStatus": null,
+      "scenario": "context without sessionRef",
+      "expectedError": {
+        "instancePath": "/context",
+        "keyword": "required"
+      },
+      "sha256": "181a8b7471b6d0d33268dec81ee0b50bdc1a41798f3ac94f768d57cb8f10416f"
+    },
+    {
+      "id": "VC92",
+      "file": "fixtures/verification-confirm/response.invalid.linked-with-customer-ref.json",
+      "kind": "body",
+      "schema": "verification-confirm.v1.schema.json#/$defs/response",
+      "valid": false,
+      "httpStatus": 200,
+      "scenario": "confirm must never return an account reference",
+      "expectedError": {
+        "instancePath": "",
+        "keyword": "additionalProperties"
+      },
+      "sha256": "841dfed5dfa27f971389a4321c1f28b4294bb786826e740d17196e881edf81bf"
+    },
+    {
+      "id": "VC93",
+      "file": "fixtures/verification-confirm/response.invalid.invalid-code-without-attempts.json",
+      "kind": "body",
+      "schema": "verification-confirm.v1.schema.json#/$defs/response",
+      "valid": false,
+      "httpStatus": 200,
+      "scenario": "invalid_code without attemptsRemaining",
+      "expectedError": {
+        "instancePath": "",
+        "keyword": "required"
+      },
+      "sha256": "da28ba99767b498e684595aec725d096e58208272f03b9a44bdc5571e0ad7994"
+    },
+    {
+      "id": "RS01",
+      "file": "fixtures/resolve/request.valid.json",
+      "kind": "body",
+      "schema": "resolve.v1.schema.json#/$defs/request",
+      "valid": true,
+      "httpStatus": null,
+      "scenario": "resolution for one data purpose",
+      "sha256": "87978f05dd988a17758d4f326ede83f04554c49e06178a3709c640f704fac713"
+    },
+    {
+      "id": "RS10",
+      "file": "fixtures/resolve/response.verified.json",
+      "kind": "body",
+      "schema": "resolve.v1.schema.json#/$defs/response",
+      "valid": true,
+      "httpStatus": 200,
+      "scenario": "correct verification: grant issued (token = G01)",
+      "sha256": "4063fa841618e6c4486045702139eaf3a495a756d2e344360623dc206e422e5e"
+    },
+    {
+      "id": "RS11",
+      "file": "fixtures/resolve/response.not-linked.json",
+      "kind": "body",
+      "schema": "resolve.v1.schema.json#/$defs/response",
+      "valid": true,
+      "httpStatus": 200,
+      "scenario": "nonexistent account, no link, or revoked link",
+      "sha256": "2a0a487bdfa151fe70bf6b57964997dcf75517fc6025a20db29c3bd3bea31700"
+    },
+    {
+      "id": "RS12",
+      "file": "fixtures/resolve/response.not-verified.json",
+      "kind": "body",
+      "schema": "resolve.v1.schema.json#/$defs/response",
+      "valid": true,
+      "httpStatus": 200,
+      "scenario": "expired verification: link stale/expired or recent-verification window elapsed",
+      "sha256": "1e853edc76caf010cf776360b0eac4c64db0a5848034a8eeea9ff9878fb896f9"
+    },
+    {
+      "id": "RS13",
+      "file": "fixtures/resolve/response.ambiguous.json",
+      "kind": "body",
+      "schema": "resolve.v1.schema.json#/$defs/response",
+      "valid": true,
+      "httpStatus": 200,
+      "scenario": "ambiguous account",
+      "sha256": "dbf3e46d0a340038dd011f7db8499256fd8c74d46e49b2dada82cf9f1d6b14c4"
+    },
+    {
+      "id": "RS14",
+      "file": "fixtures/resolve/response.conflicted.json",
+      "kind": "body",
+      "schema": "resolve.v1.schema.json#/$defs/response",
+      "valid": true,
+      "httpStatus": 200,
+      "scenario": "conflicting link",
+      "sha256": "82d7f0cee1384e0a2d088ce803cba89749799ca9a53f199a781d7594a5e57534"
+    },
+    {
+      "id": "RS15",
+      "file": "fixtures/resolve/response.not-authorized.json",
+      "kind": "body",
+      "schema": "resolve.v1.schema.json#/$defs/response",
+      "valid": true,
+      "httpStatus": 200,
+      "scenario": "guest/inactive account or purpose denied by policy",
+      "sha256": "ef2e6f013c61ab34a9fec3850d3fd0f1ffeff78e1d7665fa847949ab75dd0703"
+    },
+    {
+      "id": "RS90",
+      "file": "fixtures/resolve/request.invalid.empty-purposes.json",
+      "kind": "body",
+      "schema": "resolve.v1.schema.json#/$defs/request",
+      "valid": false,
+      "httpStatus": null,
+      "scenario": "no data purpose",
+      "expectedError": {
+        "instancePath": "/purposes",
+        "keyword": "minItems"
+      },
+      "sha256": "9fe32a9d516be27ac1573b23171765a8988d7abbe5690dba3fb9925b776db0f4"
+    },
+    {
+      "id": "RS91",
+      "file": "fixtures/resolve/request.invalid.channel-shape.json",
+      "kind": "body",
+      "schema": "resolve.v1.schema.json#/$defs/request",
+      "valid": false,
+      "httpStatus": null,
+      "scenario": "channel that is not a registered identifier",
+      "expectedError": {
+        "instancePath": "/context/channel",
+        "keyword": "pattern"
+      },
+      "sha256": "a5e22d33dfd3bfad85561a9289ddb45858bfc7b8182efb8faaccf854aedc02af"
+    },
+    {
+      "id": "RS92",
+      "file": "fixtures/resolve/response.invalid.not-linked-with-customer-ref.json",
+      "kind": "body",
+      "schema": "resolve.v1.schema.json#/$defs/response",
+      "valid": false,
+      "httpStatus": 200,
+      "scenario": "account reference outside verified",
+      "expectedError": {
+        "instancePath": "",
+        "keyword": "oneOf"
+      },
+      "sha256": "96191560eb3b87c7605c3cc7976e5798a234c64b4cc703e7fae09e2fb669d8e4"
+    },
+    {
+      "id": "RS93",
+      "file": "fixtures/resolve/response.invalid.verified-without-grant.json",
+      "kind": "body",
+      "schema": "resolve.v1.schema.json#/$defs/response",
+      "valid": false,
+      "httpStatus": 200,
+      "scenario": "verified without grant",
+      "expectedError": {
+        "instancePath": "",
+        "keyword": "oneOf"
+      },
+      "sha256": "2d91e9e9869998ebe8ab59571ea6faec258d2faa217267c8aff8ed3d3a0f6288"
+    },
+    {
+      "id": "RS94",
+      "file": "fixtures/resolve/response.invalid.master-customer-id.json",
+      "kind": "body",
+      "schema": "resolve.v1.schema.json#/$defs/response",
+      "valid": false,
+      "httpStatus": 200,
+      "scenario": "masterCustomerId is never disclosed (CS-02)",
+      "expectedError": {
+        "instancePath": "",
+        "keyword": "oneOf"
+      },
+      "sha256": "47d790a33678d449718b35394a787a425ac812a4072fe944f1c903045a657b6f"
+    },
+    {
+      "id": "LR01",
+      "file": "fixtures/link-revoke/request.valid.json",
+      "kind": "body",
+      "schema": "link-revoke.v1.schema.json#/$defs/request",
+      "valid": true,
+      "httpStatus": null,
+      "scenario": "revocation at the customer's request",
+      "sha256": "0127c7ebdf07e48f986eb45ba25a0e05191a0b89a63fe5ffcf81feb71d19c49d"
+    },
+    {
+      "id": "LR10",
+      "file": "fixtures/link-revoke/response.revoked.json",
+      "kind": "body",
+      "schema": "link-revoke.v1.schema.json#/$defs/response",
+      "valid": true,
+      "httpStatus": 200,
+      "scenario": "revocation",
+      "sha256": "aa54ff11f09c555e0aab35818c4b264ab1c1ad477ac0c08e860d77b2f520a1a8"
+    },
+    {
+      "id": "LR11",
+      "file": "fixtures/link-revoke/response.no-active-link.json",
+      "kind": "body",
+      "schema": "link-revoke.v1.schema.json#/$defs/response",
+      "valid": true,
+      "httpStatus": 200,
+      "scenario": "revocation without an active link",
+      "sha256": "2bdaba46acdab1802569c45b9117209d4924fa88175b314fcad5c26315a703ba"
+    },
+    {
+      "id": "LR90",
+      "file": "fixtures/link-revoke/request.invalid.free-text-reason.json",
+      "kind": "body",
+      "schema": "link-revoke.v1.schema.json#/$defs/request",
+      "valid": false,
+      "httpStatus": null,
+      "scenario": "free-text reason",
+      "expectedError": {
+        "instancePath": "/reason",
+        "keyword": "enum"
+      },
+      "sha256": "50a3091e93e2cf6b6f0a7f17887232429194b0c04fb3beb14cadba0fc2cfef4c"
+    },
+    {
+      "id": "ER01",
+      "file": "fixtures/errors/invalid-request.json",
+      "kind": "body",
+      "schema": "error.v1.schema.json",
+      "valid": true,
+      "httpStatus": 400,
+      "scenario": "malformed request",
+      "sha256": "3c077f670d622c384281cdaace038d1c262feeb5be1b47de6182289772896a10"
+    },
+    {
+      "id": "ER02",
+      "file": "fixtures/errors/unauthenticated.json",
+      "kind": "body",
+      "schema": "error.v1.schema.json",
+      "valid": true,
+      "httpStatus": 401,
+      "scenario": "missing or invalid credential",
+      "sha256": "e7857f5f925b611c50e7d894f0ef74115f0d3991d6a9410bf6d1f170bc9e442a"
+    },
+    {
+      "id": "ER03",
+      "file": "fixtures/errors/consumer-not-allowed.json",
+      "kind": "body",
+      "schema": "error.v1.schema.json",
+      "valid": true,
+      "httpStatus": 403,
+      "scenario": "unauthorized context (channel/account/purpose outside allowlist, N-03) or confirm without the channel-integration scope (N-01)",
+      "sha256": "0a494fab7c7d199198ca1df6e95bd7993b5b0366a1264361d19d63b4b4946d37"
+    },
+    {
+      "id": "ER04",
+      "file": "fixtures/errors/idempotency-conflict.json",
+      "kind": "body",
+      "schema": "error.v1.schema.json",
+      "valid": true,
+      "httpStatus": 409,
+      "scenario": "idempotency key reused with another body",
+      "sha256": "4b10cd9db2c47a2b529c1c0f1a640d12af6d379606dc1513349e4f9a80c2d3cb"
+    },
+    {
+      "id": "ER05",
+      "file": "fixtures/errors/rate-limited.json",
+      "kind": "body",
+      "schema": "error.v1.schema.json",
+      "valid": true,
+      "httpStatus": 429,
+      "scenario": "any limit, indistinguishable",
+      "sha256": "d0014e880caf3acd1e1fb8a06d1c5d1eba136c99654d40968c9b4e62b752321d"
+    },
+    {
+      "id": "ER06",
+      "file": "fixtures/errors/dependency-unavailable.json",
+      "kind": "body",
+      "schema": "error.v1.schema.json",
+      "valid": true,
+      "httpStatus": 503,
+      "scenario": "dependency unavailable: account provider down, challenge not consumed (V-21)",
+      "sha256": "c9a82def75204a09b7c243eaa4c302a20a200a161200511fcdc6fe80ed9ba852"
+    },
+    {
+      "id": "ER07",
+      "file": "fixtures/errors/delivery-unavailable.json",
+      "kind": "body",
+      "schema": "error.v1.schema.json",
+      "valid": true,
+      "httpStatus": 503,
+      "scenario": "dependency unavailable: email delivery",
+      "sha256": "b2fe0dec597a363a36123d0ef0e76720991c4ba258da0af48b7edb440b1f00c5"
+    },
+    {
+      "id": "ER90",
+      "file": "fixtures/errors/invalid.dependency-unavailable-not-retryable.json",
+      "kind": "body",
+      "schema": "error.v1.schema.json",
+      "valid": false,
+      "httpStatus": 503,
+      "scenario": "retryable must follow the code",
+      "expectedError": {
+        "instancePath": "/error/retryable",
+        "keyword": "const"
+      },
+      "sha256": "65b3cad32c5ac6f87a50b261e0b87dee5cc4cf85ef66090689e199ebc4854ec0"
+    },
+    {
+      "id": "ER91",
+      "file": "fixtures/errors/invalid.free-text-message.json",
+      "kind": "body",
+      "schema": "error.v1.schema.json",
+      "valid": false,
+      "httpStatus": 400,
+      "scenario": "no free text (CS-04)",
+      "expectedError": {
+        "instancePath": "/error",
+        "keyword": "additionalProperties"
+      },
+      "sha256": "615e6fdc391d8a9a11160ce7a7f7e91a179cf47aa14f4669aedeca53966a256b"
+    },
+    {
+      "id": "G01",
+      "file": "fixtures/grants/G01.valid.purchase-history.json",
+      "kind": "grant",
+      "valid": true,
+      "scenario": "grant issued correctly (V-01)",
+      "sha256": "1acb9dff48d12620e2a84f65d3cb1d4d3f449498a92bb7e2396b550f46057a2c"
+    },
+    {
+      "id": "G02",
+      "file": "fixtures/grants/G02.valid.two-purposes.json",
+      "kind": "grant",
+      "valid": true,
+      "scenario": "multi-purpose grant used for one granted purpose",
+      "sha256": "d7f3365e8c2b25ca32580b36dd773da293823acad90118d61daa2703af4c17ed"
+    },
+    {
+      "id": "G10",
+      "file": "fixtures/grants/G10.forged.foreign-key.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "signed by a key that is not pinned, same kid (V-14)",
+      "sha256": "557e8bbe0f4123de7d076035f9e8f9d6b016eb82e6a55f2a33fee43bb4acbd61"
+    },
+    {
+      "id": "G11",
+      "file": "fixtures/grants/G11.forged.alg-none.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "alg none (V-14)",
+      "sha256": "26c849cf98d585736f215ce41ec3b756b6f324ae6f13f056001fee34c3380165"
+    },
+    {
+      "id": "G12",
+      "file": "fixtures/grants/G12.forged.hs256-public-key.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "HS256 keyed with the public key (V-14)",
+      "sha256": "d0cb9fc8fcf93acc9690a756601127c0550a37b200ade96fa95860e88f54cc6e"
+    },
+    {
+      "id": "G13",
+      "file": "fixtures/grants/G13.forged.unknown-kid.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "kid not in the pinned JWKS (V-14)",
+      "sha256": "58c67ecd3dedf81e88088cce563b09595da39d93d424bf28889c78d0325129bd"
+    },
+    {
+      "id": "G14",
+      "file": "fixtures/grants/G14.forged.tampered-sub.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "payload swapped to another customer, original signature (V-13/V-19)",
+      "sha256": "285de322949e1301fe4136d225382d1ca20efcfc8bf6e39e0e52db452f21039b"
+    },
+    {
+      "id": "G15",
+      "file": "fixtures/grants/G15.forged.two-segments.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "not a compact JWS",
+      "sha256": "832cc0df3c7b95eb839c82b788ead23ba5f278bc4326766f986b3155ac8a0bc7"
+    },
+    {
+      "id": "G16",
+      "file": "fixtures/grants/G16.forged.missing.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "no grant header",
+      "sha256": "c7844f73249e11401cdc348029685d24e4512534891617c2eab0c6cea444518b"
+    },
+    {
+      "id": "G17",
+      "file": "fixtures/grants/G17.forged.wrong-typ.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "typ JWT instead of cia-grant+jwt",
+      "sha256": "62fdfcef718f031f6bc2141b58462a087ebc1cb330c6854ee330cc64d73a3667"
+    },
+    {
+      "id": "G18",
+      "file": "fixtures/grants/G18.forged.claims-schema.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "signed claims without jti",
+      "sha256": "dc410a9d5971974d04913a3184ce421bc1b4a2f2b054a49b4d688de1207a28cd"
+    },
+    {
+      "id": "G20",
+      "file": "fixtures/grants/G20.incompatible.expired.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "used after exp (V-15)",
+      "sha256": "945892627a66e25b6b1798516a886af50a466b2b7c1549010207ef92c67fe903"
+    },
+    {
+      "id": "G21",
+      "file": "fixtures/grants/G21.incompatible.not-yet-valid.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "nbf beyond the allowed skew",
+      "sha256": "52ffaa973bef2efcd6012e7c9a319c11e4bf8092d54caef275ded35ef7d0e972"
+    },
+    {
+      "id": "G22",
+      "file": "fixtures/grants/G22.incompatible.ttl-too-long.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "exp - iat = 900 s (V-15)",
+      "sha256": "68d6c158f9fb8227f6c75a10d9dd6a24970422a9cba246180579a6b343fb6cd7"
+    },
+    {
+      "id": "G23",
+      "file": "fixtures/grants/G23.incompatible.wrong-audience.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "grant for another service (V-17)",
+      "sha256": "a8177759e981bbbb422ae6af80091886d96aa9165d899e12aff9d1520ef7f096"
+    },
+    {
+      "id": "G24",
+      "file": "fixtures/grants/G24.incompatible.consumer-mismatch.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "presented by another principal (V-17)",
+      "sha256": "c954a2043e69e291e8dce5783480619c60e4cac117897f5e543821e726a0f065"
+    },
+    {
+      "id": "G25",
+      "file": "fixtures/grants/G25.incompatible.customer-mismatch.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "valid grant of A used for B (V-13)",
+      "sha256": "a9cfde0840251604272ab867123525a821bc034db7f753cde08e2aa371aa399b"
+    },
+    {
+      "id": "G26",
+      "file": "fixtures/grants/G26.incompatible.purpose-not-granted.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "sales_context grant used for purchase_history (V-18)",
+      "sha256": "03285de5afb6083b022a01fb683b6c1cd4020a2ab501531c34818cf68f63dab7"
+    },
+    {
+      "id": "G27",
+      "file": "fixtures/grants/G27.incompatible.wrong-issuer.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "issuer not pinned",
+      "sha256": "1c59f443bce4b3abc48761a79a98390cad0f9f665369eafa146837c5dbe88634"
+    },
+    {
+      "id": "G28",
+      "file": "fixtures/grants/G28.incompatible.unsupported-version.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "claims version 2",
+      "sha256": "0de7a7badbba3e92549a022cebf59445470c60ba32baba0fffa28df1b453622e"
+    },
+    {
+      "id": "GCFG",
+      "file": "fixtures/grants/verifier-config.json",
+      "kind": "verifier-config",
+      "sha256": "e9550000f91a4d942d267214948e60599cd32b63db3a00338bc8983861e3f475"
+    }
+  ]
+}

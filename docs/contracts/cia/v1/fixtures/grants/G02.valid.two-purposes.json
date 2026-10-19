@@ -1,0 +1,14 @@
+{
+  "id": "G02",
+  "scenario": "multi-purpose grant used for one granted purpose",
+  "token": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImNpYS1zeW50aGV0aWMtczAiLCJ0eXAiOiJjaWEtZ3JhbnQrand0In0.eyJjdiI6MSwiaXNzIjoiaHR0cHM6Ly9jaWEuc3ludGhldGljLnRlc3QiLCJhdWQiOiJjdXN0b21lci1wcm9maWxlIiwiYXpwIjoicjQtc2FsZXMiLCJzdWIiOiJwcmVzdGFzaG9wX2N1c3RvbWVyOjkwMDAwMDIwMSIsInB1cnBvc2VzIjpbInNhbGVzX2NvbnRleHQiLCJwdXJjaGFzZV9oaXN0b3J5Il0sImlhdCI6MTc5MjQzMjgwMCwibmJmIjoxNzkyNDMyODAwLCJleHAiOjE3OTI0MzMxMDAsImp0aSI6IjAxSzhTWU5USEdSQU5UMDAwMDAwMDAwMDAxIiwibG5rIjoibG5rX3N5bnRoZXRpY18wMDAxIiwibHZlciI6MSwiYW1yIjpbImVtYWlsX290cCJdLCJ2YXQiOjE3OTI0MzIyMDAsInNiaCI6Ijk1bGx1QmdqaTZKb2tScV9uM1pTbGZSMTRnaDFsUEp4Y3RJY2FUbWpRUVkifQ.dTddqDiRHV1Adck3mhs4XYVHxyd1BYC-TSrjpmooVXS4acGqgHeh3OxYLfXxoPZe_cAiMExa4u86l7B37V6LpQ",
+  "verifyAt": 1792432860,
+  "request": {
+    "principal": "r4-sales",
+    "customerRef": "prestashop_customer:900000201",
+    "purpose": "sales_context"
+  },
+  "expected": {
+    "accepted": true
+  }
+}

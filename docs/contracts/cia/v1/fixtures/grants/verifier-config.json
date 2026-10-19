@@ -1,0 +1,28 @@
+{
+  "synthetic": true,
+  "iss": "https://cia.synthetic.test",
+  "aud": "customer-profile",
+  "typ": "cia-grant+jwt",
+  "algorithms": [
+    "ES256"
+  ],
+  "supportedClaimsVersions": [
+    1
+  ],
+  "maxTtlSeconds": 300,
+  "clockSkewSeconds": 60,
+  "maxTokenBytes": 2048,
+  "jwks": {
+    "keys": [
+      {
+        "kty": "EC",
+        "x": "_iCIkKnp_soJJB-HkkJzXpUXcZigjBmn6KlYibuiqvg",
+        "y": "RJ_f6XDYvfft_yGFpDVAy2cNmDpF0cnrCPcgvFk7_58",
+        "crv": "P-256",
+        "kid": "cia-synthetic-s0",
+        "alg": "ES256",
+        "use": "sig"
+      }
+    ]
+  }
+}

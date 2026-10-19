@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pesaschile.cl/contracts/cia/v1/link-revoke.v1.schema.json",
+  "title": "POST /v1/identity/links/revoke (CANDIDATE, CIA-S0)",
+  "description": "Revokes the context subject's active link at the customer's request. Scope identity.link.revoke. Header idempotency-key required. Takes effect on the next resolve; grants already issued expire by TTL.",
+  "$defs": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "context", "reason"],
+      "properties": {
+        "schemaVersion": { "$ref": "cia-common.v1.schema.json#/$defs/schemaVersion" },
+        "context": { "$ref": "cia-common.v1.schema.json#/$defs/context" },
+        "reason": { "enum": ["customer_request"] }
+      }
+    },
+    "response": {
+      "description": "HTTP 200.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "outcome"],
+      "properties": {
+        "schemaVersion": { "$ref": "cia-common.v1.schema.json#/$defs/schemaVersion" },
+        "outcome": { "enum": ["revoked", "no_active_link"] }
+      }
+    }
+  }
+}

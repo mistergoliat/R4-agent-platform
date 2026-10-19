@@ -1,0 +1,15 @@
+{
+  "id": "G26",
+  "scenario": "sales_context grant used for purchase_history (V-18)",
+  "token": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImNpYS1zeW50aGV0aWMtczAiLCJ0eXAiOiJjaWEtZ3JhbnQrand0In0.eyJjdiI6MSwiaXNzIjoiaHR0cHM6Ly9jaWEuc3ludGhldGljLnRlc3QiLCJhdWQiOiJjdXN0b21lci1wcm9maWxlIiwiYXpwIjoicjQtc2FsZXMiLCJzdWIiOiJwcmVzdGFzaG9wX2N1c3RvbWVyOjkwMDAwMDIwMSIsInB1cnBvc2VzIjpbInNhbGVzX2NvbnRleHQiXSwiaWF0IjoxNzkyNDMyODAwLCJuYmYiOjE3OTI0MzI4MDAsImV4cCI6MTc5MjQzMzEwMCwianRpIjoiMDFLOFNZTlRIR1JBTlQwMDAwMDAwMDAwMDEiLCJsbmsiOiJsbmtfc3ludGhldGljXzAwMDEiLCJsdmVyIjoxLCJhbXIiOlsiZW1haWxfb3RwIl0sInZhdCI6MTc5MjQzMjIwMCwic2JoIjoiOTVsbHVCZ2ppNkpva1JxX24zWlNsZlIxNGdoMWxQSnhjdEljYVRtalFRWSJ9.2QsFHv8yTpJi7u3SH55XurzVWuO46O4CQgp0UcxPYHXoa4RMuPZG63Arzcyr33G3ANenTZhcHbmd4Uget2IZbw",
+  "verifyAt": 1792432860,
+  "request": {
+    "principal": "r4-sales",
+    "customerRef": "prestashop_customer:900000201",
+    "purpose": "purchase_history"
+  },
+  "expected": {
+    "accepted": false,
+    "reason": "purpose_not_granted"
+  }
+}
