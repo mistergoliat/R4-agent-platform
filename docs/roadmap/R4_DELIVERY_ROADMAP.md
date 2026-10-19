@@ -2,7 +2,7 @@
 title: R4 — Delivery Roadmap
 status: active
 owner: architecture
-last_reviewed: 2026-10-15
+last_reviewed: 2026-10-19
 source: ../architecture/R4_AGENTIC_PLATFORM_PRD_AND_ROADMAP.md §40
 ---
 
@@ -43,8 +43,77 @@ automáticamente.
 | J3 — Quote Integration & Autonomous Issuance | **CLOSED** (`CLOSED_WITH_RESCOPED_ACCEPTANCE`) | Integración comercial y emisión autónoma. [Registro de cierre](../acceptance/R4_J3_CLOSURE_RECORD.md) |
 | J4 — Customer Profile | **NEXT** (no iniciado) | Perfil de cliente |
 | J4.5 — Catalog | **PLANNED** | Optimización e integración de Catalog; después se reevalúa la eficiencia del agente (aceptación J3 §17) |
+| J5.5 — Autonomous Checkout & Payment Orchestration | **PLANNED / IMPLEMENTATION_DEFERRED** | De cotización aceptada a pedido pagado y registrado, mediante un microservicio externo (`checkout-service`, nombre provisional). Entre J5 y J6; gates propios, no bloquea J6/J7. Detalle en §1.2 |
 | R4 Media & Communications | **DEFERRED** | Capacidades multimedia y entrega de documentos (J3F, §4.2) |
 | J7 — Production Readiness | **NOT PRODUCTION READY** | Gobernanza operacional y habilitación de clientes reales (gates del registro de brechas J3) |
+
+### 1.2 J5.5 — Autonomous Checkout & Payment Orchestration (registro, 2026-10-19)
+
+```text
+Estado: PLANNED / IMPLEMENTATION_DEFERRED
+```
+
+Registro de alcance futuro (mandato R4-J55-ROADMAP-REGISTRATION-01). **No autoriza
+diseño ni implementación**, no reserva versiones, perfiles, capacidades ni números de
+migración, y no modifica el alcance aprobado de J4.
+
+**Posición.** Entre J5 y J6. J5 y J6 todavía no tienen fila en la tabla de §1.1;
+cuando se registren, J5.5 queda ordenado después de J5 y antes de J6.
+
+**Objetivo.** Ejecutar el proceso comercial desde una cotización aceptada hasta un
+pedido pagado y registrado, mediante un microservicio independiente del harness,
+provisionalmente denominado `checkout-service`.
+
+**Flujo objetivo:**
+
+1. Recibir una cotización válida y explícitamente aceptada desde Quote V2.
+2. Validar la identidad comercial mediante Customer Identity Authority (CIA).
+3. Resolver o crear el cliente mediante la integración oficial con PrestaShop 8.2.3.
+4. Preparar el carrito y verificar las condiciones comerciales.
+5. Generar el link de pago mediante Mercado Pago.
+6. Procesar y verificar la confirmación autenticada de pago.
+7. Crear o confirmar la orden mediante el mecanismo de PrestaShop que se valide durante el diseño.
+8. Conciliar el pago, la orden y la operación comercial, evitando duplicaciones.
+
+**Responsabilidades:**
+
+| Actor | Responsabilidad |
+|---|---|
+| R4 | Invocar capacidades externas de checkout. Sin lógica de pago, carrito ni pedido en el harness |
+| Quote Service | Autoridad sobre la cotización |
+| CIA | OTP, identidad verificada y autorización |
+| `checkout-service` | Ciclo de vida del checkout, validación de pago, idempotencia y conciliación |
+| Mercado Pago | Procesar pagos |
+| PrestaShop 8.2.3 | Cuentas, carritos y pedidos |
+
+`checkout-service` es independiente del harness. Sus funciones se exponen a R4 mediante
+capacidades y adaptadores versionados, fuera de Core (ADR-005): Cart, Payment y Order
+son conceptos de dominio y no entran en R4 Core (AGENTS.md).
+
+**Dependencias:**
+
+- J3: contratos Quote estabilizados.
+- J4: CIA v1 y vinculación comercial con PrestaShop.
+- J5: integración del checkout en las capacidades del agente Sales.
+- Migración y validación de PrestaShop 8.2.3.
+- Investigación de la integración oficial con Mercado Pago.
+
+**Gates.** J5.5 no es un gate bloqueante de los alcances originales de J6 ni de J7.
+Sus pruebas de aceptación y su habilitación productiva tendrán gates propios, que se
+definirán en su diseño. Como mínimo aplican los invariantes del PRD §41
+(`wrong-customer write = 0`, `unauthorized write = 0`,
+`duplicate irreversible effect = 0`, `material false-success = 0`): un pago y un
+pedido son efectos irreversibles y requieren ejecución gobernada.
+
+**Relación con el PRD.** El PRD §40 lista *Payment* dentro de R4-L (Extended
+Platform). Este registro no cambia el PRD: J5.5 ubica el pago en un servicio de
+dominio externo invocado por capacidades, no como extensión de la plataforma. La
+autorización para iniciar J5.5 debe resolver explícitamente esa relación.
+
+**Fuera de alcance de este registro:** implementación de `checkout-service`,
+integración real con Mercado Pago, creación de clientes o pedidos en PrestaShop,
+cambios al harness, capacidades ejecutables, migraciones, reservas de versiones,
+perfiles o números de migración, despliegues y cambios productivos.
 
 ## 2. R4-B — criterios de salida
 
