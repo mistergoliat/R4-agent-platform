@@ -7,7 +7,7 @@
 | Rama | `feat/r4-j4-customer-adapter-r2`, creada desde `origin/main` `e6105b0`. Sin merge a `main` |
 | Contrato | `customer-profile.sales-context` v1, revisión v1-rc1, en CP `47db415` (tag `cp-sales-context-v1-rc1`). `contractStatus: candidate` |
 | Alcance | Puerto, adaptador HTTP y bloques de la frontera C sin registrar. Sin harness, perfiles, definiciones, migraciones ni despliegue |
-| **Dictamen** | **`R4_J4_R2_ADAPTER_IMPLEMENTED`** · **`R4_J4_R2_CONTRACT_VALIDATED`** (§5). Interoperabilidad HTTP **sintética y local** verificada (§8). **No** es E2E productiva |
+| **Dictamen** | **`R4_J4_R2_ADAPTER_IMPLEMENTED`** · **`R4_J4_R2_CONTRACT_VALIDATED`** (§5). Regresión completa en verde (unit, contract, integration, sales, shadow; 2026-10-18). Interoperabilidad HTTP **sintética y local** verificada (§9). **No** es E2E productiva |
 
 Etiquetas: **GIT** = verificado en el repositorio · **TEST** = ejecutado en esta sesión · **DOC** = documentado, sin verificación propia.
 
@@ -134,7 +134,17 @@ No se agregó ningún estado ni categoría (`DomainErrorCategory` sin cambios).
 | Slice completo (unit + contract del slice, boundaries, core-purity) | — | **178 PASS**, 5 skip (interop) |
 | **`npx vitest run --project unit --project contract`** | **G.** Regresión | **103 archivos, 1 516 PASS, 6 skip, 0 fallos** |
 | `npm run typecheck`, `npm run lint`, `npm run build` | G | OK |
-| `integration`, `sales`, `shadow` (PostgreSQL) | G | **NO EJECUTADAS:** Docker no respondía en esta máquina (`docker info` exit 255). Este slice no toca ningún código que esas suites ejerzan (§7), pero la regresión es parcial |
+| `npx vitest run --project integration` (PostgreSQL) | G | **36 archivos, 471 PASS, 12 skip, 0 fallos** (201 s). Lo omitido es `catalog-http-real.test.ts`: opt-in por entorno contra un catalog-service real, preexistente y sin cambios frente a `main` |
+| `npx vitest run --project sales` (PostgreSQL) | G | **4 archivos, 29/29 PASS** |
+| `npx vitest run --project shadow` (PostgreSQL) | G | **1 archivo, 5/5 PASS** |
+| `recovery` | — | No ejecutada: no forma parte de `npm test` y reinicia el contenedor compartido de la base |
+
+**Regresión completa (2026-10-18, sobre `76fda0f`):**
+- Las suites con PostgreSQL quedaron pendientes en la primera corrida (2026-10-16): Docker no respondía tras un crasheo del equipo.
+- El crasheo dejó a WSL sin la distribución `docker-desktop`. Se recuperó reiniciando Docker Desktop y WSL, sin reset ni pérdida de datos.
+- El puerto 55432 de la base de tests quedó tomado por un reenvío de puertos de VS Code.
+- Las suites corrieron contra un PostgreSQL 16.14 temporal (`postgres:16-alpine`, con las mismas credenciales locales del `docker-compose.yml`, datos efímeros en tmpfs, `127.0.0.1:55433`) mediante `R4_TEST_DATABASE_URL`, el mecanismo previsto por `tests/support/env.ts`.
+- El volumen local `r4-agent-platform_r4-postgres-data` no se tocó.
 
 **Cobertura del §6 del mandato** (cada caso con test):
 - 200 `available`, `not_found` y `not_applicable`; respuesta parcial (`unknown`); historial incompleto (`history_unavailable`); cuenta retenida (`withheld`);
@@ -248,7 +258,7 @@ Es una prueba de **interoperabilidad HTTP sintética y local**, no una E2E produ
 | 6 | AP-09 (cuentas guest e inactivas) y AP-10 (clasificación `lineKind`) pendientes de negocio | `withheld` provisional; filtro AP-10 según el criterio vigente |
 | 7 | Tensión `additionalProperties: false` / README de CP (§6) | Solo de evolución; ninguna en la interoperabilidad actual |
 | 8 | Enmienda documental de la especificación R4-J4-R1 (§6) | Pendiente |
-| 9 | Regresión con PostgreSQL no ejecutada (Docker no disponible) | Ejecutar `integration`, `sales` y `shadow` antes de cualquier merge |
+| 9 | ~~Regresión con PostgreSQL no ejecutada~~ **Cerrado (2026-10-18):** `integration`, `sales` y `shadow` en verde (§5) | — |
 | 10 | La frontera C no tiene `CapabilityRegistration` ni evaluación de privacidad | Es J4-R4 |
 | 11 | El RESILIENCE gate de CP sigue abierto para un proveedor real | Bloquea datos reales del lado de CP |
 
@@ -264,7 +274,7 @@ PRODUCTION_UNCHANGED                (sales-production@3; sin despliegue)
 - Pasos recomendados, en orden:
   1. designación del owner de la autoridad de identidad y contrato v1 (CS-01 a CS-12; ID-AUTHORITY-DECISION-01);
   2. aceptación formal del owner de CP (G-16);
-  3. regresión completa de esta rama con PostgreSQL y revisión del owner antes de cualquier merge;
+  3. revisión del owner de esta rama antes de cualquier merge (la regresión completa ya está en verde, §5);
   4. enmienda documental de la especificación (§6).
 - Mientras tanto, J4-R4 tampoco debe empezar: necesita R3 para obtener el `customerRef` y el grant. Los bloques de la frontera C de este slice quedan listos para que R4 los registre cuando se autorice.
 
@@ -275,7 +285,7 @@ R4_J4_R2_ADAPTER_IMPLEMENTED
 R4_J4_R2_CONTRACT_VALIDATED            (fixtures v1-rc1 @ 47db415; sin divergencia contractual sin resolver)
 R4_J4_R2_SYNTHETIC_HTTP_INTEROP=PASS   (local, CP 6801a90, enforce; NO es E2E productiva)
 R4_J4_R2_429=COMPATIBLE
-R4_J4_R2_POSTGRES_REGRESSION=NOT_RUN   (Docker no disponible)
+R4_J4_R2_FULL_REGRESSION=PASS         (unit + contract 1 516; integration 471; sales 29; shadow 5; 0 fallos; 2026-10-18)
 R4_HARNESS_UNCHANGED
 CUSTOMER_REAL_DATA_ACCESS_BLOCKED
 G16_PENDING
