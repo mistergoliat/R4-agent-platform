@@ -1,0 +1,20 @@
+{
+  "id": "D05",
+  "rules": [
+    5,
+    6
+  ],
+  "title": "no reliable deduplication and reconciliation stays unknown: abandoned at challenge expiry, never resent",
+  "providerDeduplicates": false,
+  "providerResults": [
+    "timeout_sent"
+  ],
+  "reconciliation": [
+    "unknown"
+  ],
+  "expect": {
+    "state": "abandoned",
+    "providerCalls": 1,
+    "delivered": 1
+  }
+}

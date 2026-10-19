@@ -1,0 +1,91 @@
+{
+  "id": "I01",
+  "rules": [
+    1,
+    8
+  ],
+  "title": "two simultaneous requests with the same key and body: one execution; the other gets operation_in_progress; later replays get the stored result",
+  "epoch": 1792431600,
+  "challenge": {
+    "verificationId": "Vf0SyntheticChallenge1",
+    "code": "482913",
+    "issuedAt": 0,
+    "ttlSeconds": 600,
+    "maxAttempts": 5
+  },
+  "bodies": {
+    "correct": {
+      "schemaVersion": 1,
+      "context": {
+        "channel": "whatsapp",
+        "channelAccountRef": "100000000000001",
+        "subjectRef": "15555550101",
+        "sessionRef": "bnd_synthetic_0001",
+        "subjectAssurance": "provider_signed"
+      },
+      "verificationId": "Vf0SyntheticChallenge1",
+      "code": "482913"
+    }
+  },
+  "steps": [
+    {
+      "at": 10,
+      "ref": "s1",
+      "principal": "r4-sales-channel",
+      "route": "POST /v1/identity/verifications/confirm",
+      "key": "whatsapp:wamid.SYNTHETIC0001",
+      "body": "correct",
+      "dependency": "hold",
+      "expect": null
+    },
+    {
+      "at": 11,
+      "principal": "r4-sales-channel",
+      "route": "POST /v1/identity/verifications/confirm",
+      "key": "whatsapp:wamid.SYNTHETIC0001",
+      "body": "correct",
+      "dependency": "ok",
+      "expect": {
+        "status": 409,
+        "body": {
+          "error": {
+            "code": "operation_in_progress",
+            "retryable": true
+          }
+        }
+      }
+    },
+    {
+      "at": 12,
+      "complete": "s1",
+      "expect": {
+        "status": 200,
+        "body": {
+          "schemaVersion": 1,
+          "outcome": "linked"
+        }
+      }
+    },
+    {
+      "at": 13,
+      "principal": "r4-sales-channel",
+      "route": "POST /v1/identity/verifications/confirm",
+      "key": "whatsapp:wamid.SYNTHETIC0001",
+      "body": "correct",
+      "dependency": "ok",
+      "expect": {
+        "status": 200,
+        "body": {
+          "schemaVersion": 1,
+          "outcome": "linked"
+        }
+      }
+    }
+  ],
+  "effects": {
+    "failedAttempts": 0,
+    "links": 1,
+    "challenges": 0,
+    "emailsQueued": 0
+  }
+}

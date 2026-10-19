@@ -1,0 +1,86 @@
+{
+  "id": "I09",
+  "rules": [
+    2
+  ],
+  "title": "the same key on another route is another operation (no 409)",
+  "epoch": 1792431600,
+  "challenge": {
+    "verificationId": "Vf0SyntheticChallenge1",
+    "code": "482913",
+    "issuedAt": 0,
+    "ttlSeconds": 600,
+    "maxAttempts": 5
+  },
+  "bodies": {
+    "start": {
+      "schemaVersion": 1,
+      "context": {
+        "channel": "whatsapp",
+        "channelAccountRef": "100000000000001",
+        "subjectRef": "15555550101",
+        "sessionRef": "bnd_synthetic_0001",
+        "subjectAssurance": "provider_signed"
+      },
+      "verificationPurpose": "link_commercial_account",
+      "email": "valid@synthetic.test",
+      "purposes": [
+        "sales_context",
+        "purchase_history"
+      ]
+    },
+    "correct": {
+      "schemaVersion": 1,
+      "context": {
+        "channel": "whatsapp",
+        "channelAccountRef": "100000000000001",
+        "subjectRef": "15555550101",
+        "sessionRef": "bnd_synthetic_0001",
+        "subjectAssurance": "provider_signed"
+      },
+      "verificationId": "Vf0SyntheticChallenge1",
+      "code": "482913"
+    }
+  },
+  "steps": [
+    {
+      "at": 0,
+      "principal": "r4-sales",
+      "route": "POST /v1/identity/verifications",
+      "key": "whatsapp:wamid.SYNTHETIC0001",
+      "body": "start",
+      "dependency": "ok",
+      "expect": {
+        "status": 202,
+        "body": {
+          "schemaVersion": 1,
+          "verificationId": "Vf0SyntheticChallengeB",
+          "status": "challenge_issued",
+          "expiresAt": "2026-10-19T17:50:00Z",
+          "resendAvailableAt": "2026-10-19T17:41:00Z"
+        }
+      }
+    },
+    {
+      "at": 10,
+      "principal": "r4-sales-channel",
+      "route": "POST /v1/identity/verifications/confirm",
+      "key": "whatsapp:wamid.SYNTHETIC0001",
+      "body": "correct",
+      "dependency": "ok",
+      "expect": {
+        "status": 200,
+        "body": {
+          "schemaVersion": 1,
+          "outcome": "linked"
+        }
+      }
+    }
+  ],
+  "effects": {
+    "failedAttempts": 0,
+    "links": 1,
+    "challenges": 1,
+    "emailsQueued": 1
+  }
+}

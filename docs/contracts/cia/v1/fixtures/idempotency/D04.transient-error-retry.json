@@ -1,0 +1,19 @@
+{
+  "id": "D04",
+  "rules": [
+    5,
+    6
+  ],
+  "title": "definite transient rejection (nothing sent): retried",
+  "providerDeduplicates": false,
+  "providerResults": [
+    "transient_error",
+    "accepted"
+  ],
+  "reconciliation": [],
+  "expect": {
+    "state": "sent",
+    "providerCalls": 2,
+    "delivered": 1
+  }
+}

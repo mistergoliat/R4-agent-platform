@@ -1,0 +1,85 @@
+{
+  "id": "I03",
+  "rules": [
+    3,
+    4
+  ],
+  "title": "account provider down after a correct code: 503, nothing consumed, the key is released; the retry with the same key executes once",
+  "epoch": 1792431600,
+  "challenge": {
+    "verificationId": "Vf0SyntheticChallenge1",
+    "code": "482913",
+    "issuedAt": 0,
+    "ttlSeconds": 600,
+    "maxAttempts": 5
+  },
+  "bodies": {
+    "correct": {
+      "schemaVersion": 1,
+      "context": {
+        "channel": "whatsapp",
+        "channelAccountRef": "100000000000001",
+        "subjectRef": "15555550101",
+        "sessionRef": "bnd_synthetic_0001",
+        "subjectAssurance": "provider_signed"
+      },
+      "verificationId": "Vf0SyntheticChallenge1",
+      "code": "482913"
+    }
+  },
+  "steps": [
+    {
+      "at": 10,
+      "principal": "r4-sales-channel",
+      "route": "POST /v1/identity/verifications/confirm",
+      "key": "whatsapp:wamid.SYNTHETIC0001",
+      "body": "correct",
+      "dependency": "unavailable",
+      "expect": {
+        "status": 503,
+        "body": {
+          "error": {
+            "code": "dependency_unavailable",
+            "retryable": true
+          }
+        }
+      }
+    },
+    {
+      "at": 20,
+      "principal": "r4-sales-channel",
+      "route": "POST /v1/identity/verifications/confirm",
+      "key": "whatsapp:wamid.SYNTHETIC0001",
+      "body": "correct",
+      "dependency": "ok",
+      "expect": {
+        "status": 200,
+        "body": {
+          "schemaVersion": 1,
+          "outcome": "linked"
+        }
+      }
+    },
+    {
+      "at": 21,
+      "principal": "r4-sales-channel",
+      "route": "POST /v1/identity/verifications/confirm",
+      "key": "whatsapp:wamid.SYNTHETIC0001",
+      "body": "correct",
+      "dependency": "ok",
+      "expect": {
+        "status": 200,
+        "body": {
+          "schemaVersion": 1,
+          "outcome": "linked"
+        }
+      }
+    }
+  ],
+  "effects": {
+    "failedAttempts": 0,
+    "links": 1,
+    "challenges": 0,
+    "emailsQueued": 0
+  }
+}

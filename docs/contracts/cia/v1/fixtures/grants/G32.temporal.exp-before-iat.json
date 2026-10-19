@@ -1,0 +1,15 @@
+{
+  "id": "G32",
+  "scenario": "exp earlier than iat",
+  "token": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImNpYS1zeW50aGV0aWMtczAiLCJ0eXAiOiJjaWEtZ3JhbnQrand0In0.eyJjdiI6MSwiaXNzIjoiaHR0cHM6Ly9jaWEuc3ludGhldGljLnRlc3QiLCJhdWQiOiJjdXN0b21lci1wcm9maWxlIiwiYXpwIjoicjQtc2FsZXMiLCJzdWIiOiJwcmVzdGFzaG9wX2N1c3RvbWVyOjkwMDAwMDIwMSIsInB1cnBvc2VzIjpbInB1cmNoYXNlX2hpc3RvcnkiXSwiaWF0IjoxNzkyNDMyODAwLCJuYmYiOjE3OTI0MzI4MDAsImV4cCI6MTc5MjQzMjc5OSwianRpIjoiMDFLOFNZTlRIR1JBTlQwMDAwMDAwMDAwMDEiLCJsbmsiOiJsbmtfc3ludGhldGljXzAwMDEiLCJsdmVyIjoxLCJhbXIiOlsiZW1haWxfb3RwIl0sInZhdCI6MTc5MjQzMjIwMCwic2JoIjoiOTVsbHVCZ2ppNkpva1JxX24zWlNsZlIxNGdoMWxQSnhjdEljYVRtalFRWSJ9.EGsF0ub7TQWuUILY-LH_LSPC8WvwQr8HPJdlKIK1ITQmrrtNVtNKvB2-r9PNEsZvRFe44Q_wWd18ol_VJBUtiw",
+  "verifyAt": 1792432860,
+  "request": {
+    "principal": "r4-sales",
+    "customerRef": "prestashop_customer:900000201",
+    "purpose": "purchase_history"
+  },
+  "expected": {
+    "accepted": false,
+    "reason": "invalid_time_claims"
+  }
+}

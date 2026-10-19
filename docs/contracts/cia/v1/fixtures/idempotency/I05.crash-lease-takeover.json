@@ -1,0 +1,79 @@
+{
+  "id": "I05",
+  "rules": [
+    1,
+    8
+  ],
+  "title": "the first execution dies before committing: operation_in_progress until the 30 s lease ends, then one execution",
+  "epoch": 1792431600,
+  "challenge": {
+    "verificationId": "Vf0SyntheticChallenge1",
+    "code": "482913",
+    "issuedAt": 0,
+    "ttlSeconds": 600,
+    "maxAttempts": 5
+  },
+  "bodies": {
+    "correct": {
+      "schemaVersion": 1,
+      "context": {
+        "channel": "whatsapp",
+        "channelAccountRef": "100000000000001",
+        "subjectRef": "15555550101",
+        "sessionRef": "bnd_synthetic_0001",
+        "subjectAssurance": "provider_signed"
+      },
+      "verificationId": "Vf0SyntheticChallenge1",
+      "code": "482913"
+    }
+  },
+  "steps": [
+    {
+      "at": 10,
+      "principal": "r4-sales-channel",
+      "route": "POST /v1/identity/verifications/confirm",
+      "key": "whatsapp:wamid.SYNTHETIC0001",
+      "body": "correct",
+      "dependency": "crash",
+      "expect": null
+    },
+    {
+      "at": 20,
+      "principal": "r4-sales-channel",
+      "route": "POST /v1/identity/verifications/confirm",
+      "key": "whatsapp:wamid.SYNTHETIC0001",
+      "body": "correct",
+      "dependency": "ok",
+      "expect": {
+        "status": 409,
+        "body": {
+          "error": {
+            "code": "operation_in_progress",
+            "retryable": true
+          }
+        }
+      }
+    },
+    {
+      "at": 41,
+      "principal": "r4-sales-channel",
+      "route": "POST /v1/identity/verifications/confirm",
+      "key": "whatsapp:wamid.SYNTHETIC0001",
+      "body": "correct",
+      "dependency": "ok",
+      "expect": {
+        "status": 200,
+        "body": {
+          "schemaVersion": 1,
+          "outcome": "linked"
+        }
+      }
+    }
+  ],
+  "effects": {
+    "failedAttempts": 0,
+    "links": 1,
+    "challenges": 0,
+    "emailsQueued": 0
+  }
+}

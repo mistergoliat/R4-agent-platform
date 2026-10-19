@@ -1,0 +1,114 @@
+{
+  "id": "I06",
+  "rules": [
+    5,
+    9
+  ],
+  "title": "a replayed start returns the stored 202 and queues no second email, even after the challenge expired; after 24 h the key is forgotten and executes again",
+  "epoch": 1792431600,
+  "challenge": {
+    "verificationId": "Vf0SyntheticChallenge1",
+    "code": "482913",
+    "issuedAt": 0,
+    "ttlSeconds": 600,
+    "maxAttempts": 5
+  },
+  "bodies": {
+    "start": {
+      "schemaVersion": 1,
+      "context": {
+        "channel": "whatsapp",
+        "channelAccountRef": "100000000000001",
+        "subjectRef": "15555550101",
+        "sessionRef": "bnd_synthetic_0001",
+        "subjectAssurance": "provider_signed"
+      },
+      "verificationPurpose": "link_commercial_account",
+      "email": "valid@synthetic.test",
+      "purposes": [
+        "sales_context",
+        "purchase_history"
+      ]
+    }
+  },
+  "steps": [
+    {
+      "at": 0,
+      "principal": "r4-sales",
+      "route": "POST /v1/identity/verifications",
+      "key": "whatsapp:wamid.SYNTHETIC0001",
+      "body": "start",
+      "dependency": "ok",
+      "expect": {
+        "status": 202,
+        "body": {
+          "schemaVersion": 1,
+          "verificationId": "Vf0SyntheticChallengeB",
+          "status": "challenge_issued",
+          "expiresAt": "2026-10-19T17:50:00Z",
+          "resendAvailableAt": "2026-10-19T17:41:00Z"
+        }
+      }
+    },
+    {
+      "at": 5,
+      "principal": "r4-sales",
+      "route": "POST /v1/identity/verifications",
+      "key": "whatsapp:wamid.SYNTHETIC0001",
+      "body": "start",
+      "dependency": "ok",
+      "expect": {
+        "status": 202,
+        "body": {
+          "schemaVersion": 1,
+          "verificationId": "Vf0SyntheticChallengeB",
+          "status": "challenge_issued",
+          "expiresAt": "2026-10-19T17:50:00Z",
+          "resendAvailableAt": "2026-10-19T17:41:00Z"
+        }
+      }
+    },
+    {
+      "at": 82800,
+      "principal": "r4-sales",
+      "route": "POST /v1/identity/verifications",
+      "key": "whatsapp:wamid.SYNTHETIC0001",
+      "body": "start",
+      "dependency": "ok",
+      "expect": {
+        "status": 202,
+        "body": {
+          "schemaVersion": 1,
+          "verificationId": "Vf0SyntheticChallengeB",
+          "status": "challenge_issued",
+          "expiresAt": "2026-10-19T17:50:00Z",
+          "resendAvailableAt": "2026-10-19T17:41:00Z"
+        }
+      }
+    },
+    {
+      "at": 86401,
+      "principal": "r4-sales",
+      "route": "POST /v1/identity/verifications",
+      "key": "whatsapp:wamid.SYNTHETIC0001",
+      "body": "start",
+      "dependency": "ok",
+      "expect": {
+        "status": 202,
+        "body": {
+          "schemaVersion": 1,
+          "verificationId": "Vf0SyntheticChallengeC",
+          "status": "challenge_issued",
+          "expiresAt": "2026-10-20T17:50:01Z",
+          "resendAvailableAt": "2026-10-20T17:41:01Z"
+        }
+      }
+    }
+  ],
+  "effects": {
+    "failedAttempts": 0,
+    "links": 0,
+    "challenges": 2,
+    "emailsQueued": 2
+  }
+}

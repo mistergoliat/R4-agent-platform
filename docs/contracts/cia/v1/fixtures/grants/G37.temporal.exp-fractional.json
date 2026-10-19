@@ -1,0 +1,15 @@
+{
+  "id": "G37",
+  "scenario": "exp with a fraction of a second",
+  "token": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImNpYS1zeW50aGV0aWMtczAiLCJ0eXAiOiJjaWEtZ3JhbnQrand0In0.eyJjdiI6MSwiaXNzIjoiaHR0cHM6Ly9jaWEuc3ludGhldGljLnRlc3QiLCJhdWQiOiJjdXN0b21lci1wcm9maWxlIiwiYXpwIjoicjQtc2FsZXMiLCJzdWIiOiJwcmVzdGFzaG9wX2N1c3RvbWVyOjkwMDAwMDIwMSIsInB1cnBvc2VzIjpbInB1cmNoYXNlX2hpc3RvcnkiXSwiaWF0IjoxNzkyNDMyODAwLCJuYmYiOjE3OTI0MzI4MDAsImV4cCI6MTc5MjQzMzA5OS41LCJqdGkiOiIwMUs4U1lOVEhHUkFOVDAwMDAwMDAwMDAwMSIsImxuayI6Imxua19zeW50aGV0aWNfMDAwMSIsImx2ZXIiOjEsImFtciI6WyJlbWFpbF9vdHAiXSwidmF0IjoxNzkyNDMyMjAwLCJzYmgiOiI5NWxsdUJnamk2Sm9rUnFfbjNaU2xmUjE0Z2gxbFBKeGN0SWNhVG1qUVFZIn0.8KMw3yOLOPfQaZu-hXXhaUQ74UXfTsZPGykHz7yjLOKCjv-yn4ZHRocpiRT5UDWqHb_mLNHoiFgEThbgxL7MSg",
+  "verifyAt": 1792432860,
+  "request": {
+    "principal": "r4-sales",
+    "customerRef": "prestashop_customer:900000201",
+    "purpose": "purchase_history"
+  },
+  "expected": {
+    "accepted": false,
+    "reason": "malformed"
+  }
+}

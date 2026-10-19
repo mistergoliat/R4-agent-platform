@@ -1,0 +1,19 @@
+{
+  "id": "D01",
+  "rules": [
+    5,
+    6
+  ],
+  "title": "provider with reliable deduplication: a timeout is retried with the same dedupKey; the provider delivers once",
+  "providerDeduplicates": true,
+  "providerResults": [
+    "timeout_sent",
+    "accepted"
+  ],
+  "reconciliation": [],
+  "expect": {
+    "state": "sent",
+    "providerCalls": 2,
+    "delivered": 1
+  }
+}

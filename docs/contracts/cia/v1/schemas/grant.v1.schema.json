@@ -15,6 +15,7 @@
       }
     },
     "claims": {
+      "description": "Time claims are integer Unix seconds. Invariants checked by the verifier: vat <= iat <= nbf < exp; exp - iat <= 300; iat - vat <= the pinned maximum proof age; iat and nbf at most the pinned clock skew ahead of the verifier; exp strictly after the verifier clock, with no skew.",
       "type": "object",
       "additionalProperties": false,
       "required": ["cv", "iss", "aud", "azp", "sub", "purposes", "iat", "nbf", "exp", "jti", "lnk", "lver", "amr", "vat", "sbh"],
@@ -37,7 +38,7 @@
       }
     },
     "rejectionReason": {
-      "enum": ["missing", "malformed", "unsupported_alg", "unknown_key", "bad_signature", "unsupported_version", "wrong_issuer", "wrong_audience", "consumer_mismatch", "not_yet_valid", "expired", "ttl_too_long", "customer_mismatch", "purpose_not_granted", "revoked"]
+      "enum": ["missing", "malformed", "unsupported_alg", "unknown_key", "bad_signature", "unsupported_version", "wrong_issuer", "wrong_audience", "consumer_mismatch", "invalid_time_claims", "ttl_too_long", "issued_in_future", "not_yet_valid", "expired", "customer_mismatch", "purpose_not_granted", "revoked"]
     },
     "rejection": {
       "description": "PROPOSED 403 body of the verifying service. Not accepted by its owner (D2).",

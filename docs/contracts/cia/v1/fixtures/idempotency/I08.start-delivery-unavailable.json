@@ -1,0 +1,77 @@
+{
+  "id": "I08",
+  "rules": [
+    3,
+    5
+  ],
+  "title": "delivery known unavailable before any challenge is created: 503, key released; the retry creates one challenge and queues one email",
+  "epoch": 1792431600,
+  "challenge": {
+    "verificationId": "Vf0SyntheticChallenge1",
+    "code": "482913",
+    "issuedAt": 0,
+    "ttlSeconds": 600,
+    "maxAttempts": 5
+  },
+  "bodies": {
+    "start": {
+      "schemaVersion": 1,
+      "context": {
+        "channel": "whatsapp",
+        "channelAccountRef": "100000000000001",
+        "subjectRef": "15555550101",
+        "sessionRef": "bnd_synthetic_0001",
+        "subjectAssurance": "provider_signed"
+      },
+      "verificationPurpose": "link_commercial_account",
+      "email": "valid@synthetic.test",
+      "purposes": [
+        "sales_context",
+        "purchase_history"
+      ]
+    }
+  },
+  "steps": [
+    {
+      "at": 0,
+      "principal": "r4-sales",
+      "route": "POST /v1/identity/verifications",
+      "key": "whatsapp:wamid.SYNTHETIC0001",
+      "body": "start",
+      "dependency": "unavailable",
+      "expect": {
+        "status": 503,
+        "body": {
+          "error": {
+            "code": "delivery_unavailable",
+            "retryable": true
+          }
+        }
+      }
+    },
+    {
+      "at": 5,
+      "principal": "r4-sales",
+      "route": "POST /v1/identity/verifications",
+      "key": "whatsapp:wamid.SYNTHETIC0001",
+      "body": "start",
+      "dependency": "ok",
+      "expect": {
+        "status": 202,
+        "body": {
+          "schemaVersion": 1,
+          "verificationId": "Vf0SyntheticChallengeB",
+          "status": "challenge_issued",
+          "expiresAt": "2026-10-19T17:50:05Z",
+          "resendAvailableAt": "2026-10-19T17:41:05Z"
+        }
+      }
+    }
+  ],
+  "effects": {
+    "failedAttempts": 0,
+    "links": 0,
+    "challenges": 1,
+    "emailsQueued": 1
+  }
+}

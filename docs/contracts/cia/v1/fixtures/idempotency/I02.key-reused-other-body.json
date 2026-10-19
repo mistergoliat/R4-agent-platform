@@ -1,0 +1,82 @@
+{
+  "id": "I02",
+  "rules": [
+    2
+  ],
+  "title": "the same key with another body is 409 idempotency_conflict and has no effect",
+  "epoch": 1792431600,
+  "challenge": {
+    "verificationId": "Vf0SyntheticChallenge1",
+    "code": "482913",
+    "issuedAt": 0,
+    "ttlSeconds": 600,
+    "maxAttempts": 5
+  },
+  "bodies": {
+    "wrong": {
+      "schemaVersion": 1,
+      "context": {
+        "channel": "whatsapp",
+        "channelAccountRef": "100000000000001",
+        "subjectRef": "15555550101",
+        "sessionRef": "bnd_synthetic_0001",
+        "subjectAssurance": "provider_signed"
+      },
+      "verificationId": "Vf0SyntheticChallenge1",
+      "code": "000000"
+    },
+    "correct": {
+      "schemaVersion": 1,
+      "context": {
+        "channel": "whatsapp",
+        "channelAccountRef": "100000000000001",
+        "subjectRef": "15555550101",
+        "sessionRef": "bnd_synthetic_0001",
+        "subjectAssurance": "provider_signed"
+      },
+      "verificationId": "Vf0SyntheticChallenge1",
+      "code": "482913"
+    }
+  },
+  "steps": [
+    {
+      "at": 10,
+      "principal": "r4-sales-channel",
+      "route": "POST /v1/identity/verifications/confirm",
+      "key": "whatsapp:wamid.SYNTHETIC0001",
+      "body": "wrong",
+      "dependency": "ok",
+      "expect": {
+        "status": 200,
+        "body": {
+          "schemaVersion": 1,
+          "outcome": "invalid_code",
+          "attemptsRemaining": 4
+        }
+      }
+    },
+    {
+      "at": 11,
+      "principal": "r4-sales-channel",
+      "route": "POST /v1/identity/verifications/confirm",
+      "key": "whatsapp:wamid.SYNTHETIC0001",
+      "body": "correct",
+      "dependency": "ok",
+      "expect": {
+        "status": 409,
+        "body": {
+          "error": {
+            "code": "idempotency_conflict",
+            "retryable": false
+          }
+        }
+      }
+    }
+  ],
+  "effects": {
+    "failedAttempts": 1,
+    "links": 0,
+    "challenges": 0,
+    "emailsQueued": 0
+  }
+}

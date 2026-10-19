@@ -26,11 +26,11 @@
     },
     {
       "file": "schemas/error.v1.schema.json",
-      "sha256": "fdd9bb4e3001883eafcbe5c80261754d251357d417aaae424d98b8e0b82984dc"
+      "sha256": "99457c5a0a6d0c0b6dc8bde24d5cad4f72c531ba160399154ba2e6f11d97c861"
     },
     {
       "file": "schemas/grant.v1.schema.json",
-      "sha256": "ff980d917917509074b811d7f3b34bb4acbb607eab1172c799ba799f1c9db6a7"
+      "sha256": "65ef63bc3e90f89ba6ce18205468de7ea57ae3d3adb63302842d8641f5304e8b"
     },
     {
       "file": "schemas/link-revoke.v1.schema.json",
@@ -111,6 +111,39 @@
       "G26",
       "G27",
       "G28"
+    ],
+    "grant_temporal_coherence": [
+      "G03",
+      "G04",
+      "G20",
+      "G21",
+      "G22",
+      "G30",
+      "G31",
+      "G32",
+      "G33",
+      "G34",
+      "G35",
+      "G36",
+      "G37"
+    ],
+    "idempotency": [
+      "ER04",
+      "ER08",
+      "I01",
+      "I02",
+      "I03",
+      "I04",
+      "I05",
+      "I06",
+      "I07",
+      "I08",
+      "I09",
+      "D01",
+      "D02",
+      "D03",
+      "D04",
+      "D05"
     ]
   },
   "fixtures": [
@@ -354,7 +387,7 @@
       "valid": true,
       "httpStatus": 200,
       "scenario": "correct verification: grant issued (token = G01)",
-      "sha256": "4063fa841618e6c4486045702139eaf3a495a756d2e344360623dc206e422e5e"
+      "sha256": "43e59072cff3def80a7890ea9002f038d68ae27f08b268e0c1ddf98da4df824a"
     },
     {
       "id": "RS11",
@@ -591,6 +624,16 @@
       "sha256": "b2fe0dec597a363a36123d0ef0e76720991c4ba258da0af48b7edb440b1f00c5"
     },
     {
+      "id": "ER08",
+      "file": "fixtures/errors/operation-in-progress.json",
+      "kind": "body",
+      "schema": "error.v1.schema.json",
+      "valid": true,
+      "httpStatus": 409,
+      "scenario": "same idempotency key and body while the first request is still executing",
+      "sha256": "47d07417c2999c9709f9c10e10103b383e9d2d9b1f358a5f93bb62d87558cdb9"
+    },
+    {
       "id": "ER90",
       "file": "fixtures/errors/invalid.dependency-unavailable-not-retryable.json",
       "kind": "body",
@@ -624,7 +667,7 @@
       "kind": "grant",
       "valid": true,
       "scenario": "grant issued correctly (V-01)",
-      "sha256": "1acb9dff48d12620e2a84f65d3cb1d4d3f449498a92bb7e2396b550f46057a2c"
+      "sha256": "8cab7b70f5393842a3e021327b3f7a3b604434bbc42f81cbde0fea5e1c456b73"
     },
     {
       "id": "G02",
@@ -632,7 +675,23 @@
       "kind": "grant",
       "valid": true,
       "scenario": "multi-purpose grant used for one granted purpose",
-      "sha256": "d7f3365e8c2b25ca32580b36dd773da293823acad90118d61daa2703af4c17ed"
+      "sha256": "0d1f27a9244975aa6796bbd7330cf15bb6297318751001607f6859e73e134f30"
+    },
+    {
+      "id": "G03",
+      "file": "fixtures/grants/G03.valid.last-second.json",
+      "kind": "grant",
+      "valid": true,
+      "scenario": "accepted one second before exp",
+      "sha256": "3b880850534f4d9fa7595cdb1fd6b6f4f1b5ae8f4138c4cb0414115a5f6dfd9e"
+    },
+    {
+      "id": "G04",
+      "file": "fixtures/grants/G04.valid.issuer-clock-ahead.json",
+      "kind": "grant",
+      "valid": true,
+      "scenario": "issuer clock 60 s ahead of the verifier (maximum skew)",
+      "sha256": "d3bc4c356931534a08f1e596af21456240161aaa63621db7d3ed2a7c9d086021"
     },
     {
       "id": "G10",
@@ -640,7 +699,7 @@
       "kind": "grant",
       "valid": false,
       "scenario": "signed by a key that is not pinned, same kid (V-14)",
-      "sha256": "557e8bbe0f4123de7d076035f9e8f9d6b016eb82e6a55f2a33fee43bb4acbd61"
+      "sha256": "660ecc49a498c759864615012ec837c47cf237e289942d2f693a8b1b108faef6"
     },
     {
       "id": "G11",
@@ -656,7 +715,7 @@
       "kind": "grant",
       "valid": false,
       "scenario": "HS256 keyed with the public key (V-14)",
-      "sha256": "d0cb9fc8fcf93acc9690a756601127c0550a37b200ade96fa95860e88f54cc6e"
+      "sha256": "c2b35e32907e7be353f30f0e12d78c3cf2d44e22ca71b11dad87d02f14c6536a"
     },
     {
       "id": "G13",
@@ -664,7 +723,7 @@
       "kind": "grant",
       "valid": false,
       "scenario": "kid not in the pinned JWKS (V-14)",
-      "sha256": "58c67ecd3dedf81e88088cce563b09595da39d93d424bf28889c78d0325129bd"
+      "sha256": "20031105efea752457b969bcfceefbf9cedfff0a26b1a829c4f71a2491af7470"
     },
     {
       "id": "G14",
@@ -672,7 +731,7 @@
       "kind": "grant",
       "valid": false,
       "scenario": "payload swapped to another customer, original signature (V-13/V-19)",
-      "sha256": "285de322949e1301fe4136d225382d1ca20efcfc8bf6e39e0e52db452f21039b"
+      "sha256": "46e283ffc47f664e4648e0e924313447088d878cae8567b042842d98dd069dd9"
     },
     {
       "id": "G15",
@@ -696,7 +755,7 @@
       "kind": "grant",
       "valid": false,
       "scenario": "typ JWT instead of cia-grant+jwt",
-      "sha256": "62fdfcef718f031f6bc2141b58462a087ebc1cb330c6854ee330cc64d73a3667"
+      "sha256": "2a226348382914d595520e88330adee6ee84b44005451953f38005fe34a3c793"
     },
     {
       "id": "G18",
@@ -704,23 +763,23 @@
       "kind": "grant",
       "valid": false,
       "scenario": "signed claims without jti",
-      "sha256": "dc410a9d5971974d04913a3184ce421bc1b4a2f2b054a49b4d688de1207a28cd"
+      "sha256": "5e6e8aae44359527cf3e787ab977411610707b5d8ad487c7883454f7e8571ed9"
     },
     {
       "id": "G20",
       "file": "fixtures/grants/G20.incompatible.expired.json",
       "kind": "grant",
       "valid": false,
-      "scenario": "used after exp (V-15)",
-      "sha256": "945892627a66e25b6b1798516a886af50a466b2b7c1549010207ef92c67fe903"
+      "scenario": "used at exp: no skew on expiry (V-15)",
+      "sha256": "0ff10dd0e30941da39ecd4815d9b947a8b7ef57d003a67335045e30fa74cbeba"
     },
     {
       "id": "G21",
       "file": "fixtures/grants/G21.incompatible.not-yet-valid.json",
       "kind": "grant",
       "valid": false,
-      "scenario": "nbf beyond the allowed skew",
-      "sha256": "52ffaa973bef2efcd6012e7c9a319c11e4bf8092d54caef275ded35ef7d0e972"
+      "scenario": "nbf 120 s after iat, used at iat",
+      "sha256": "a561daf2d94a40d4bec37ce6fe5d959f13e1216dc60c4dc9c74472a7f55a4295"
     },
     {
       "id": "G22",
@@ -728,7 +787,7 @@
       "kind": "grant",
       "valid": false,
       "scenario": "exp - iat = 900 s (V-15)",
-      "sha256": "68d6c158f9fb8227f6c75a10d9dd6a24970422a9cba246180579a6b343fb6cd7"
+      "sha256": "d9b6676e369ef73ad4f9702e204eebc9b1cfa6ccbc20ca6f637a2de615e07f40"
     },
     {
       "id": "G23",
@@ -736,7 +795,7 @@
       "kind": "grant",
       "valid": false,
       "scenario": "grant for another service (V-17)",
-      "sha256": "a8177759e981bbbb422ae6af80091886d96aa9165d899e12aff9d1520ef7f096"
+      "sha256": "b10cb8b5f62c3a590d320bf2c5c9b98ce123ddf4cf51df61ea4a1bf67eb0eaa5"
     },
     {
       "id": "G24",
@@ -744,7 +803,7 @@
       "kind": "grant",
       "valid": false,
       "scenario": "presented by another principal (V-17)",
-      "sha256": "c954a2043e69e291e8dce5783480619c60e4cac117897f5e543821e726a0f065"
+      "sha256": "ef300371b33bbeb5f19f6745f00ada7aa76badf1ac490d005e5fd94fdac32728"
     },
     {
       "id": "G25",
@@ -752,7 +811,7 @@
       "kind": "grant",
       "valid": false,
       "scenario": "valid grant of A used for B (V-13)",
-      "sha256": "a9cfde0840251604272ab867123525a821bc034db7f753cde08e2aa371aa399b"
+      "sha256": "90f831afd2fa8b1933c520d5b8d1c3627e0bb25509c6d82f044c2894ac848bd3"
     },
     {
       "id": "G26",
@@ -760,7 +819,7 @@
       "kind": "grant",
       "valid": false,
       "scenario": "sales_context grant used for purchase_history (V-18)",
-      "sha256": "03285de5afb6083b022a01fb683b6c1cd4020a2ab501531c34818cf68f63dab7"
+      "sha256": "0c50d1514ec36c5a38d28551917a86111562834a0eecf644c7c6b20833316845"
     },
     {
       "id": "G27",
@@ -768,7 +827,7 @@
       "kind": "grant",
       "valid": false,
       "scenario": "issuer not pinned",
-      "sha256": "1c59f443bce4b3abc48761a79a98390cad0f9f665369eafa146837c5dbe88634"
+      "sha256": "3beb32f37a92de18edf7811752eff34ee601895857dd274048edebd9129d2637"
     },
     {
       "id": "G28",
@@ -776,13 +835,227 @@
       "kind": "grant",
       "valid": false,
       "scenario": "claims version 2",
-      "sha256": "0de7a7badbba3e92549a022cebf59445470c60ba32baba0fffa28df1b453622e"
+      "sha256": "11898143319cfc1a69d0b4614d866b4a38db5b01caf65d350e8072d2f712a0cb"
+    },
+    {
+      "id": "G30",
+      "file": "fixtures/grants/G30.temporal.issued-in-future.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "iat one hour ahead of the verifier",
+      "sha256": "44f05efe36364300d1fd3bbf3b76a1351c6d97a2c0a3c5537ef00e1d22a919f1"
+    },
+    {
+      "id": "G31",
+      "file": "fixtures/grants/G31.temporal.nbf-after-exp.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "nbf later than exp: empty validity window",
+      "sha256": "a781f6f60bf86c9590ac25709b812ccc07c7148ff3a569fff225b9e521ddaddd"
+    },
+    {
+      "id": "G32",
+      "file": "fixtures/grants/G32.temporal.exp-before-iat.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "exp earlier than iat",
+      "sha256": "65baac3c94732a45f1098da750dd515932c612ee79de1d4cfe725aba0e6adb40"
+    },
+    {
+      "id": "G33",
+      "file": "fixtures/grants/G33.temporal.nbf-before-iat.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "nbf backdated before iat",
+      "sha256": "89b7b679dedc8e179a13969b775700e605dde1df7f86c8c3c203fcb01770b731"
+    },
+    {
+      "id": "G34",
+      "file": "fixtures/grants/G34.temporal.vat-after-iat.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "proof of control later than issuance",
+      "sha256": "7a17bd2d70701784a4091e58099ec201fbd41963eda3725e6f3c39b6d4b19943"
+    },
+    {
+      "id": "G35",
+      "file": "fixtures/grants/G35.temporal.proof-too-old.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "proof of control older than the maximum link age (90 days)",
+      "sha256": "d6006560e56d2aebb6a9ab3acfd8e9e11fb2d2d482378abe972d2f8356312cfc"
+    },
+    {
+      "id": "G36",
+      "file": "fixtures/grants/G36.temporal.iat-not-integer.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "iat as a string",
+      "sha256": "452b726a6c0849bb28f5af8f78008467254aa775460f0833b4ca71930e75c5b5"
+    },
+    {
+      "id": "G37",
+      "file": "fixtures/grants/G37.temporal.exp-fractional.json",
+      "kind": "grant",
+      "valid": false,
+      "scenario": "exp with a fraction of a second",
+      "sha256": "0ee307e3b87037ce932cf22e37e19f11d5e10cd531a11f844da1776741666aeb"
     },
     {
       "id": "GCFG",
       "file": "fixtures/grants/verifier-config.json",
       "kind": "verifier-config",
-      "sha256": "e9550000f91a4d942d267214948e60599cd32b63db3a00338bc8983861e3f475"
+      "sha256": "f2049316e1991870e60405f1baf211e99e1395b380118b59a4897054769f855e"
+    },
+    {
+      "id": "D01",
+      "file": "fixtures/idempotency/D01.dedup-timeout-retry.json",
+      "kind": "delivery-scenario",
+      "rules": [
+        5,
+        6
+      ],
+      "scenario": "provider with reliable deduplication: a timeout is retried with the same dedupKey; the provider delivers once",
+      "sha256": "b1026fd00bfcd8ad0b8df65ceba4d8719031f19dd60c50611be93ce88da9d932"
+    },
+    {
+      "id": "D02",
+      "file": "fixtures/idempotency/D02.no-dedup-timeout-reconciled-sent.json",
+      "kind": "delivery-scenario",
+      "rules": [
+        5,
+        6
+      ],
+      "scenario": "no reliable deduplication: a timeout is never resent blindly; reconciliation finds it sent",
+      "sha256": "1d594b00da64134df9e522bbf8cbeba878812f54a088e9016a7ca3f6fc2796c1"
+    },
+    {
+      "id": "D03",
+      "file": "fixtures/idempotency/D03.no-dedup-timeout-reconciled-not-sent.json",
+      "kind": "delivery-scenario",
+      "rules": [
+        5,
+        6
+      ],
+      "scenario": "no reliable deduplication: reconciliation proves it was not sent, then one resend",
+      "sha256": "2e69ea0a919f0817afe6fc192c20387a57d1df0d5218c77ffac404948ff1cf5f"
+    },
+    {
+      "id": "D04",
+      "file": "fixtures/idempotency/D04.transient-error-retry.json",
+      "kind": "delivery-scenario",
+      "rules": [
+        5,
+        6
+      ],
+      "scenario": "definite transient rejection (nothing sent): retried",
+      "sha256": "bb053f0e074d7d718317e056c0b8806e4ff121f753e57f20550a27234ee988ec"
+    },
+    {
+      "id": "D05",
+      "file": "fixtures/idempotency/D05.no-dedup-unknown-until-expiry.json",
+      "kind": "delivery-scenario",
+      "rules": [
+        5,
+        6
+      ],
+      "scenario": "no reliable deduplication and reconciliation stays unknown: abandoned at challenge expiry, never resent",
+      "sha256": "e70ef844aae773fcb0d0181d581a1bf0fd7d6e21c7854651da1ce0dbe6e2dd18"
+    },
+    {
+      "id": "I01",
+      "file": "fixtures/idempotency/I01.concurrent-same-key.json",
+      "kind": "idempotency-scenario",
+      "rules": [
+        1,
+        8
+      ],
+      "scenario": "two simultaneous requests with the same key and body: one execution; the other gets operation_in_progress; later replays get the stored result",
+      "sha256": "8e91b4c1f31fcfcd02ada0a09439f602e8189559231255d39af45704dec43ae6"
+    },
+    {
+      "id": "I02",
+      "file": "fixtures/idempotency/I02.key-reused-other-body.json",
+      "kind": "idempotency-scenario",
+      "rules": [
+        2
+      ],
+      "scenario": "the same key with another body is 409 idempotency_conflict and has no effect",
+      "sha256": "0407d9f69f1f44cea6b85a47e04a761eb17848635f9cee2bb09c5d41b6e6e512"
+    },
+    {
+      "id": "I03",
+      "file": "fixtures/idempotency/I03.transient-failure-then-retry.json",
+      "kind": "idempotency-scenario",
+      "rules": [
+        3,
+        4
+      ],
+      "scenario": "account provider down after a correct code: 503, nothing consumed, the key is released; the retry with the same key executes once",
+      "sha256": "629c177188cf14e626c0cc567676762c21b30d66f1095e1de29581d624b053d2"
+    },
+    {
+      "id": "I04",
+      "file": "fixtures/idempotency/I04.wrong-code-replay.json",
+      "kind": "idempotency-scenario",
+      "rules": [
+        4
+      ],
+      "scenario": "a replayed wrong code does not consume a second attempt; a new key does",
+      "sha256": "ae676aab466af43f6478b96f45299cc18dd23f3eb0e7d1c4fb54d4ad39843b72"
+    },
+    {
+      "id": "I05",
+      "file": "fixtures/idempotency/I05.crash-lease-takeover.json",
+      "kind": "idempotency-scenario",
+      "rules": [
+        1,
+        8
+      ],
+      "scenario": "the first execution dies before committing: operation_in_progress until the 30 s lease ends, then one execution",
+      "sha256": "d7ca132019cd4a50fdb1ae35f32f00040102ec92f37114f9bd8b2e8be4b1340c"
+    },
+    {
+      "id": "I06",
+      "file": "fixtures/idempotency/I06.start-replay-and-retention.json",
+      "kind": "idempotency-scenario",
+      "rules": [
+        5,
+        9
+      ],
+      "scenario": "a replayed start returns the stored 202 and queues no second email, even after the challenge expired; after 24 h the key is forgotten and executes again",
+      "sha256": "2532300685270d84b9748ef0c1273227ecb38a411c35cd2c4a8998afda904640"
+    },
+    {
+      "id": "I07",
+      "file": "fixtures/idempotency/I07.confirm-replay-after-challenge-expiry.json",
+      "kind": "idempotency-scenario",
+      "rules": [
+        9
+      ],
+      "scenario": "a completed confirm replays its stored outcome after the challenge expired; a new key sees the expired challenge",
+      "sha256": "505db238f44181d701ca3188752b759df57d8d5e100cda42c780aec30e5ce6ff"
+    },
+    {
+      "id": "I08",
+      "file": "fixtures/idempotency/I08.start-delivery-unavailable.json",
+      "kind": "idempotency-scenario",
+      "rules": [
+        3,
+        5
+      ],
+      "scenario": "delivery known unavailable before any challenge is created: 503, key released; the retry creates one challenge and queues one email",
+      "sha256": "d36c6c4112a73dce8d53af0d9ba0141893377772736b388b9a2fe02e91c8bf4d"
+    },
+    {
+      "id": "I09",
+      "file": "fixtures/idempotency/I09.identity-includes-route.json",
+      "kind": "idempotency-scenario",
+      "rules": [
+        2
+      ],
+      "scenario": "the same key on another route is another operation (no 409)",
+      "sha256": "62d9fc2b63e1ec1757ce61b992bdc45003891ded8f593bb0f93c5d1824dbe05d"
     }
   ]
 }

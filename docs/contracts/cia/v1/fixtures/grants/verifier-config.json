@@ -11,13 +11,14 @@
   ],
   "maxTtlSeconds": 300,
   "clockSkewSeconds": 60,
+  "maxProofAgeSeconds": 7776000,
   "maxTokenBytes": 2048,
   "jwks": {
     "keys": [
       {
         "kty": "EC",
-        "x": "_iCIkKnp_soJJB-HkkJzXpUXcZigjBmn6KlYibuiqvg",
-        "y": "RJ_f6XDYvfft_yGFpDVAy2cNmDpF0cnrCPcgvFk7_58",
+        "x": "fH0KUeBlTxkRjmSdPP86luAqLOcXC5U_bsDxTROvOys",
+        "y": "JImy1khZv7qbk3plPAAL9a10D3r8qdZeU6mzOAT2FSQ",
         "crv": "P-256",
         "kid": "cia-synthetic-s0",
         "alg": "ES256",

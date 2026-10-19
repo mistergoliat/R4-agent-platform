@@ -1,0 +1,20 @@
+{
+  "id": "D02",
+  "rules": [
+    5,
+    6
+  ],
+  "title": "no reliable deduplication: a timeout is never resent blindly; reconciliation finds it sent",
+  "providerDeduplicates": false,
+  "providerResults": [
+    "timeout_sent"
+  ],
+  "reconciliation": [
+    "sent"
+  ],
+  "expect": {
+    "state": "sent",
+    "providerCalls": 1,
+    "delivered": 1
+  }
+}

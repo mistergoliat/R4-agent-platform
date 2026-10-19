@@ -2,8 +2,8 @@
 
 | Campo | Valor |
 |---|---|
-| Revisión | `v1-s0-candidate` (2026-10-19) |
-| Mandato | R4-J4-CIA-S0-CONTRACT-FOUNDATION-01 |
+| Revisión | `v1-s0-candidate` (2026-10-19), endurecida por HARDENING-01: idempotencia (§4.1) e invariantes temporales del grant (§6.3) |
+| Mandatos | R4-J4-CIA-S0-CONTRACT-FOUNDATION-01; R4-J4-CIA-S0-CONTRACT-HARDENING-01 |
 | Estado | **CANDIDATO. No aprobado.** Requiere la aprobación del owner productor de la CIA (por designar, D1) y, para §6–§8, del owner de Customer Profile (D2) |
 | Dirección de diseño | Omnicanal, seleccionada (OMNICHANNEL-ALIGNMENT-01). Arquitectura B: CIA independiente |
 | Base | [Revisión omnicanal](../../../architecture/R4_J4_R3_CIA_OMNICHANNEL_DESIGN_REVIEW.md) (prevalece), [propuesta de contrato](../../../architecture/R4_J4_R3_CIA_CONTRACT_PROPOSAL.md), [informe de descubrimiento](../../../architecture/R4_J4_R3_CIA_DISCOVERY_REPORT.md). Esos tres documentos quedan como **históricos**: este documento es la **única especificación normativa** de la API de consumidores v1 |
@@ -55,7 +55,7 @@ Regla: un modelo **NO DEBE** poder construir el `context`. Las capacidades del c
 - Solo `POST` con cuerpo `application/json`. Ningún identificador en path ni query.
 - `Authorization: Bearer <credencial del principal>`.
 - `x-correlation-id`: `^[A-Za-z0-9._:-]{1,128}$`.
-- `idempotency-key`: `^[A-Za-z0-9._:-]{16,128}$`, **obligatorio** en las operaciones con efecto (§5.1, §5.2, §5.4). Misma clave y mismo cuerpo, del mismo principal, en 24 h: se devuelve la primera respuesta, sin un segundo efecto (no reenvía el correo, no consume un intento). Misma clave con otro cuerpo: 409 `idempotency_conflict`.
+- `idempotency-key`: `^[A-Za-z0-9._:-]{16,128}$`, **obligatorio** en las operaciones con efecto (§5.1, §5.2, §5.4). Semántica completa en §4.1.
 - `schemaVersion: 1` obligatorio en peticiones y respuestas 2xx.
 - Peticiones **cerradas**: una propiedad desconocida es 400 `invalid_request`.
 - Respuestas: los schemas describen v1 exactamente. Un consumidor DEBE ignorar campos que no conoce (cambios aditivos solo con una revisión nueva del contrato).
@@ -67,7 +67,8 @@ Regla: un modelo **NO DEBE** poder construir el `context`. Las capacidades del c
 | 400 | `invalid_request` | false | Cuerpo inválido (incluye email con `\|`, `%`, `[`, `]` o espacios) |
 | 401 | `unauthenticated` | false | Credencial ausente o inválida |
 | 403 | `consumer_not_allowed` | false | Scope ausente; `channel`, `channelAccountRef` o propósito fuera de la allowlist; `subjectAssurance` insuficiente. Error de configuración, **nunca** un estado del cliente |
-| 409 | `idempotency_conflict` | false | Clave reutilizada con otro cuerpo |
+| 409 | `idempotency_conflict` | false | Clave reutilizada con otro cuerpo (§4.1) |
+| 409 | `operation_in_progress` | true | Misma clave y mismo cuerpo mientras la primera petición sigue ejecutándose; header `Retry-After` ≤ lease restante (§4.1) |
 | 429 | `rate_limited` | true | Cualquier límite, sin indicar cuál; idéntico para todos |
 | 503 | `dependency_unavailable` | true | Proveedor de cuentas no disponible. **Nunca** se responde un estado falso |
 | 503 | `delivery_unavailable` | true | Proveedor de correo no disponible |
@@ -83,6 +84,60 @@ Objeto `context` ([`cia-common.v1.schema.json`](schemas/cia-common.v1.schema.jso
   "subjectAssurance": "provider_signed"
 }
 ```
+
+### 4.1 Idempotencia
+
+Aplica a `verifications`, `verifications/confirm` y `links/revoke`. `resolve` es de lectura y no lleva clave.
+
+**Identidad de la operación:** `(principal autenticado, método y ruta, idempotency-key)`. La misma clave en otra ruta o de otro principal es otra operación (I09).
+
+**Fingerprint:** `HMAC-SHA256(clave de fingerprint, JCS(cuerpo))`, con JCS = RFC 8785 (JSON canónico). Una clave con otro fingerprint es 409 `idempotency_conflict` sin efecto (I02).
+
+**Antes de reservar:** autenticación, autorización, validación del cuerpo y límites de tasa se evalúan **antes** de tocar el registro. Sus errores (400, 401, 403, 429) no crean registro.
+
+**Registro** (uno por identidad):
+
+| Estado | Significado | Otra petición con la misma identidad y el mismo fingerprint |
+|---|---|---|
+| — (ausente) | Nunca vista, liberada o retención vencida | Reserva **atómica** (insert-if-absent): una sola gana y ejecuta |
+| `in_progress` | Reservada; lease de 30 s | 409 `operation_in_progress` (`retryable: true`, `Retry-After` ≤ lease restante). **No** ejecuta (I01) |
+| `in_progress`, lease vencido | El ejecutor murió sin confirmar | Toma el control y ejecuta. Es seguro: ningún efecto se confirma sin completar el registro en la misma transacción (I05) |
+| `completed` | Resultado terminal guardado | Misma respuesta (estado HTTP y cuerpo), **sin** efecto, hasta 24 h después de completarse (I01, I04, I06, I07) |
+
+**Regla de confirmación:** el efecto interno de la operación (contador de intentos, consumo del desafío, vínculo, revocación, creación del desafío y su entrada en la cola de envío) y el paso a `completed` se confirman en **una sola transacción**. Por eso un reintento nunca repite el efecto y un intento de OTP nunca se cuenta dos veces (I04).
+
+**Resultado por operación:**
+
+| Operación | Terminal (`completed`) | Fallo transitorio sin efecto (registro **liberado**: el siguiente reintento ejecuta) |
+|---|---|---|
+| `verifications` | 202 (desafío y envío encolado confirmados) | 503 `delivery_unavailable`: la entrega se sabe no disponible **antes** de crear el desafío; uniforme para cualquier email (I08) |
+| `verifications/confirm` | 200 con cualquier `outcome`, incluidos `invalid_code`, `expired` y `locked` | 503 `dependency_unavailable`: código correcto con el proveedor de cuentas caído; nada se consume (I03) |
+| `links/revoke` | 200 | 503 `dependency_unavailable` (almacenamiento) |
+
+**Efecto externo: envío del correo del desafío.** Lo hace la entrega de la CIA fuera de la petición; el 202 no depende de él (respuesta uniforme). La clave de deduplicación ante el proveedor es el `verificationId`.
+
+| Estado del envío | Transición |
+|---|---|
+| `pending` | Se llama al proveedor |
+| `sent` | **Efecto externo confirmado** (aceptación del proveedor). Terminal |
+| `pending` (reintento) | Rechazo transitorio definitivo: no se envió nada (D04) |
+| `pending` (reintento) | Resultado **desconocido** (timeout) **y** el proveedor deduplica de forma fiable por la clave durante todo el TTL del desafío: se reintenta con la **misma** clave (D01) |
+| `reconciliation_required` | Resultado desconocido **sin** deduplicación fiable: **no** se reenvía. Se reconcilia consultando al proveedor: `sent` (D02), `not_sent` → `pending` (D03), desconocido hasta la expiración del desafío → `abandoned` (D05) |
+
+Un envío tardío o duplicado de un código viejo es inocuo: un desafío nuevo invalida el anterior. El cliente puede pedir un desafío nuevo (otra clave), sujeto a reenvío ≥ 60 s y a los límites.
+
+**Contenido del registro (regla 7):** identidad, fingerprint, estado, lease, retención y la respuesta terminal. **Nunca** el OTP, el email, el `context` ni el cuerpo de la petición. Las respuestas guardadas no contienen secretos: `outcome`, o el 202 con `verificationId`, que sin el código no sirve.
+
+**Plazos:**
+
+| Plazo | Valor | Relación |
+|---|---|---|
+| Lease de `in_progress` | 30 s | ≪ TTL del desafío (600 s). Acota la espera de `operation_in_progress` |
+| TTL del desafío | 600 s | Los reintentos tras un 503 solo tienen sentido dentro de él; después, `confirm` responde `expired` (I07) |
+| Retención de `completed` | 24 h desde la terminación | Una repetición dentro de 24 h devuelve la respuesta guardada **aunque el desafío ya haya expirado o se haya consumido**. No crea un desafío ni envía un correo (I06, I07) |
+| Tras 24 h | — | La clave se olvida: reutilizarla es una operación nueva. `verifications` crearía otro desafío (con límites, e invalidando el anterior); `confirm` vería el desafío consumido o expirado, sin efecto. Un consumidor **NO DEBE** reutilizar claves después de 24 h |
+
+Conformidad: escenarios I01–I09 y D01–D05 ([`fixtures/idempotency/`](fixtures/idempotency/)), ejecutados contra un modelo de referencia en la prueba de contrato. **No** es almacenamiento de producción (CIA-S1).
 
 ## 5. Operaciones
 
@@ -114,7 +169,7 @@ Respuesta **202** ([fixture](fixtures/verification-start/response.challenge-issu
 - La CIA **NO DEBE** consultar al proveedor de cuentas en este paso. El OTP se envía siempre al email declarado.
 - Un desafío nuevo invalida el anterior del mismo sujeto.
 - El email se guarda cifrado solo hasta consumir o expirar el desafío; después, solo su HMAC.
-- Errores: 400, 401, 403, 409, 429, 503 `delivery_unavailable`.
+- Errores: 400, 401, 403, 409 (`idempotency_conflict`, `operation_in_progress`), 429, 503 `delivery_unavailable` (sin desafío creado; §4.1).
 
 ### 5.2 Confirmar verificación
 
@@ -135,7 +190,8 @@ Respuesta **200**: `{ "schemaVersion": 1, "outcome": … }` (+ `attemptsRemainin
 
 - **NUNCA** devuelve una referencia de cuenta ni un grant (VC92 es inválido).
 - Con cualquier principal sin el scope de confirmación: 403 `consumer_not_allowed`, sin tocar el desafío.
-- 503 `dependency_unavailable`: el desafío **no** se consume y puede reintentarse dentro de su TTL (con la misma `idempotency-key`).
+- 503 `dependency_unavailable`: el desafío **no** se consume, el intento **no** cuenta y la clave se libera; el reintento con la misma `idempotency-key` ejecuta de nuevo dentro del TTL del desafío (§4.1, I03). Un código incorrecto nunca da 503: no necesita al proveedor.
+- La Channel Integration **NO DEBE** mostrar al usuario un 503 de forma distinta a "procesando": un 503 tras un código implica que el código era correcto.
 - Revelar el resultado a quien probó controlar el buzón no es enumeración.
 
 ### 5.3 Resolver
@@ -181,7 +237,7 @@ JWS compacto, **ES256** (P-256), **TTL máximo 300 s**. Schema: [`grant.v1.schem
 | `azp` | Principal consumidor; DEBE ser igual al principal autenticado ante el verificador | Sí |
 | `sub` | Referencia de cuenta con namespace (`prestashop_customer:<id>` en v1) | Sí |
 | `purposes` | Propósitos de datos concedidos (1–8, únicos) | Sí |
-| `iat`, `nbf`, `exp` | Segundos Unix; `exp − iat ≤ 300` | Sí |
+| `iat`, `nbf`, `exp` | Segundos Unix enteros. El emisor fija `iat = nbf` = instante de emisión y `exp ≤ iat + 300`, sin superar la ventana de verificación reciente (plano C) ni `revalidate_after` del vínculo (plano B). Invariantes en §6.3 | Sí |
 | `jti` | ULID | Sí |
 | `lnk`, `lver` | Vínculo y su versión (revocación v1.1) | Sí |
 | `amr` | `["email_otp"]` | Sí |
@@ -209,14 +265,32 @@ Header `x-customer-access-grant: <JWS>` junto al `Authorization: Bearer` del con
 | 9 | `iss` fijado | `wrong_issuer` | G27 |
 | 10 | `aud` = el verificador | `wrong_audience` | G23 |
 | 11 | `azp` = principal autenticado | `consumer_mismatch` | G24 |
-| 12 | `nbf ≤ ahora + 60 s` | `not_yet_valid` | G21 |
-| 13 | `exp > ahora` | `expired` | G20 |
-| 14 | `exp − iat ≤ 300` | `ttl_too_long` | G22 |
-| 15 | `sub` = `customerRef` del cuerpo | `customer_mismatch` | G25 |
-| 16 | `purpose` del cuerpo ∈ `purposes` | `purpose_not_granted` | G26 |
-| 17 | (v1.1, OD-CIA-4) `lnk`/`lver` no revocados | `revoked` | — |
+| 12 | Coherencia interna: `vat ≤ iat ≤ nbf < exp` **y** `iat − vat ≤ 90 días` | `invalid_time_claims` | G31–G35 |
+| 13 | `exp − iat ≤ 300` | `ttl_too_long` | G22 |
+| 14 | `iat ≤ ahora + 60 s` | `issued_in_future` | G30 |
+| 15 | `nbf ≤ ahora + 60 s` | `not_yet_valid` | G21 |
+| 16 | `exp > ahora` (sin tolerancia) | `expired` | G20 |
+| 17 | `sub` = `customerRef` del cuerpo | `customer_mismatch` | G25 |
+| 18 | `purpose` del cuerpo ∈ `purposes` | `purpose_not_granted` | G26 |
+| 19 | (v1.1, OD-CIA-4) `lnk`/`lver` no revocados | `revoked` | — |
 
-Aceptación: G01, G02. Fallo: **403** `{ "error": "grant_rejected", "reason": <motivo> }` (`grant.v1.schema.json#/$defs/rejection`), **propuesto**: el formato de error de CP no cambia hasta que su owner lo acepte. Para R4 no cambia nada: cualquier 403 es `unauthorized` sin reintento.
+Un claim temporal que no es un entero ≥ 0 (cadena, fracción, negativo) falla en el paso 7 como `malformed` (G36, G37).
+
+**Invariantes temporales:**
+
+| # | Invariante | Motivo |
+|---|---|---|
+| T1 | Todos los instantes son segundos Unix enteros | Sin ambigüedad de unidad ni de redondeo |
+| T2 | `vat ≤ iat` | La prueba de control no puede ser posterior a la emisión |
+| T3 | `iat ≤ nbf < exp` | Sin `nbf` retroactivo ni ventana vacía o invertida |
+| T4 | `exp − iat ≤ 300` | TTL máximo del grant (plano D) |
+| T5 | `iat − vat ≤ 90 días` (`maxProofAgeSeconds`, fijado en el verificador) | Defensa en profundidad: ningún grant puede apoyarse en una prueba más vieja que el vínculo más largo (plano B). La ventana por propósito (plano C, 24 h candidata) la aplica el **emisor** |
+| T6 | `iat ≤ ahora + 60 s` y `nbf ≤ ahora + 60 s` | Tolerancia de desfase **acotada a 60 s** y solo hacia el futuro: absorbe un reloj del emisor adelantado. Impide emisiones arbitrariamente futuras |
+| T7 | `exp > ahora`, **sin** tolerancia | Un verificador adelantado invalida el grant hasta 60 s antes (fallo cerrado); nunca lo prolonga más allá de 300 s |
+
+Consecuencia: la vida efectiva máxima de un grant en cualquier verificador es `exp − (iat − 60) ≤ 360 s` de reloj del verificador, y nunca más de 300 s de reloj del emisor. Bordes aceptados: G03 (un segundo antes de `exp`) y G04 (emisor 60 s adelantado). Los pasos 12–13 no dependen del reloj del verificador.
+
+Aceptación: G01–G04. Fallo: **403** `{ "error": "grant_rejected", "reason": <motivo> }` (`grant.v1.schema.json#/$defs/rejection`), **propuesto**: el formato de error de CP no cambia hasta que su owner lo acepte. Para R4 no cambia nada: cualquier 403 es `unauthorized` sin reintento.
 
 ### 6.4 Revocación
 
@@ -282,6 +356,8 @@ Decisiones pendientes para aceptar D2 (DEP-12): las nueve filas **Pendiente CP**
 | SR-08 | Sin acceso a datos reales mientras D1 y D2 estén pendientes | §11 |
 | SR-09 | Minimización: sin email, `subjectRef`, código ni token en claro en respuestas, logs o auditoría; claves separadas (HMAC, cifrado de email, firma, proveedor) | §5, §6.1 |
 | SR-10 | Email validado antes de cualquier filtro del proveedor (`\|`, `%`, `[`, `]`, espacios) | VS90 |
+| SR-11 | Idempotencia sin doble efecto: reserva atómica, efecto y terminación en una transacción, ningún secreto en el registro, ningún reenvío ciego de correo | §4.1; I01–I09, D01–D05 |
+| SR-12 | Grants temporalmente coherentes, con desfase acotado a 60 s y sin emisión futura | §6.3 T1–T7; G03, G04, G20–G22, G30–G37 |
 
 ## 10. Bloqueos de integración
 
@@ -297,7 +373,7 @@ Decisiones pendientes para aceptar D2 (DEP-12): las nueve filas **Pendiente CP**
 |---|---|
 | Diferido | El webhook solo persiste y responde; un worker entrega a la CIA fuera de la petición |
 | Secreto en reposo | El código **NO DEBE** quedar en `inbound_events.content`, `memory_entries`, `task_inputs`, telemetría ni ningún almacenamiento conversacional. Si debe esperar a un worker, solo en un almacén dedicado, cifrado, con TTL ≤ TTL del desafío y borrado al entregar |
-| Idempotencia | `idempotency-key` derivada de `(channel, providerEventId)`: un reenvío del proveedor o un reintento del worker no consume un segundo intento (§4) |
+| Idempotencia | `idempotency-key` derivada de `(channel, providerEventId)`: un reenvío del proveedor o un reintento del worker no consume un segundo intento. 409 `operation_in_progress` y 503 se reintentan con la **misma** clave; 409 `idempotency_conflict` es un error de programación, terminal (§4.1) |
 | Fallos de la CIA | 503/timeout: reintento con backoff dentro del TTL del desafío. 4xx: terminal. Al agotar el TTL, la tarea se reanuda con un marcador sin código (`outcome` no disponible) |
 | Orden | Respetar el orden de llegada por conversación: un código no puede adelantar a un desafío nuevo que lo invalidó |
 | Reanudación | Entrada de plataforma sin código (patrón `unsupportedContentMarker`) |
@@ -337,7 +413,7 @@ Alternativas a evaluar: O1 diferido (puerto de desvío + almacén cifrado efíme
 | Artefacto | Contenido |
 |---|---|
 | `schemas/` | 7 schemas: común, 4 operaciones (`$defs/request`, `$defs/response`), error, grant (`header`, `claims`, `rejectionReason`, `rejection`) |
-| `fixtures/` | 44 cuerpos (28 válidos, 16 inválidos), 20 casos de grant (2 aceptados, 18 rechazados), `grants/verifier-config.json` (JWKS público sintético) |
+| `fixtures/` | 45 cuerpos (29 válidos, 16 inválidos), 30 casos de grant (4 aceptados, 26 rechazados), `grants/verifier-config.json` (JWKS público sintético y límites temporales), 9 escenarios de idempotencia (I01–I09) y 5 de envío de correo (D01–D05) |
 | `MANIFEST.json` | Procedencia, escenarios exigidos → fixtures, y `sha256(JSON.stringify(JSON.parse(file)))` de cada schema y fixture |
 
 Verificar:
@@ -352,11 +428,27 @@ node tests/support/generate-cia-s0-fixtures.mjs   # recalcula hashes; sin cambio
 ## 13. Estado
 
 ```text
-CIA_S0_CONTRACT_CANDIDATE_READY
-CIA_CORE_CHANNEL_AGNOSTIC
-CIA_CORE_ACCOUNT_PROVIDER_AGNOSTIC
+CIA_S0_CONTRACT_HARDENED
+CIA_S0_READY_FOR_OWNER_REVIEW
+CIA_S1_SYNTHETIC_IMPLEMENTATION_READY
 D1_OWNER_PENDING
 D2_CP_APPROVAL_PENDING
 R4_HARNESS_UNCHANGED
 CUSTOMER_REAL_DATA_ACCESS_BLOCKED
 ```
+
+Histórico (FOUNDATION-01): `CIA_S0_CONTRACT_CANDIDATE_READY`, `CIA_CORE_CHANNEL_AGNOSTIC`, `CIA_CORE_ACCOUNT_PROVIDER_AGNOSTIC`. Siguen vigentes.
+
+## 14. Preparación de CIA-S1
+
+CIA-S1 (núcleo con buzón falso y proveedor de cuentas falso, revisión §12) puede empezar como **implementación sintética aislada**, en un repositorio o paquete propio de la CIA, sin tocar R4.
+
+| Entrada para S1 | Artefacto |
+|---|---|
+| Contrato de la API | §4–§5 y los schemas |
+| Vectores de conformidad de cuerpos | Fixtures VS/VC/RS/LR/ER |
+| Vectores de idempotencia y envío | I01–I09, D01–D05 y el modelo de referencia de la prueba |
+| Vectores del grant (para S4) | G01–G37 y el verificador de referencia |
+| Requisitos de seguridad | SR-01 a SR-12 |
+
+**No** requiere para S1: D1 (lo requiere publicar el contrato, CS-10), D2 (lo requiere S4/CP-S5), SEC-OTP-01/02 (lo requiere R4-S6) ni datos reales (S8). Requiere una **autorización explícita** del slice y la ubicación del código de la CIA.

@@ -1,0 +1,21 @@
+{
+  "id": "D03",
+  "rules": [
+    5,
+    6
+  ],
+  "title": "no reliable deduplication: reconciliation proves it was not sent, then one resend",
+  "providerDeduplicates": false,
+  "providerResults": [
+    "timeout_not_sent",
+    "accepted"
+  ],
+  "reconciliation": [
+    "not_sent"
+  ],
+  "expect": {
+    "state": "sent",
+    "providerCalls": 2,
+    "delivered": 1
+  }
+}

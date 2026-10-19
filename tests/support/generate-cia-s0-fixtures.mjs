@@ -64,9 +64,19 @@ function generateGrants() {
     ['G16', 'forged.missing', 'no grant header', null, 'missing'],
     ['G17', 'forged.wrong-typ', 'typ JWT instead of cia-grant+jwt', es256({ ...header, typ: 'JWT' }, claims), 'malformed'],
     ['G18', 'forged.claims-schema', 'signed claims without jti', es256(header, withoutJti), 'malformed'],
-    ['G20', 'incompatible.expired', 'used after exp (V-15)', valid, 'expired', { verifyAt: IAT + 300 }],
-    ['G21', 'incompatible.not-yet-valid', 'nbf beyond the allowed skew', valid, 'not_yet_valid', { verifyAt: IAT - 120 }],
+    ['G03', 'valid.last-second', 'accepted one second before exp', valid, null, { verifyAt: IAT + 299 }],
+    ['G04', 'valid.issuer-clock-ahead', 'issuer clock 60 s ahead of the verifier (maximum skew)', valid, null, { verifyAt: IAT - 60 }],
+    ['G20', 'incompatible.expired', 'used at exp: no skew on expiry (V-15)', valid, 'expired', { verifyAt: IAT + 300 }],
+    ['G21', 'incompatible.not-yet-valid', 'nbf 120 s after iat, used at iat', es256(header, { ...claims, nbf: IAT + 120 }), 'not_yet_valid', { verifyAt: IAT }],
     ['G22', 'incompatible.ttl-too-long', 'exp - iat = 900 s (V-15)', es256(header, { ...claims, exp: IAT + 900 }), 'ttl_too_long'],
+    ['G30', 'temporal.issued-in-future', 'iat one hour ahead of the verifier', es256(header, { ...claims, iat: IAT + 3600, nbf: IAT + 3600, exp: IAT + 3900 }), 'issued_in_future'],
+    ['G31', 'temporal.nbf-after-exp', 'nbf later than exp: empty validity window', es256(header, { ...claims, nbf: IAT + 400 }), 'invalid_time_claims'],
+    ['G32', 'temporal.exp-before-iat', 'exp earlier than iat', es256(header, { ...claims, exp: IAT - 1 }), 'invalid_time_claims'],
+    ['G33', 'temporal.nbf-before-iat', 'nbf backdated before iat', es256(header, { ...claims, nbf: IAT - 3600 }), 'invalid_time_claims'],
+    ['G34', 'temporal.vat-after-iat', 'proof of control later than issuance', es256(header, { ...claims, vat: IAT + 10 }), 'invalid_time_claims'],
+    ['G35', 'temporal.proof-too-old', 'proof of control older than the maximum link age (90 days)', es256(header, { ...claims, vat: IAT - 7776001 }), 'invalid_time_claims'],
+    ['G36', 'temporal.iat-not-integer', 'iat as a string', es256(header, { ...claims, iat: String(IAT) }), 'malformed'],
+    ['G37', 'temporal.exp-fractional', 'exp with a fraction of a second', es256(header, { ...claims, exp: IAT + 299.5 }), 'malformed'],
     ['G23', 'incompatible.wrong-audience', 'grant for another service (V-17)', es256(header, { ...claims, aud: 'other-service' }), 'wrong_audience'],
     ['G24', 'incompatible.consumer-mismatch', 'presented by another principal (V-17)', valid, 'consumer_mismatch', { request: { principal: 'other-consumer' } }],
     ['G25', 'incompatible.customer-mismatch', 'valid grant of A used for B (V-13)', valid, 'customer_mismatch', { request: { customerRef: 'prestashop_customer:900000202' } }],
@@ -84,7 +94,7 @@ function generateGrants() {
   }
   write('grants/verifier-config.json', {
     synthetic: true, iss: ISS, aud: 'customer-profile', typ: 'cia-grant+jwt', algorithms: ['ES256'], supportedClaimsVersions: [1],
-    maxTtlSeconds: 300, clockSkewSeconds: 60, maxTokenBytes: 2048,
+    maxTtlSeconds: 300, clockSkewSeconds: 60, maxProofAgeSeconds: 7776000, maxTokenBytes: 2048,
     jwks: { keys: [{ ...issuer.publicKey.export({ format: 'jwk' }), kid: KID, alg: 'ES256', use: 'sig' }] },
   });
   write('resolve/response.verified.json', {
@@ -140,6 +150,7 @@ const BODIES = [
   ['ER05', 'errors/rate-limited.json', ER, true, 429, 'any limit, indistinguishable'],
   ['ER06', 'errors/dependency-unavailable.json', ER, true, 503, 'dependency unavailable: account provider down, challenge not consumed (V-21)'],
   ['ER07', 'errors/delivery-unavailable.json', ER, true, 503, 'dependency unavailable: email delivery'],
+  ['ER08', 'errors/operation-in-progress.json', ER, true, 409, 'same idempotency key and body while the first request is still executing'],
   ['ER90', 'errors/invalid.dependency-unavailable-not-retryable.json', ER, false, 503, 'retryable must follow the code', { instancePath: '/error/retryable', keyword: 'const' }],
   ['ER91', 'errors/invalid.free-text-message.json', ER, false, 400, 'no free text (CS-04)', { instancePath: '/error', keyword: 'additionalProperties' }],
 ];
@@ -156,6 +167,8 @@ const SCENARIOS = {
   dependency_unavailable: ['ER06', 'ER07'],
   grant_issued: ['G01', 'G02', 'RS10'],
   grant_forged_or_incompatible: ['G10', 'G11', 'G12', 'G13', 'G14', 'G15', 'G16', 'G17', 'G18', 'G20', 'G21', 'G22', 'G23', 'G24', 'G25', 'G26', 'G27', 'G28'],
+  grant_temporal_coherence: ['G03', 'G04', 'G20', 'G21', 'G22', 'G30', 'G31', 'G32', 'G33', 'G34', 'G35', 'G36', 'G37'],
+  idempotency: ['ER04', 'ER08', 'I01', 'I02', 'I03', 'I04', 'I05', 'I06', 'I07', 'I08', 'I09', 'D01', 'D02', 'D03', 'D04', 'D05'],
 };
 
 if (process.argv.includes('--grants')) generateGrants();
@@ -187,6 +200,10 @@ const manifest = {
       return { id: g.id, file: `fixtures/grants/${file}`, kind: 'grant', valid: g.expected.accepted, scenario: g.scenario, sha256: hash(read(`fixtures/grants/${file}`)) };
     }),
     { id: 'GCFG', file: 'fixtures/grants/verifier-config.json', kind: 'verifier-config', sha256: hash(read('fixtures/grants/verifier-config.json')) },
+    ...readdirSync(join(FIX, 'idempotency')).sort().map((file) => {
+      const s = JSON.parse(read(`fixtures/idempotency/${file}`));
+      return { id: s.id, file: `fixtures/idempotency/${file}`, kind: s.id.startsWith('D') ? 'delivery-scenario' : 'idempotency-scenario', rules: s.rules, scenario: s.title, sha256: hash(read(`fixtures/idempotency/${file}`)) };
+    }),
   ],
 };
 writeFileSync(join(ROOT, 'MANIFEST.json'), `${JSON.stringify(manifest, null, 2)}\n`);
