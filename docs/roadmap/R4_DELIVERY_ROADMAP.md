@@ -27,7 +27,7 @@ requiere autorización explícita (AGENTS.md).
 | R4-I | Governed Production | **En progreso** — implementado sobre R4 POST-H RECOVERY BASELINE `dd06a68`; pendiente de auditoría (§3.11) |
 | R4-J | Sales Autonomy | **En progreso**: J3 cerrado (2026-10-15, `main` `b5fd288`); hitos en §1.1 |
 | R4-K | Platform Generalization Test (Marketing Analyst) | No iniciado |
-| R4-L | Extended Platform | No iniciado |
+| R4-L | Extended Platform | No iniciado. Incluye *Payment* (PRD §40); registro de planificación J5.5 — Checkout & Payments en §1.2 (`PLANNED / IMPLEMENTATION_DEFERRED`) |
 
 **Post-H Architecture Gap Review** (gate humano, **no** una fase): GAP-H-001
 confirmado y **resuelto** (ADR-028, §3.10; publicado en `dd06a68`). No se abrió
@@ -43,22 +43,26 @@ automáticamente.
 | J3 — Quote Integration & Autonomous Issuance | **CLOSED** (`CLOSED_WITH_RESCOPED_ACCEPTANCE`) | Integración comercial y emisión autónoma. [Registro de cierre](../acceptance/R4_J3_CLOSURE_RECORD.md) |
 | J4 — Customer Profile | **NEXT** (no iniciado) | Perfil de cliente |
 | J4.5 — Catalog | **PLANNED** | Optimización e integración de Catalog; después se reevalúa la eficiencia del agente (aceptación J3 §17) |
-| J5.5 — Autonomous Checkout & Payment Orchestration | **PLANNED / IMPLEMENTATION_DEFERRED** | De cotización aceptada a pedido pagado y registrado, mediante un microservicio externo (`checkout-service`, nombre provisional). Entre J5 y J6; gates propios, no bloquea J6/J7. Detalle en §1.2 |
 | R4 Media & Communications | **DEFERRED** | Capacidades multimedia y entrega de documentos (J3F, §4.2) |
 | J7 — Production Readiness | **NOT PRODUCTION READY** | Gobernanza operacional y habilitación de clientes reales (gates del registro de brechas J3) |
 
-### 1.2 J5.5 — Autonomous Checkout & Payment Orchestration (registro, 2026-10-19)
+### 1.2 R4-L — J5.5 Autonomous Checkout & Payment Orchestration (registro de planificación, 2026-10-19)
 
 ```text
 Estado: PLANNED / IMPLEMENTATION_DEFERRED
+Fase:   R4-L — Extended Platform (PRD §40: Payment)
 ```
 
-Registro de alcance futuro (mandato R4-J55-ROADMAP-REGISTRATION-01). **No autoriza
-diseño ni implementación**, no reserva versiones, perfiles, capacidades ni números de
-migración, y no modifica el alcance aprobado de J4.
+Registro de alcance futuro (mandatos R4-J55-ROADMAP-REGISTRATION-01 y
+R4-J55-ROADMAP-ALIGNMENT-01). **No autoriza diseño ni implementación**, no reserva
+versiones, perfiles, capacidades ni números de migración, y no modifica el alcance ni
+la prioridad aprobados de J4.
 
-**Posición.** Entre J5 y J6. J5 y J6 todavía no tienen fila en la tabla de §1.1;
-cuando se registren, J5.5 queda ordenado después de J5 y antes de J6.
+**Pertenencia y nombre.** Según el PRD §40 vigente, Checkout & Payments pertenece a
+**R4-L — Extended Platform**, no a los hitos de R4-J (§1.1). `J5.5` es solo un
+**identificador provisional de planificación**: no implica que existan hitos J5 o J6
+formalmente definidos en este roadmap (no los hay), ni fija una posición o secuencia
+obligatoria respecto de otros hitos.
 
 **Objetivo.** Ejecutar el proceso comercial desde una cotización aceptada hasta un
 pedido pagado y registrado, mediante un microservicio independiente del harness,
@@ -94,21 +98,22 @@ son conceptos de dominio y no entran en R4 Core (AGENTS.md).
 
 - J3: contratos Quote estabilizados.
 - J4: CIA v1 y vinculación comercial con PrestaShop.
-- J5: integración del checkout en las capacidades del agente Sales.
+- Integración del checkout en las capacidades del agente Sales (alcance aún no
+  registrado como hito en este roadmap).
 - Migración y validación de PrestaShop 8.2.3.
 - Investigación de la integración oficial con Mercado Pago.
 
-**Gates.** J5.5 no es un gate bloqueante de los alcances originales de J6 ni de J7.
-Sus pruebas de aceptación y su habilitación productiva tendrán gates propios, que se
-definirán en su diseño. Como mínimo aplican los invariantes del PRD §41
+**Gates.** J5.5 no es un gate bloqueante de los alcances originales de ningún hito de
+R4-J, J7 incluido. Sus pruebas de aceptación y su habilitación productiva tendrán
+gates propios, que se definirán en su diseño. Como mínimo aplican los invariantes del PRD §41
 (`wrong-customer write = 0`, `unauthorized write = 0`,
 `duplicate irreversible effect = 0`, `material false-success = 0`): un pago y un
 pedido son efectos irreversibles y requieren ejecución gobernada.
 
-**Relación con el PRD.** El PRD §40 lista *Payment* dentro de R4-L (Extended
-Platform). Este registro no cambia el PRD: J5.5 ubica el pago en un servicio de
-dominio externo invocado por capacidades, no como extensión de la plataforma. La
-autorización para iniciar J5.5 debe resolver explícitamente esa relación.
+**Relación con el PRD.** El PRD §40 lista *Payment* dentro de R4-L, que comienza
+"después de validar R4 Core". Este registro se ajusta a esa ubicación y no modifica el
+PRD. Cualquier cambio de fase o de secuencia requiere una enmienda explícita del PRD
+y autorización del owner (AGENTS.md).
 
 **Fuera de alcance de este registro:** implementación de `checkout-service`,
 integración real con Mercado Pago, creación de clientes o pedidos en PrestaShop,
