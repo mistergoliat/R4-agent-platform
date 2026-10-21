@@ -1,3 +1,4 @@
+import type { Logger } from 'pino';
 import { createPlatform, type Platform } from '@r4/api';
 import { createGatewayPlatform, type GatewayPlatform } from '@r4/channel-gateway';
 import type { TrustedHumanContext } from '@r4/contracts';
@@ -46,6 +47,8 @@ export interface TestbedOptions {
   readonly catalog?: CatalogPort & { readonly bindingKind: string };
   /** (SEC-OTP) The gateway's identity-verification composition; the bed then migrates its schema. Absent: none (R4-I). */
   readonly identityVerification?: IdentityVerificationInspectionOptions;
+  /** (SEC-S7) The gateway logger (default: silent), e.g. to sweep its output for leaked secrets. */
+  readonly gatewayLogger?: Logger;
 }
 
 /**
@@ -71,6 +74,7 @@ export class LiveOpsTestbed {
   #workers: WorkerPlatform[] = [];
   readonly #catalog: (CatalogPort & { readonly bindingKind: string }) | undefined;
   #identityVerification: IdentityVerificationInspectionOptions | undefined;
+  #gatewayLogger: Logger | undefined;
   #timestamp = Math.floor(Date.now() / 1000) - 600;
 
   private constructor(fields: { db: TestDatabase; pool: Pool; api: Platform; gateway: GatewayPlatform; provider: FakeWhatsAppProvider; production: { config: ProductionConfig; secrets: ProductionSecrets }; model: FakeModelProvider; queue: QueuedStep[]; env: Record<string, string>; catalog?: CatalogPort & { readonly bindingKind: string } }) {
@@ -115,7 +119,7 @@ export class LiveOpsTestbed {
     const production = loadProductionConfig(env);
     const logger = createSilentLogger();
     const api = await createPlatform({ databaseUrl: db.url, host: '127.0.0.1', port: 0, logLevel: 'silent', agentDefinitionsDir: options.agentDefinitionsDir ?? SALES_AGENT_DIR, dbPoolMax: 4 }, { logger, humanContext: () => OPERATOR });
-    const gateway = await startGateway(db.url, pool, production, env, options.identityVerification);
+    const gateway = await startGateway(db.url, pool, production, env, options.identityVerification, options.gatewayLogger);
     const queue: QueuedStep[] = [];
     const model = new FakeModelProvider((request, index) => {
       const next = queue.shift();
@@ -124,6 +128,7 @@ export class LiveOpsTestbed {
     });
     const bed = new LiveOpsTestbed({ db, pool, api, gateway, provider, production, model, queue, env: { ...env, R4_DATABASE_URL: db.url }, ...(options.catalog ? { catalog: options.catalog } : {}) });
     bed.#identityVerification = options.identityVerification;
+    bed.#gatewayLogger = options.gatewayLogger;
     if (options.autonomy) await bed.setAutonomy(true);
     return bed;
   }
@@ -137,7 +142,7 @@ export class LiveOpsTestbed {
     const env = { ...this.env, R4_PROD_ROLLOUT_ALLOWLIST: rollout.allowlist.map(keyOf).join(',') };
     const production = loadProductionConfig(env);
     await this.gateway.close();
-    this.gateway = await startGateway(this.db.url, this.pool, production, env, this.#identityVerification);
+    this.gateway = await startGateway(this.db.url, this.pool, production, env, this.#identityVerification, this.#gatewayLogger);
     this.production = production;
     this.env = env;
   }
@@ -151,7 +156,7 @@ export class LiveOpsTestbed {
     // A gateway that refused to start left the previous (closed) one in place.
     await this.gateway.close().catch(() => undefined);
     this.#identityVerification = identityVerification;
-    this.gateway = await startGateway(this.db.url, this.pool, this.production, this.env, identityVerification);
+    this.gateway = await startGateway(this.db.url, this.pool, this.production, this.env, identityVerification, this.#gatewayLogger);
   }
 
   /** Queues the stand-in model's next decisions, one per model call. */
@@ -242,11 +247,11 @@ export class LiveOpsTestbed {
   }
 }
 
-function startGateway(databaseUrl: string, pool: Pool, production: { config: ProductionConfig; secrets: ProductionSecrets }, env: Readonly<Record<string, string | undefined>>, identityVerification?: IdentityVerificationInspectionOptions): Promise<GatewayPlatform> {
+function startGateway(databaseUrl: string, pool: Pool, production: { config: ProductionConfig; secrets: ProductionSecrets }, env: Readonly<Record<string, string | undefined>>, identityVerification?: IdentityVerificationInspectionOptions, logger?: Logger): Promise<GatewayPlatform> {
   const { bindings } = composeSalesGateway({ pool, production, env });
   // (SEC-OTP) The synthetic composition plugs the inspector in, as a deployment would; absent: exactly R4-I.
   const inspected = identityVerification ? { ...bindings, inspection: identityVerificationInspection(identityVerification) } : bindings;
-  return createGatewayPlatform({ databaseUrl, host: '127.0.0.1', port: 0, logLevel: 'silent', dbPoolMax: 4, gatewayId: 'gateway-test', dispatch: false, resumeAfterMs: 1000 }, inspected, { logger: createSilentLogger() });
+  return createGatewayPlatform({ databaseUrl, host: '127.0.0.1', port: 0, logLevel: 'silent', dbPoolMax: 4, gatewayId: 'gateway-test', dispatch: false, resumeAfterMs: 1000 }, inspected, { logger: logger ?? createSilentLogger() });
 }
 
 export interface WorkerOverridesForTest {
