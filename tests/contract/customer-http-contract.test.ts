@@ -183,6 +183,8 @@ describe('package boundaries', () => {
       'agents/sales/src/capabilities/customer-synthetic.ts',
       'agents/sales/src/capabilities/customer-v2.ts',
       'agents/sales/src/capabilities/customer-v3.ts',
+      // SEC-S5: the identity verification capabilities (CIA start client types), synthetic composition only.
+      'agents/sales/src/capabilities/identity-verification.ts',
     ]);
   });
 });

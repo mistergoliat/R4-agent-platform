@@ -66,6 +66,9 @@ export interface PinnedIdentityContract {
   /** SEC-S4: POST /v1/identity/verifications/confirm. */
   readonly validateConfirmRequest: ValidateFunction;
   readonly validateConfirmResponse: ValidateFunction;
+  /** SEC-S5: POST /v1/identity/verifications. */
+  readonly validateStartRequest: ValidateFunction;
+  readonly validateStartResponse: ValidateFunction;
 }
 
 const addFormats = ((addFormatsImport as unknown as { default?: unknown }).default ?? addFormatsImport) as (ajv: Ajv2020) => Ajv2020;
@@ -94,14 +97,20 @@ export function pinnedIdentityContract(): PinnedIdentityContract {
   const confirm = load('schemas/verification-confirm.v1.schema.json');
   ajv.addSchema(resolve);
   ajv.addSchema(error);
+  const start = load('schemas/verification-start.v1.schema.json');
   ajv.addSchema(confirm);
+  ajv.addSchema(start);
   const validateRequest = ajv.getSchema(`${resolve.$id}#/$defs/request`);
   const validateResponse = ajv.getSchema(`${resolve.$id}#/$defs/response`);
   const validateError = ajv.getSchema(error.$id);
   const validateConfirmRequest = ajv.getSchema(`${confirm.$id}#/$defs/request`);
   const validateConfirmResponse = ajv.getSchema(`${confirm.$id}#/$defs/response`);
-  if (!validateRequest || !validateResponse || !validateError || !validateConfirmRequest || !validateConfirmResponse) throw new CustomerIdentityContractPinError('the pinned CIA schemas did not compile');
-  pinned = { ownerCommit: source.ownerCommit, revision: source.revision, validateRequest, validateResponse, validateError, validateConfirmRequest, validateConfirmResponse };
+  const validateStartRequest = ajv.getSchema(`${start.$id}#/$defs/request`);
+  const validateStartResponse = ajv.getSchema(`${start.$id}#/$defs/response`);
+  if (!validateRequest || !validateResponse || !validateError || !validateConfirmRequest || !validateConfirmResponse || !validateStartRequest || !validateStartResponse) {
+    throw new CustomerIdentityContractPinError('the pinned CIA schemas did not compile');
+  }
+  pinned = { ownerCommit: source.ownerCommit, revision: source.revision, validateRequest, validateResponse, validateError, validateConfirmRequest, validateConfirmResponse, validateStartRequest, validateStartResponse };
   return pinned;
 }
 

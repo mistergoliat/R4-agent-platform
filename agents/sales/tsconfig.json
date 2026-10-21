@@ -80,6 +80,9 @@
     },
     {
       "path": "../../adapters/channels/whatsapp-cloud"
+    },
+    {
+      "path": "../../adapters/domains/identity/verification"
     }
   ]
 }

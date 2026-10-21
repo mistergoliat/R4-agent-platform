@@ -90,6 +90,9 @@ export class VerificationInspector implements InboundInspector<PoolClient> {
         const binding = { responseId, expectationId: live.expectationId, channel: context.channel, providerEventId: context.providerEventId };
         await store.captureResponse(tx, { ...binding, sealed: this.#o.box.seal(result.submission.code, binding) });
         captured = true;
+      } else if (result.kind === 'replace' && accepts && live && WITHHELD_UNDER_ACCEPTING.has(result.reason)) {
+        // SEC-S5 `code_needed`: the platform redacted a number under an accepting challenge without spending an attempt.
+        await store.recordWithheld(tx, { expectationId: live.expectationId, channel: context.channel, providerEventId: context.providerEventId, reason: result.reason });
       }
       await tx.query('release savepoint identity_verification_inspection');
       this.#emit({ event: 'verification.inspected', reason: result.kind === 'pass' ? 'pass' : result.reason, captured, channel: context.channel, expectationId, errorCode: null });
@@ -112,6 +115,9 @@ export class VerificationInspector implements InboundInspector<PoolClient> {
     }
   }
 }
+
+/** Reasons for which R4 redacted a number without sending it although the challenge accepted a code (decision §7.3). */
+const WITHHELD_UNDER_ACCEPTING: ReadonlySet<string> = new Set(['multiple_candidates', 'ambiguous_digits', 'not_six_digits', 'context_not_allowed']);
 
 /** The live expectation belongs to the binding and task the inbound arrives on, and that task accepts input. */
 function isCurrent(live: ExpectationRecord, context: TrustedChannelContext): boolean {

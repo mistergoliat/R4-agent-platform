@@ -299,6 +299,40 @@ export class IdentityVerificationStore {
     });
   }
 
+  /** SEC-S5: the most recent expectation opened for a binding (any state), for the commercial status. */
+  async latestForBinding(bindingId: string): Promise<ExpectationRecord | null> {
+    return guard(async () => {
+      const row = await one(this.#pool, 'select * from identity_verification.expectations where binding_id = $1 order by created_at desc, expectation_id desc limit 1', [bindingId]);
+      return row ? expectationOf(row) : null;
+    });
+  }
+
+  /**
+   * SEC-S5 (migration 0014): records, inside the inbound transaction, that a number reached a live,
+   * accepting expectation and was redacted WITHOUT being sent (no CIA attempt). Reason only.
+   */
+  async recordWithheld(client: PoolClient, withheld: { readonly expectationId: string; readonly channel: string; readonly providerEventId: string; readonly reason: string }): Promise<void> {
+    return guard(async () => {
+      await client.query(
+        `insert into identity_verification.withheld_submissions (channel, provider_event_id, expectation_id, reason) values ($1, $2, $3, $4)
+         on conflict (channel, provider_event_id) do nothing`,
+        [withheld.channel, withheld.providerEventId, withheld.expectationId, withheld.reason],
+      );
+    });
+  }
+
+  /** `code_needed`: the latest message under the challenge was withheld, after any code it received. */
+  async codeNeeded(expectationId: string): Promise<boolean> {
+    return guard(async () => {
+      const r = await this.#pool.query<{ needed: boolean }>(
+        `select coalesce((select max(received_at) from identity_verification.withheld_submissions where expectation_id = $1)
+                         > coalesce((select max(received_at) from identity_verification.responses where expectation_id = $1), '-infinity'::timestamptz), false) as needed`,
+        [expectationId],
+      );
+      return r.rows[0]?.needed === true;
+    });
+  }
+
   // ── Responses ─────────────────────────────────────────────────────────────────────────────────
 
   /**

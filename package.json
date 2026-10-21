@@ -63,6 +63,7 @@
     "test:mutation:identity-verification-state": "node tests/mutation/identity-verification-state-mutations.mjs",
     "test:mutation:identity-verification-ingress": "node tests/mutation/identity-verification-ingress-mutations.mjs",
     "test:mutation:identity-verification-dispatch": "node tests/mutation/identity-verification-dispatch-mutations.mjs",
+    "test:mutation:identity-verification-commercial": "node tests/mutation/identity-verification-commercial-mutations.mjs",
     "test:mutation:rr1": "node tests/mutation/rr1-revalidation-mutations.mjs",
     "production:sales:plan": "node agents/sales/dist/cli/production.js --plan",
     "production:sales:validate": "node agents/sales/dist/cli/production.js --validate",

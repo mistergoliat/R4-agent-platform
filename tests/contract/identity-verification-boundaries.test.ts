@@ -44,7 +44,11 @@ const ALLOWED_IMPORTS: Readonly<Record<string, readonly string[]>> = {
 };
 
 /** The only files outside the package (and the tests) that may use it, and why. */
-const INTEGRATIONS: readonly string[] = [];
+const INTEGRATIONS: readonly string[] = [
+  // S5: the commercial layer reads and opens expectations (types and the store only), synthetic composition only.
+  'agents/sales/src/capabilities/customer-synthetic.ts',
+  'agents/sales/src/capabilities/identity-verification.ts',
+];
 
 describe('SEC-S4: only the gateway composition ever reaches the decryption, the dispatcher or the confirm credential (AT-19)', () => {
   const SECRET_SURFACE = /SecretBox|Keyring|VerificationConfirmDispatcher|CiaVerificationConfirmClient|loadCiaVerificationConfirmConfig|R4_CHANNEL_IDENTITY_CONFIRM_BEARER_TOKEN|R4_PROD_VERIFICATION_CODE_KEYS/;
@@ -63,6 +67,16 @@ describe('SEC-S4: only the gateway composition ever reaches the decryption, the 
       .map((path) => relative(ROOT, path).replace(/\\/g, '/'));
     expect(users.sort()).toEqual(['adapters/domains/identity/http/src/confirm.ts']);
     for (const { path, text } of sources) expect(text, path).not.toMatch(/@r4-adapters\/identity-http/);
+  });
+});
+
+describe('SEC-S5: the commercial capabilities exist only in the synthetic composition (R4_LIVE_CUSTOMER_CAPABILITIES_DISABLED)', () => {
+  it('no Sales profile, definition, registry, CLI or bootstrap names them', () => {
+    const named = files(join(ROOT, 'agents'))
+      .concat(files(join(ROOT, 'agents/sales'), '.json'))
+      .filter((path) => /identity\.start_verification|identity\.verification_status|identityStartVerificationCapability|identityVerificationStatusCapability|composeSyntheticIdentityVerificationCapabilities|IDENTITY_VERIFICATION_CAPABILITY_IDS/.test(readFileSync(path, 'utf8')))
+      .map((path) => relative(ROOT, path).replace(/\\/g, '/'));
+    expect(named.sort()).toEqual(['agents/sales/src/capabilities/customer-synthetic.ts', 'agents/sales/src/capabilities/identity-verification.ts']);
   });
 });
 

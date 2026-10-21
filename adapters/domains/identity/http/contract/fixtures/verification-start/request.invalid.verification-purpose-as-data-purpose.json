@@ -1,0 +1,1 @@
+{ "schemaVersion": 1, "context": { "channel": "whatsapp", "channelAccountRef": "100000000000001", "subjectRef": "15555550101", "sessionRef": "bnd_synthetic_0001", "subjectAssurance": "provider_signed" }, "email": "valid@synthetic.test", "purposes": ["link_commercial_account", "purchase_history"] }
