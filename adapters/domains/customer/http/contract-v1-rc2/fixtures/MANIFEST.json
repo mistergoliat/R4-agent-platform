@@ -1,0 +1,46 @@
+{
+  "contract": "customer-profile.sales-context",
+  "schemaVersion": 1,
+  "revision": "v1-rc2",
+  "owner": "MS-pesaschile-customer-profile",
+  "contractStatus": "candidate",
+  "schemas": [
+    "schemas/customer-sales-context-v1.schema.json",
+    "schemas/customer-sales-context-request-v1.schema.json"
+  ],
+  "generator": "synthetic fixtures authored for J4-D2-CONTRACT-REVISION-01 (REV-05); no producer emits them yet (CP-S5 not authorized)",
+  "hash": "sha256(JSON.stringify(JSON.parse(file)))",
+  "inherits": {
+    "revision": "v1-rc1",
+    "manifest": "../../customer-sales-context-v1/fixtures/MANIFEST.json",
+    "rule": "every v1-rc1 fixture keeps its verdict under v1-rc2"
+  },
+  "fixtures": [
+    {
+      "id": "EG1",
+      "file": "error-grant-rejected.json",
+      "kind": "error",
+      "endpoint": "POST /v1/capabilities/customer/sales-context",
+      "purpose": null,
+      "httpStatus": 403,
+      "status": "grant_rejected",
+      "valid": true,
+      "hypothetical": false,
+      "note": "public 403 body for any customer-grant failure, including a missing grant",
+      "sha256": "544d9e09403ca2c49209bf20023840f2eb398dd59ff3a6728ada8f77da9a1fa3"
+    },
+    {
+      "id": "EG2",
+      "file": "error-grant-rejected-with-reason.invalid.json",
+      "kind": "error",
+      "endpoint": "POST /v1/capabilities/customer/sales-context",
+      "purpose": null,
+      "httpStatus": 403,
+      "status": "grant_rejected",
+      "valid": false,
+      "hypothetical": false,
+      "note": "INVALID: a public reason is forbidden; the reason stays in the audit",
+      "sha256": "13687698a59e5557247af020044cadd7f2febd6cb6d603fb0d480f5efc8399f9"
+    }
+  ]
+}

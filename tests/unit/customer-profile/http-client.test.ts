@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DomainError } from '@r4-adapters/domains';
 import { CUSTOMER_PROFILE_MAX_RESPONSE_BYTES, CustomerProfileHttpClient, readBounded } from '@r4-adapters/customer-http';
-import { answer, clientWith, clone, CONFIG, fixtureById, get, grantFor, NOW, set, streamOf, TOKEN, type Json, type JsonObject } from './support.js';
+import { answer, clientWith, clone, CONFIG, fixtureById, get, GRANT_TOKEN, grantFor, grantVerified, NOW, set, streamOf, TOKEN, type Json, type JsonObject } from './support.js';
 
 // R4-J4-R2: Customer Profile HTTP client, unit level (injected fetch, synthetic bodies only).
 
@@ -25,7 +25,8 @@ describe('request serialization', () => {
     expect(url).toBe('http://127.0.0.1:4310/v1/capabilities/customer/sales-context');
     expect(init.method).toBe('POST');
     expect(init.body).toBe('{"customerRef":"prestashop_customer:900000201","purpose":"sales_context"}');
-    expect(init.headers).toEqual({ accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${TOKEN}`, 'x-correlation-id': 'r4:run.1' });
+    expect(init.headers).toEqual({ accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${TOKEN}`, 'x-correlation-id': 'r4:run.1', 'x-customer-access-grant': GRANT_TOKEN });
+    expect(init.redirect).toBe('manual');
   });
 
   it('purchase_history carries its page; the purpose comes from the operation, never from an argument', async () => {
@@ -34,13 +35,13 @@ describe('request serialization', () => {
     expect(calls[0]!.init.body).toBe('{"customerRef":"prestashop_customer:900000301","purpose":"purchase_history","page":{"limit":10,"offset":0}}');
   });
 
-  it('never sends the grant (D2 does not exist) and drops an invalid correlation id', async () => {
+  it('R4-J4-R3: sends the grant once, unmodified, only in x-customer-access-grant (never in the body or URL), and drops an invalid correlation id', async () => {
     const { client, calls } = clientWith(() => answer(200, SC01()));
     await client.getSalesContext(REF, grantFor(), { correlationId: 'has space' });
-    const sent = JSON.stringify(calls[0]);
-    expect(sent).not.toContain('synthetic-grant-not-sent');
-    expect(calls[0]!.init.headers['x-correlation-id']).toBeUndefined();
-    expect(Object.keys(calls[0]!.init.headers).some((name) => /grant/i.test(name))).toBe(false);
+    const { url, init } = calls[0]!;
+    expect(init.headers['x-correlation-id']).toBeUndefined();
+    expect(Object.entries(init.headers).filter(([name]) => /grant/i.test(name))).toEqual([['x-customer-access-grant', GRANT_TOKEN]]);
+    expect(`${url}${init.body}`).not.toContain(GRANT_TOKEN.split('.')[0]!);
   });
 });
 
@@ -145,7 +146,7 @@ describe('transport, deadline and size', () => {
   });
 
   it('64 KiB of UTF-8 passes; one byte more is response_too_large, cut on the stream', async () => {
-    const base = JSON.stringify(SC01());
+    const base = JSON.stringify(grantVerified(SC01()));
     const padTo = (bytes: number) => `${base.slice(0, -1)}${' '.repeat(bytes - Buffer.byteLength(base))}}`;
     const ok = clientWith(() => answer(200, padTo(CUSTOMER_PROFILE_MAX_RESPONSE_BYTES)));
     await expect(ok.client.getSalesContext(REF, grantFor())).resolves.toMatchObject({ status: 'available' });
@@ -266,10 +267,8 @@ describe('lifecycle and authorization basis (AP-05)', () => {
     for (const body of [SC01(), approved]) await expect(clientWith(() => answer(200, body)).client.getSalesContext(REF, grantFor())).resolves.toMatchObject({ status: 'available' });
   });
 
-  it('a verified customer grant that R4 never sent is incoherent', async () => {
-    const body = SC01();
-    set(body, 'provenance.authorizationBasis', 'customer_grant_verified');
-    expect((await failureOf(clientWith(() => answer(200, body)).client.getSalesContext(REF, grantFor()))).code).toBe('authorization_basis_incoherent');
+  it('R4-J4-R3: with the grant sent, an answer authorized by the bearer alone (service_scope_only) is refused', async () => {
+    expect((await failureOf(clientWith(() => answer(200, SC01(), {}, { asServed: true })).client.getSalesContext(REF, grantFor()))).code).toBe('authorization_basis_insufficient');
   });
 
   it('deprecated is refused in every mode', async () => {
@@ -283,7 +282,7 @@ describe('lifecycle and authorization basis (AP-05)', () => {
     expect((await failureOf(candidate.client.getSalesContext(REF, grantFor()))).code).toBe('contract_not_approved');
     const approved = SC01();
     set(approved, 'provenance.contractStatus', 'approved');
-    const scopeOnly = clientWith(() => answer(200, approved), { lifecycle: 'real' });
+    const scopeOnly = clientWith(() => answer(200, approved, {}, { asServed: true }), { lifecycle: 'real' });
     expect((await failureOf(scopeOnly.client.getSalesContext(REF, grantFor()))).code).toBe('authorization_basis_insufficient');
   });
 });
@@ -332,8 +331,8 @@ describe('telemetry and logs carry no identifier, token, grant or fact', () => {
     }
     const everything = JSON.stringify([events, lines]);
     expect(events.length).toBe(4);
-    for (const secret of ['900000301', 'prestashop_customer', TOKEN, 'synthetic-grant-not-sent', 'Rack sintetico', 'ana@example.com']) expect(everything, secret).not.toContain(secret);
-    expect(events[0]).toMatchObject({ purpose: 'purchase_history', outcome: 'ok', httpStatus: 200, cacheControlNoStore: true, diagnostics: { contractStatus: 'candidate', authorizationBasis: 'service_scope_only', timezoneStatus: 'unverified' } });
+    for (const secret of ['900000301', 'prestashop_customer', TOKEN, GRANT_TOKEN, ...GRANT_TOKEN.split('.'), 'Rack sintetico', 'ana@example.com']) expect(everything, secret).not.toContain(secret);
+    expect(events[0]).toMatchObject({ purpose: 'purchase_history', outcome: 'ok', httpStatus: 200, cacheControlNoStore: true, diagnostics: { contractStatus: 'candidate', authorizationBasis: 'customer_grant_verified', timezoneStatus: 'unverified' } });
     vi.restoreAllMocks();
   });
 });

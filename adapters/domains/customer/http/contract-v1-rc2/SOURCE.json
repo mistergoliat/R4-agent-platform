@@ -1,0 +1,68 @@
+{
+  "owner": "MS-pesaschile-customer-profile",
+  "contract": "customer-profile.sales-context",
+  "schemaVersion": 1,
+  "revision": "v1-rc2",
+  "contractStatus": "candidate",
+  "ownerCommit": "bbd766ef4b32c0ceb1065f9b7791f63f46798ef9",
+  "ownerRef": "origin/main (CP-S5 merged: fff8ac7, PR #26; report bbd766e, PR #27)",
+  "copiedFrom": "git show bbd766e:<ownerPath>, byte for byte (R4-J4-R3, 2026-10-21). Read-only contract evidence: never edited in R4.",
+  "inherits": {
+    "revision": "v1-rc1",
+    "pinnedIn": [
+      "contract/",
+      "fixtures/"
+    ],
+    "rule": "every v1-rc1 fixture keeps its verdict under v1-rc2 (owner MANIFEST)"
+  },
+  "runtime": "wire.ts validates CP answers against these schemas since R4-J4-R3; the v1-rc1 copies stay as R2 regression evidence",
+  "hashRules": {
+    "sha256": "sha256(file bytes, LF)",
+    "contentSha256": "sha256(JSON.stringify(JSON.parse(file))), the owner MANIFEST rule",
+    "gitBlob": "git hash-object of the same bytes"
+  },
+  "files": [
+    {
+      "file": "contract-v1-rc2/customer-sales-context-v1.schema.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1-rc2/schemas/customer-sales-context-v1.schema.json",
+      "gitBlob": "236ee0d707185b6d44edbbd53de02d27c39d0574",
+      "sha256": "d391dc69a1688c450a6f265e52ddf79abe2a1fa4e80e53e82fe2b04a2b171cde",
+      "contentSha256": "fc29ea6bd1c6a6bd2978fc8a119cc3389207ca3587012530759ce3d2e8b6ea36"
+    },
+    {
+      "file": "contract-v1-rc2/customer-sales-context-request-v1.schema.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1-rc2/schemas/customer-sales-context-request-v1.schema.json",
+      "gitBlob": "5ed606750b1e1fc03535928f16e69717e9a989df",
+      "sha256": "702fd87a1b4fde4291a9337a83f3fdb9232293185e5728ef6ffe427e7b304f8d",
+      "contentSha256": "c8da52af2a393d4bc32726699d0cc21816e73d176aebee40e9a51eb1b9b8efa3"
+    },
+    {
+      "file": "contract-v1-rc2/owner-SOURCE.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1-rc2/SOURCE.json",
+      "gitBlob": "6fedb49c8d05fc7b99683e7b6cf40e137214cfc7",
+      "sha256": "d590375d00e064a0d6d09b4788ca637ffd3d5b1f5d3eb82cce60fc7065787f4d",
+      "contentSha256": "8d22d6f796db6e4d495f299ba63055668d71400a85aeec87d1c47114d4cc4690"
+    },
+    {
+      "file": "contract-v1-rc2/fixtures/MANIFEST.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1-rc2/fixtures/MANIFEST.json",
+      "gitBlob": "b37f30031535dd8f1e97c96243dbe344528055a0",
+      "sha256": "a6e6bc69676060bec6b5b0de333ad5150c1022233977950799b685a6e7cc69e7",
+      "contentSha256": "46aab26061340cf19f8af38a9a36aa2e8516f7a8fde6e1eaf733221c6f068e41"
+    },
+    {
+      "file": "contract-v1-rc2/fixtures/error-grant-rejected.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1-rc2/fixtures/error-grant-rejected.json",
+      "gitBlob": "86f9c11cc8af87a7232f52c01085ffcc98490c2d",
+      "sha256": "ce961e1b8ed1900ad6605dfdc3a3fb745db0101b910442597616367f5a1a634a",
+      "contentSha256": "544d9e09403ca2c49209bf20023840f2eb398dd59ff3a6728ada8f77da9a1fa3"
+    },
+    {
+      "file": "contract-v1-rc2/fixtures/error-grant-rejected-with-reason.invalid.json",
+      "ownerPath": "docs/contracts/customer-sales-context-v1-rc2/fixtures/error-grant-rejected-with-reason.invalid.json",
+      "gitBlob": "beb53803b897c0f5bc51a8af47bb5cc3226838e2",
+      "sha256": "8ddd50fbb5e12b4a830d52f6ef46105676f0ed333fdcf8482a45be34e07f3a77",
+      "contentSha256": "13687698a59e5557247af020044cadd7f2febd6cb6d603fb0d480f5efc8399f9"
+    }
+  ]
+}

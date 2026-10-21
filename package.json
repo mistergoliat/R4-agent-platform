@@ -15,6 +15,7 @@
     "adapters/domains/shipping/http",
     "adapters/domains/quote/http",
     "adapters/domains/customer/http",
+    "adapters/domains/identity/http",
     "adapters/models/*",
     "adapters/channels/*",
     "agents/sales"
@@ -29,6 +30,7 @@
     "test:contract": "vitest run --project contract",
     "test:integration": "vitest run --project integration",
     "test:recovery": "vitest run --project recovery",
+    "test:interop": "vitest run --project interop",
     "test:shadow": "vitest run --project shadow",
     "test:evaluation": "vitest run --project unit tests/unit/evaluation tests/unit/sales/evaluation && vitest run --project contract tests/contract/quality-boundaries.test.ts",
     "test:mutation:evaluation": "node tests/mutation/evaluation-mutations.mjs",

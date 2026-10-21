@@ -1,0 +1,1 @@
+{ "schemaVersion": 1, "status": "verified", "customerRef": "prestashop_customer:900000201", "masterCustomerId": 900000201, "grant": { "token": "aaaa.bbbb.cccc", "expiresAt": "2026-10-19T18:05:00Z", "purposes": ["purchase_history"] }, "resolvedAt": "2026-10-19T18:00:00Z" }

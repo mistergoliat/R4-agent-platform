@@ -299,3 +299,31 @@ PRODUCTION_UNCHANGED (sales-production@3)
 | Códigos internos (`purpose_minimization_violated`, `history_unavailable`, `authorization_basis_insufficient`, `customer_ref_mismatch` y los demás de §9) | Aceptados | Especificación §9 |
 
 Con estas precisiones, ADR-039 pasa a **aceptación interna de R4**. D1, D2, D6 y D7 conservan sus dependencias y bloqueos.
+
+---
+
+## 9. Punteros R4-J4-R3: D1, D2, CP-S5 y autoridad contractual (`R4-J4-R3-CIA-CP-INTEGRATION-01`, 2026-10-21)
+
+Esta sección **solo apunta** a decisiones ya registradas por sus owners. No las duplica ni las reinterpreta. Las secciones 1 a 8 se conservan como historia. Donde difieren de lo siguiente (por ejemplo, la §4 todavía dice D1 `BLOCKED` y D2 `PROPOSED`), prevalecen estos registros.
+
+| Asunto | Estado vigente | Registro de autoridad |
+|---|---|---|
+| **D1**: owner productor de la CIA | **Designado.** La CIA es un servicio independiente (`MS-pesaschile-customer-identity-authority`) | CIA `contract/cia/V1_D2_ACCEPTANCE.md` (CIA-D1-01), commit `7525395d14d72c36853add31b327c6ebd5fb9e73` |
+| **D2**: grant por cliente | **Aceptada solo para interoperabilidad sintética.** Contrato CIA `v1-d2` | Rol CIA: `contract/cia/V1_D2_ACCEPTANCE.md` (CIA-D2-ACC-01..03), commit `7525395`. Rol CP: `docs/reviews/J4_D2_CP_ACCEPTANCE_RECORD.md`. Rol R4: `docs/reviews/J4_D2_R4_CONFORMITY_RECORD.md` (R4-D2-CONF-01..05). Los dos últimos están en el repositorio de CP, `main` `d67ad64` |
+| **Transferencia de autoridad contractual del grant** | La CIA es la autoridad de su contrato de emisión de grants. R4 la cedió (R4-AUTH-01) y la CIA la asumió (AUTH-TRANSFER-01-CIA) | CIA `contract/cia/V1_D2_ACCEPTANCE.md` y `contract/cia/v1-d2/DELTA.md` §1; registro R4 en CP `docs/reviews/J4_D2_R4_CONFORMITY_RECORD.md` |
+| **Contrato CIA histórico de R4** | `docs/contracts/cia/v1` en la rama `docs/r4-j4-r3-cia-discovery` @ `873da0f`. **Referencia de origen**, no fuente vigente. Las integraciones nuevas fijan el contrato desde la CIA. No se edita | — |
+| **CP-S5**: verificación del grant en Customer Profile | **Integrado en CP `main`** (`fff8ac7`, PR #26; informe en `bbd766e`, PR #27). Modo `required` disponible y `disabled` por defecto. **Sin despliegue:** el Customer Profile productivo no verifica grants | CP `docs/reviews/CP_J4_S5_GRANT_VERIFIER_IMPLEMENTATION_REPORT.md` y `CP_J4_S5_OWNER_MERGE_REPORT.md` |
+
+**Evidencia de la integración sintética R4-J4-R3** (rama `feat/r4-j4-r3-cia-cp-synthetic`, sin merge):
+
+| Elemento | Evidencia |
+|---|---|
+| Contratos fijados en R4 | CIA `v1-d2` @ `7525395` (`adapters/domains/identity/http/contract`, 27 archivos) y CP `v1-rc2` @ `bbd766e` (`adapters/domains/customer/http/contract-v1-rc2`). Ambos con git blob, sha256 y hash de contenido verificados por tests |
+| Campaña R4 → CIA → CP | **23/23** en 3 ejecuciones, la última sobre un clon limpio. Servicios sintéticos: CIA y CP compilados, bindings reales de R4 en PostgreSQL |
+| Activación productiva | **Ninguna.** Las capacidades `customer.get_context@2` y `customer.get_purchase_history@1` solo se registran en la composición sintética |
+| Informe | `R4_J4_R3_CIA_CP_INTEGRATION_REPORT.md`; seguimiento `R4_J4_R3_SEC_OTP_FOLLOWUP.md` |
+
+**No cambia con esta sección:**
+- G-16, AP-01 a AP-11 (incluido AP-04-H), D6, D7 y el hallazgo del merge de 02C siguen como estaban.
+- Los datos reales siguen bloqueados.
+- ADR-039 no se modifica: la resolución por invocación desde `bindingByTask` se mantiene.

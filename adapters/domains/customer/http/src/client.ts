@@ -2,6 +2,7 @@ import { performance } from 'node:perf_hooks';
 import {
   CUSTOMER_REF_PATTERN,
   DomainError,
+  isSyntheticCustomerRef,
   type CallOptions,
   type CustomerAccessGrant,
   type CustomerProfilePort,
@@ -23,10 +24,10 @@ import {
   type WireRequest,
 } from './wire.js';
 
-/** The subset of `fetch` the client uses (injected: tests and deployments decide the transport). */
+/** The subset of `fetch` the client uses (injected). `redirect: 'manual'`: a 3xx is never followed (R4-J4-R3). */
 export type CustomerProfileFetch = (
   url: string,
-  init: { method: 'POST'; headers: Record<string, string>; body: string; signal: AbortSignal },
+  init: { method: 'POST'; headers: Record<string, string>; body: string; signal: AbortSignal; redirect: 'manual' },
 ) => Promise<{ status: number; headers: { get(name: string): string | null }; body: ReadableStream<Uint8Array> | null }>;
 
 /** One owner call for telemetry. Carries no token, customerRef, grant, body or fact. */
@@ -52,22 +53,28 @@ export const CUSTOMER_PROFILE_MAX_RESPONSE_BYTES = 64 * 1024;
 const REQUEST_MAX_BYTES = 1024;
 /** The R4 correlation-id shape, a subset of CP's ^[A-Za-z0-9._:-]{1,128}$ (alignment §4.6). */
 const CORRELATION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+/** Transport shape of the CIA grant (compact JWS, CIA v1-d2 §6.2): R4 checks the shape, never the content. */
+export const GRANT_HEADER = 'x-customer-access-grant';
+const GRANT_TOKEN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+const GRANT_MAX_BYTES = 2048;
 
 /**
- * Customer Profile HTTP client (R4-J4-R2), the implementation of CustomerProfilePort over
- * `POST /v1/capabilities/customer/sales-context` (v1-rc1). Transport only: the purpose is fixed by
- * the operation, identifiers travel only in the JSON body, the service bearer token is the only
- * credential sent (the per-customer grant is not sent until D2 exists), and every answer goes
- * through wire.ts before anything reaches the port.
+ * Customer Profile HTTP client (R4-J4-R2, grant transport R4-J4-R3), the implementation of
+ * CustomerProfilePort over `POST /v1/capabilities/customer/sales-context` (v1-rc2). Transport only:
+ * the purpose is fixed by the operation, identifiers travel only in the JSON body, the service bearer
+ * authenticates R4 and the CIA grant (opaque, unmodified) travels once in `x-customer-access-grant`.
+ * Every answer goes through wire.ts before anything reaches the port; with a grant sent, only a
+ * `customer_grant_verified` answer that does not outlive the grant is accepted.
  *
  * Classification:
  *   200                         → answer (available / not_found / not_applicable), validated
  *   503 + valid degraded body   → temporarily_unavailable `profile_unavailable` (owner code kept)
  *   400 / 413 / 415             → validation
- *   401 / 403                   → unauthorized `profile_unauthorized` (never not_found, never retried)
+ *   401 / 403                   → unauthorized `profile_unauthorized` (never not_found, never retried;
+ *                                 403 grant_rejected included: the owner code stays a diagnostic)
  *   429                         → temporarily_unavailable `rate_limited` (no retry: maxAttempts 1)
  *   500 / 502 / 503 / 504 / 5xx → temporarily_unavailable
- *   404 / 405 / other           → contract_violation `unexpected_status`
+ *   3xx / 404 / 405 / other     → contract_violation `unexpected_status` (a redirect is never followed)
  *   network                     → temporarily_unavailable `profile_unreachable`
  *   deadline (caller or local)  → timeout `deadline_exceeded`
  *   anything outside v1-rc1     → contract_violation (never repaired, never retried)
@@ -131,6 +138,12 @@ export class CustomerProfileHttpClient implements CustomerProfilePort {
     const expiresAt = Date.parse(grant.expiresAt);
     if (!grant.purposes.includes(purpose)) throw fail(new DomainError('validation', 'grant_purpose_not_covered', `the customer grant does not cover ${purpose}`), null);
     if (!Number.isFinite(expiresAt) || expiresAt <= now.getTime()) throw fail(new DomainError('validation', 'grant_expired', 'the customer grant has expired'), null);
+    if (typeof grant.token !== 'string' || Buffer.byteLength(grant.token, 'utf8') > GRANT_MAX_BYTES || !GRANT_TOKEN.test(grant.token)) {
+      throw fail(new DomainError('validation', 'grant_malformed', 'the customer grant is not a compact JWS of at most 2048 bytes'), null);
+    }
+    if (this.#config.lifecycle === 'synthetic' && !isSyntheticCustomerRef(request.customerRef)) {
+      throw fail(new DomainError('validation', 'customer_ref_outside_synthetic_range', 'a synthetic binding may only read synthetic customers'), null);
+    }
     if (options?.signal?.aborted) throw fail(new DomainError('timeout', 'deadline_exceeded', 'the caller deadline passed before Customer Profile was called'), null);
 
     const body = serializeRequest(request);
@@ -144,11 +157,12 @@ export class CustomerProfileHttpClient implements CustomerProfilePort {
       authorization: `Bearer ${this.#config.bearerToken}`,
     };
     if (options?.correlationId && CORRELATION_ID.test(options.correlationId)) headers['x-correlation-id'] = options.correlationId;
-    // D2 does not exist: no grant header is sent (alignment §5.3). The answer must then say service_scope_only.
+    // D2 (CIA v1-d2 §6.2): the grant travels exactly once, as issued; Customer Profile verifies it (CP-S5).
+    headers[GRANT_HEADER] = grant.token;
 
     let response: Awaited<ReturnType<CustomerProfileFetch>>;
     try {
-      response = await this.#fetch(`${this.#config.baseUrl}${CUSTOMER_PROFILE_ROUTE}`, { method: 'POST', headers, body, signal });
+      response = await this.#fetch(`${this.#config.baseUrl}${CUSTOMER_PROFILE_ROUTE}`, { method: 'POST', headers, body, signal, redirect: 'manual' });
     } catch (error) {
       if (signal.aborted) throw fail(new DomainError('timeout', 'deadline_exceeded', 'Customer Profile did not answer before the deadline'), null);
       throw fail(new DomainError('temporarily_unavailable', 'profile_unreachable', `Customer Profile could not be reached (${transportCode(error)})`), null);
@@ -177,12 +191,13 @@ export class CustomerProfileHttpClient implements CustomerProfilePort {
           ...(request.purpose === 'purchase_history' ? { page: request.page } : {}),
           httpStatus,
           lifecycle: this.#config.lifecycle,
-          grantSent: false,
+          grantSent: true,
+          grantExpiresAt: grant.expiresAt,
           now,
         });
       } catch (error) {
         // A 503 that is not a valid degraded envelope is still an unavailability, unless it leaks forbidden data.
-        if (httpStatus === 503 && error instanceof DomainError && !['sensitive_field_present', 'purpose_minimization_violated', 'customer_ref_mismatch', 'foreign_customer_ref'].includes(error.code)) {
+        if (httpStatus === 503 && error instanceof DomainError && !['sensitive_field_present', 'purpose_minimization_violated', 'customer_ref_mismatch', 'foreign_customer_ref', 'authorization_basis_insufficient'].includes(error.code)) {
           throw fail(new DomainError('temporarily_unavailable', 'profile_unavailable', 'Customer Profile is unavailable (HTTP 503)', { httpStatus }), httpStatus, null, null, noStore);
         }
         if (error instanceof DomainError) throw fail(error, httpStatus, null, null, noStore);

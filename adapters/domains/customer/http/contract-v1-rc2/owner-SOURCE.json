@@ -1,0 +1,53 @@
+{
+  "owner": "MS-pesaschile-customer-profile",
+  "contract": "customer-profile.sales-context",
+  "schemaVersion": 1,
+  "revision": "v1-rc2",
+  "contractStatus": "candidate",
+  "publishedApi": false,
+  "provenance": {
+    "mandate": "J4-D2-CONTRACT-REVISION-01",
+    "authoredOn": "97bcc43dcc222a2d6016cfc8f9b2b63a0167dc93",
+    "supersedes": {
+      "revision": "v1-rc1",
+      "ref": "cp-sales-context-v1-rc1",
+      "commit": "47db415e1ebf67b5e6770dbdcfc697880b6e5f76"
+    },
+    "containingCommit": null,
+    "containingRef": {
+      "kind": "branch",
+      "name": "docs/cp-j4-s5-d2-contract-alignment"
+    },
+    "note": "containingCommit is null on purpose: a file cannot carry the SHA of the commit that contains it. Resolve it with `git log -1 --format=%H -- docs/contracts/customer-sales-context-v1-rc2/SOURCE.json`."
+  },
+  "runtime": {
+    "loadedBySrc": true,
+    "srcPinnedRevision": "v1-rc2",
+    "note": "Since CP-S5.4 (J4-CP-S5-AUTHORIZATION-AND-IMPLEMENTATION-01) src/application/customer-sales-context/contract-output-validator.ts imports this directory. v1-rc1 stays in ../customer-sales-context-v1/ as the regression baseline."
+  },
+  "schemas": {
+    "dialect": "https://json-schema.org/draft/2020-12/schema",
+    "response": {
+      "file": "schemas/customer-sales-context-v1.schema.json",
+      "sha256": "fc29ea6bd1c6a6bd2978fc8a119cc3389207ca3587012530759ce3d2e8b6ea36"
+    },
+    "request": {
+      "file": "schemas/customer-sales-context-request-v1.schema.json",
+      "sha256": "c8da52af2a393d4bc32726699d0cc21816e73d176aebee40e9a51eb1b9b8efa3",
+      "identicalTo": "v1-rc1"
+    }
+  },
+  "manifest": "fixtures/MANIFEST.json",
+  "manifestSha256": "46aab26061340cf19f8af38a9a36aa2e8516f7a8fde6e1eaf733221c6f068e41",
+  "inherits": {
+    "revision": "v1-rc1",
+    "manifest": "../customer-sales-context-v1/fixtures/MANIFEST.json",
+    "manifestSha256": "33159ce0a529714a3d8058a0beef179fdec8c0209dd59efd0da0998b0d06bfff",
+    "fixtures": 34
+  },
+  "fixtures": 2,
+  "synthetic": true,
+  "decisionRecord": "docs/reviews/CP_J4_S5_D2_DECISION_MATRIX.md",
+  "acceptancePackage": "docs/reviews/J4_D2_CONTRACT_ACCEPTANCE_PACKAGE.md",
+  "validatedBy": "tests/contract/customer-sales-context-v1-rc2.contract.test.ts"
+}

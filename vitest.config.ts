@@ -36,6 +36,8 @@ const alias = {
   '@r4-adapters/quote-http': src('./adapters/domains/quote/http/src/index.ts'),
   // R4-J4-R2: Customer Profile HTTP adapter (outside Core; bound by no profile: synthetic only).
   '@r4-adapters/customer-http': src('./adapters/domains/customer/http/src/index.ts'),
+  // R4-J4-R3: Customer Identity Authority HTTP adapter (outside Core; synthetic, loopback only; bound by no production profile).
+  '@r4-adapters/identity-http': src('./adapters/domains/identity/http/src/index.ts'),
   '@r4-adapters/openai-compatible': src('./adapters/models/openai-compatible/src/index.ts'),
   // R4-I: channel adapter (outside Core). The testing entry (local fake provider) is listed first: aliases match by prefix.
   '@r4-adapters/whatsapp-cloud/testing': src('./adapters/channels/whatsapp-cloud/src/testing.ts'),
@@ -96,6 +98,20 @@ export default defineConfig({
           globalSetup: ['tests/support/global-setup.ts'],
           testTimeout: 300_000,
           hookTimeout: 120_000,
+        },
+      },
+      {
+        // R4-J4-R3: R4 → CIA → Customer Profile synthetic campaign (opt-in: `npm run test:interop`, never part of `npm test`).
+        // Needs built clean checkouts of the CIA and CP (R4_INTEROP_CIA_DIR, R4_INTEROP_CP_DIR), the CIA PostgreSQL and R4's PostgreSQL.
+        resolve: { alias },
+        test: {
+          name: 'interop',
+          include: ['tests/interop/**/*.test.ts'],
+          environment: 'node',
+          globalSetup: ['tests/support/global-setup.ts'],
+          testTimeout: 60_000,
+          hookTimeout: 180_000,
+          fileParallelism: false,
         },
       },
       {

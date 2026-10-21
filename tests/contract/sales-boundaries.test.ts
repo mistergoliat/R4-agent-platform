@@ -184,7 +184,7 @@ describe('domain adapters and the provider adapter stay behind their seams', () 
     // R4-I: the channel adapter depends only on the channel-neutral contracts.
     expect(manifest('adapters/channels/whatsapp-cloud')).toEqual(['@r4/live-ops']);
     const salesDeps = manifest('agents/sales');
-    expect(salesDeps.filter((d) => !/^(@r4\/(contracts|observability|model-gateway|capability-runtime|context-compiler|policy-engine|persistence-postgres|agent-kernel|api|worker|evaluation|evaluator|scheduler|shadow|live-ops|channel-gateway)|@r4-adapters\/(domains|catalog-http|shipping-http|quote-http|openai-compatible|whatsapp-cloud)|pg|pino|zod)$/.test(d))).toEqual([]);
+    expect(salesDeps.filter((d) => !/^(@r4\/(contracts|observability|model-gateway|capability-runtime|context-compiler|policy-engine|persistence-postgres|agent-kernel|api|worker|evaluation|evaluator|scheduler|shadow|live-ops|channel-gateway)|@r4-adapters\/(domains|catalog-http|shipping-http|quote-http|customer-http|identity-http|openai-compatible|whatsapp-cloud)|pg|pino|zod)$/.test(d))).toEqual([]);
     // R4-J1B: the Catalog HTTP adapter depends only on the domain ports and zod — nothing from R4 Core.
     expect(manifest('adapters/domains/catalog/http')).toEqual(['@r4-adapters/domains', 'zod']);
     // R4-J2B: the Shipping HTTP adapter likewise depends only on the domain ports and zod.
