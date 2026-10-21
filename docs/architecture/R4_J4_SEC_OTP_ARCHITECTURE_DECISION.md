@@ -464,7 +464,7 @@ export type CommercialVerificationStatus =
 
 - **La landing es un flujo externo** de creación de cuenta, con contrato y owner propios (EXT-05).
   - Este diseño **no inventa la URL** y no implementa la página.
-  - Hasta que exista su contrato, `onboarding.available = false` y la respuesta comercial ofrece el registro sin enlace (por ejemplo, "te avisaremos cuando esté disponible" o atención humana; decisión OA-12).
+  - Hasta que exista su contrato, `onboarding.available = false`, y la respuesta comercial informa que todavía no existe un registro disponible desde el chat: sin enlace, sin redirección y sin prometer disponibilidad (OA-12, decidido en ACCEPTANCE-03).
   - Cuando exista, la URL la entregará la configuración del pack, sujeta al contrato de la landing.
 - **La landing nunca recibe** el código, el `verificationId`, el grant ni un `customerRef`.
   - Que reciba el email declarado o un identificador de conversación es una decisión de su contrato y de la política de datos (OA-04), no de este diseño.
@@ -652,16 +652,16 @@ submitForConfirmation(candidate)  — autoridad: ¿se gasta un intento en la CIA
 | OA-01 | Frontera: `live-ops` y `channel-gateway` fuera del kernel; solo un punto de inspección genérico | **Decidido** (revisión 02) |
 | OA-02 | ADR-040 R4-I.1 con 7 invariantes (§9.1) | **Decidido el contenido.** El archivo ADR-040 se redacta en SEC-S3 |
 | OA-03 | A seleccionada; B descartada; C opcional posterior | **Decidido** |
-| OA-04 | Política de datos personales del email (E1 frente a E2) y qué recibe la landing | Pendiente (owner de datos + R4). E1 solo con datos sintéticos |
-| OA-05 | Política de `identity.start_verification@1` (autónoma o con aprobación; frecuencia) | Pendiente |
+| OA-04 | Política de datos personales del email (E1 frente a E2) y qué recibe la landing | **Decidido** (`R4-J4-SEC-OTP-OWNER-ACCEPTANCE-03`): E1 permitido **solo sintético**. Los correos reales requieren la decisión D7 |
+| OA-05 | Política de `identity.start_verification@1` (autónoma o con aprobación; frecuencia) | **Decidido** (ACCEPTANCE-03): inicio autónomo gobernado, **solo** ante intención explícita del cliente, con correo declarado y binding vigente. Sin correos preventivos. Respeta los límites de la CIA, una expectativa activa por conversación y la idempotencia |
 | OA-06 | Un consumidor y dos credenciales | **Decidido.** Pendiente CIA-CLAR-01 (owner de la CIA) |
 | OA-07 | 4 a 8 dígitos; normalización; 6 dígitos ASCII para enviar; gracia de 10 min; captura solo con expectativa válida; nada al modelo en la protección; sin envío automático de números ambiguos | **Decidido** (sintético) |
-| OA-07b | Contenido exacto de la lista permitida `CODE_CONTEXT` (§8.2) | Pendiente (propuesta incluida) |
-| OA-08 | Texto exacto de los marcadores (§8.3) | Pendiente |
-| OA-09 | Gate RR-1: residuos aceptables y si `humanOwned` invalida la asociación | Pendiente |
+| OA-07b | Contenido exacto de la lista permitida `CODE_CONTEXT` (§8.2) | **Decidido** (ACCEPTANCE-03): la lista propuesta, **solo para implementación y validación sintética**, sin ampliaciones implícitas. Validar que pedidos, montos y mensajes ambiguos se redacten sin consumir intentos (SEC-S1) |
+| OA-08 | Texto exacto de los marcadores (§8.3) | **Decidido** (ACCEPTANCE-03): los marcadores de la revisión 02. El de reanudación no lleva resultados autoritativos |
+| OA-09 | Gate RR-1: residuos aceptables y si `humanOwned` invalida la asociación | **Parcial** (ACCEPTANCE-03): RR-1 **sigue pendiente de cierre**. Para operaciones de identidad nuevas, `humanOwned` vuelve **no apta** la asociación. Verificado: `ProductionStore.taskState()` ya expone `humanOwned` (`TaskStateFacts`, `packages/live-ops/src/ports.ts:124,312`; handoff `requested` o `active`, `production-store.ts:655-665`), así que la regla se aplica sin tocar el harness |
 | OA-10 | Custodia productiva de claves, roles de base de datos, revisión de nginx y PM2 | Pendiente (datos reales) |
-| OA-11 | Entradas de plataforma con `role: participant` (sin cambiar el harness) | Pendiente |
-| OA-12 | Respuesta comercial de `onboarding_required` mientras `onboarding.available = false` | Pendiente |
+| OA-11 | Entradas de plataforma con `role: participant` (sin cambiar el harness) | **Decidido** (ACCEPTANCE-03) para sintético. El resultado se lee **exclusivamente** con `identity.verification_status@1` |
+| OA-12 | Respuesta comercial de `onboarding_required` mientras `onboarding.available = false` | **Decidido** (ACCEPTANCE-03): informar que todavía no existe un registro disponible desde el chat. Sin enlace inventado, sin redirección y sin promesa de disponibilidad |
 | BA-01…BA-06 | Bloqueos de activación de las entradas alternativas (§10) | Pendientes (gate de activación real) |
 
 ---
