@@ -12,6 +12,8 @@ import type { SealedCode } from './secret-box.js';
  */
 
 export type ExpectationState = 'created' | 'awaiting_code' | 'processing' | 'confirmed' | 'rejected' | 'expired' | 'cancelled';
+/** Decision rev. 02 §9.2. `absent` is not a mode: it is a composition without the inspector. */
+export type VerificationMode = 'full' | 'protect_only';
 export type ResponseState = 'pending' | 'dispatching' | 'resolved' | 'notified' | 'cancelled' | 'failed' | 'expired';
 export type CiaConfirmOutcome = 'linked' | 'no_eligible_account' | 'ineligible_account' | 'ambiguous' | 'conflicted' | 'invalid_code' | 'expired' | 'locked';
 
@@ -201,18 +203,65 @@ export class IdentityVerificationStore {
 
   /** Closes a live expectation (`cancelled` or `expired`); its pending sealed codes are erased (trigger). Idempotent. */
   closeExpectation(expectationId: string, to: 'cancelled' | 'expired', reason: string): Promise<ExpectationRecord> {
+    return guard(() => withTransaction(this.#pool, (c) => this.#close(c, expectationId, to, reason)));
+  }
+
+  /** The same, inside the caller's transaction (SEC-S3: the inbound transaction, which already holds the conversation lock). */
+  closeExpectationWithin(client: PoolClient, expectationId: string, to: 'cancelled' | 'expired', reason: string): Promise<ExpectationRecord> {
+    return guard(() => this.#close(client, expectationId, to, reason));
+  }
+
+  async #close(c: PoolClient, expectationId: string, to: 'cancelled' | 'expired', reason: string): Promise<ExpectationRecord> {
+    const current = await this.#lockedExpectation(c, expectationId);
+    if (!LIVE.includes(current.state as ExpectationState)) return expectationOf(current);
+    const row = await one(
+      c,
+      `update identity_verification.expectations
+          set state = $2, closed_at = clock_timestamp(), closed_reason = $3, version = version + 1
+        where expectation_id = $1 returning *`,
+      [expectationId, to, reason],
+    );
+    return expectationOf(required(row));
+  }
+
+  /** Whether ANY conversation is still protected: the inspector cannot be removed from the composition while true. */
+  async anyProtectionActive(q: Pool | PoolClient): Promise<boolean> {
+    return guard(async () => {
+      const r = await q.query<{ active: boolean }>('select exists (select 1 from identity_verification.expectations where protect_until > clock_timestamp()) as active');
+      return r.rows[0]?.active === true;
+    });
+  }
+
+  // ── Component mode (SEC-S3, migration 0012) ───────────────────────────────────────────────────
+
+  /** The durable mode the gateway composed; `null` when no gateway ever composed the component. */
+  async mode(q: Pool | PoolClient = this.#pool): Promise<VerificationMode | null> {
+    return guard(async () => {
+      const row = await one(q, 'select mode from identity_verification.component_mode', []);
+      return row ? (row.mode as VerificationMode) : null;
+    });
+  }
+
+  /**
+   * Records the composed mode. Entering `protect_only` cancels every open response and erases its
+   * sealed code in the same transaction (no confirmation will ever be sent); redaction continues.
+   */
+  setMode(mode: VerificationMode, changedBy: string, reason: string): Promise<{ readonly responsesCancelled: number }> {
     return guard(() =>
       withTransaction(this.#pool, async (c) => {
-        const current = await this.#lockedExpectation(c, expectationId);
-        if (!LIVE.includes(current.state as ExpectationState)) return expectationOf(current);
-        const row = await one(
-          c,
-          `update identity_verification.expectations
-              set state = $2, closed_at = clock_timestamp(), closed_reason = $3, version = version + 1
-            where expectation_id = $1 returning *`,
-          [expectationId, to, reason],
+        await c.query(
+          `insert into identity_verification.component_mode (singleton, mode, changed_by, reason) values (true, $1, $2, $3)
+           on conflict (singleton) do update set mode = excluded.mode, changed_by = excluded.changed_by, reason = excluded.reason, changed_at = clock_timestamp()`,
+          [mode, changedBy, reason],
         );
-        return expectationOf(required(row));
+        if (mode !== 'protect_only') return { responsesCancelled: 0 };
+        const r = await c.query(
+          `update identity_verification.responses
+              set state = 'cancelled', failure_code = 'protect_only',
+                  code_ciphertext = null, code_iv = null, code_tag = null, key_id = null, lease_owner = null, lease_expires_at = null
+            where state in ('pending', 'dispatching')`,
+        );
+        return { responsesCancelled: r.rowCount ?? 0 };
       }),
     );
   }

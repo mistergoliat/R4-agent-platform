@@ -1,6 +1,7 @@
 import type { AutonomyControlsState } from './autonomy.js';
 import type { ProviderStatusEvent } from './channel.js';
 import type { DispatchDecision, DispatchFacts, OutboundOrigin, OutboundStatus, SubmissionDisposition, SubmissionResult } from './delivery.js';
+import type { InboundInspector } from './inspection.js';
 
 /**
  * Persistence port of R4-I production state. Only operational state needed
@@ -73,6 +74,16 @@ export interface NewInboundEvent {
   readonly status: 'received' | 'rejected';
   readonly failureCode: string | null;
   readonly correlationId: string;
+}
+
+/** What the inbound transaction needs, besides the event, to build the trusted context. */
+export interface InspectedInbound {
+  readonly inspector: InboundInspector;
+  /** False for unsupported content: persisted as its marker, never inspected. */
+  readonly inspectable: boolean;
+  readonly senderRef: string;
+  /** The adapter attests a direct conversation and senderRef is the conversation reference. */
+  readonly direct: boolean;
 }
 
 export interface InboundSettlement {
@@ -297,6 +308,13 @@ export interface ProductionStore {
 
   // Inbound (dedupe by provider event identity under a unique constraint).
   recordInbound(event: NewInboundEvent): Promise<{ readonly record: InboundEventRecord; readonly created: boolean }>;
+  /**
+   * R4-I.1 (ADR-040): one transaction under the conversation lock — duplicate check first (a
+   * re-delivery is never inspected), then the trusted context (open binding, task state, database
+   * clock), then the inspector, then the insert of the decided text and its sha256. `event.content`
+   * is the candidate text (`contentSha256` is ignored and recomputed from the decided text).
+   */
+  recordInboundInspected(event: NewInboundEvent, inspected: InspectedInbound): Promise<{ readonly record: InboundEventRecord; readonly created: boolean }>;
   settleInbound(inboundId: string, settlement: InboundSettlement): Promise<void>;
   /** Received but never settled (a crash between persistence and ingestion). */
   unsettledInbound(olderThanMs: number, limit: number): Promise<InboundEventRecord[]>;

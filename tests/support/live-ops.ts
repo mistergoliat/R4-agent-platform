@@ -9,6 +9,7 @@ import { conversationKey, loadProductionConfig, type ProductionConfig, type Prod
 import { createWorkerPlatform, type WorkerAdmission, type WorkerCycle, type WorkerPlatform, type WorkerPresenceBinding } from '@r4/worker';
 import { SALES_AGENT_DIR, migrateSales } from '@r4-sales/agent';
 import { composeSalesGateway, composeSalesProductionWorker } from '@r4-sales/agent/production';
+import { identityVerificationInspection, migrateIdentityVerification, type IdentityVerificationInspectionOptions } from '@r4-adapters/identity-verification';
 import { FakeWhatsAppProvider, notification, signNotification, type NotificationMessage, type NotificationStatus } from '@r4-adapters/whatsapp-cloud/testing';
 import { createMigratedTestDatabase, openPool, type TestDatabase } from './database.js';
 
@@ -43,6 +44,8 @@ export interface TestbedOptions {
   readonly agentDefinitionsDir?: string;
   /** The Catalog binding of a profile that makes Catalog REAL (sales-production@2): a local stand-in of catalog-service. */
   readonly catalog?: CatalogPort & { readonly bindingKind: string };
+  /** (SEC-OTP) The gateway's identity-verification composition; the bed then migrates its schema. Absent: none (R4-I). */
+  readonly identityVerification?: IdentityVerificationInspectionOptions;
 }
 
 /**
@@ -67,6 +70,7 @@ export class LiveOpsTestbed {
   readonly #queue: QueuedStep[];
   #workers: WorkerPlatform[] = [];
   readonly #catalog: (CatalogPort & { readonly bindingKind: string }) | undefined;
+  #identityVerification: IdentityVerificationInspectionOptions | undefined;
   #timestamp = Math.floor(Date.now() / 1000) - 600;
 
   private constructor(fields: { db: TestDatabase; pool: Pool; api: Platform; gateway: GatewayPlatform; provider: FakeWhatsAppProvider; production: { config: ProductionConfig; secrets: ProductionSecrets }; model: FakeModelProvider; queue: QueuedStep[]; env: Record<string, string>; catalog?: CatalogPort & { readonly bindingKind: string } }) {
@@ -87,6 +91,7 @@ export class LiveOpsTestbed {
     const db = await createMigratedTestDatabase();
     const pool = openPool(db.url);
     await migrateSales(pool);
+    if (options.identityVerification) await migrateIdentityVerification(pool);
     const provider = new FakeWhatsAppProvider({ accessToken: ACCESS_TOKEN });
     await provider.start();
     const env = {
@@ -110,7 +115,7 @@ export class LiveOpsTestbed {
     const production = loadProductionConfig(env);
     const logger = createSilentLogger();
     const api = await createPlatform({ databaseUrl: db.url, host: '127.0.0.1', port: 0, logLevel: 'silent', agentDefinitionsDir: options.agentDefinitionsDir ?? SALES_AGENT_DIR, dbPoolMax: 4 }, { logger, humanContext: () => OPERATOR });
-    const gateway = await startGateway(db.url, pool, production, env);
+    const gateway = await startGateway(db.url, pool, production, env, options.identityVerification);
     const queue: QueuedStep[] = [];
     const model = new FakeModelProvider((request, index) => {
       const next = queue.shift();
@@ -118,6 +123,7 @@ export class LiveOpsTestbed {
       return typeof next === 'function' ? next(request) : next;
     });
     const bed = new LiveOpsTestbed({ db, pool, api, gateway, provider, production, model, queue, env: { ...env, R4_DATABASE_URL: db.url }, ...(options.catalog ? { catalog: options.catalog } : {}) });
+    bed.#identityVerification = options.identityVerification;
     if (options.autonomy) await bed.setAutonomy(true);
     return bed;
   }
@@ -131,9 +137,21 @@ export class LiveOpsTestbed {
     const env = { ...this.env, R4_PROD_ROLLOUT_ALLOWLIST: rollout.allowlist.map(keyOf).join(',') };
     const production = loadProductionConfig(env);
     await this.gateway.close();
-    this.gateway = await startGateway(this.db.url, this.pool, production, env);
+    this.gateway = await startGateway(this.db.url, this.pool, production, env, this.#identityVerification);
     this.production = production;
     this.env = env;
+  }
+
+  /**
+   * (SEC-OTP) Redeploys the gateway over the same database with another identity-verification
+   * composition (a rollback step or a mode change). Rejects when the new gateway refuses to start;
+   * the previous gateway is closed either way.
+   */
+  async recomposeGateway(identityVerification: IdentityVerificationInspectionOptions | undefined): Promise<void> {
+    // A gateway that refused to start left the previous (closed) one in place.
+    await this.gateway.close().catch(() => undefined);
+    this.#identityVerification = identityVerification;
+    this.gateway = await startGateway(this.db.url, this.pool, this.production, this.env, identityVerification);
   }
 
   /** Queues the stand-in model's next decisions, one per model call. */
@@ -224,9 +242,11 @@ export class LiveOpsTestbed {
   }
 }
 
-function startGateway(databaseUrl: string, pool: Pool, production: { config: ProductionConfig; secrets: ProductionSecrets }, env: Readonly<Record<string, string | undefined>>): Promise<GatewayPlatform> {
+function startGateway(databaseUrl: string, pool: Pool, production: { config: ProductionConfig; secrets: ProductionSecrets }, env: Readonly<Record<string, string | undefined>>, identityVerification?: IdentityVerificationInspectionOptions): Promise<GatewayPlatform> {
   const { bindings } = composeSalesGateway({ pool, production, env });
-  return createGatewayPlatform({ databaseUrl, host: '127.0.0.1', port: 0, logLevel: 'silent', dbPoolMax: 4, gatewayId: 'gateway-test', dispatch: false, resumeAfterMs: 1000 }, bindings, { logger: createSilentLogger() });
+  // (SEC-OTP) The synthetic composition plugs the inspector in, as a deployment would; absent: exactly R4-I.
+  const inspected = identityVerification ? { ...bindings, inspection: identityVerificationInspection(identityVerification) } : bindings;
+  return createGatewayPlatform({ databaseUrl, host: '127.0.0.1', port: 0, logLevel: 'silent', dbPoolMax: 4, gatewayId: 'gateway-test', dispatch: false, resumeAfterMs: 1000 }, inspected, { logger: createSilentLogger() });
 }
 
 export interface WorkerOverridesForTest {

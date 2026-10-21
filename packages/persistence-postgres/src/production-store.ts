@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { PlatformError, sha256Hex } from '@r4/contracts';
 import {
+  conversationLockKey,
   statusAfterEvidence,
   statusAfterOperatorResolution,
   type AutonomyControlChange,
@@ -15,6 +16,8 @@ import {
   type DispatchToken,
   type InboundEventRecord,
   type InboundSettlement,
+  type InspectedInbound,
+  type InspectionDecision,
   type NewConversationBinding,
   type NewInboundEvent,
   type NewOperatorOutbound,
@@ -150,6 +153,51 @@ export class PostgresProductionStore implements ProductionStore {
       [e.inboundId, e.channel, e.providerEventId, e.status, e.contentKind, e.contentType, e.content, e.contentSha256, e.conversationKey, e.accountRef, e.conversationRef, e.occurredAt, e.failureCode, e.correlationId],
     )).rows[0]!;
     return { record: inboundFromRow(r), created: r.inserted === true };
+  }
+
+  recordInboundInspected(e: NewInboundEvent, inspected: InspectedInbound): Promise<{ record: InboundEventRecord; created: boolean }> {
+    const { conversationKey, accountRef, conversationRef, occurredAt, content } = e;
+    if (conversationKey === null || accountRef === null || conversationRef === null || occurredAt === null || content === null) {
+      return Promise.reject(new PlatformError('validation', 'incomplete_inbound_record', 'an inspected inbound needs its conversation, time and content'));
+    }
+    return withTransaction(this.#pool, async (c) => {
+      // R4-I.1: serialized per conversation BEFORE the duplicate check, so a re-delivery is never inspected.
+      await c.query('select pg_advisory_xact_lock($1::bigint)', [conversationLockKey(e.channel, conversationKey)]);
+      const duplicate = (await c.query<Row>(
+        'update inbound_events set duplicate_deliveries = duplicate_deliveries + 1 where channel = $1 and provider_event_id = $2 returning *',
+        [e.channel, e.providerEventId],
+      )).rows[0];
+      if (duplicate) return { record: inboundFromRow(duplicate), created: false };
+      const binding = (await c.query<Row>(`select * from channel_conversation_bindings where channel = $1 and conversation_key = $2 and status = 'open'`, [e.channel, conversationKey])).rows[0];
+      const taskId = (binding?.task_id as string | null | undefined) ?? null;
+      const state = taskId ? await taskStateOf(c, taskId) : null;
+      const now = iso((await c.query<Row>('select clock_timestamp() as now')).rows[0]!.now);
+      let decision: InspectionDecision = { kind: 'pass' };
+      if (inspected.inspectable) {
+        // A throw aborts the transaction: nothing is persisted and the provider re-delivers (ADR-040 inv. 5).
+        decision = await inspected.inspector.inspect({ kind: 'text', text: content }, {
+          channel: e.channel, accountRef, conversationRef, senderRef: inspected.senderRef, direct: inspected.direct, conversationKey,
+          providerEventId: e.providerEventId, occurredAt, now,
+          binding: binding
+            ? {
+                bindingId: binding.binding_id as string,
+                recipientRef: binding.recipient_ref as string,
+                taskId,
+                taskAcceptsInput: state !== null && !state.terminalIntent && !['completed', 'cancelled', 'failed'].includes(state.status),
+                humanOwned: state?.humanOwned ?? false,
+              }
+            : null,
+        }, c);
+      }
+      // The decided text is the only one persisted and hashed.
+      const text = decision.kind === 'replace' ? decision.text : content;
+      const r = (await c.query<Row>(
+        `insert into inbound_events (inbound_id, channel, provider_event_id, status, content_kind, content_type, content, content_sha256, conversation_key, account_ref, conversation_ref, occurred_at, failure_code, settled_at, correlation_id)
+         values ($1, $2, $3, 'received', $4, $5, $6, $7, $8, $9, $10, $11, null, null, $12) returning *`,
+        [e.inboundId, e.channel, e.providerEventId, e.contentKind, e.contentType, text, sha256Hex(text), conversationKey, accountRef, conversationRef, occurredAt, e.correlationId],
+      )).rows[0]!;
+      return { record: inboundFromRow(r), created: true };
+    });
   }
 
   async settleInbound(inboundId: string, s: InboundSettlement): Promise<void> {

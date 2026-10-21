@@ -6,6 +6,7 @@ export * from './delivery.js';
 export * from './channel.js';
 export * from './ports.js';
 export * from './controls.js';
+export * from './inspection.js';
 export * from './ingress.js';
 export * from './outbound.js';
 export * from './operator.js';

@@ -22,6 +22,7 @@ import {
 } from '@r4/live-ops';
 import { ExecutionRuntime, TaskRuntime, TemporalRuntime, executionReadinessStatus, workerCompatibility, type ExecutionExpectation } from '@r4/task-runtime';
 import type { GatewayConfig } from './config.js';
+import { assertNoOpenProtection, type GatewayInspection, type GatewayInspectionFactory } from './inspection.js';
 
 /** What the deploying composition plugs in (a pack's production composition). */
 export interface GatewayBindings {
@@ -31,6 +32,8 @@ export interface GatewayBindings {
   readonly inbound: readonly InboundChannelAdapter[];
   readonly outbound: readonly OutboundChannelAdapter[];
   readonly taskFactory: ConversationTaskFactory;
+  /** R4-I.1 (ADR-040): the single inbound inspector, by composition. Absent: exactly R4-I, refused while a protection window is open. */
+  readonly inspection?: GatewayInspectionFactory;
 }
 
 export interface GatewayOverrides {
@@ -46,6 +49,8 @@ export interface GatewayPlatform {
   readonly delivery: OutboundDeliveryRuntime;
   readonly controls: AutonomyControls;
   readonly logger: Logger;
+  /** R4-I.1: the composed inbound inspection (null: none, exactly R4-I). */
+  readonly inspection: GatewayInspection | null;
   /** Starts the dispatcher (if configured) and the unsettled-inbound resume timer. */
   start(): void;
   /** Graceful: stop claiming, finish the submission in flight, close the server and connections. */
@@ -99,10 +104,15 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
     const executionStore = new PostgresExecutionStore(pool);
     const execution = new ExecutionRuntime({ store: executionStore, ids, clock, logger, maxRunRecoveries: 0 });
     const temporal = new TemporalRuntime({ store: executionStore, execution, ids, logger });
+    // R4-I.1: the composed inspector, or the refusal to start without one while a protection window is open (no override).
+    const log = (event: string, fields: Record<string, unknown>) => logger.info({ ...fields, event }, event);
+    const inspection = bindings.inspection ? await bindings.inspection({ pool, store, temporal, gatewayId: config.gatewayId, log }) : null;
+    if (!inspection) await assertNoOpenProtection(pool);
     const controls = new AutonomyControls({ store, logger });
     const delivery = new OutboundDeliveryRuntime({ store, adapters: bindings.outbound, config: production, owner: config.gatewayId, logger });
     const ingress = new ChannelIngress({
       store, tasks, temporal, controls, adapters: bindings.inbound, delivery, config: production, secrets: bindings.production.secrets, profile, taskFactory: bindings.taskFactory, ids, logger,
+      ...(inspection ? { inspector: inspection.inspector } : {}),
     });
     const presence = new PostgresWorkerPresenceStore(pool);
     // A worker counts only if it runs in production and composes this exact execution contract.
@@ -132,6 +142,7 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
           channel: { id: profile.channel.id, status: profile.channel.status, inbound: Boolean(inbound), outbound: outbound?.bindingKind ?? null },
           profile: profileLabel(profile),
           dispatcher: config.dispatch,
+          inspection: inspection ? { id: inspection.inspector.id, version: inspection.inspector.version, mode: inspection.mode, degradedReason: inspection.degradedReason } : null,
         },
       };
     };
@@ -173,11 +184,12 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
     let resumeTimer: NodeJS.Timeout | null = null;
     let started = false;
     return {
-      app, pool, ingress, delivery, controls, logger,
+      app, pool, ingress, delivery, controls, logger, inspection,
       start() {
         if (started) return;
         started = true;
         if (config.dispatch) dispatcher.start();
+        inspection?.start();
         resumeTimer = setInterval(() => {
           void ingress.resumeUnsettled(config.resumeAfterMs).catch((error: unknown) => logger.warn({ err: error instanceof Error ? error.message : String(error) }, 'inbound resume failed'));
         }, Math.max(1000, Math.floor(config.resumeAfterMs / 2)));
@@ -185,6 +197,7 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
       async close() {
         if (resumeTimer) clearInterval(resumeTimer);
         if (started && config.dispatch) await dispatcher.stop();
+        await inspection?.stop();
         await app.close();
         await pool.end();
       },

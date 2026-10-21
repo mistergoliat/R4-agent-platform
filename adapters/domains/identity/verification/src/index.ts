@@ -29,5 +29,8 @@ export {
   type ResponseClaim,
   type ResponseRecord,
   type ResponseState,
+  type VerificationMode,
 } from './state-store.js';
+export { VerificationInspector, type VerificationInspectionEvent, type VerificationInspectorOptions } from './inspector.js';
+export { identityVerificationInspection, type IdentityVerificationInspection, type IdentityVerificationInspectionOptions } from './gateway.js';
 export { IDENTITY_VERIFICATION_MIGRATIONS_DIR, identityVerificationSchemaIsCurrent, migrateIdentityVerification } from './migrate.js';

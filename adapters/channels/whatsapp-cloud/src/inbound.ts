@@ -34,6 +34,8 @@ const STATUS_MAP: Readonly<Record<string, ProviderStatusEvent['status']>> = { se
  */
 export class WhatsAppInboundAdapter implements InboundChannelAdapter {
   readonly channel = WHATSAPP_CHANNEL_ID;
+  /** Every canonical inbound here is one-to-one: conversationRef and senderRef are both the signed `from` (#message). */
+  readonly directConversations = true;
   readonly #config: WhatsAppCloudConfig;
 
   constructor(config: WhatsAppCloudConfig) {

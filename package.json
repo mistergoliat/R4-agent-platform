@@ -61,6 +61,7 @@
     "test:mutation:worker-readiness": "node tests/mutation/worker-readiness-mutations.mjs",
     "test:mutation:identity-verification": "node tests/mutation/identity-verification-mutations.mjs",
     "test:mutation:identity-verification-state": "node tests/mutation/identity-verification-state-mutations.mjs",
+    "test:mutation:identity-verification-ingress": "node tests/mutation/identity-verification-ingress-mutations.mjs",
     "production:sales:plan": "node agents/sales/dist/cli/production.js --plan",
     "production:sales:validate": "node agents/sales/dist/cli/production.js --validate",
     "production:sales:smoke": "node agents/sales/dist/cli/production.js --smoke",

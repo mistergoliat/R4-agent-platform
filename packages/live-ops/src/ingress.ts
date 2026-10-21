@@ -5,6 +5,7 @@ import { decideInboundAutonomy, type InboundAutonomyDecision } from './autonomy.
 import { canonicalInboundSchema, type CanonicalInbound, type HeaderBag, type InboundChannelAdapter } from './channel.js';
 import type { AutonomyControls } from './controls.js';
 import type { ProductionConfig, ProductionSecrets } from './mode.js';
+import type { InboundInspector } from './inspection.js';
 import type { OutboundDeliveryRuntime } from './outbound.js';
 import type { ConversationBindingRecord, InboundEventRecord, ProductionStore } from './ports.js';
 import { profileFingerprint, profileLabel, type ProductionProfile } from './profile.js';
@@ -35,6 +36,8 @@ export interface ChannelIngressOptions {
   readonly taskFactory: ConversationTaskFactory;
   readonly ids: IdGenerator;
   readonly logger: StructuredLogger;
+  /** R4-I.1 (ADR-040): the single inspection point, by composition. Absent: ingress is exactly R4-I. */
+  readonly inspector?: InboundInspector;
 }
 
 export type IngestOutcome =
@@ -137,7 +140,7 @@ export class ChannelIngress {
     const event = canonicalInboundSchema.parse(raw);
     const key = conversationKey(this.#o.secrets.identityHashKey, event.channel, event.accountRef, event.conversationRef);
     const text = event.content.kind === 'text' ? event.content.text : unsupportedContentMarker(event.content.contentType);
-    const { record, created } = await this.#o.store.recordInbound({
+    const inbound = {
       inboundId: this.#o.ids.next(),
       channel: event.channel,
       providerEventId: event.providerEventId,
@@ -152,7 +155,17 @@ export class ChannelIngress {
       status: 'received',
       failureCode: null,
       correlationId,
-    });
+    } as const;
+    const { inspector } = this.#o;
+    // With an inspector, the content is decided (and hashed) only inside the locked inbound transaction.
+    const { record, created } = inspector
+      ? await this.#o.store.recordInboundInspected(inbound, {
+          inspector,
+          inspectable: event.content.kind === 'text',
+          senderRef: event.senderRef,
+          direct: this.#adapters.get(event.channel)?.directConversations === true && event.senderRef === event.conversationRef,
+        })
+      : await this.#o.store.recordInbound(inbound);
     if (!created) {
       emitTelemetry(this.#o.logger, 'inbound.duplicate', { channel: event.channel, inboundId: record.inboundId, status: record.status, correlationId });
       return { kind: 'duplicate', inboundId: record.inboundId };
