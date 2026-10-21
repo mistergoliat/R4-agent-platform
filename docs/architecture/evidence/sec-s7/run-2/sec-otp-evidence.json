@@ -1,0 +1,167 @@
+[
+  {
+    "scenario": "setup",
+    "kind": "E2E",
+    "cia": "7525395",
+    "cp": "bbd766e",
+    "kids": [
+      "cia-synthetic-r3-k1"
+    ],
+    "fastCiaOtp": {
+      "ttlSeconds": 20,
+      "resendSeconds": 1
+    }
+  },
+  {
+    "scenario": "A existing account",
+    "kind": "E2E",
+    "confirm": "linked",
+    "status": "account_linked",
+    "context": {
+      "identity": "verified",
+      "purchaseHistory": "present",
+      "validUntil": "2026-10-21T22:19:18.000Z"
+    },
+    "cp": "accepted",
+    "resume": "marker without outcome"
+  },
+  {
+    "scenario": "B onboarding",
+    "kind": "E2E",
+    "first": "no_eligible_account",
+    "status": {
+      "status": "onboarding_required",
+      "onboarding": {
+        "available": false
+      }
+    },
+    "afterCreationWithoutNewChallenge": "not_linked",
+    "second": "linked",
+    "context": "verified"
+  },
+  {
+    "scenario": "C wrong code",
+    "kind": "E2E",
+    "first": "invalid_code(4)",
+    "then": "linked"
+  },
+  {
+    "scenario": "C expired code",
+    "kind": "E2E",
+    "inbound": "withheld",
+    "confirmCalls": 0,
+    "status": "verification_expired"
+  },
+  {
+    "scenario": "C duplicated code",
+    "kind": "E2E",
+    "redeliveries": 3,
+    "captures": 1,
+    "confirms": 1,
+    "afterLinked": "withheld, not sent"
+  },
+  {
+    "scenario": "C binding change",
+    "kind": "E2E",
+    "expectation": "cancelled(binding_not_current)",
+    "code": "withheld",
+    "confirms": 0,
+    "newBindingStatus": "none"
+  },
+  {
+    "scenario": "C task cancelled",
+    "kind": "E2E",
+    "code": "withheld",
+    "confirms": 0
+  },
+  {
+    "scenario": "C replacement",
+    "kind": "E2E",
+    "a": "cancelled(superseded)",
+    "codeOfA": "invalid_code against B",
+    "codeOfB": "linked"
+  },
+  {
+    "scenario": "C restart during confirmation",
+    "kind": "FAULT",
+    "pendingAcrossRestart": true,
+    "cutAfterApplied": 1,
+    "attemptsWithOneKey": 2,
+    "outcome": "linked"
+  },
+  {
+    "scenario": "C CIA unavailable",
+    "kind": "FAULT",
+    "injected503": 2,
+    "outcome": "linked"
+  },
+  {
+    "scenario": "C ambiguous",
+    "kind": "E2E",
+    "order": "withheld",
+    "status": "code_needed",
+    "attemptsSpent": 0,
+    "then": "linked"
+  },
+  {
+    "scenario": "C inspector failure",
+    "kind": "FAULT",
+    "inbound": "messageWithheld",
+    "capture": false,
+    "recovery": "linked"
+  },
+  {
+    "scenario": "C persistence failure",
+    "kind": "FAULT",
+    "first": 500,
+    "persisted": "nothing",
+    "redelivery": 200,
+    "outcome": "linked"
+  },
+  {
+    "scenario": "C AT-24 lock",
+    "kind": "E2E",
+    "wrongCodes": 5,
+    "status": "verification_locked",
+    "sixth": "not sent"
+  },
+  {
+    "scenario": "C rollback with protection",
+    "kind": "E2E",
+    "absent": "refused (identity_verification_protection_active)",
+    "protectOnly": "start refused"
+  },
+  {
+    "scenario": "C AT-25 credentials",
+    "kind": "E2E",
+    "startWithChannelCredential": 403,
+    "confirmWithAgentCredential": 403
+  },
+  {
+    "scenario": "C alternative inputs",
+    "kind": "E2E",
+    "protectedRoute": "POST /v1/channels/:channel/webhook",
+    "gates": [
+      "POST /v1/tasks",
+      "POST /v1/tasks/:id/inputs",
+      "POST /v1/tasks/:id/cancel",
+      "POST /v1/tasks/:id/handoff",
+      "POST /v1/human-requests/:id/respond",
+      "POST /v1/executions/:id/reconciliation/reschedule",
+      "POST /v1/production/controls",
+      "POST /v1/tasks/:id/operator-messages",
+      "POST /v1/outbound/:id/resolve",
+      "POST /v1/outbound/:id/cancel"
+    ],
+    "otpSentThroughThem": 0
+  },
+  {
+    "scenario": "AT-12 sweep N-15",
+    "kind": "E2E",
+    "codesChecked": 16,
+    "variants": 64,
+    "gatewayLogLines": 351,
+    "observations": 15,
+    "sealedLeft": 0
+  }
+]

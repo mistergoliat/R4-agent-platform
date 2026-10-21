@@ -1,0 +1,285 @@
+[
+  {
+    "scenario": "setup",
+    "kind": "E2E",
+    "kids": [
+      "cia-synthetic-r3-k1"
+    ],
+    "cia": "7525395",
+    "cp": "bbd766e"
+  },
+  {
+    "scenario": "1 valid link (get_context@3)",
+    "kind": "E2E",
+    "outcome": "succeeded",
+    "payload": {
+      "identity": "verified",
+      "purchaseHistory": "present",
+      "validUntil": "2026-10-21T22:21:03.000Z"
+    },
+    "cp": {
+      "outcome": "accepted",
+      "reason": null
+    }
+  },
+  {
+    "scenario": "2 no binding",
+    "kind": "E2E",
+    "payload": {
+      "identity": "unavailable",
+      "reason": "anonymous"
+    }
+  },
+  {
+    "scenario": "3 no link",
+    "kind": "E2E",
+    "payload": {
+      "identity": "unavailable",
+      "reason": "not_linked"
+    },
+    "ciaStatus": "not_linked"
+  },
+  {
+    "scenario": "4 OTP not confirmed",
+    "kind": "E2E",
+    "payload": {
+      "identity": "unavailable",
+      "reason": "not_verified"
+    },
+    "ciaStatus": "not_verified"
+  },
+  {
+    "scenario": "6 duplicate e-mail",
+    "kind": "E2E",
+    "confirmOutcome": "ambiguous",
+    "ciaStatus": "ambiguous",
+    "payload": {
+      "identity": "unavailable",
+      "reason": "not_verified"
+    }
+  },
+  {
+    "scenario": "7 guest account",
+    "kind": "E2E",
+    "confirmOutcome": "ineligible_account",
+    "ciaStatus": "not_authorized",
+    "payload": {
+      "identity": "unavailable",
+      "reason": "not_authorized"
+    }
+  },
+  {
+    "scenario": "7 inactive account",
+    "kind": "E2E",
+    "confirmOutcome": "ineligible_account",
+    "ciaStatus": "not_authorized",
+    "payload": {
+      "identity": "unavailable",
+      "reason": "not_authorized"
+    }
+  },
+  {
+    "scenario": "8 purpose not granted",
+    "kind": "E2E",
+    "ciaStatus": "not_verified",
+    "payload": {
+      "identity": "unavailable",
+      "reason": "not_verified"
+    }
+  },
+  {
+    "scenario": "17/18/20 history available, empty, paginated",
+    "kind": "E2E",
+    "normal": {
+      "identity": "verified",
+      "meaning": "purchased_historically_not_ownership",
+      "quantityBasis": "gross_units_not_net_of_returns",
+      "datePrecision": "day_timezone_unverified",
+      "items": [
+        {
+          "productName": "Rack sintetico",
+          "catalogKey": null,
+          "lastPurchasedOn": "2026-09-28",
+          "totalQuantity": 1,
+          "orderCount": 1
+        },
+        {
+          "productName": "Disco sintetico 10 kg - Color : Rojo",
+          "catalogKey": null,
+          "lastPurchasedOn": "2026-03-14",
+          "totalQuantity": 4,
+          "orderCount": 2
+        },
+        {
+          "productName": "Barra olimpica sintetica 20 kg",
+          "catalogKey": null,
+          "lastPurchasedOn": "2025-11-03",
+          "totalQuantity": 1,
+          "orderCount": 1
+        }
+      ],
+      "page": {
+        "offset": 0,
+        "returned": 3,
+        "hasMore": false,
+        "nextOffset": null
+      },
+      "validUntil": "2026-10-21T22:21:05.000Z"
+    },
+    "first": {
+      "offset": 0,
+      "returned": 2,
+      "hasMore": true,
+      "nextOffset": 2
+    },
+    "second": {
+      "offset": 2,
+      "returned": 1,
+      "hasMore": false,
+      "nextOffset": null
+    }
+  },
+  {
+    "scenario": "19 incomplete history / not_on_file",
+    "kind": "E2E",
+    "failed": {
+      "category": "temporarily_unavailable",
+      "code": "history_unavailable",
+      "retryable": true,
+      "ownerReason": "dependency_unavailable"
+    }
+  },
+  {
+    "scenario": "21 revocation after issuance",
+    "kind": "E2E",
+    "afterRevocation": {
+      "identity": "unavailable",
+      "reason": "not_linked"
+    },
+    "heldGrantAtCp": "accepted until exp"
+  },
+  {
+    "scenario": "23 subject isolation",
+    "kind": "E2E",
+    "a": {
+      "identity": "verified",
+      "purchaseHistory": "present",
+      "validUntil": "2026-10-21T22:21:08.000Z"
+    },
+    "b": {
+      "identity": "verified",
+      "purchaseHistory": "none",
+      "validUntil": "2026-10-21T22:21:08.000Z"
+    }
+  },
+  {
+    "scenario": "9 grant of another consumer",
+    "kind": "FAULT",
+    "failure": {
+      "category": "unauthorized",
+      "code": "profile_unauthorized",
+      "retryable": false,
+      "httpStatus": 403,
+      "ownerCode": "grant_rejected",
+      "requiredScope": null
+    },
+    "cp": {
+      "outcome": "rejected",
+      "reason": "consumer_mismatch"
+    }
+  },
+  {
+    "scenario": "10 grant of another account",
+    "kind": "FAULT",
+    "failure": {
+      "category": "unauthorized",
+      "code": "profile_unauthorized",
+      "retryable": false,
+      "httpStatus": 403,
+      "ownerCode": "grant_rejected",
+      "requiredScope": null
+    },
+    "cp": {
+      "outcome": "rejected",
+      "reason": "customer_mismatch"
+    }
+  },
+  {
+    "scenario": "11 tampered grant",
+    "kind": "FAULT",
+    "failure": {
+      "category": "unauthorized",
+      "code": "profile_unauthorized",
+      "retryable": false,
+      "httpStatus": 403,
+      "ownerCode": "grant_rejected",
+      "requiredScope": null
+    },
+    "cp": {
+      "outcome": "rejected",
+      "reason": "bad_signature"
+    }
+  },
+  {
+    "scenario": "12 expired grant",
+    "kind": "FAULT",
+    "failure": {
+      "category": "contract_violation",
+      "code": "incoherent_grant",
+      "retryable": false
+    }
+  },
+  {
+    "scenario": "13 CIA unavailable",
+    "kind": "FAULT",
+    "failure": {
+      "category": "temporarily_unavailable",
+      "code": "identity_unreachable",
+      "retryable": true
+    }
+  },
+  {
+    "scenario": "14 CP unavailable",
+    "kind": "FAULT",
+    "failure": {
+      "category": "temporarily_unavailable",
+      "code": "profile_unreachable",
+      "retryable": true
+    }
+  },
+  {
+    "scenario": "16 CP service_scope_only",
+    "kind": "FAULT",
+    "failure": {
+      "category": "contract_violation",
+      "code": "authorization_basis_insufficient",
+      "retryable": false
+    }
+  },
+  {
+    "scenario": "22 CP with prohibited data",
+    "kind": "FAULT",
+    "failure": {
+      "category": "contract_violation",
+      "code": "sensitive_field_present",
+      "retryable": false,
+      "path": "account.email"
+    }
+  },
+  {
+    "scenario": "8b purpose not covered (adapter)",
+    "kind": "ADAPTER",
+    "cp": {
+      "outcome": "rejected",
+      "reason": "purpose_not_granted"
+    }
+  },
+  {
+    "scenario": "24 no leak",
+    "kind": "E2E",
+    "observations": 28,
+    "identityEvents": 26,
+    "profileEvents": 18,
+    "grantsChecked": 22
+  }
+]

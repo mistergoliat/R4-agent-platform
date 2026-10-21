@@ -1,0 +1,7 @@
+run=1 checkout=/c/Users/dell/Pesaschile IA/dev/r4-j4-sec-a head=129586c55d3f90120fe3bb01db45f38710bfd87e exit=0 start=2026-10-21T22:10:45Z end=2026-10-21T22:13:49Z
+ Test Files  2 passed (2)
+      Tests  41 passed (41)
+untracked/modified before: 0 after: 0
+sha256 campaign.log 3f9ba25f9bbef6ffeb3780d1777fe02887afb7d0a7971aaccbf8a026cdbc0f2e
+sha256 r3-evidence.json 773c0741a63be27099e74d48aa18f7d26d5b5f4212710ffa92d07dd939d3c84d
+sha256 sec-otp-evidence.json 0b76690bb37206a32f0b1b45ec87292f57e752522441a235f5dc72178871237d
