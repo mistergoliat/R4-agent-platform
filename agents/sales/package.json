@@ -36,6 +36,8 @@
   ],
   "dependencies": {
     "@r4-adapters/catalog-http": "*",
+    "@r4-adapters/customer-http": "*",
+    "@r4-adapters/identity-http": "*",
     "@r4-adapters/domains": "*",
     "@r4-adapters/shipping-http": "*",
     "@r4-adapters/quote-http": "*",

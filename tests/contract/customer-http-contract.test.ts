@@ -166,13 +166,21 @@ describe('package boundaries', () => {
     expect(all).not.toMatch(/\/v1\/customers|\/rfm|\/cluster|\/clv|\/affinity|\/intelligence|commercial-profile|\/profile'/);
   });
 
-  it('no Sales profile, registry or definition binds the adapter or the boundary-C readers (J4-R4 is not authorized)', () => {
+  // R4-J4-R3 (R3.5): the readers are now used by the capability registrations (customer-v2.ts) and their
+  // only composition, the synthetic one (customer-synthetic.ts). Nothing else in Sales may reach them:
+  // no production profile, CLI, bootstrap, composition root or agent definition (J4-R4 is not authorized).
+  it('no Sales profile, registry or definition binds the adapters or the boundary-C readers (J4-R4 is not authorized)', () => {
     const salesFiles = (dir: string): string[] =>
       readdirSync(dir, { withFileTypes: true }).flatMap((entry) => (entry.isDirectory() ? salesFiles(join(dir, entry.name)) : entry.name.endsWith('.ts') || entry.name.endsWith('.json') ? [join(dir, entry.name)] : []));
     const users = salesFiles(join(ROOT, 'agents', 'sales'))
       .filter((file) => !file.includes('node_modules') && !file.includes(`${join('agents', 'sales', 'dist')}`))
-      .filter((file) => /customer-http|customer-profile-outputs|readCustomerContextV2|readCustomerPurchaseHistoryV1|get_purchase_history/.test(readFileSync(file, 'utf8')))
+      .filter((file) => /customer-http|identity-http|customer-profile-outputs|customer-v2|customer-synthetic|readCustomerContextV2|readCustomerPurchaseHistoryV1|get_purchase_history/.test(readFileSync(file, 'utf8')))
       .map((file) => file.slice(ROOT.length + 1).replace(/\\/g, '/'));
-    expect(users).toEqual(['agents/sales/src/capabilities/customer-profile-outputs.ts']);
+    expect(users.sort()).toEqual([
+      'agents/sales/package.json',
+      'agents/sales/src/capabilities/customer-profile-outputs.ts',
+      'agents/sales/src/capabilities/customer-synthetic.ts',
+      'agents/sales/src/capabilities/customer-v2.ts',
+    ]);
   });
 });
