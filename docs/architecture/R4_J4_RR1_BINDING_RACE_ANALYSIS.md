@@ -2,7 +2,7 @@
 
 | Campo | Valor |
 |---|---|
-| Mandato | `R4-J4-SEC-OTP-DESIGN-01` (§7) |
+| Mandatos | `R4-J4-SEC-OTP-DESIGN-01` (§7) · `R4-J4-SEC-OTP-DESIGN-OWNER-REVISION-02` (§8: gate independiente; `V` lee `bindingByTask` y `taskState`; se añade la lectura de estado de verificación) |
 | Fecha | 2026-10-21 |
 | Para | Owner de R4 |
 | Origen | `R4_J4_R3_OWNER_MERGE_REPORT.md` §2 (OWNER-R3-03) y §6 (RR-1): "Clausura concurrente de un binding durante una invocación ya iniciada. La invocación puede completar con el binding leído al inicio" |
@@ -143,7 +143,8 @@ T5   return
 | Operación | Revalidación | Si falla |
 |---|---|---|
 | `identity.start_verification@1` | `V` antes de `openExpectation`, antes de la llamada a la CIA y después del 202 | Antes de la CIA: rechazar sin efecto. Después del 202: expectativa `cancelled(binding_not_current)`. **El correo ya salió** (residuo R-2) |
-| Inspector de la ingesta | `expectation.binding_id = findOpenBinding(...).bindingId` y la tarea no terminal | Redactar sin capturar y cancelar la expectativa |
+| Inspector de la ingesta | `expectation.binding_id = ctx.binding.bindingId` y `ctx.binding.taskAcceptsInput`. `ChannelIngress` lee ambos (binding abierto y `taskState`) **dentro de la transacción del inbound**, bajo el lock de la conversación (`TrustedChannelContext`, decisión §5.1) | Redactar sin enviar y cancelar la expectativa |
+| `identity.verification_status@1` (lectura comercial) | `V(taskId, b₀)` antes de leer el estado y antes de devolverlo | `{status: 'none'}`. Un estado de otro binding nunca se hereda (AT-ONB-07) |
 | Despachador de `confirm` | `V(expectation.task_id, expectation.binding_id)` justo antes de abrir el cifrado | `cancelled(binding_not_current)`, sin llamar a la CIA y con el cifrado borrado |
 | Reanudación | `submitInput` ya rechaza tareas terminales (`temporal-runtime.ts:394-396`) | `notified(task_terminal)` |
 
@@ -189,6 +190,7 @@ Todas se basan en **barreras de promesas**, sin temporizadores. El patrón es el
 | RR1-T06 | Integration (`LiveOpsTestbed`, Postgres real, worker real; doble de CIA y CP en proceso con barrera) | Webhook → tarea → `customer.get_context@3` en vuelo | Doble de la CIA bloqueado | `api.temporal.cancelTask(taskId)` y luego un webhook nuevo del mismo cliente (cierra el binding) | El doble de CP no recibe peticiones. Ninguna observación de la invocación en la base. El nuevo inbound abre un binding nuevo |
 | RR1-T07 | Unit (despachador) | Doble de la CIA `confirm` | Antes del reclamo | binding `closed` | Sin llamada a `confirm`; respuesta `cancelled`, cifrado anulado |
 | RR1-T08 | Unit (despachador) | Doble de la CIA `confirm` bloqueado | Dentro de `confirm` | Tarea `cancelled` | Resultado registrado; `submitInput` no crea entrada (`task_terminal`); expectativa sin reanudación |
+| RR1-T09 | Unit (`identity.verification_status@1`) | Store de expectativas con `onboarding_required` para el binding A | Dentro de la lectura del store | Tarea `cancelled` (binding A sigue `open`) | `{status: 'none'}`. El estado no sale de la invocación |
 
 **Mutaciones obligatorias** (`tests/mutation`):
 - quitar T2': RR1-T01 y RR1-T02 deben fallar;
@@ -202,13 +204,15 @@ Todas se basan en **barreras de promesas**, sin temporizadores. El patrón es el
 ```text
 GATE_RR1 = CLOSED (bloquea activación real) hasta que:
   1. Las capacidades customer.* activables revaliden V en T1, T2' y T4' (versión nueva).
-  2. identity.start_verification y el despachador de confirm revaliden V (§5.2).
-  3. RR1-T01…T08 en verde y las mutaciones del §6 detectadas.
+  2. identity.start_verification, identity.verification_status y el despachador de confirm
+     revaliden V (§5.2). V lee SIEMPRE bindingByTask Y taskState: releer solo el binding
+     no detecta la cancelación de la tarea.
+  3. RR1-T01…T09 en verde y las mutaciones del §6 detectadas.
   4. El owner acepte por escrito los residuos R-1…R-3 (§8) o autorice H-ALT-1 por mandato de harness.
   5. OA-09 decidido: ¿humanOwned invalida la asociación?
 ```
 
-Este gate **no** se resuelve por implicación al cerrar SEC-OTP-01/02, G-16, AP-* ni D7, y no los resuelve.
+Este gate **no** se resuelve por implicación al cerrar SEC-OTP-01/02, G-16, AP-* ni D7, y no los resuelve. En particular, **que la campaña SEC-OTP (SEC-S7) funcione no cierra RR-1**: su cierre exige los cinco puntos anteriores, verificados por separado.
 
 ---
 
