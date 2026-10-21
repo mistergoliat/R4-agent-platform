@@ -101,6 +101,20 @@ export default defineConfig({
         },
       },
       {
+        // R4-J4-R3: R4 → CIA → Customer Profile synthetic campaign (opt-in: `npm run test:interop`, never part of `npm test`).
+        // Needs built clean checkouts of the CIA and CP (R4_INTEROP_CIA_DIR, R4_INTEROP_CP_DIR), the CIA PostgreSQL and R4's PostgreSQL.
+        resolve: { alias },
+        test: {
+          name: 'interop',
+          include: ['tests/interop/**/*.test.ts'],
+          environment: 'node',
+          globalSetup: ['tests/support/global-setup.ts'],
+          testTimeout: 60_000,
+          hookTimeout: 180_000,
+          fileParallelism: false,
+        },
+      },
+      {
         resolve: { alias },
         test: {
           name: 'recovery',
