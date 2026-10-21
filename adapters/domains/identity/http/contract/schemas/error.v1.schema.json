@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pesaschile.cl/contracts/cia/v1/error.v1.schema.json",
+  "title": "CIA v1 error body (CANDIDATE, CIA-S0)",
+  "description": "Every non-2xx answer of the consumer API. No free text. HTTP: invalid_request 400, unauthenticated 401, consumer_not_allowed 403 (credential, scope, channel, channel account or purpose outside the consumer's allowlist: a configuration error, never a customer state), idempotency_conflict 409 (same key, different body), operation_in_progress 409 (same key and body while the first request still executes; retry after Retry-After), rate_limited 429 (identical for every limit), dependency_unavailable 503, delivery_unavailable 503.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["error"],
+  "properties": {
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "retryable"],
+      "properties": {
+        "code": { "enum": ["invalid_request", "unauthenticated", "consumer_not_allowed", "idempotency_conflict", "operation_in_progress", "rate_limited", "dependency_unavailable", "delivery_unavailable"] },
+        "retryable": { "type": "boolean" }
+      },
+      "if": { "properties": { "code": { "enum": ["operation_in_progress", "rate_limited", "dependency_unavailable", "delivery_unavailable"] } } },
+      "then": { "properties": { "retryable": { "const": true } } },
+      "else": { "properties": { "retryable": { "const": false } } }
+    }
+  }
+}

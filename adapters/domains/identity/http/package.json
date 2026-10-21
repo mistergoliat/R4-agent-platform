@@ -1,0 +1,24 @@
+{
+  "name": "@r4-adapters/identity-http",
+  "version": "0.0.0",
+  "private": true,
+  "description": "R4-J4-R3 Customer Identity Authority HTTP adapter of the CustomerIdentityResolver port (MS-pesaschile-customer-identity-authority contract v1-d2, owner commit 7525395): POST /v1/identity/resolve with the agent bearer, the channel subject only in the body, deadline, 16 KiB UTF-8 cap, no redirects, no retries, closed validation against the pinned schema, opaque grant (transport shape, expiresAt and purposes only). Synthetic and loopback only. Transport only. Outside R4 Core.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "contract"
+  ],
+  "dependencies": {
+    "@r4-adapters/domains": "*",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
+  }
+}

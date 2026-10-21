@@ -1,0 +1,96 @@
+{
+  "contract": "customer-identity-authority",
+  "schemaVersion": 1,
+  "revision": "v1-d2-candidate",
+  "contractStatus": "candidate",
+  "normative": false,
+  "owner": "pending (D1: producer owner not designated)",
+  "synthetic": true,
+  "specification": "CIA_V1_CONTRACT.md",
+  "delta": "DELTA.md",
+  "provenance": {
+    "mandate": "J4-D2-CONTRACT-REVISION-01",
+    "repository": "mistergoliat/MS-pesaschile-customer-identity-authority",
+    "branch": "docs/cia-d2-contract-revision",
+    "authoredOn": "df66f9234050487245090d7c1485a767715d0866",
+    "containingCommit": null,
+    "containingCommitNote": "a file cannot carry the SHA of the commit that contains it: git log -1 --format=%H -- contract/cia/v1-d2/MANIFEST.json",
+    "revisionsSource": {
+      "repository": "mistergoliat/MS-pesaschile-customer-profile",
+      "branch": "docs/cp-j4-s5-d2-contract-alignment",
+      "commit": "97bcc43dcc222a2d6016cfc8f9b2b63a0167dc93",
+      "document": "docs/reviews/CP_J4_S5_D2_DECISION_MATRIX.md",
+      "appliedHere": [
+        "REV-01",
+        "REV-02",
+        "REV-03",
+        "REV-08"
+      ]
+    },
+    "contractAuthority": "PROPOSED: the CIA owns its grant issuance contract and revises it in this repository. R4 docs/contracts/cia/v1 @ 873da0f stays historical and is not modified. The transfer depends on D1 (producer owner)."
+  },
+  "base": {
+    "revision": "v1-s0-candidate",
+    "path": "../v1",
+    "r4Commit": "873da0fa74f30f957f57287a7e564d5c37e13ed7",
+    "files": 99,
+    "sourceJson": {
+      "file": "contract/SOURCE.json",
+      "sha256": "967c0315d4341a17315ab79633f62f445fe16335d2713e19fece0c6ae99d394c"
+    },
+    "replaced": [
+      {
+        "file": "CIA_V1_CONTRACT.md",
+        "s0Sha256": "7503d8a88171505da36adeb6501020006869c744068bce1e5ca433a60e95f308",
+        "s0GitBlob": "e7ffd1fa1fc3cb379151ad03d5677eddc850ed2e"
+      },
+      {
+        "file": "schemas/grant.v1.schema.json",
+        "s0Sha256": "c54fb22541294b07aa77a4a8a5da97ed2030a445d2314e4eac040209f88d9231",
+        "s0GitBlob": "2e74d3be198b1b392b5dd18e42648d3fdba4ec39"
+      }
+    ],
+    "inheritedUnchanged": 97,
+    "inheritedNote": "every other file of ../v1 listed in contract/SOURCE.json, byte for byte; ../v1/MANIFEST.json stays the manifest of the inherited artifacts"
+  },
+  "cryptographicFixtures": "G01-G37 (30 cases) inherited unchanged from ../v1/fixtures/grants; not regenerated",
+  "hash": "sha256 of the file bytes (LF; .gitattributes eol=lf); gitBlob = git hash-object of the same bytes",
+  "files": [
+    {
+      "file": "CIA_V1_CONTRACT.md",
+      "role": "specification (replaces ../v1/CIA_V1_CONTRACT.md in this revision)",
+      "sha256": "ec1affcb7e9fbca31b96a436f8e38c7d4d7257298138c14173b18f2f7b1c53b1",
+      "gitBlob": "521fd0453d8000ce29d4eb93a7dbc8e1164be656"
+    },
+    {
+      "file": "DELTA.md",
+      "role": "exact delta against v1-s0-candidate and contract-authority proposal",
+      "sha256": "6390b624ebea6954cb248fb36af60b699c2c20608f74b29f6f72706a0930fc5b",
+      "gitBlob": "f12d0fcd609a5b6eb66b0931c7836b3eeeb11721"
+    },
+    {
+      "file": "fixtures/rejection/outcome.rejected.valid.json",
+      "role": "fixture: valid internal verifier outcome (#/$defs/verifierOutcome)",
+      "sha256": "5929179d0cd785218ba98d9336797f0b4f23126737812dc51fc6629148f34fb8",
+      "gitBlob": "dc9483158a2182cf494f1a76be704c875944a7cd"
+    },
+    {
+      "file": "fixtures/rejection/public.grant-rejected.valid.json",
+      "role": "fixture: valid public rejection body (#/$defs/publicRejection)",
+      "sha256": "ce961e1b8ed1900ad6605dfdc3a3fb745db0101b910442597616367f5a1a634a",
+      "gitBlob": "86f9c11cc8af87a7232f52c01085ffcc98490c2d"
+    },
+    {
+      "file": "fixtures/rejection/public.with-reason.invalid.json",
+      "role": "fixture: INVALID public rejection body carrying reason (#/$defs/publicRejection)",
+      "sha256": "b96daa7f24950a31f02e8d4e05520299ca92835a2f85689dedb0aa1cd1d64ae6",
+      "gitBlob": "240c0c21fdd5601854c3f2c5daf2dc083cfd1d26"
+    },
+    {
+      "file": "schemas/grant.v1.schema.json",
+      "role": "grant schema (replaces ../v1/schemas/grant.v1.schema.json in this revision; header, claims and rejectionReason unchanged)",
+      "sha256": "35614cd83347b7f0299b99eef11bbf604f047a6d47e288864c03225c90135a9a",
+      "gitBlob": "3b05baaa48c865b19ea2353b6a22032fe823303f"
+    }
+  ]
+}

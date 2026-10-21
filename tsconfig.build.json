@@ -24,6 +24,7 @@
     { "path": "adapters/domains/shipping/http" },
     { "path": "adapters/domains/quote/http" },
     { "path": "adapters/domains/customer/http" },
+    { "path": "adapters/domains/identity/http" },
     { "path": "adapters/models/openai-compatible" },
     { "path": "adapters/channels/whatsapp-cloud" },
     { "path": "agents/sales" }

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pesaschile.cl/contracts/cia/v1/cia-common.v1.schema.json",
+  "title": "Customer Identity Authority v1 — common types (CANDIDATE, CIA-S0)",
+  "description": "Shared definitions of the CIA v1 consumer API. Channel names, channel subject formats, account namespaces and data purposes are values registered in configuration, never types of the core: the schemas only fix their lexical shape.",
+  "$defs": {
+    "schemaVersion": { "const": 1 },
+    "context": {
+      "description": "Omnichannel context asserted by the consumer's channel integration from an authenticated channel event (never by a model). The consumer itself is NOT in the body: it is the principal authenticated by the bearer.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["channel", "channelAccountRef", "subjectRef", "sessionRef", "subjectAssurance"],
+      "properties": {
+        "channel": { "description": "Registered channel identifier (configuration).", "type": "string", "pattern": "^[a-z][a-z0-9_-]{1,31}$" },
+        "channelAccountRef": { "description": "The consumer's own account on the channel (configuration allowlist).", "$ref": "#/$defs/opaqueRef" },
+        "subjectRef": { "description": "Channel subject as authenticated by the channel provider. Its exact format is registered per channel; the CIA stores only its keyed hash.", "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[\\x21-\\x7E]+$" },
+        "sessionRef": { "description": "Opaque session/conversation reference of the consumer. Must be identical between starting and confirming a verification.", "$ref": "#/$defs/opaqueRef" },
+        "subjectAssurance": { "description": "How the subject was authenticated. v1 accepts only a provider-signed event.", "enum": ["provider_signed"] }
+      }
+    },
+    "opaqueRef": { "type": "string", "pattern": "^[A-Za-z0-9._:-]{1,128}$" },
+    "dataPurpose": { "description": "Registered data-access purpose (configuration allowlist per consumer).", "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$" },
+    "dataPurposes": { "type": "array", "items": { "$ref": "#/$defs/dataPurpose" }, "minItems": 1, "maxItems": 8, "uniqueItems": true },
+    "verificationPurpose": { "description": "Why the verification is performed. Distinct from data-access purposes, which only grants carry.", "enum": ["link_commercial_account"] },
+    "accountRef": { "description": "Commercial account reference with the namespace of a registered account provider: <namespace>:<id>.", "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}:[A-Za-z0-9._-]{1,128}$" },
+    "timestamp": { "type": "string", "format": "date-time", "pattern": "Z$" },
+    "verificationId": { "description": "128 random bits, base64url without padding. Kept by the channel integration; never shown to a model.", "type": "string", "pattern": "^[A-Za-z0-9_-]{22}$" },
+    "email": { "description": "Declared by the user: untrusted. Characters that alter account-provider filters are rejected.", "type": "string", "maxLength": 254, "format": "email", "pattern": "^[^\\s|%\\[\\]]+$" },
+    "code": { "description": "One-time code exactly as normalized by the channel integration.", "type": "string", "pattern": "^[0-9]{6}$" },
+    "grant": {
+      "description": "Per-customer access grant. token is a compact JWS (grant.v1.schema.json); consumers treat it as opaque.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["token", "expiresAt", "purposes"],
+      "properties": {
+        "token": { "type": "string", "maxLength": 2048, "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$" },
+        "expiresAt": { "description": "Equals the exp claim of the token.", "$ref": "#/$defs/timestamp" },
+        "purposes": { "description": "Equals the requested purposes; all must be granted.", "$ref": "#/$defs/dataPurposes" }
+      }
+    }
+  }
+}

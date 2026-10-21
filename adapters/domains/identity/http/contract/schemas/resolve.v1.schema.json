@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pesaschile.cl/contracts/cia/v1/resolve.v1.schema.json",
+  "title": "POST /v1/identity/resolve (CANDIDATE, CIA-S0)",
+  "description": "Read-only resolution of the context's subject for the requested data purposes. Scope identity.resolve. The response is the IdentityResolution wire shape: accountRef and grant appear ONLY with status verified; no personal data.",
+  "$defs": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "context", "purposes"],
+      "properties": {
+        "schemaVersion": { "$ref": "cia-common.v1.schema.json#/$defs/schemaVersion" },
+        "context": { "$ref": "cia-common.v1.schema.json#/$defs/context" },
+        "purposes": { "$ref": "cia-common.v1.schema.json#/$defs/dataPurposes" }
+      }
+    },
+    "response": {
+      "description": "HTTP 200.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "status", "customerRef", "grant", "resolvedAt"],
+          "properties": {
+            "schemaVersion": { "$ref": "cia-common.v1.schema.json#/$defs/schemaVersion" },
+            "status": { "const": "verified" },
+            "customerRef": { "$ref": "cia-common.v1.schema.json#/$defs/accountRef" },
+            "grant": { "$ref": "cia-common.v1.schema.json#/$defs/grant" },
+            "resolvedAt": { "$ref": "cia-common.v1.schema.json#/$defs/timestamp" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schemaVersion", "status", "resolvedAt"],
+          "properties": {
+            "schemaVersion": { "$ref": "cia-common.v1.schema.json#/$defs/schemaVersion" },
+            "status": { "enum": ["not_linked", "not_verified", "ambiguous", "conflicted", "not_authorized"] },
+            "resolvedAt": { "$ref": "cia-common.v1.schema.json#/$defs/timestamp" }
+          }
+        }
+      ]
+    }
+  }
+}

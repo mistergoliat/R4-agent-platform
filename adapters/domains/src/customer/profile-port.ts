@@ -38,10 +38,39 @@ export interface CustomerAccessGrant {
   readonly purposes: readonly CustomerPurpose[];
 }
 
-/** What the identity authority answers for the channel subject (implemented in J4-R3, not here). */
+/** What the identity authority answers for the channel subject. */
 export type IdentityResolution =
   | { readonly status: 'verified'; readonly customerRef: string; readonly grant: CustomerAccessGrant; readonly resolvedAt: string }
   | { readonly status: 'not_linked' | 'not_verified' | 'ambiguous' | 'conflicted' | 'not_authorized'; readonly resolvedAt: string };
+
+/**
+ * R4-J4-R3: the channel subject, taken only from the trusted conversation binding
+ * (`ProductionStore.bindingByTask`), never from the model, the transcript or the workspace.
+ * `sessionRef` is the binding id: CIA contract v1-d2 §3 ("Sesión": consumer session reference,
+ * R4 `bindingId`). It is the one field added to the R1 draft subject, because the accepted contract
+ * requires it.
+ */
+export interface ChannelSubject {
+  readonly channel: string;
+  readonly accountRef: string;
+  readonly subjectRef: string;
+  readonly sessionRef: string;
+}
+
+/** R4-J4-R3 (specification R4-J4-R1 §4): resolves the subject for the purposes asked, per invocation. */
+export interface CustomerIdentityResolver {
+  resolve(subject: ChannelSubject, purposes: readonly CustomerPurpose[], options?: CallOptions): Promise<IdentityResolution>;
+}
+
+/** Synthetic Customer Profile ids (CP dataset and CIA fixtures): the only customers a synthetic binding may reach (AG-1). */
+export const SYNTHETIC_CUSTOMER_ID_MIN = 900000201;
+export const SYNTHETIC_CUSTOMER_ID_MAX = 900000313;
+
+export function isSyntheticCustomerRef(customerRef: string): boolean {
+  if (!CUSTOMER_REF_PATTERN.test(customerRef)) return false;
+  const id = Number(customerRef.slice('prestashop_customer:'.length));
+  return id >= SYNTHETIC_CUSTOMER_ID_MIN && id <= SYNTHETIC_CUSTOMER_ID_MAX;
+}
 
 export type CustomerProfileStatus = 'available' | 'not_found' | 'withheld';
 
