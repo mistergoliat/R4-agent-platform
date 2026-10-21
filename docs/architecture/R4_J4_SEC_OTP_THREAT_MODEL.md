@@ -180,7 +180,7 @@ AT-02 es una tabla de unos 60 casos, en tres bloques.
 | RX-04 | Igual que RX-03 | Inbound primero | Respuesta contra A `pending` → el reemplazo la cancela con el cifrado borrado; el despachador no la envía |
 | RX-05 | Dos entregas del mismo `providerEventId` en paralelo | Una retiene el lock | La segunda es duplicado y no inspecciona; una respuesta |
 | RX-06 | El barrido expira la expectativa ∥ inbound | Ambos órdenes | La redacción es igual en ambos (`protect_until`). Captura solo si `now < challenge_expires_at` en la transacción del inbound |
-| RX-07 | El despachador registra el resultado ∥ reemplazo | El reemplazo primero | Resultado guardado en la respuesta; la expectativa nueva intacta; sin reanudación |
+| RX-07 | El despachador registra el resultado ∥ reemplazo | El reemplazo primero | Resultado descartado (`stale`, SEC-S2): la respuesta ya fue cancelada y su cifrado borrado por el reemplazo; la expectativa nueva intacta; sin reanudación |
 | RX-08 | Llamada a la CIA en vuelo (doble bloqueado en una barrera) ∥ inbound de la misma conversación | — | El inbound **no espera** a la CIA: ningún lock retenido durante la red (el inbound termina mientras la barrera sigue cerrada) |
 
 ### 4.6 Transiciones de estado (AT-TR)
