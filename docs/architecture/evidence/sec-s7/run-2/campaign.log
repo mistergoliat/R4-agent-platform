@@ -1,0 +1,9 @@
+
+ RUN  v4.1.11 C:/Users/dell/Pesaschile IA/dev/r4-j4-sec-a
+
+
+ Test Files  2 passed (2)
+      Tests  41 passed (41)
+   Start at  19:13:54
+   Duration  139.64s (transform 4.10s, setup 0ms, import 12.03s, tests 126.25s, environment 1ms)
+

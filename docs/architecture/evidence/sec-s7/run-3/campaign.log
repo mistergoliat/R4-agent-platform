@@ -1,0 +1,9 @@
+
+ RUN  v4.1.11 C:/Users/dell/i/r4
+
+
+ Test Files  2 passed (2)
+      Tests  41 passed (41)
+   Start at  19:16:37
+   Duration  134.54s (transform 4.83s, setup 0ms, import 13.80s, tests 119.86s, environment 0ms)
+
