@@ -16,6 +16,7 @@
     "adapters/domains/quote/http",
     "adapters/domains/customer/http",
     "adapters/domains/identity/http",
+    "adapters/domains/identity/verification",
     "adapters/models/*",
     "adapters/channels/*",
     "agents/sales"
@@ -58,6 +59,7 @@
     "test:mutation:production": "node tests/mutation/production-mutations.mjs",
     "test:mutation:production-control": "node tests/mutation/production-control-mutations.mjs",
     "test:mutation:worker-readiness": "node tests/mutation/worker-readiness-mutations.mjs",
+    "test:mutation:identity-verification": "node tests/mutation/identity-verification-mutations.mjs",
     "production:sales:plan": "node agents/sales/dist/cli/production.js --plan",
     "production:sales:validate": "node agents/sales/dist/cli/production.js --validate",
     "production:sales:smoke": "node agents/sales/dist/cli/production.js --smoke",

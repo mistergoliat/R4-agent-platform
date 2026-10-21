@@ -31,6 +31,7 @@
       "@r4-adapters/quote-http": ["./adapters/domains/quote/http/src/index.ts"],
       "@r4-adapters/customer-http": ["./adapters/domains/customer/http/src/index.ts"],
       "@r4-adapters/identity-http": ["./adapters/domains/identity/http/src/index.ts"],
+      "@r4-adapters/identity-verification": ["./adapters/domains/identity/verification/src/index.ts"],
       "@r4-adapters/openai-compatible": ["./adapters/models/openai-compatible/src/index.ts"],
       "@r4-adapters/whatsapp-cloud/testing": ["./adapters/channels/whatsapp-cloud/src/testing.ts"],
       "@r4-adapters/whatsapp-cloud": ["./adapters/channels/whatsapp-cloud/src/index.ts"],
@@ -40,5 +41,5 @@
       "@r4-sales/agent": ["./agents/sales/src/index.ts"]
     }
   },
-  "include": ["packages/*/src", "apps/*/src", "adapters/domains/src", "adapters/domains/catalog/http/src", "adapters/domains/shipping/http/src", "adapters/domains/quote/http/src", "adapters/domains/customer/http/src", "adapters/domains/identity/http/src", "adapters/models/*/src", "adapters/channels/*/src", "agents/sales/src", "tests", "vitest.config.ts", "eslint.config.js"]
+  "include": ["packages/*/src", "apps/*/src", "adapters/domains/src", "adapters/domains/catalog/http/src", "adapters/domains/shipping/http/src", "adapters/domains/quote/http/src", "adapters/domains/customer/http/src", "adapters/domains/identity/http/src", "adapters/domains/identity/verification/src", "adapters/models/*/src", "adapters/channels/*/src", "agents/sales/src", "tests", "vitest.config.ts", "eslint.config.js"]
 }

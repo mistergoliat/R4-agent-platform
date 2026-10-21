@@ -107,7 +107,7 @@ V(taskId, bindingId₀) ≡ bindingByTask(taskId).bindingId = bindingId₀
                        ∧ bindingByTask(taskId).status = 'open'
                        ∧ taskState(taskId).status ∉ {completed, cancelled, failed}
                        ∧ ¬ taskState(taskId).terminalIntent
-                       ∧ (OA-09) ¬ taskState(taskId).humanOwned   ← decisión del owner
+                       ∧ ¬ taskState(taskId).humanOwned          ← OA-09 (ACCEPTANCE-03): obligatorio en operaciones de identidad nuevas
 ```
 
 - `bindingId₀` es el binding leído en T1.
@@ -135,7 +135,7 @@ T5   return
 **Versión:** se implementa como versión nueva (`customer.get_context@3`, `customer.get_purchase_history@2`), según la convención del repositorio de no cambiar el comportamiento de una versión publicada. Los hashes históricos de `@2` y `@1` no cambian.
 
 **¿Por qué un `anonymous` en T4' si el modelo ya no recibirá nada?** Es defensa en profundidad:
-- en T4' la run podría seguir viva si `humanOwned` se cuenta como no válido (OA-09);
+- en T4' la run podría seguir viva y la tarea haber pasado a `humanOwned`, que OA-09 declara no apta para operaciones de identidad nuevas;
 - además, el resultado de la invocación queda coherente con la autorización en el instante de devolverlo.
 
 ### 5.2 Operaciones SEC-OTP
@@ -209,7 +209,9 @@ GATE_RR1 = CLOSED (bloquea activación real) hasta que:
      no detecta la cancelación de la tarea.
   3. RR1-T01…T09 en verde y las mutaciones del §6 detectadas.
   4. El owner acepte por escrito los residuos R-1…R-3 (§8) o autorice H-ALT-1 por mandato de harness.
-  5. OA-09 decidido: ¿humanOwned invalida la asociación?
+  5. OA-09: humanOwned invalida la asociación en las operaciones de identidad nuevas (decidido en
+     ACCEPTANCE-03; aplicable sin tocar el harness: TaskStateFacts.humanOwned, ports.ts:124,312).
+     Los residuos R-1…R-3 siguen pendientes de aceptación: RR-1 NO está cerrado.
 ```
 
 Este gate **no** se resuelve por implicación al cerrar SEC-OTP-01/02, G-16, AP-* ni D7, y no los resuelve. En particular, **que la campaña SEC-OTP (SEC-S7) funcione no cierra RR-1**: su cierre exige los cinco puntos anteriores, verificados por separado.

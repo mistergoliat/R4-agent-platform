@@ -38,6 +38,8 @@ const alias = {
   '@r4-adapters/customer-http': src('./adapters/domains/customer/http/src/index.ts'),
   // R4-J4-R3: Customer Identity Authority HTTP adapter (outside Core; synthetic, loopback only; bound by no production profile).
   '@r4-adapters/identity-http': src('./adapters/domains/identity/http/src/index.ts'),
+  // R4-J4 SEC-S1: SEC-OTP identity verification (outside Core; pure classifier only; wired to no ingress).
+  '@r4-adapters/identity-verification': src('./adapters/domains/identity/verification/src/index.ts'),
   '@r4-adapters/openai-compatible': src('./adapters/models/openai-compatible/src/index.ts'),
   // R4-I: channel adapter (outside Core). The testing entry (local fake provider) is listed first: aliases match by prefix.
   '@r4-adapters/whatsapp-cloud/testing': src('./adapters/channels/whatsapp-cloud/src/testing.ts'),
