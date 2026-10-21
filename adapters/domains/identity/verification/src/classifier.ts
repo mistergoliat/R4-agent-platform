@@ -16,8 +16,11 @@ import { FORGEABLE_MARKER_PREFIXES, PLATFORM_MARKERS } from './markers.js';
 export const CANDIDATE_MIN_DIGITS = 4;
 export const CANDIDATE_MAX_DIGITS = 8;
 export const CODE_DIGITS = 6;
-/** At most this many separator characters may sit between two digits of the same run. */
+/** At most this many separator characters may sit between two digits of the same (strong) run. */
 const MAX_GAP = 3;
+/** A weak link: at most this many connector characters (or one short word) between two digit groups. */
+const MAX_WEAK_GAP = 8;
+const MAX_LINK_WORD = 3;
 
 /**
  * OA-07b: the words that may surround a code for it to be submitted. Owner-approved for synthetic
@@ -48,6 +51,7 @@ export type ReplacementReason =
   | 'expectation_not_accepting'
   | 'subject_not_attested'
   | 'multiple_candidates'
+  | 'ambiguous_digits'
   | 'not_six_digits'
   | 'context_not_allowed'
   | 'fail_closed';
@@ -98,6 +102,7 @@ function classify(original: string, context: VerificationInspectionContext): Ver
   if (!context.directSubjectAttested) return withheld('subject_not_attested');
   const [only, ...others] = candidates;
   if (!only || others.length > 0) return withheld('multiple_candidates');
+  if (!only.submittable) return withheld('ambiguous_digits');
   if (only.digits.length !== CODE_DIGITS) return withheld('not_six_digits');
   if (!codeOnly(units, only)) return withheld('context_not_allowed');
   return {
@@ -151,6 +156,8 @@ interface Candidate {
   readonly first: number;
   readonly last: number;
   readonly digits: string;
+  /** Only an unambiguous strong run of 4–8 digits, alone in its cluster, may ever be submitted. */
+  readonly submittable: boolean;
 }
 
 interface DigitGroup {
@@ -159,51 +166,131 @@ interface DigitGroup {
   readonly digits: string;
 }
 
-/**
- * A run is a maximal sequence of digit groups separated by at most MAX_GAP separator characters.
- * A run of 4–8 digits is one candidate. A longer run (phone, RUT) is not a candidate; but each of
- * its contiguous groups of exactly six digits is, so a code written next to other digits
- * ("482913 482913", "482913 1234") is still redacted.
- */
-function candidatesOf(units: readonly Unit[]): Candidate[] {
-  const candidates: Candidate[] = [];
-  let i = 0;
-  while (i < units.length) {
-    if (units[i]?.digit == null) {
-      i += 1;
-      continue;
-    }
-    const groups = runAt(units, i);
-    const digits = groups.map((g) => g.digits).join('');
-    const first = groups[0]?.first ?? i;
-    const last = groups[groups.length - 1]?.last ?? i;
-    if (digits.length >= CANDIDATE_MIN_DIGITS && digits.length <= CANDIDATE_MAX_DIGITS) candidates.push({ first, last, digits });
-    else if (digits.length > CANDIDATE_MAX_DIGITS) candidates.push(...groups.filter((g) => g.digits.length === CODE_DIGITS));
-    i = last + 1;
-  }
-  return candidates;
+/** How two consecutive digit groups relate: `none` means they are separate numbers. */
+type Link = 'strong' | 'weak' | 'none';
+
+interface Segment {
+  readonly groups: readonly DigitGroup[];
+  readonly links: readonly Link[];
 }
 
-function runAt(units: readonly Unit[], start: number): DigitGroup[] {
+/**
+ * Redaction is the union of three rules; only the first can produce a submittable candidate.
+ *
+ *  1. A strong run (groups joined by 1–MAX_GAP separators) of 4–8 digits is a candidate.
+ *  2. A cluster (groups joined by strong or weak links: up to MAX_WEAK_GAP connector characters,
+ *     or one word of at most MAX_LINK_WORD letters such as "y") with a weak link and 4–8 digits is
+ *     redacted whole: "482 y 913", "482----913", "482 🙏 913".
+ *  3. In a run or cluster of more than 8 digits, every window of consecutive groups totalling exactly
+ *     six digits is redacted: "482913 1234", "482 913 1234". A phone or RUT written that way loses
+ *     those digits while the conversation is protected (a stated cost: see the validation report).
+ *
+ * Overlapping spans merge, and a merged span is never submittable.
+ */
+function candidatesOf(units: readonly Unit[]): Candidate[] {
+  const groups = digitGroupsOf(units);
+  const links = groups.slice(1).map((group, index) => linkOf(units, groups[index], group));
+  const spans: Candidate[] = [];
+  for (const run of segmentsOf(groups, links, (link) => link === 'strong')) {
+    const length = digitsOf(run.groups).length;
+    if (length >= CANDIDATE_MIN_DIGITS && length <= CANDIDATE_MAX_DIGITS) spans.push(candidateOf(run.groups, true));
+    else if (length > CANDIDATE_MAX_DIGITS) spans.push(...sixDigitWindows(run.groups));
+  }
+  for (const cluster of segmentsOf(groups, links, (link) => link !== 'none')) {
+    if (!cluster.links.includes('weak')) continue;
+    const length = digitsOf(cluster.groups).length;
+    if (length >= CANDIDATE_MIN_DIGITS && length <= CANDIDATE_MAX_DIGITS) spans.push(candidateOf(cluster.groups, false));
+    else if (length > CANDIDATE_MAX_DIGITS) spans.push(...sixDigitWindows(cluster.groups));
+  }
+  return merged(units, spans);
+}
+
+function digitGroupsOf(units: readonly Unit[]): DigitGroup[] {
   const groups: DigitGroup[] = [];
-  let k = start;
-  for (;;) {
-    let digits = '';
+  let k = 0;
+  while (k < units.length) {
+    if (units[k]?.digit == null) {
+      k += 1;
+      continue;
+    }
     const first = k;
+    let digits = '';
     while (units[k]?.digit != null) {
       digits += units[k]?.digit ?? '';
       k += 1;
     }
     groups.push({ first, last: k - 1, digits });
-    let gap = 0;
-    while (gap < MAX_GAP && isSeparator(units[k + gap])) gap += 1;
-    if (units[k + gap]?.digit == null) return groups;
-    k += gap;
   }
+  return groups;
+}
+
+const LETTER = /^\p{L}\p{M}*$/u;
+
+function linkOf(units: readonly Unit[], before: DigitGroup | undefined, after: DigitGroup): Link {
+  if (!before) return 'none';
+  const gap = units.slice(before.last + 1, after.first);
+  if (gap.length <= MAX_GAP && gap.every(isSeparator)) return 'strong';
+  if (gap.length > MAX_WEAK_GAP) return 'none';
+  const words = gap.map((u) => (LETTER.test(u.text) ? 'w' : ' ')).join('').split(' ').filter((w) => w.length > 0);
+  const [word, ...more] = words;
+  return word === undefined || (more.length === 0 && word.length <= MAX_LINK_WORD) ? 'weak' : 'none';
 }
 
 function isSeparator(unit: Unit | undefined): boolean {
   return unit !== undefined && SEPARATOR.test(unit.text);
+}
+
+function segmentsOf(groups: readonly DigitGroup[], links: readonly Link[], joins: (link: Link) => boolean): Segment[] {
+  const segments: Segment[] = [];
+  let current: { groups: DigitGroup[]; links: Link[] } = { groups: [], links: [] };
+  groups.forEach((group, index) => {
+    const link = index === 0 ? undefined : links[index - 1];
+    if (link !== undefined && !joins(link)) {
+      segments.push(current);
+      current = { groups: [], links: [] };
+    } else if (link !== undefined) {
+      current.links.push(link);
+    }
+    current.groups.push(group);
+  });
+  if (current.groups.length > 0) segments.push(current);
+  return segments;
+}
+
+function digitsOf(groups: readonly DigitGroup[]): string {
+  return groups.map((g) => g.digits).join('');
+}
+
+function candidateOf(groups: readonly DigitGroup[], submittable: boolean): Candidate {
+  return { first: groups[0]?.first ?? 0, last: groups[groups.length - 1]?.last ?? 0, digits: digitsOf(groups), submittable };
+}
+
+function sixDigitWindows(groups: readonly DigitGroup[]): Candidate[] {
+  const windows: Candidate[] = [];
+  for (let i = 0; i < groups.length; i += 1) {
+    let total = 0;
+    for (let j = i; j < groups.length && total < CODE_DIGITS; j += 1) {
+      total += groups[j]?.digits.length ?? 0;
+      if (total === CODE_DIGITS) windows.push(candidateOf(groups.slice(i, j + 1), false));
+    }
+  }
+  return windows;
+}
+
+/** Overlapping spans become one span over all their units; a span that absorbed another is never submittable. */
+function merged(units: readonly Unit[], spans: readonly Candidate[]): Candidate[] {
+  const out: Candidate[] = [];
+  for (const span of [...spans].sort((a, b) => a.first - b.first || b.last - a.last)) {
+    const previous = out[out.length - 1];
+    if (previous && span.first <= previous.last) {
+      const last = Math.max(previous.last, span.last);
+      const digits = units.slice(previous.first, last + 1).map((u) => u.digit ?? '').join('');
+      out[out.length - 1] = { first: previous.first, last, digits, submittable: false };
+    } else {
+      out.push(span);
+    }
+  }
+  return out;
 }
 
 // ── "Code only" (OA-07b): what surrounds the single candidate ─────────────────────────────────

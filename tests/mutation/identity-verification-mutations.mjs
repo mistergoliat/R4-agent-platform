@@ -60,8 +60,8 @@ const MUTATIONS = [
     tests: [UNIT],
   },
   {
-    name: 'M10 a code written next to other digits is not redacted (long runs ignored)',
-    edits: [{ file: CLASSIFIER, from: '    else if (digits.length > CANDIDATE_MAX_DIGITS) candidates.push(...groups.filter((g) => g.digits.length === CODE_DIGITS));\n', to: '' }],
+    name: 'M10 six-digit windows of long strong runs are not redacted (482913 1234, 482 913 1234)',
+    edits: [{ file: CLASSIFIER, from: '    else if (length > CANDIDATE_MAX_DIGITS) spans.push(...sixDigitWindows(run.groups));', to: '' }],
     tests: [UNIT],
   },
   {
@@ -77,6 +77,51 @@ const MUTATIONS = [
   {
     name: 'M13 zero-width characters are not removed (they split the code)',
     edits: [{ file: CLASSIFIER, from: 'const INVISIBLE = /[\\p{Cf}\\uFE0E\\uFE0F\\u20E3]/gu;', to: 'const INVISIBLE = /[\\uFE0E\\uFE0F\\u20E3]/gu;' }],
+    tests: [UNIT],
+  },
+  {
+    name: 'M15 (close 04) no weak links: split or mixed fragments are not joined',
+    edits: [{ file: CLASSIFIER, from: "  return word === undefined || (more.length === 0 && word.length <= MAX_LINK_WORD) ? 'weak' : 'none';", to: "  return 'none';" }],
+    tests: [UNIT],
+  },
+  {
+    name: 'M16 (close 04) a short word does not link two groups (482 y 913)',
+    edits: [{ file: CLASSIFIER, from: "  return word === undefined || (more.length === 0 && word.length <= MAX_LINK_WORD) ? 'weak' : 'none';", to: "  return word === undefined ? 'weak' : 'none';" }],
+    tests: [UNIT],
+  },
+  {
+    name: 'M17 (close 04) long separator gaps are not joined (482----913, 482    913)',
+    edits: [{ file: CLASSIFIER, from: 'const MAX_WEAK_GAP = 8;', to: 'const MAX_WEAK_GAP = 3;' }],
+    tests: [UNIT],
+  },
+  {
+    name: 'M18 (close 04) weakly linked clusters are not redacted',
+    edits: [{ file: CLASSIFIER, from: "    if (!cluster.links.includes('weak')) continue;", to: '    continue;' }],
+    tests: [UNIT],
+  },
+  {
+    name: 'M19 (close 04) six-digit windows of long weak clusters are not redacted',
+    edits: [{ file: CLASSIFIER, from: '    else if (length > CANDIDATE_MAX_DIGITS) spans.push(...sixDigitWindows(cluster.groups));', to: '' }],
+    tests: [UNIT],
+  },
+  {
+    name: 'M20 (close 04) an ambiguous span is submitted',
+    edits: [{ file: CLASSIFIER, from: "  if (!only.submittable) return withheld('ambiguous_digits');", to: '' }],
+    tests: [UNIT],
+  },
+  {
+    name: 'M21 (close 04) a weakly linked cluster is marked submittable',
+    edits: [{ file: CLASSIFIER, from: 'spans.push(candidateOf(cluster.groups, false));', to: 'spans.push(candidateOf(cluster.groups, true));' }],
+    tests: [UNIT],
+  },
+  {
+    name: 'M22 (close 04) overlapping spans are not merged',
+    edits: [{ file: CLASSIFIER, from: '    if (previous && span.first <= previous.last) {', to: '    if (previous && span.first < 0) {' }],
+    tests: [UNIT],
+  },
+  {
+    name: 'M23 (close 04) a redacted span ends one grapheme early (positions)',
+    edits: [{ file: CLASSIFIER, from: '  return { start: first.start, end: last.end, replacement };', to: '  return { start: first.start, end: last.start, replacement };' }],
     tests: [UNIT],
   },
   {

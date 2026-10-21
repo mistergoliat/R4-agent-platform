@@ -66,7 +66,7 @@ describe('redact without submitting: no CIA attempt is consumed', () => {
     ['total', 'total 482913', VALID, `total ${WITHHELD}`, 'context_not_allowed'],
     ['code plus a purchase', '482913 y quiero 3 sacos', VALID, `${WITHHELD} y quiero 3 sacos`, 'context_not_allowed'],
     ['letters glued to the number', 'ABC-482913', VALID, `ABC-${WITHHELD}`, 'context_not_allowed'],
-    ['code next to other digits', '482913 1234', VALID, `${WITHHELD} 1234`, 'context_not_allowed'],
+    ['code next to other digits', '482913 1234', VALID, `${WITHHELD} 1234`, 'ambiguous_digits'],
     ['two candidates', 'pedido 123456 código 482913', VALID, `pedido ${WITHHELD} código ${WITHHELD}`, 'multiple_candidates'],
     ['code written twice', '482913 482913', VALID, `${WITHHELD} ${WITHHELD}`, 'multiple_candidates'],
     ['five digits', '48291', VALID, WITHHELD, 'not_six_digits'],
@@ -94,12 +94,70 @@ describe('no redaction', () => {
   it.each([
     ['mobile phone, grouped', '+56 9 1234 5678'],
     ['mobile phone, contiguous', '912345678'],
-    ['RUT with dots', '12.345.678-9'],
     ['RUT without dots', '12345678-9'],
     ['three digits', 'son 123'],
     ['digits separated by words', 'tengo 2 hijos y 3 perros'],
     ['no digits', 'hola, ¿cómo estás?'],
   ])('protected, but not a candidate: %s', (_name, text) => {
+    expect(inspect(text)).toEqual({ kind: 'pass' });
+  });
+});
+
+// Owner close 04: numeric fragments. Broad redaction of mixed or split sequences; never a submission.
+const FRAGMENTS: [string, string, string, string][] = [
+  ['split by a short word', '482 y 913', WITHHELD, 'ambiguous_digits'],
+  ['split code next to another group', '482 913 1234', `${WITHHELD} 1234`, 'ambiguous_digits'],
+  ['code split 2+4 next to another group', '48 2913 1234', `${WITHHELD} 1234`, 'ambiguous_digits'],
+  ['four spaces', '482    913', WITHHELD, 'ambiguous_digits'],
+  ['six spaces', '482      913', WITHHELD, 'ambiguous_digits'],
+  ['four hyphens', '482----913', WITHHELD, 'ambiguous_digits'],
+  ['spaced double hyphen', '482 -- 913', WITHHELD, 'ambiguous_digits'],
+  ['dotted gap', '482 . . . 913', WITHHELD, 'ambiguous_digits'],
+  ['emoji between the halves', '482 🙏 913', WITHHELD, 'ambiguous_digits'],
+  ['full-width halves and a word', '４８２ y ９１３', WITHHELD, 'ambiguous_digits'],
+  ['arabic-indic split next to another group', '٤٨٢ ٩١٣ ١٢٣٤', `${WITHHELD} ١٢٣٤`, 'ambiguous_digits'],
+  ['code with a trailing group by a word', '482913 y 12', WITHHELD, 'ambiguous_digits'],
+  ['strong code inside a weak cluster', '48 29 13 y 77', WITHHELD, 'ambiguous_digits'],
+  ['order numbers joined by a word', 'pedido 1234 y 5678', `pedido ${WITHHELD}`, 'ambiguous_digits'],
+  ['short group then a split code', '1234 y 482 913', `${WITHHELD} y ${WITHHELD}`, 'multiple_candidates'],
+  ['three groups of four', '1234 y 5678 y 9999', `${WITHHELD} y ${WITHHELD} y ${WITHHELD}`, 'multiple_candidates'],
+  ['RUT with dots (stated cost)', '12.345.678-9', `12.${WITHHELD}-9`, 'ambiguous_digits'],
+  ['phone in groups of three (stated cost)', '+56 912 345 678', `+56 ${WITHHELD}`, 'ambiguous_digits'],
+];
+
+describe('numeric fragments: redacted, never submitted', () => {
+  it.each(FRAGMENTS)('%s', (_name, text, persisted, reason) => {
+    expect(inspect(text)).toEqual({ kind: 'replace', text: persisted, reason, submission: null });
+  });
+
+  it.each(FRAGMENTS)('without protection nothing changes: %s', (_name, text) => {
+    expect(inspect(text, UNPROTECTED)).toEqual({ kind: 'pass' });
+  });
+
+  it.each(FRAGMENTS)('in the grace period it is still redacted: %s', (_name, text, persisted) => {
+    expect(replaced(inspect(text, GRACE)).text).toBe(persisted);
+  });
+});
+
+describe('positions: original characters outside the redacted fragments are kept exactly', () => {
+  it.each([
+    ['keycaps between emoji with skin tone', '👍🏽 mi código es 4\uFE0F\u20E38\uFE0F\u20E32\uFE0F\u20E3 9\uFE0F\u20E31\uFE0F\u20E33\uFE0F\u20E3 🙏', `👍🏽 mi código es ${RECEIVED} 🙏`, 'code_submitted'],
+    ['decomposed accents around a split code', 'cafe\u0301 482 y 913 n\u0303andu\u0301', `cafe\u0301 ${WITHHELD} n\u0303andu\u0301`, 'ambiguous_digits'],
+    ['zero-width joiner emoji around fragments', '👨\u200D👩\u200D👧 482 🙏 913 👨\u200D👩\u200D👧', `👨\u200D👩\u200D👧 ${WITHHELD} 👨\u200D👩\u200D👧`, 'ambiguous_digits'],
+    ['full-width code weakly linked to a quantity', 'ｈｏｌａ ４８２９１３ y 7 sacos', `ｈｏｌａ ${WITHHELD} sacos`, 'ambiguous_digits'],
+    ['combining mark on a digit', 'pedido 4\u0301829 y 13', `pedido ${WITHHELD}`, 'ambiguous_digits'],
+  ])('%s', (_name, text, persisted, reason) => {
+    expect(inspect(text)).toMatchObject({ kind: 'replace', text: persisted, reason });
+  });
+});
+
+describe('documented limits: formats that cannot be detected unambiguously (not redacted)', () => {
+  it.each([
+    ['halves split by a longer word', '482 luego 913'],
+    ['halves split by two words', '482 y también 913'],
+    ['code concatenated with other digits', '4829131234'],
+    ['digits written as words', 'cuatro ocho dos nueve uno tres'],
+  ])('%s', (_name, text) => {
     expect(inspect(text)).toEqual({ kind: 'pass' });
   });
 });
@@ -155,8 +213,10 @@ describe('invariants over formats and wrappers', () => {
   const contexts = [VALID, GRACE, NOT_ATTESTED];
   const asciiDigits = (text: string) => [...text.normalize('NFKC')].filter((c) => /[0-9]/.test(c)).join('');
 
+  const fragments = ['482 y 913', '482    913', '482----913', '482 🙏 913', '482 913 1234', '48 2913 1234', '٤٨٢ ٩١٣ ١٢٣٤'];
+
   it('with protection, the code never survives in the persisted text, in any script', () => {
-    for (const format of formats) {
+    for (const format of [...formats, ...fragments]) {
       for (const wrapper of wrappers) {
         for (const context of contexts) {
           const result = replaced(inspect(wrapper.replaceAll('{c}', format), context));
@@ -179,6 +239,16 @@ describe('invariants over formats and wrappers', () => {
             expect(result.reason).not.toBe('code_submitted');
           }
         }
+      }
+    }
+  });
+
+  it('a split or mixed numeric fragment is never submitted, whatever surrounds it', () => {
+    for (const format of fragments) {
+      for (const wrapper of wrappers) {
+        const result = replaced(inspect(wrapper.replaceAll('{c}', format)));
+        expect(result.submission).toBeNull();
+        expect(result.reason).not.toBe('code_submitted');
       }
     }
   });
