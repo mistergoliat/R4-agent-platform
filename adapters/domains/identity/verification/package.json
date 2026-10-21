@@ -2,7 +2,7 @@
   "name": "@r4-adapters/identity-verification",
   "version": "0.0.0",
   "private": true,
-  "description": "R4-J4 SEC-OTP channel identity verification (outside R4 Core). SEC-S1: the pure classifier of inbound text while a verification is pending: Unicode normalization, 4–8 digit candidates, redact(candidate) separated from submitForConfirmation(candidate), CODE_CONTEXT allowlist, neutralization of forged platform markers, fail-closed rule. No I/O, no network, no database, no secrets, no channel or provider names. Not wired to any ingress.",
+  "description": "R4-J4 SEC-OTP channel identity verification (outside R4 Core). SEC-S1: pure classifier of inbound text while a verification is pending (no I/O). SEC-S2: transient state in its own schema identity_verification (expectations, sealed responses, leases and fencing, expiry and purge) and AES-256-GCM SecretBox with key ids and rotation; no plaintext code is ever stored. No channel or provider names; not wired to any ingress; no CIA calls.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -13,6 +13,10 @@
     }
   },
   "files": [
-    "dist"
-  ]
+    "dist",
+    "migrations"
+  ],
+  "dependencies": {
+    "@r4/persistence-postgres": "*"
+  }
 }

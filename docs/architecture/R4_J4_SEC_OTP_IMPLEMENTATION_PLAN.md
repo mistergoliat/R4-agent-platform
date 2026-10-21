@@ -214,6 +214,7 @@ Cada transición de expectativa toma el lock de su conversación.
 | RR-1 (`GATE_RR1`) | Cerrado. Independiente: **no se resuelve porque SEC-OTP funcione** |
 | BA-01 a BA-06 (entradas alternativas) | Cerrados. Bloquean la activación real |
 | G-16, AP-*, D7 | Pendientes; cada uno con su mandato |
+| `SEC_OTP_TEXT_COVERAGE_REVIEW_PENDING` | **Dependencia de SEC-S3** (owner, `R4-J4-SEC-S1-OWNER-MERGE-05`): los formatos numéricos no detectados por SEC-S1 (informe S1 §9) se evalúan antes de conectar el inspector a tráfico real. No se declara `OTP_LEAKAGE_IMPOSSIBLE`. Con una obligación de protección y contenido no determinable con seguridad, la inspección falla cerrada |
 | OA-04, OA-05, OA-07b, OA-08, OA-09, OA-10, OA-11, OA-12 | Pendientes |
 | EXT-05 (landing), EXT-07 (webchat) | Pendientes y fuera de R4 |
 | Datos reales | **Bloqueados** |
