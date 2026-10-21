@@ -49,6 +49,8 @@ describe('AT-ALT-01: alternative inputs are inventoried and none of them is trea
     const runtime = [...files('packages'), ...files('apps'), ...files('agents/sales/src'), ...files('adapters')];
     const callers = runtime.filter((f) => /\.submitInput\(/.test(text(f)) && !f.startsWith('packages/task-runtime/'));
     expect(callers.sort()).toEqual([
+      // SEC-S4 resume: the platform marker "[identity verification update available]" only (no outcome, no customer text).
+      'adapters/domains/identity/verification/src/dispatcher.ts',
       // E-8: the Sales harness (the shadow executor goes through it): synthetic corpus; BA-06, never fed real traffic outside the protected ingress.
       'agents/sales/src/harness/runtime.ts',
       // E-2.

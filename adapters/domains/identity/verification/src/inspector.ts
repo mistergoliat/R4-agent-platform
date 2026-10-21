@@ -46,14 +46,21 @@ export class VerificationInspector implements InboundInspector<PoolClient> {
   readonly version = 1 as const;
   readonly id = 'identity-verification';
   readonly #o: VerificationInspectorOptions;
+  #mode: VerificationMode;
 
   constructor(options: VerificationInspectorOptions) {
     if (options.mode === 'full' && !options.box) throw new Error('identity verification: full mode needs the keyring');
     this.#o = options;
+    this.#mode = options.mode;
   }
 
   get mode(): VerificationMode {
-    return this.#o.mode;
+    return this.#mode;
+  }
+
+  /** One way only (emergency, breaker): from here on nothing is captured; redaction continues. */
+  enterProtectOnly(): void {
+    this.#mode = 'protect_only';
   }
 
   protectionActive(tx: PoolClient): Promise<boolean> {
@@ -71,14 +78,14 @@ export class VerificationInspector implements InboundInspector<PoolClient> {
       expectationId = live?.expectationId ?? null;
       const current = live !== null && isCurrent(live, context);
       if (live !== null && !current) await store.closeExpectationWithin(tx, live.expectationId, 'cancelled', 'binding_not_current');
-      const accepts = this.#o.mode === 'full' && live !== null && current && challengeOpen(live, context.now) && context.binding?.humanOwned === false;
+      const accepts = this.#mode === 'full' && live !== null && current && challengeOpen(live, context.now) && context.binding?.humanOwned === false;
       const result = inspectVerificationText(content.text, {
         protectionActive,
         expectationAcceptsCode: accepts,
         directSubjectAttested: context.direct && context.binding !== null && context.senderRef === context.binding.recipientRef,
       });
       let captured = false;
-      if (result.kind === 'replace' && result.submission && live && this.#o.box && this.#o.mode === 'full') {
+      if (result.kind === 'replace' && result.submission && live && this.#o.box && this.#mode === 'full') {
         const responseId = randomUUID();
         const binding = { responseId, expectationId: live.expectationId, channel: context.channel, providerEventId: context.providerEventId };
         await store.captureResponse(tx, { ...binding, sealed: this.#o.box.seal(result.submission.code, binding) });

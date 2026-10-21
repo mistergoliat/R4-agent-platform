@@ -6,8 +6,8 @@
   "acceptance": "D2 accepted for synthetic interoperability only (contract/cia/V1_D2_ACCEPTANCE.md, CIA-D2-ACC-01..03)",
   "repository": "mistergoliat/MS-pesaschile-customer-identity-authority",
   "ownerCommit": "7525395d14d72c36853add31b327c6ebd5fb9e73",
-  "copiedFrom": "git show 7525395:<sourcePath>, byte for byte (R4-J4-R3, 2026-10-21). Read-only contract evidence: never edited in R4.",
-  "scope": "POST /v1/identity/resolve only: the resolve request/response, the common types it references and the error body. The grant JWS schema is not pinned: R4 never decodes a grant (Customer Profile verifies it).",
+  "copiedFrom": "git show 7525395:<sourcePath>, byte for byte (R4-J4-R3, 2026-10-21; the confirm schema and fixtures in SEC-S4, 2026-10-21). Read-only contract evidence: never edited in R4.",
+  "scope": "POST /v1/identity/resolve (R4-J4-R3) and POST /v1/identity/verifications/confirm (SEC-S4): their request/response schemas, the common types they reference and the error body. The grant JWS schema is not pinned: R4 never decodes a grant (Customer Profile verifies it).",
   "hashRules": {
     "sha256": "sha256(file bytes, LF)",
     "contentSha256": "sha256(JSON.stringify(JSON.parse(file))), the owner MANIFEST rule",
@@ -188,6 +188,104 @@
       "gitBlob": "4368c70b5c6b499ad8257f5507defbf4f04c2623",
       "sha256": "a9e3427f015ad4036611b60ad6cc72269a3db4e3ef4793439a00095c2de9a88d",
       "contentSha256": "e7857f5f925b611c50e7d894f0ef74115f0d3991d6a9410bf6d1f170bc9e442a"
+    },
+    {
+      "file": "schemas/verification-confirm.v1.schema.json",
+      "sourcePath": "contract/cia/v1/schemas/verification-confirm.v1.schema.json",
+      "gitBlob": "afeb20271e9ab533f4ce74bf755d9251a6992a9e",
+      "sha256": "271bbfb2fa474cca7b299e5b0c978c0ecd708ae4312ca3b0a9d2450af192bf1e",
+      "contentSha256": "77e59d0f9eb54b5d648d47bb89b5ab2bcbebe6a3f18e0c5ab857b7a8a5748621"
+    },
+    {
+      "file": "fixtures/verification-confirm/request.invalid.code-not-normalized.json",
+      "sourcePath": "contract/cia/v1/fixtures/verification-confirm/request.invalid.code-not-normalized.json",
+      "gitBlob": "8cad3c7460c6761442f06bc2a16a682725387683",
+      "sha256": "95b2eadb498c0573e01f06dad3eb65e67cef03d3a8c0f3600cf2f6feaf3ce0da",
+      "contentSha256": "b32d2fcd2d2cdd9f2544ae4b2b8861e8ef38107c9f5fa9878782ce8224e49b21"
+    },
+    {
+      "file": "fixtures/verification-confirm/request.invalid.missing-session.json",
+      "sourcePath": "contract/cia/v1/fixtures/verification-confirm/request.invalid.missing-session.json",
+      "gitBlob": "26776c6339393bd34de6ce35b1121df4efe94890",
+      "sha256": "b6caede18fae11dbce3cd45fc677ccec7864ffbd925fb044c3ec47d0f9373a92",
+      "contentSha256": "181a8b7471b6d0d33268dec81ee0b50bdc1a41798f3ac94f768d57cb8f10416f"
+    },
+    {
+      "file": "fixtures/verification-confirm/request.valid.json",
+      "sourcePath": "contract/cia/v1/fixtures/verification-confirm/request.valid.json",
+      "gitBlob": "b3bd3cac0601557e9783bee9f74aa75ac3d3ecef",
+      "sha256": "f90a2677a184a3ddfa26668272101972c2c16b1baab70f8df9bb19ef0e2a07fb",
+      "contentSha256": "9cd39e0780ec37dea3d326629ee98255c71fcdc11d5394dcfed23d61e7c42ab0"
+    },
+    {
+      "file": "fixtures/verification-confirm/response.ambiguous.json",
+      "sourcePath": "contract/cia/v1/fixtures/verification-confirm/response.ambiguous.json",
+      "gitBlob": "8f8a48ddecacde8e9b65dbe07b7c443e3583e4a8",
+      "sha256": "34638dd672b636042dae55df253879bbcebf15752cebe73226c73d611224c7d5",
+      "contentSha256": "484e85a41885f1a02eddfa5d89b44d62cb75cd0510af49fea0c8ac745adfbf56"
+    },
+    {
+      "file": "fixtures/verification-confirm/response.conflicted.json",
+      "sourcePath": "contract/cia/v1/fixtures/verification-confirm/response.conflicted.json",
+      "gitBlob": "9e3a04fbd9f36aa2c326641ee6b494ac1ec87a21",
+      "sha256": "b8d01678c4635f73bb7f7b3bd5e8a3691c60a6b975531e4a02301b77fec7617d",
+      "contentSha256": "7fbdaf626d47b7cc6aac2af1569cba1b6d6b9baf16cce4ada2a12e63894d262a"
+    },
+    {
+      "file": "fixtures/verification-confirm/response.expired.json",
+      "sourcePath": "contract/cia/v1/fixtures/verification-confirm/response.expired.json",
+      "gitBlob": "012df3abc6d09e6bb532633b616f7a66c1e3f2d1",
+      "sha256": "7c49c35b18b06a58c8462dc57a6cfac24e6c03f1c95b59fab90d09aef51ff2f8",
+      "contentSha256": "13f9b6e19954a97d19a42659cd2101553f8c90aa51de8eb48ea39bc2a7fbc663"
+    },
+    {
+      "file": "fixtures/verification-confirm/response.ineligible-account.json",
+      "sourcePath": "contract/cia/v1/fixtures/verification-confirm/response.ineligible-account.json",
+      "gitBlob": "553473d8cad1d38911c495645c870b76bee2ba21",
+      "sha256": "fb2729c7add4eee5cb47f82cb0968bb02308f25b088aa17512850453948fef81",
+      "contentSha256": "f1be0de328b39b53ed571a2bb14889106fc4a4c5e4573904cc3f826bbed4f09e"
+    },
+    {
+      "file": "fixtures/verification-confirm/response.invalid-code.json",
+      "sourcePath": "contract/cia/v1/fixtures/verification-confirm/response.invalid-code.json",
+      "gitBlob": "851abcddc364b82ebc109ca14e0be076edecf0c0",
+      "sha256": "532a931382807788ef9a0eb0dbfaf80d3431834d2a9fccc1c930dfeb8740d612",
+      "contentSha256": "4c14d8b8351aea983a0554a2584343914a6ec4194ca926aafcf0ea3e86c8d12c"
+    },
+    {
+      "file": "fixtures/verification-confirm/response.invalid.invalid-code-without-attempts.json",
+      "sourcePath": "contract/cia/v1/fixtures/verification-confirm/response.invalid.invalid-code-without-attempts.json",
+      "gitBlob": "598e1123d39a3bbed6fc5fb2588e805674406f63",
+      "sha256": "3f1a8d132545c7dd3ea08328ef54bc2976ff737c6b6e3d410af7954c12236a2e",
+      "contentSha256": "da28ba99767b498e684595aec725d096e58208272f03b9a44bdc5571e0ad7994"
+    },
+    {
+      "file": "fixtures/verification-confirm/response.invalid.linked-with-customer-ref.json",
+      "sourcePath": "contract/cia/v1/fixtures/verification-confirm/response.invalid.linked-with-customer-ref.json",
+      "gitBlob": "9260838614583d50f5f4150c76ebacbae76e4619",
+      "sha256": "ab105626ba4851470a7db716aab78c8ce0ace06b23dbad58a598b3698a8f6a9a",
+      "contentSha256": "841dfed5dfa27f971389a4321c1f28b4294bb786826e740d17196e881edf81bf"
+    },
+    {
+      "file": "fixtures/verification-confirm/response.linked.json",
+      "sourcePath": "contract/cia/v1/fixtures/verification-confirm/response.linked.json",
+      "gitBlob": "7299548e8c8f92198cd3c1ab3d4342f920eb21a2",
+      "sha256": "9c93f9877d6ac19d18fa33619bb11fb976cca942c209b3912dce6b99a4368b07",
+      "contentSha256": "0c7e1cb733aa77b77a36bde4724cc1b6f8701141c2e170a629dce2a5af03c81c"
+    },
+    {
+      "file": "fixtures/verification-confirm/response.locked.json",
+      "sourcePath": "contract/cia/v1/fixtures/verification-confirm/response.locked.json",
+      "gitBlob": "4d9ad2a606f497dcea958c46bbbb7e59ab38a568",
+      "sha256": "1e2225cc15f62fffc3280b6e8ef2714a2efcbbdcc81b91e525930763ae0ace93",
+      "contentSha256": "25491d2f66feeb8479e8f64d3b04bc2da38a44179c4bfca054dba4e0915626c9"
+    },
+    {
+      "file": "fixtures/verification-confirm/response.no-eligible-account.json",
+      "sourcePath": "contract/cia/v1/fixtures/verification-confirm/response.no-eligible-account.json",
+      "gitBlob": "7dd55e1cb39cb00452509f9df683d78ea87dbafa",
+      "sha256": "c19eef42aa7b59e4a606012dceacda5c76721c7b3a67408e80b23d97559e30c7",
+      "contentSha256": "72f17e361b2c4f9971656e7bba10a804f0a190261a7d7b2ef989631a780ad663"
     },
     {
       "file": "MANIFEST.v1.json",

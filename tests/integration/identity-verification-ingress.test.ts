@@ -21,7 +21,9 @@ import { CANARY_PHONE_ID, LiveOpsTestbed, OPERATOR, keyOf } from '../support/liv
 
 const CODE = '482913';
 const KEYS = `k0:${randomBytes(32).toString('base64')}`;
-const FULL = { requested: 'full', codeKeys: KEYS } as const;
+// The dispatcher is composed (full needs its CIA client) but never started in this suite.
+const UNUSED_CONFIRM = { confirm: () => Promise.reject(new Error('the confirm dispatcher is not started in the ingress suite')) };
+const FULL = { requested: 'full', codeKeys: KEYS, confirm: UNUSED_CONFIRM } as const;
 const box = new SecretBox(Keyring.parse(KEYS));
 
 let bed: LiveOpsTestbed;

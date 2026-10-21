@@ -63,6 +63,9 @@ export interface PinnedIdentityContract {
   readonly validateRequest: ValidateFunction;
   readonly validateResponse: ValidateFunction;
   readonly validateError: ValidateFunction;
+  /** SEC-S4: POST /v1/identity/verifications/confirm. */
+  readonly validateConfirmRequest: ValidateFunction;
+  readonly validateConfirmResponse: ValidateFunction;
 }
 
 const addFormats = ((addFormatsImport as unknown as { default?: unknown }).default ?? addFormatsImport) as (ajv: Ajv2020) => Ajv2020;
@@ -88,13 +91,17 @@ export function pinnedIdentityContract(): PinnedIdentityContract {
   ajv.addSchema(load('schemas/cia-common.v1.schema.json'));
   const resolve = load('schemas/resolve.v1.schema.json');
   const error = load('schemas/error.v1.schema.json');
+  const confirm = load('schemas/verification-confirm.v1.schema.json');
   ajv.addSchema(resolve);
   ajv.addSchema(error);
+  ajv.addSchema(confirm);
   const validateRequest = ajv.getSchema(`${resolve.$id}#/$defs/request`);
   const validateResponse = ajv.getSchema(`${resolve.$id}#/$defs/response`);
   const validateError = ajv.getSchema(error.$id);
-  if (!validateRequest || !validateResponse || !validateError) throw new CustomerIdentityContractPinError('the pinned CIA schemas did not compile');
-  pinned = { ownerCommit: source.ownerCommit, revision: source.revision, validateRequest, validateResponse, validateError };
+  const validateConfirmRequest = ajv.getSchema(`${confirm.$id}#/$defs/request`);
+  const validateConfirmResponse = ajv.getSchema(`${confirm.$id}#/$defs/response`);
+  if (!validateRequest || !validateResponse || !validateError || !validateConfirmRequest || !validateConfirmResponse) throw new CustomerIdentityContractPinError('the pinned CIA schemas did not compile');
+  pinned = { ownerCommit: source.ownerCommit, revision: source.revision, validateRequest, validateResponse, validateError, validateConfirmRequest, validateConfirmResponse };
   return pinned;
 }
 
@@ -290,7 +297,7 @@ export function failureOf(status: number, ownerCode: string | null): DomainError
   return violation('unexpected_status', `the CIA answered HTTP ${status}, outside its contract`, details);
 }
 
-function ownerCodeOf(text: string, contract: PinnedIdentityContract): string | null {
+export function ownerCodeOf(text: string, contract: PinnedIdentityContract): string | null {
   try {
     const body = JSON.parse(text) as unknown;
     return contract.validateError(body) ? (body as { error: { code: string } }).error.code : null;
@@ -304,7 +311,7 @@ function safePath(path: string): string {
 }
 
 /** Reads the body as UTF-8, cutting the stream as soon as it exceeds `maxBytes`; a stalled body ends at the deadline. */
-async function readBounded(body: ReadableStream<Uint8Array> | null, maxBytes: number, signal: AbortSignal): Promise<string> {
+export async function readBounded(body: ReadableStream<Uint8Array> | null, maxBytes: number, signal: AbortSignal): Promise<string> {
   if (body === null) return '';
   const reader = body.getReader();
   const chunks: Uint8Array[] = [];

@@ -49,9 +49,20 @@ export function loadCustomerIdentityHttpConfig(env: Readonly<Record<string, stri
   const missing = CUSTOMER_IDENTITY_ENV.filter((name) => !env[name]?.trim());
   if (missing.length > 0) throw new CustomerIdentityConfigError('customer_identity_config_incomplete', `refusing to compose the CIA adapter: missing ${missing.join(', ')}`);
 
+  const base = loopbackBase(env.R4_CUSTOMER_IDENTITY_BASE_URL!);
+  const bearerToken = syntheticToken(env.R4_CUSTOMER_IDENTITY_BEARER_TOKEN!, 'R4_CUSTOMER_IDENTITY_BEARER_TOKEN');
+  const raw = env.R4_CUSTOMER_IDENTITY_TIMEOUT_MS!.trim();
+  const timeoutMs = /^\d{1,5}$/.test(raw) ? Number(raw) : Number.NaN;
+  if (!Number.isInteger(timeoutMs) || timeoutMs < CUSTOMER_IDENTITY_TIMEOUT_MIN_MS || timeoutMs > CUSTOMER_IDENTITY_TIMEOUT_MAX_MS) {
+    throw new CustomerIdentityConfigError('invalid_customer_identity_config', 'R4_CUSTOMER_IDENTITY_TIMEOUT_MS must be an integer between 100 and 3000');
+  }
+  return { baseUrl: base.origin, bearerToken, timeoutMs, lifecycle: 'synthetic' };
+}
+
+function loopbackBase(raw: string): URL {
   let base: URL;
   try {
-    base = new URL(env.R4_CUSTOMER_IDENTITY_BASE_URL!.trim());
+    base = new URL(raw.trim());
   } catch {
     throw new CustomerIdentityConfigError('invalid_customer_identity_config', 'R4_CUSTOMER_IDENTITY_BASE_URL is not a URL');
   }
@@ -60,17 +71,48 @@ export function loadCustomerIdentityHttpConfig(env: Readonly<Record<string, stri
   }
   if (base.protocol !== 'http:' && base.protocol !== 'https:') throw new CustomerIdentityConfigError('invalid_customer_identity_config', 'R4_CUSTOMER_IDENTITY_BASE_URL must be http(s)');
   if (!LOOPBACK.has(base.hostname)) throw new CustomerIdentityConfigError('network_not_allowed', 'the CIA is reachable on loopback only in this slice');
+  return base;
+}
 
-  const bearerToken = env.R4_CUSTOMER_IDENTITY_BEARER_TOKEN!.trim();
-  if (!/^synthetic-[\x21-\x7e]{14,502}$/.test(bearerToken)) {
-    throw new CustomerIdentityConfigError('invalid_customer_identity_config', 'R4_CUSTOMER_IDENTITY_BEARER_TOKEN must be a synthetic credential ("synthetic-…", 24–512 printable characters)');
+function syntheticToken(raw: string, variable: string): string {
+  const token = raw.trim();
+  if (!/^synthetic-[\x21-\x7e]{14,502}$/.test(token)) {
+    throw new CustomerIdentityConfigError('invalid_customer_identity_config', `${variable} must be a synthetic credential ("synthetic-…", 24–512 printable characters)`);
   }
-  const raw = env.R4_CUSTOMER_IDENTITY_TIMEOUT_MS!.trim();
-  const timeoutMs = /^\d{1,5}$/.test(raw) ? Number(raw) : Number.NaN;
-  if (!Number.isInteger(timeoutMs) || timeoutMs < CUSTOMER_IDENTITY_TIMEOUT_MIN_MS || timeoutMs > CUSTOMER_IDENTITY_TIMEOUT_MAX_MS) {
-    throw new CustomerIdentityConfigError('invalid_customer_identity_config', 'R4_CUSTOMER_IDENTITY_TIMEOUT_MS must be an integer between 100 and 3000');
+  return token;
+}
+
+/**
+ * SEC-S4: the CIA `channel-integration` credential of the channel gateway (OA-06: one consumer
+ * `r4-sales`, two credentials). It holds ONLY `identity.verification.confirm`; only the gateway
+ * process receives it — never the sales worker, the API or the scheduler.
+ *
+ *   R4_CUSTOMER_MODE                           "synthetic" only; "real" is REFUSED.
+ *   R4_CUSTOMER_IDENTITY_BASE_URL              the same CIA, loopback only.
+ *   R4_CHANNEL_IDENTITY_CONFIRM_BEARER_TOKEN   the channel-integration credential ("synthetic-…").
+ * The deadline is fixed at 3 s (plan §4.4) and there is no internal retry: the dispatcher decides.
+ */
+export interface CiaVerificationConfirmConfig {
+  readonly baseUrl: string;
+  readonly bearerToken: string;
+  readonly timeoutMs: number;
+  readonly lifecycle: 'synthetic';
+}
+
+export const CIA_CONFIRM_ENV = ['R4_CUSTOMER_MODE', 'R4_CUSTOMER_IDENTITY_BASE_URL', 'R4_CHANNEL_IDENTITY_CONFIRM_BEARER_TOKEN'] as const;
+export const CIA_CONFIRM_TIMEOUT_MS = 3_000;
+
+export function loadCiaVerificationConfirmConfig(env: Readonly<Record<string, string | undefined>>): CiaVerificationConfirmConfig {
+  const mode = env.R4_CUSTOMER_MODE?.trim();
+  if (mode === 'real') throw new CustomerIdentityConfigError('customer_real_data_blocked', 'R4_CUSTOMER_MODE=real is refused: real identity verification is blocked');
+  if (mode !== 'synthetic') {
+    throw new CustomerIdentityConfigError(mode ? 'invalid_customer_identity_config' : 'customer_identity_config_incomplete', 'refusing to compose the CIA confirm client: R4_CUSTOMER_MODE must be "synthetic"');
   }
-  return { baseUrl: base.origin, bearerToken, timeoutMs, lifecycle: 'synthetic' };
+  const missing = CIA_CONFIRM_ENV.filter((name) => !env[name]?.trim());
+  if (missing.length > 0) throw new CustomerIdentityConfigError('customer_identity_config_incomplete', `refusing to compose the CIA confirm client: missing ${missing.join(', ')}`);
+  const base = loopbackBase(env.R4_CUSTOMER_IDENTITY_BASE_URL!);
+  const bearerToken = syntheticToken(env.R4_CHANNEL_IDENTITY_CONFIRM_BEARER_TOKEN!, 'R4_CHANNEL_IDENTITY_CONFIRM_BEARER_TOKEN');
+  return { baseUrl: base.origin, bearerToken, timeoutMs: CIA_CONFIRM_TIMEOUT_MS, lifecycle: 'synthetic' };
 }
 
 /** Safe description (no secret) for plans and readiness. Declarative only. */

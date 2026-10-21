@@ -89,6 +89,8 @@ export interface ResponseClaim {
   readonly leaseOwner: string;
   readonly leaseGeneration: string;
   readonly attempts: number;
+  /** The response deadline (the challenge expiry): never confirmed at or after `deadlineAt - 5 s`. */
+  readonly deadlineAt: string;
   readonly sealed: SealedCode;
 }
 
@@ -398,6 +400,7 @@ export class IdentityVerificationStore {
           leaseOwner: owner,
           leaseGeneration: String(r.lease_generation),
           attempts: Number(r.attempts),
+          deadlineAt: iso(r.deadline_at) ?? '',
           sealed,
         };
       }),
@@ -476,6 +479,59 @@ export class IdentityVerificationStore {
         return { kind: 'failed' } as const;
       }),
     );
+  }
+
+  /**
+   * SEC-S4: ends a claim WITHOUT a CIA answer (fenced): the binding is no longer current, or the deadline
+   * passed. The response leaves the open states (its sealed code erased in the same statement) and the
+   * expectation is closed with `reason` if it is still live.
+   */
+  abandonClaim(claim: ResponseClaim, to: 'cancelled' | 'expired', reason: string): Promise<{ readonly kind: 'abandoned' | 'stale' }> {
+    return guard(() =>
+      withTransaction(this.#pool, async (c) => {
+        await lockConversation(c, claim.channel, claim.conversationKey);
+        const done = await this.#fenced(c, claim, `state = $4, failure_code = $5`, [to, reason]);
+        if (!done) return { kind: 'stale' } as const;
+        await c.query(
+          `update identity_verification.expectations
+              set state = $2, closed_at = clock_timestamp(), closed_reason = $3, version = version + 1
+            where expectation_id = $1 and state in ('created', 'awaiting_code', 'processing')`,
+          [claim.expectationId, to, reason],
+        );
+        return { kind: 'abandoned' } as const;
+      }),
+    );
+  }
+
+  /**
+   * SEC-S4 special condition: the CIA answered a claim whose response was closed while the call was in
+   * flight (replacement, expiry, closing). The result stays discarded; only the non-sensitive fact that
+   * an external operation completed is recorded. Nothing if the lease was merely lost to a newer claim.
+   */
+  recordDiscardedOutcome(claim: ResponseClaim, outcome: CiaConfirmOutcome): Promise<boolean> {
+    return guard(async () => {
+      const r = await this.#pool.query(
+        `insert into identity_verification.discarded_outcomes (response_id, expectation_id, lease_generation, cia_outcome, response_state)
+         select r.response_id, r.expectation_id, r.lease_generation, $3, r.state from identity_verification.responses r
+          where r.response_id = $1 and r.lease_generation = $2::bigint and r.state in ('cancelled', 'expired', 'failed')
+         on conflict (response_id) do nothing`,
+        [claim.responseId, claim.leaseGeneration, outcome],
+      );
+      return (r.rowCount ?? 0) > 0;
+    });
+  }
+
+  /** Resolved responses whose task resume was never confirmed (crash between `resolved` and `notified`). */
+  async resolvedAwaitingResume(olderThanMs: number, limit: number): Promise<readonly { readonly responseId: string; readonly taskId: string }[]> {
+    return guard(async () => {
+      const r = await this.#pool.query<{ response_id: string; task_id: string }>(
+        `select r.response_id, e.task_id from identity_verification.responses r join identity_verification.expectations e using (expectation_id)
+          where r.state = 'resolved' and r.received_at <= clock_timestamp() - make_interval(secs => $1::double precision / 1000)
+          order by r.received_seq limit $2`,
+        [olderThanMs, limit],
+      );
+      return r.rows.map((row) => ({ responseId: row.response_id, taskId: row.task_id }));
+    });
   }
 
   async markNotified(responseId: string): Promise<boolean> {

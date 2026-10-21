@@ -38,11 +38,33 @@ const ALLOWED_IMPORTS: Readonly<Record<string, readonly string[]>> = {
   'state-store.ts': ['@r4/persistence-postgres'],
   'migrate.ts': ['node:url', '@r4/persistence-postgres'],
   'inspector.ts': ['node:crypto', '@r4/live-ops', '@r4/persistence-postgres'],
-  'gateway.ts': ['@r4/persistence-postgres'],
+  'gateway.ts': ['@r4/live-ops', '@r4/persistence-postgres'],
+  // S4: ports only (the CIA client, the production store and the temporal runtime are injected).
+  'dispatcher.ts': ['@r4/live-ops'],
 };
 
 /** The only files outside the package (and the tests) that may use it, and why. */
 const INTEGRATIONS: readonly string[] = [];
+
+describe('SEC-S4: only the gateway composition ever reaches the decryption, the dispatcher or the confirm credential (AT-19)', () => {
+  const SECRET_SURFACE = /SecretBox|Keyring|VerificationConfirmDispatcher|CiaVerificationConfirmClient|loadCiaVerificationConfirmConfig|R4_CHANNEL_IDENTITY_CONFIRM_BEARER_TOKEN|R4_PROD_VERIFICATION_CODE_KEYS/;
+
+  it('no agent pack, worker, API, scheduler or Core package references them', () => {
+    const offenders = ['agents', 'apps', 'packages']
+      .flatMap((dir) => files(join(ROOT, dir)))
+      .filter((path) => SECRET_SURFACE.test(readFileSync(path, 'utf8')))
+      .map((path) => relative(ROOT, path));
+    expect(offenders).toEqual([]);
+  });
+
+  it('the CIA confirm client lives in identity-http and is used only through the injected ConfirmPort', () => {
+    const users = files(join(ROOT, 'adapters'))
+      .filter((path) => /CiaVerificationConfirmClient/.test(readFileSync(path, 'utf8')))
+      .map((path) => relative(ROOT, path).replace(/\\/g, '/'));
+    expect(users.sort()).toEqual(['adapters/domains/identity/http/src/confirm.ts']);
+    for (const { path, text } of sources) expect(text, path).not.toMatch(/@r4-adapters\/identity-http/);
+  });
+});
 
 describe('identity-verification (SEC-S1/S2/S3) boundaries', () => {
   it('depends only on @r4/persistence-postgres and the live-ops ports', () => {
