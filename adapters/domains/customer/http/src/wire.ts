@@ -16,7 +16,10 @@ import {
 import type { CustomerProfileLifecycle } from './config.js';
 
 /**
- * Wire rules of `customer-profile.sales-context` v1-rc1 (owner commit 47db415), as R4 enforces them.
+ * Wire rules of `customer-profile.sales-context`, as R4 enforces them. Since R4-J4-R3 the runtime pins
+ * revision v1-rc2 (owner commit bbd766e, CP-S5 merged): v1-rc1 plus the 403 grant_rejected error and
+ * the customer-grant semantics of authorizationBasis and validUntil. The v1-rc1 copies (contract/,
+ * fixtures/, owner commit 47db415) stay as regression evidence.
  *
  * Tolerant reader (decision R4-J4-R2, specification R4-J4-R1 §5, owner README "consumers must
  * tolerate additive fields within schemaVersion 1"):
@@ -33,7 +36,7 @@ import type { CustomerProfileLifecycle } from './config.js';
  */
 
 const CONTRACT = 'customer-profile.sales-context';
-const CONTRACT_DIR = new URL('../contract/', import.meta.url);
+const CONTRACT_DIR = new URL('../contract-v1-rc2/', import.meta.url);
 const RESPONSE_SCHEMA_FILE = 'customer-sales-context-v1.schema.json';
 const REQUEST_SCHEMA_FILE = 'customer-sales-context-request-v1.schema.json';
 const MAX_TTL_MS = 15 * 60_000;
@@ -67,16 +70,16 @@ export interface PinnedContract {
 
 let pinned: PinnedContract | undefined;
 
-/** Loads the copied v1-rc1 schemas once, refusing any byte that differs from contract/SOURCE.json. */
+/** Loads the copied v1-rc2 schemas once, refusing any byte that differs from contract-v1-rc2/SOURCE.json. */
 export function pinnedContract(): PinnedContract {
   if (pinned) return pinned;
   const source = JSON.parse(readFileSync(new URL('SOURCE.json', CONTRACT_DIR), 'utf8')) as PinnedSource;
   const load = (file: string): object => {
     const bytes = readFileSync(new URL(file, CONTRACT_DIR));
     const normalized = Buffer.from(bytes.toString('utf8').replace(/\r\n/g, '\n'), 'utf8');
-    const expected = source.files.find((entry) => entry.file === `contract/${file}`)?.sha256;
+    const expected = source.files.find((entry) => entry.file === `contract-v1-rc2/${file}`)?.sha256;
     if (!expected || createHash('sha256').update(normalized).digest('hex') !== expected) {
-      throw new CustomerProfileContractPinError(`contract/${file} does not match the pinned owner copy (${source.ownerCommit})`);
+      throw new CustomerProfileContractPinError(`contract-v1-rc2/${file} does not match the pinned owner copy (${source.ownerCommit})`);
     }
     return JSON.parse(normalized.toString('utf8')) as object;
   };
@@ -106,7 +109,7 @@ export function serializeRequest(request: WireRequest): string {
     ? { customerRef: request.customerRef, purpose: request.purpose }
     : { customerRef: request.customerRef, purpose: request.purpose, page: { limit: request.page.limit, offset: request.page.offset } };
   if (!pinnedContract().validateRequest(body)) {
-    throw new DomainError('validation', 'invalid_request', 'the Customer Profile request is outside the v1-rc1 request schema');
+    throw new DomainError('validation', 'invalid_request', 'the Customer Profile request is outside the pinned request schema');
   }
   return JSON.stringify(body);
 }
@@ -285,8 +288,10 @@ export interface ReadContext {
   readonly page?: CustomerPurchasePageRequest;
   readonly httpStatus: 200 | 503;
   readonly lifecycle: CustomerProfileLifecycle;
-  /** True only when R4 sent a per-customer grant (never, until D2). */
+  /** True when R4 sent a per-customer grant (every port operation since R4-J4-R3). */
   readonly grantSent: boolean;
+  /** The grant's expiresAt (from the identity authority, never a parsed claim), when sent. */
+  readonly grantExpiresAt?: string;
   readonly now: Date;
 }
 
@@ -299,7 +304,7 @@ export function readContextAnswer(raw: unknown, context: ReadContext): { answer:
   const validate = pinnedContract().validateContext;
   if (!validate(projected)) {
     const first = validate.errors?.[0];
-    throw violation('invalid_response', `the Customer Profile answer violates the pinned v1-rc1 schema at ${safePath(first?.instancePath || '/')}`, {
+    throw violation('invalid_response', `the Customer Profile answer violates the pinned v1-rc2 schema at ${safePath(first?.instancePath || '/')}`, {
       schemaPath: safePath(first?.instancePath || '/'),
       keyword: first?.keyword ?? null,
     });
@@ -311,10 +316,14 @@ export function readContextAnswer(raw: unknown, context: ReadContext): { answer:
     throw violation('invalid_response', `HTTP ${context.httpStatus} does not match status ${answer.status}`, { httpStatus: context.httpStatus });
   }
 
-  // Lifecycle (AP-05). R4 never sent a grant, so an answer claiming a verified grant is incoherent.
+  // Lifecycle (AP-05). A verified basis R4 never asked for is incoherent; with a grant sent, only a
+  // verified basis is an authorized read: a bearer alone (service_scope_only) never is.
   const { contractStatus, authorizationBasis } = answer.provenance;
   if (authorizationBasis === 'customer_grant_verified' && !context.grantSent) {
     throw violation('authorization_basis_incoherent', 'the Customer Profile answer claims a verified customer grant that R4 never sent');
+  }
+  if (context.grantSent && authorizationBasis !== 'customer_grant_verified') {
+    throw violation('authorization_basis_insufficient', 'the Customer Profile answer was not authorized by the customer grant R4 sent');
   }
   if (contractStatus === 'deprecated') throw violation('contract_not_approved', 'the Customer Profile contract is deprecated');
   if (context.lifecycle === 'real') {
@@ -328,6 +337,10 @@ export function readContextAnswer(raw: unknown, context: ReadContext): { answer:
   }
 
   assertFreshness(answer, context.now);
+  // v1-rc2: a grant-verified answer never outlives the grant.
+  if (context.grantExpiresAt !== undefined && answer.freshness.validUntil !== null && Date.parse(answer.freshness.validUntil) > Date.parse(context.grantExpiresAt)) {
+    throw violation('validity_exceeds_grant', 'the Customer Profile answer is valid beyond the customer grant');
+  }
 
   // SR-09: a partial answer says so.
   if (answer.completeness === 'partial' && !answer.warnings.includes('partial_context')) throw violation('invalid_response', 'a partial answer without partial_context');

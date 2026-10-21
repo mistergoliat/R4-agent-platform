@@ -5,6 +5,10 @@ import { CustomerProfileHttpClient, type CustomerProfileCallTelemetry, type Cust
 
 // R4-J4-R2 test support: synthetic only. No real customer, no identity resolution, no network
 // unless a test starts a local server itself.
+//
+// R4-J4-R3: R4 now sends the CIA grant and accepts only a grant-verified answer. The pinned v1-rc1
+// fixtures stay byte-identical on disk; `answer()` serves a COPY marked `customer_grant_verified`
+// (what CP-S5 answers when it verified the grant), unless a test asks for the body as is.
 
 export const ROOT = join(import.meta.dirname, '..', '..', '..');
 export const PACKAGE = join(ROOT, 'adapters', 'domains', 'customer', 'http');
@@ -16,9 +20,10 @@ export const NOW = new Date('2026-10-15T12:05:00.000Z');
 
 export const CONFIG: CustomerProfileHttpConfig = { baseUrl: 'http://127.0.0.1:4310', bearerToken: TOKEN, timeoutMs: 3_000, lifecycle: 'synthetic' };
 
-/** An explicit, deterministic synthetic grant (D2 does not exist: it is never sent). */
-export const grantFor = (purposes: readonly CustomerPurpose[] = ['sales_context', 'purchase_history'], expiresAt = '2026-10-15T12:10:00.000Z'): CustomerAccessGrant => ({
-  token: 'synthetic-grant-not-sent',
+/** A synthetic grant shaped as a compact JWS (opaque to R4: never decoded). Outlives the fixtures' validUntil (12:15). */
+export const GRANT_TOKEN = 'eyJzeW50aGV0aWMiOnRydWV9.eyJub3QiOiJhIHJlYWwgZ3JhbnQifQ.c3ludGhldGljLXNpZ25hdHVyZQ';
+export const grantFor = (purposes: readonly CustomerPurpose[] = ['sales_context', 'purchase_history'], expiresAt = '2026-10-15T12:15:00.000Z'): CustomerAccessGrant => ({
+  token: GRANT_TOKEN,
   expiresAt,
   purposes,
 });
@@ -75,8 +80,18 @@ export function streamOf(text: string | Uint8Array, chunkSize = 4096): ReadableS
   });
 }
 
-export function answer(status: number, body: unknown, headers: Record<string, string> = {}) {
-  const text = typeof body === 'string' ? body : JSON.stringify(body);
+/** The answer CP-S5 gives once it verified the grant: a copy of the body with authorizationBasis customer_grant_verified. */
+export function grantVerified(body: unknown): unknown {
+  const provenance = (body as { provenance?: { authorizationBasis?: unknown } } | null)?.provenance;
+  if (provenance?.authorizationBasis !== 'service_scope_only') return body;
+  const copy = structuredClone(body) as { provenance: { authorizationBasis: string } };
+  copy.provenance.authorizationBasis = 'customer_grant_verified';
+  return copy;
+}
+
+export function answer(status: number, body: unknown, headers: Record<string, string> = {}, options: { readonly asServed?: boolean } = {}) {
+  const served = options.asServed ? body : grantVerified(body);
+  const text = typeof served === 'string' ? served : JSON.stringify(served);
   const all: Record<string, string> = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...headers };
   return { status, headers: { get: (name: string) => all[name.toLowerCase()] ?? null }, body: streamOf(text) };
 }

@@ -14,7 +14,7 @@ import { answer, clientWith, fixtureById, grantFor, NOW } from './support.js';
 
 // R4-J4-R2: boundary C (what the model may observe). Synthetic, explicit identities only: no resolver.
 
-const VERIFIED: IdentityResolution = { status: 'verified', customerRef: 'prestashop_customer:900000301', grant: grantFor(), resolvedAt: NOW.toISOString() };
+const VERIFIED: IdentityResolution = { status: 'verified', customerRef: 'prestashop_customer:900000301', grant: grantFor(undefined, '2026-10-15T12:10:00.000Z'), resolvedAt: NOW.toISOString() };
 const OPTIONS = { now: NOW };
 
 /** A port whose operations fail unless given: proves which operation (and so which purpose) a reader uses. */
@@ -185,13 +185,13 @@ describe('get_purchase_history@1 output', () => {
 
   it('an incomplete history is a failure through the real adapter, never a partial list', async () => {
     const { client } = clientWith(() => answer(200, fixtureById('PH09')));
-    const resolution: IdentityResolution = { ...VERIFIED, customerRef: 'prestashop_customer:900000309' };
+    const resolution: IdentityResolution = { ...VERIFIED, customerRef: 'prestashop_customer:900000309', grant: grantFor() };
     await expect(readCustomerPurchaseHistoryV1(resolution, { limit: 10 }, client, OPTIONS)).rejects.toMatchObject({ category: 'temporarily_unavailable', code: 'history_unavailable' });
   });
 
   it('end to end over the adapter with the PH05 fixture: the seller service line never reaches the model', async () => {
     const { client } = clientWith(() => answer(200, fixtureById('PH05')));
-    const resolution: IdentityResolution = { ...VERIFIED, customerRef: 'prestashop_customer:900000305' };
+    const resolution: IdentityResolution = { ...VERIFIED, customerRef: 'prestashop_customer:900000305', grant: grantFor() };
     const output = await readCustomerPurchaseHistoryV1(resolution, { limit: 10 }, client, OPTIONS);
     expect(output.identity === 'verified' && output.items.map((entry) => entry.productName)).toEqual(['Disco sintetico 10 kg - Color : Negro']);
   });

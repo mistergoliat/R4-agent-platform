@@ -44,9 +44,9 @@ describe('pinned owner artifacts (provenance)', () => {
     expect(contentHash(readFileSync(join(FIXTURES, 'MANIFEST.json'), 'utf8'))).toBe(owner.manifestSha256);
   });
 
-  it('the runtime loads the pinned schemas (hash-checked) and both request fixtures validate', () => {
+  it('R4-J4-R3: the runtime loads the pinned v1-rc2 schemas (hash-checked) and both v1-rc1 request fixtures still validate', () => {
     const contract = pinnedContract();
-    expect(contract.ownerCommit).toBe(SOURCE.ownerCommit);
+    expect(contract).toMatchObject({ ownerCommit: 'bbd766ef4b32c0ceb1065f9b7791f63f46798ef9', revision: 'v1-rc2' });
     for (const file of ['request-sales-context.json', 'request-purchase-history.json']) expect(contract.validateRequest(fixture(file)), file).toBe(true);
   });
 });

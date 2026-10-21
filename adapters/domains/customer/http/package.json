@@ -2,7 +2,7 @@
   "name": "@r4-adapters/customer-http",
   "version": "0.0.0",
   "private": true,
-  "description": "R4-J4-R2 Customer Profile HTTP adapter of the CustomerProfilePort (MS-pesaschile-customer-profile customer-profile.sales-context v1-rc1, owner commit 47db415): one POST route with the purpose fixed by the port operation, bearer auth, deadline, UTF-8 byte cap, forbidden-field scan, allowlist projection validated against the pinned JSON Schema, lifecycle and freshness checks, typed owner errors. Transport only. Outside R4 Core.",
+  "description": "R4-J4-R2 Customer Profile HTTP adapter of the CustomerProfilePort (MS-pesaschile-customer-profile customer-profile.sales-context; runtime pinned to v1-rc2 at owner commit bbd766e since R4-J4-R3, v1-rc1 at 47db415 kept as regression evidence): one POST route with the purpose fixed by the port operation, bearer auth plus the opaque CIA grant in x-customer-access-grant (R4-J4-R3), no redirects, deadline, UTF-8 byte cap, forbidden-field scan, allowlist projection validated against the pinned JSON Schema, customer_grant_verified required and validUntil bounded by the grant, lifecycle and freshness checks, typed owner errors. Transport only. Outside R4 Core.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -14,7 +14,8 @@
   },
   "files": [
     "dist",
-    "contract"
+    "contract",
+    "contract-v1-rc2"
   ],
   "dependencies": {
     "@r4-adapters/domains": "*",
