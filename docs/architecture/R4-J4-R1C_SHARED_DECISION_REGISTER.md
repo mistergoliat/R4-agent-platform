@@ -314,6 +314,15 @@ Esta sección **solo apunta** a decisiones ya registradas por sus owners. No las
 | **Contrato CIA histórico de R4** | `docs/contracts/cia/v1` en la rama `docs/r4-j4-r3-cia-discovery` @ `873da0f`. **Referencia de origen**, no fuente vigente. Las integraciones nuevas fijan el contrato desde la CIA. No se edita | — |
 | **CP-S5**: verificación del grant en Customer Profile | **Integrado en CP `main`** (`fff8ac7`, PR #26; informe en `bbd766e`, PR #27). Modo `required` disponible y `disabled` por defecto. **Sin despliegue:** el Customer Profile productivo no verifica grants | CP `docs/reviews/CP_J4_S5_GRANT_VERIFIER_IMPLEMENTATION_REPORT.md` y `CP_J4_S5_OWNER_MERGE_REPORT.md` |
 
+**Evidencia de la integración sintética R4-J4-R3** (rama `feat/r4-j4-r3-cia-cp-synthetic`, sin merge):
+
+| Elemento | Evidencia |
+|---|---|
+| Contratos fijados en R4 | CIA `v1-d2` @ `7525395` (`adapters/domains/identity/http/contract`, 27 archivos) y CP `v1-rc2` @ `bbd766e` (`adapters/domains/customer/http/contract-v1-rc2`). Ambos con git blob, sha256 y hash de contenido verificados por tests |
+| Campaña R4 → CIA → CP | **23/23** en 3 ejecuciones, la última sobre un clon limpio. Servicios sintéticos: CIA y CP compilados, bindings reales de R4 en PostgreSQL |
+| Activación productiva | **Ninguna.** Las capacidades `customer.get_context@2` y `customer.get_purchase_history@1` solo se registran en la composición sintética |
+| Informe | `R4_J4_R3_CIA_CP_INTEGRATION_REPORT.md`; seguimiento `R4_J4_R3_SEC_OTP_FOLLOWUP.md` |
+
 **No cambia con esta sección:**
 - G-16, AP-01 a AP-11 (incluido AP-04-H), D6, D7 y el hallazgo del merge de 02C siguen como estaban.
 - Los datos reales siguen bloqueados.
