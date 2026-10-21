@@ -223,11 +223,12 @@ describe('construction (AG-2)', () => {
     R4_CUSTOMER_PROFILE_BEARER_TOKEN: 'synthetic-r4-sales-cp-token-0123456789abcdefghij',
     R4_CUSTOMER_PROFILE_TIMEOUT_MS: '3000',
   };
-  const bindings = { bindingByTask: () => Promise.resolve(null) };
+  const bindings = { bindingByTask: () => Promise.resolve(null), taskState: () => Promise.resolve(null) };
 
+  // SEC-S6: the synthetic composition now registers the RR-1 versions (customer-v3.ts); @2/@1 above stay builders.
   it('the synthetic composition registers exactly the two capabilities from a complete synthetic configuration', () => {
     const capabilities = composeSyntheticCustomerCapabilities({ env: ENV, bindings });
-    expect(capabilities.map((c) => `${c.definition.capabilityId}@${c.definition.version}`)).toEqual(['customer.get_context@2', 'customer.get_purchase_history@1']);
+    expect(capabilities.map((c) => `${c.definition.capabilityId}@${c.definition.version}`)).toEqual(['customer.get_context@3', 'customer.get_purchase_history@2']);
   });
 
   it.each<[string, Record<string, string | undefined>]>([
