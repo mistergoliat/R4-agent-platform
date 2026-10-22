@@ -1,0 +1,7 @@
+run=3 checkout=/c/Users/dell/i/r4 head=129586c55d3f90120fe3bb01db45f38710bfd87e exit=0 start=2026-10-21T22:16:34Z end=2026-10-21T22:18:51Z
+ Test Files  2 passed (2)
+      Tests  41 passed (41)
+untracked/modified before: 0 after: 0
+sha256 campaign.log fcf6f713dbfca317c6238efec27ef6da05dd429f67df0e3211b5843a7d63fd0a
+sha256 r3-evidence.json f3c117e53c77bbc39af177d6241a09fe97dda5d247c0a82ded34227107c067f1
+sha256 sec-otp-evidence.json f3bcf2773aa343a1dd4bb82224582c703ace8988cbdd01b6a27156905d3d04e7

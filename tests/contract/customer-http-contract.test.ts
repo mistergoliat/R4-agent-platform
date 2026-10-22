@@ -169,18 +169,22 @@ describe('package boundaries', () => {
   // R4-J4-R3 (R3.5): the readers are now used by the capability registrations (customer-v2.ts) and their
   // only composition, the synthetic one (customer-synthetic.ts). Nothing else in Sales may reach them:
   // no production profile, CLI, bootstrap, composition root or agent definition (J4-R4 is not authorized).
+  // SEC-S6: the RR-1 versions (customer-v3.ts: get_context@3, get_purchase_history@2) are under the same rule.
   it('no Sales profile, registry or definition binds the adapters or the boundary-C readers (J4-R4 is not authorized)', () => {
     const salesFiles = (dir: string): string[] =>
       readdirSync(dir, { withFileTypes: true }).flatMap((entry) => (entry.isDirectory() ? salesFiles(join(dir, entry.name)) : entry.name.endsWith('.ts') || entry.name.endsWith('.json') ? [join(dir, entry.name)] : []));
     const users = salesFiles(join(ROOT, 'agents', 'sales'))
       .filter((file) => !file.includes('node_modules') && !file.includes(`${join('agents', 'sales', 'dist')}`))
-      .filter((file) => /customer-http|identity-http|customer-profile-outputs|customer-v2|customer-synthetic|readCustomerContextV2|readCustomerPurchaseHistoryV1|get_purchase_history/.test(readFileSync(file, 'utf8')))
+      .filter((file) => /customer-http|identity-http|customer-profile-outputs|customer-v2|customer-v3|customer-synthetic|customerContextV3Capability|customerPurchaseHistoryV2Capability|readCustomerContextV2|readCustomerPurchaseHistoryV1|get_purchase_history/.test(readFileSync(file, 'utf8')))
       .map((file) => file.slice(ROOT.length + 1).replace(/\\/g, '/'));
     expect(users.sort()).toEqual([
       'agents/sales/package.json',
       'agents/sales/src/capabilities/customer-profile-outputs.ts',
       'agents/sales/src/capabilities/customer-synthetic.ts',
       'agents/sales/src/capabilities/customer-v2.ts',
+      'agents/sales/src/capabilities/customer-v3.ts',
+      // SEC-S5: the identity verification capabilities (CIA start client types), synthetic composition only.
+      'agents/sales/src/capabilities/identity-verification.ts',
     ]);
   });
 });

@@ -29,7 +29,7 @@ const pg = createRequire(join(dir, 'package.json'))('pg');
 const sha = (token) => createHash('sha256').update(token).digest('hex');
 const AGENT_SCOPES = ['identity.verification.start', 'identity.resolve', 'identity.link.revoke'];
 const CHANNELS = {
-  whatsapp: { channelAccountRefs: ['100000000000001'], subjectRefPattern: '^[0-9]{8,15}$', displayName: 'el chat sintético de prueba', minAssurance: 'provider_signed' },
+  whatsapp: { channelAccountRefs: options.channelAccountRefs ?? ['100000000000001'], subjectRefPattern: '^[0-9]{8,15}$', displayName: 'el chat sintético de prueba', minAssurance: 'provider_signed' },
 };
 const consumer = (id) => ({ id, purposes: ['sales_context', 'purchase_history'], providerScope: ['1'], channels: CHANNELS });
 const credentials = (consumerId, tokens) => [
@@ -61,13 +61,22 @@ const cia = await createCia(config, {
   // Only rate-limit decisions are surfaced (limit name and consumer; no identifier).
   log: (event, fields) => { if (event.includes('rate_limited')) process.stderr.write(`${JSON.stringify({ event, limit: fields?.limit, consumer: fields?.consumer })}
 `); },
-  ...(options.grantTtlSeconds === undefined ? {} : { settings: { grant: { ttlSeconds: options.grantTtlSeconds } } }),
+  // The CIA's own settings option (never its code): a short grant TTL (R3) or, in SEC-S7, a short OTP
+  // TTL and resend interval for the time-dependent scenarios of a dedicated instance.
+  settings: {
+    ...(options.grantTtlSeconds === undefined ? {} : { grant: { ttlSeconds: options.grantTtlSeconds } }),
+    ...(options.otp === undefined ? {} : { otp: options.otp }),
+  },
 });
 const baseUrl = await cia.http.listen({ host: '127.0.0.1', port: 0 });
 process.send({ type: 'ready', baseUrl });
 
 process.on('message', async (message) => {
-  if (message.op === 'code') {
+  if (message.op === 'add_account') {
+    // SEC-S7 path B: a simulated account creation in the synthetic provider (the shop), never in the CIA.
+    double.accounts.push({ shopId: 1, active: true, guest: false, deleted: false, ...message.account });
+    process.send({ id: message.id, added: true });
+  } else if (message.op === 'code') {
     await cia.delivery.runOnce();
     process.send({ id: message.id, code: sender.codeFor(message.email) ?? null });
   } else if (message.op === 'close') {

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pesaschile.cl/contracts/cia/v1/verification-start.v1.schema.json",
+  "title": "POST /v1/identity/verifications (CANDIDATE, CIA-S0)",
+  "description": "Starts an email one-time-code challenge. Scope identity.verification.start. Header idempotency-key required. The 202 answer is identical in shape and timing for every well-formed email: no account lookup happens before the code is confirmed.",
+  "$defs": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "context", "verificationPurpose", "email", "purposes"],
+      "properties": {
+        "schemaVersion": { "$ref": "cia-common.v1.schema.json#/$defs/schemaVersion" },
+        "context": { "$ref": "cia-common.v1.schema.json#/$defs/context" },
+        "verificationPurpose": { "$ref": "cia-common.v1.schema.json#/$defs/verificationPurpose" },
+        "email": { "$ref": "cia-common.v1.schema.json#/$defs/email" },
+        "purposes": { "description": "Data-access purposes the subject intends to authorize later; recorded with the challenge, granted only by resolve.", "$ref": "cia-common.v1.schema.json#/$defs/dataPurposes" }
+      }
+    },
+    "response": {
+      "description": "HTTP 202.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "verificationId", "status", "expiresAt", "resendAvailableAt"],
+      "properties": {
+        "schemaVersion": { "$ref": "cia-common.v1.schema.json#/$defs/schemaVersion" },
+        "verificationId": { "$ref": "cia-common.v1.schema.json#/$defs/verificationId" },
+        "status": { "const": "challenge_issued" },
+        "expiresAt": { "$ref": "cia-common.v1.schema.json#/$defs/timestamp" },
+        "resendAvailableAt": { "$ref": "cia-common.v1.schema.json#/$defs/timestamp" }
+      }
+    }
+  }
+}

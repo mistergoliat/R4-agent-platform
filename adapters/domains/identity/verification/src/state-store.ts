@@ -12,6 +12,8 @@ import type { SealedCode } from './secret-box.js';
  */
 
 export type ExpectationState = 'created' | 'awaiting_code' | 'processing' | 'confirmed' | 'rejected' | 'expired' | 'cancelled';
+/** Decision rev. 02 §9.2. `absent` is not a mode: it is a composition without the inspector. */
+export type VerificationMode = 'full' | 'protect_only';
 export type ResponseState = 'pending' | 'dispatching' | 'resolved' | 'notified' | 'cancelled' | 'failed' | 'expired';
 export type CiaConfirmOutcome = 'linked' | 'no_eligible_account' | 'ineligible_account' | 'ambiguous' | 'conflicted' | 'invalid_code' | 'expired' | 'locked';
 
@@ -87,6 +89,8 @@ export interface ResponseClaim {
   readonly leaseOwner: string;
   readonly leaseGeneration: string;
   readonly attempts: number;
+  /** The response deadline (the challenge expiry): never confirmed at or after `deadlineAt - 5 s`. */
+  readonly deadlineAt: string;
   readonly sealed: SealedCode;
 }
 
@@ -201,18 +205,65 @@ export class IdentityVerificationStore {
 
   /** Closes a live expectation (`cancelled` or `expired`); its pending sealed codes are erased (trigger). Idempotent. */
   closeExpectation(expectationId: string, to: 'cancelled' | 'expired', reason: string): Promise<ExpectationRecord> {
+    return guard(() => withTransaction(this.#pool, (c) => this.#close(c, expectationId, to, reason)));
+  }
+
+  /** The same, inside the caller's transaction (SEC-S3: the inbound transaction, which already holds the conversation lock). */
+  closeExpectationWithin(client: PoolClient, expectationId: string, to: 'cancelled' | 'expired', reason: string): Promise<ExpectationRecord> {
+    return guard(() => this.#close(client, expectationId, to, reason));
+  }
+
+  async #close(c: PoolClient, expectationId: string, to: 'cancelled' | 'expired', reason: string): Promise<ExpectationRecord> {
+    const current = await this.#lockedExpectation(c, expectationId);
+    if (!LIVE.includes(current.state as ExpectationState)) return expectationOf(current);
+    const row = await one(
+      c,
+      `update identity_verification.expectations
+          set state = $2, closed_at = clock_timestamp(), closed_reason = $3, version = version + 1
+        where expectation_id = $1 returning *`,
+      [expectationId, to, reason],
+    );
+    return expectationOf(required(row));
+  }
+
+  /** Whether ANY conversation is still protected: the inspector cannot be removed from the composition while true. */
+  async anyProtectionActive(q: Pool | PoolClient): Promise<boolean> {
+    return guard(async () => {
+      const r = await q.query<{ active: boolean }>('select exists (select 1 from identity_verification.expectations where protect_until > clock_timestamp()) as active');
+      return r.rows[0]?.active === true;
+    });
+  }
+
+  // ── Component mode (SEC-S3, migration 0012) ───────────────────────────────────────────────────
+
+  /** The durable mode the gateway composed; `null` when no gateway ever composed the component. */
+  async mode(q: Pool | PoolClient = this.#pool): Promise<VerificationMode | null> {
+    return guard(async () => {
+      const row = await one(q, 'select mode from identity_verification.component_mode', []);
+      return row ? (row.mode as VerificationMode) : null;
+    });
+  }
+
+  /**
+   * Records the composed mode. Entering `protect_only` cancels every open response and erases its
+   * sealed code in the same transaction (no confirmation will ever be sent); redaction continues.
+   */
+  setMode(mode: VerificationMode, changedBy: string, reason: string): Promise<{ readonly responsesCancelled: number }> {
     return guard(() =>
       withTransaction(this.#pool, async (c) => {
-        const current = await this.#lockedExpectation(c, expectationId);
-        if (!LIVE.includes(current.state as ExpectationState)) return expectationOf(current);
-        const row = await one(
-          c,
-          `update identity_verification.expectations
-              set state = $2, closed_at = clock_timestamp(), closed_reason = $3, version = version + 1
-            where expectation_id = $1 returning *`,
-          [expectationId, to, reason],
+        await c.query(
+          `insert into identity_verification.component_mode (singleton, mode, changed_by, reason) values (true, $1, $2, $3)
+           on conflict (singleton) do update set mode = excluded.mode, changed_by = excluded.changed_by, reason = excluded.reason, changed_at = clock_timestamp()`,
+          [mode, changedBy, reason],
         );
-        return expectationOf(required(row));
+        if (mode !== 'protect_only') return { responsesCancelled: 0 };
+        const r = await c.query(
+          `update identity_verification.responses
+              set state = 'cancelled', failure_code = 'protect_only',
+                  code_ciphertext = null, code_iv = null, code_tag = null, key_id = null, lease_owner = null, lease_expires_at = null
+            where state in ('pending', 'dispatching')`,
+        );
+        return { responsesCancelled: r.rowCount ?? 0 };
       }),
     );
   }
@@ -245,6 +296,40 @@ export class IdentityVerificationStore {
     return guard(async () => {
       const row = await one(q, 'select * from identity_verification.expectations where expectation_id = $1', [expectationId]);
       return row ? expectationOf(row) : null;
+    });
+  }
+
+  /** SEC-S5: the most recent expectation opened for a binding (any state), for the commercial status. */
+  async latestForBinding(bindingId: string): Promise<ExpectationRecord | null> {
+    return guard(async () => {
+      const row = await one(this.#pool, 'select * from identity_verification.expectations where binding_id = $1 order by created_at desc, expectation_id desc limit 1', [bindingId]);
+      return row ? expectationOf(row) : null;
+    });
+  }
+
+  /**
+   * SEC-S5 (migration 0014): records, inside the inbound transaction, that a number reached a live,
+   * accepting expectation and was redacted WITHOUT being sent (no CIA attempt). Reason only.
+   */
+  async recordWithheld(client: PoolClient, withheld: { readonly expectationId: string; readonly channel: string; readonly providerEventId: string; readonly reason: string }): Promise<void> {
+    return guard(async () => {
+      await client.query(
+        `insert into identity_verification.withheld_submissions (channel, provider_event_id, expectation_id, reason) values ($1, $2, $3, $4)
+         on conflict (channel, provider_event_id) do nothing`,
+        [withheld.channel, withheld.providerEventId, withheld.expectationId, withheld.reason],
+      );
+    });
+  }
+
+  /** `code_needed`: the latest message under the challenge was withheld, after any code it received. */
+  async codeNeeded(expectationId: string): Promise<boolean> {
+    return guard(async () => {
+      const r = await this.#pool.query<{ needed: boolean }>(
+        `select coalesce((select max(received_at) from identity_verification.withheld_submissions where expectation_id = $1)
+                         > coalesce((select max(received_at) from identity_verification.responses where expectation_id = $1), '-infinity'::timestamptz), false) as needed`,
+        [expectationId],
+      );
+      return r.rows[0]?.needed === true;
     });
   }
 
@@ -349,6 +434,7 @@ export class IdentityVerificationStore {
           leaseOwner: owner,
           leaseGeneration: String(r.lease_generation),
           attempts: Number(r.attempts),
+          deadlineAt: iso(r.deadline_at) ?? '',
           sealed,
         };
       }),
@@ -427,6 +513,59 @@ export class IdentityVerificationStore {
         return { kind: 'failed' } as const;
       }),
     );
+  }
+
+  /**
+   * SEC-S4: ends a claim WITHOUT a CIA answer (fenced): the binding is no longer current, or the deadline
+   * passed. The response leaves the open states (its sealed code erased in the same statement) and the
+   * expectation is closed with `reason` if it is still live.
+   */
+  abandonClaim(claim: ResponseClaim, to: 'cancelled' | 'expired', reason: string): Promise<{ readonly kind: 'abandoned' | 'stale' }> {
+    return guard(() =>
+      withTransaction(this.#pool, async (c) => {
+        await lockConversation(c, claim.channel, claim.conversationKey);
+        const done = await this.#fenced(c, claim, `state = $4, failure_code = $5`, [to, reason]);
+        if (!done) return { kind: 'stale' } as const;
+        await c.query(
+          `update identity_verification.expectations
+              set state = $2, closed_at = clock_timestamp(), closed_reason = $3, version = version + 1
+            where expectation_id = $1 and state in ('created', 'awaiting_code', 'processing')`,
+          [claim.expectationId, to, reason],
+        );
+        return { kind: 'abandoned' } as const;
+      }),
+    );
+  }
+
+  /**
+   * SEC-S4 special condition: the CIA answered a claim whose response was closed while the call was in
+   * flight (replacement, expiry, closing). The result stays discarded; only the non-sensitive fact that
+   * an external operation completed is recorded. Nothing if the lease was merely lost to a newer claim.
+   */
+  recordDiscardedOutcome(claim: ResponseClaim, outcome: CiaConfirmOutcome): Promise<boolean> {
+    return guard(async () => {
+      const r = await this.#pool.query(
+        `insert into identity_verification.discarded_outcomes (response_id, expectation_id, lease_generation, cia_outcome, response_state)
+         select r.response_id, r.expectation_id, r.lease_generation, $3, r.state from identity_verification.responses r
+          where r.response_id = $1 and r.lease_generation = $2::bigint and r.state in ('cancelled', 'expired', 'failed')
+         on conflict (response_id) do nothing`,
+        [claim.responseId, claim.leaseGeneration, outcome],
+      );
+      return (r.rowCount ?? 0) > 0;
+    });
+  }
+
+  /** Resolved responses whose task resume was never confirmed (crash between `resolved` and `notified`). */
+  async resolvedAwaitingResume(olderThanMs: number, limit: number): Promise<readonly { readonly responseId: string; readonly taskId: string }[]> {
+    return guard(async () => {
+      const r = await this.#pool.query<{ response_id: string; task_id: string }>(
+        `select r.response_id, e.task_id from identity_verification.responses r join identity_verification.expectations e using (expectation_id)
+          where r.state = 'resolved' and r.received_at <= clock_timestamp() - make_interval(secs => $1::double precision / 1000)
+          order by r.received_seq limit $2`,
+        [olderThanMs, limit],
+      );
+      return r.rows.map((row) => ({ responseId: row.response_id, taskId: row.task_id }));
+    });
   }
 
   async markNotified(responseId: string): Promise<boolean> {

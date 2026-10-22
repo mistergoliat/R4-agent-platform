@@ -1,0 +1,1 @@
+{ "schemaVersion": 1, "channel": "whatsapp", "accountRef": "100000000000001", "subjectRef": "15555550101", "conversationRef": "15555550101", "email": "valid@synthetic.test", "purposes": ["purchase_history"] }

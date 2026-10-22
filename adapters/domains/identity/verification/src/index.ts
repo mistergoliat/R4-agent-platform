@@ -29,5 +29,18 @@ export {
   type ResponseClaim,
   type ResponseRecord,
   type ResponseState,
+  type VerificationMode,
 } from './state-store.js';
+export { VerificationInspector, type VerificationInspectionEvent, type VerificationInspectorOptions } from './inspector.js';
+export {
+  RESUME_SOURCE,
+  VerificationConfirmDispatcher,
+  type ConfirmAnswer,
+  type ConfirmPort,
+  type DispatchEvent,
+  type DispatchResult,
+  type ResumePort,
+  type VerificationConfirmDispatcherOptions,
+} from './dispatcher.js';
+export { identityVerificationInspection, type IdentityVerificationInspection, type IdentityVerificationInspectionOptions } from './gateway.js';
 export { IDENTITY_VERIFICATION_MIGRATIONS_DIR, identityVerificationSchemaIsCurrent, migrateIdentityVerification } from './migrate.js';

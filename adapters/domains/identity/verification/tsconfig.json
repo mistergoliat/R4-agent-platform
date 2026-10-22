@@ -10,6 +10,9 @@
   ],
   "references": [
     {
+      "path": "../../../../packages/live-ops"
+    },
+    {
       "path": "../../../../packages/persistence-postgres"
     }
   ]

@@ -15,7 +15,8 @@ import { createSilentLogger } from '@r4/observability';
 import { PostgresProductionStore, type Pool } from '@r4/persistence-postgres';
 import type { Platform } from '@r4/api';
 import { composeSyntheticCustomerCapabilities } from '../../agents/sales/src/capabilities/customer-synthetic.js';
-import { CUSTOMER_PURCHASE_HISTORY_CAPABILITY_ID, customerContextV2Capability, customerPurchaseHistoryV1Capability } from '../../agents/sales/src/capabilities/customer-v2.js';
+import { CUSTOMER_PURCHASE_HISTORY_CAPABILITY_ID } from '../../agents/sales/src/capabilities/customer-v2.js';
+import { customerContextV3Capability, customerPurchaseHistoryV2Capability } from '../../agents/sales/src/capabilities/customer-v3.js';
 import { createMigratedTestDatabase, openPool, type TestDatabase } from '../support/database.js';
 import { FakeClock, idsFrom } from '../support/deterministic.js';
 import { InMemoryObservationStore } from '../support/memory-observation-store.js';
@@ -27,7 +28,8 @@ import { startTestPlatform, validTaskBody } from '../support/platform.js';
 // - Customer Profile: the COMPILED service of a clean, built checkout at bbd766e
 //   (R4_INTEROP_CP_DIR), synthetic source, auth enforce, grant mode required, the CIA JWKS pinned
 //   before it starts, principal r4-sales;
-// - R4: the two Customer capabilities from the synthetic composition, invoked through the real
+// - R4: the two Customer capabilities from the synthetic composition (SEC-S6: get_context@3 and
+//   get_purchase_history@2, with the RR-1 revalidation), invoked through the real
 //   CapabilityRegistry/CapabilityInvoker, the subject coming from real task bindings in R4's
 //   PostgreSQL (ProductionStore.openBinding + attachTask, the authorized test support).
 // Opt-in (npm run test:interop); never part of `npm test`. Without the checkouts this file FAILS:
@@ -270,8 +272,8 @@ function invokerOf(capabilities: readonly unknown[]) {
     return observation;
   };
   return {
-    context: (taskId: string) => invoke(taskId, 'customer.get_context', 2),
-    history: (taskId: string, args: Record<string, unknown> = {}) => invoke(taskId, CUSTOMER_PURCHASE_HISTORY_CAPABILITY_ID, 1, args),
+    context: (taskId: string) => invoke(taskId, 'customer.get_context', 3),
+    history: (taskId: string, args: Record<string, unknown> = {}) => invoke(taskId, CUSTOMER_PURCHASE_HISTORY_CAPABILITY_ID, 2, args),
   };
 }
 
@@ -283,7 +285,7 @@ function withResolver(alter: (real: CustomerIdentityResolver) => CustomerIdentit
   const real = new CustomerIdentityHttpClient({ config: loadCustomerIdentityHttpConfig(env()), fetch: (url, init) => recordingFetch(url, init).then((r) => ({ status: r.status, headers: r.headers, body: r.body })), onCall: (e) => identityEvents.push(e) });
   const profile = new CustomerProfileHttpClient({ config: { baseUrl: cp.baseUrl, bearerToken: CP_TOKEN, timeoutMs: 3000, lifecycle: 'synthetic' }, fetch: (url, init) => recordingFetch(url, init).then((r) => ({ status: r.status, headers: r.headers, body: r.body })), onCall: (e) => profileEvents.push(e) });
   const deps = { bindings: store, identity: alter(real), profile };
-  return invokerOf([customerContextV2Capability(deps), customerPurchaseHistoryV1Capability(deps)]);
+  return invokerOf([customerContextV3Capability(deps), customerPurchaseHistoryV2Capability(deps)]);
 }
 
 let r4: ReturnType<typeof composed>;
@@ -321,7 +323,7 @@ describe('E2E: R4 → CIA → Customer Profile (nothing altered)', () => {
     expect(await verify(cia, subject!, 'valid@synthetic.test')).toBe('linked');
     const before = decisionsOf(cp);
     const observation = await r4.context(taskId);
-    record('1 valid link (get_context@2)', 'E2E', { outcome: observation.outcome, payload: observation.payload, cp: lastDecision(cp) });
+    record('1 valid link (get_context@3)', 'E2E', { outcome: observation.outcome, payload: observation.payload, cp: lastDecision(cp) });
     expect(observation).toMatchObject({ outcome: 'succeeded', payload: { identity: 'verified', purchaseHistory: 'present' } });
     expect(decisionsOf(cp)).toBe(before + 1);
     expect(lastDecision(cp)).toEqual({ outcome: 'accepted', reason: null });

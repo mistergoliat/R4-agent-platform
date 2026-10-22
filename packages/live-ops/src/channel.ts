@@ -62,6 +62,12 @@ export type HeaderBag = Readonly<Record<string, string | undefined>>;
 
 export interface InboundChannelAdapter {
   readonly channel: string;
+  /**
+   * R4-I.1: the adapter attests that every inbound it canonicalizes belongs to a one-to-one
+   * conversation whose subject is the conversation reference. Absent means not attested: an
+   * inspector then never takes `senderRef === conversationRef` as proof of a direct sender.
+   */
+  readonly directConversations?: boolean;
   /** Provider subscription handshake (if the provider has one). */
   verifySubscription(query: Readonly<Record<string, string | undefined>>): { readonly ok: true; readonly body: string } | { readonly ok: false; readonly status: number; readonly reason: string };
   /** Authenticity of a notification, on the raw body exactly as received. Fails closed. */

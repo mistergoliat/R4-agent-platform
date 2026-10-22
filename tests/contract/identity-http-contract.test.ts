@@ -27,10 +27,10 @@ describe('pinned CIA artifacts (provenance)', () => {
     expect(json('MANIFEST.v1-d2.json')).toMatchObject({ revision: 'v1-d2-candidate', base: { revision: 'v1-s0-candidate' } });
   });
 
-  it('every copied file is byte-identical to the owner blob it records (3 schemas, 22 fixtures, 2 manifests)', () => {
+  it('every copied file is byte-identical to the owner blob it records (5 schemas, 41 fixtures, 2 manifests; SEC-S4 confirm, SEC-S5 start)', () => {
     const copied = [...listed('schemas'), ...listed('fixtures'), 'MANIFEST.v1.json', 'MANIFEST.v1-d2.json'].sort();
     expect(SOURCE.files.map((entry) => entry.file).sort()).toEqual(copied);
-    expect(copied).toHaveLength(27);
+    expect(copied).toHaveLength(48);
     for (const entry of SOURCE.files) {
       const bytes = lf(entry.file);
       expect(sha256(bytes), entry.file).toBe(entry.sha256);
@@ -129,11 +129,14 @@ describe('package boundaries', () => {
     expect((JSON.parse(readFileSync(join(PACKAGE, 'package.json'), 'utf8')) as { dependencies: unknown }).dependencies).toEqual({ '@r4-adapters/domains': '*', ajv: '8.20.0', 'ajv-formats': '3.0.1' });
   });
 
-  it('calls exactly one route, resolve (no verification, confirmation or revocation routes: SEC-OTP-01/02)', () => {
+  it('calls only resolve, (SEC-S5) the agent start and (SEC-S4) the channel-integration confirm; never revocation or keys', () => {
     const all = sources.map((source) => source.text).join('\n');
     expect(CUSTOMER_IDENTITY_ROUTE).toBe('/v1/identity/resolve');
-    expect([...all.matchAll(/'\/v1\/[^']*'/g)].map((match) => match[0])).toEqual(["'/v1/identity/resolve'"]);
-    expect(all).not.toMatch(/verifications|confirm|links\/revoke|jwks/);
+    expect([...all.matchAll(/'\/v1\/[^']*'/g)].map((match) => match[0]).sort()).toEqual(["'/v1/identity/resolve'", "'/v1/identity/verifications'", "'/v1/identity/verifications/confirm'"]);
+    expect(all).not.toMatch(/links\/revoke|jwks/);
+    // The confirm route is reached only with the channel-integration credential, never the agent one.
+    const confirm = sources.find((source) => source.text.includes('CIA_CONFIRM_ROUTE ='))!.text;
+    expect(confirm).not.toMatch(/R4_CUSTOMER_IDENTITY_BEARER_TOKEN/);
   });
 
   it('never decodes, signs or rewrites a grant', () => {

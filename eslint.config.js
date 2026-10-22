@@ -189,7 +189,8 @@ export default tseslint.config(
     },
   },
   // R4-J4 SEC-OTP: the identity-verification integration (outside Core) reaches R4 only through the public persistence
-  // package (its own schema, the generic migrator and transactions). Never a runtime, the kernel, live-ops, an app or a pack.
+  // package (its own schema, the generic migrator and transactions) and the generic live-ops ports (InboundInspector v1,
+  // the conversation lock key). Never a runtime, the kernel, a model, an app or a pack.
   {
     files: ['adapters/domains/identity/verification/src/**/*.ts'],
     rules: {
@@ -198,7 +199,7 @@ export default tseslint.config(
         {
           patterns: [
             ...forbiddenEverywhere,
-            { group: ['pg', 'pg/*', '@r4/task-runtime', '@r4/capability-runtime', '@r4/agent-kernel', '@r4/context-compiler', '@r4/model-gateway', '@r4/policy-engine', '@r4/live-ops', '@r4/worker', '@r4/api', '@r4/channel-gateway', '@r4-sales/*', '**/packages/**', '**/apps/**', '**/agents/**'], message: 'identity-verification depends only on @r4/persistence-postgres in SEC-S2 (decision rev. 02 §4).' },
+            { group: ['pg', 'pg/*', '@r4/task-runtime', '@r4/capability-runtime', '@r4/agent-kernel', '@r4/context-compiler', '@r4/model-gateway', '@r4/policy-engine', '@r4/worker', '@r4/api', '@r4/channel-gateway', '@r4-sales/*', '**/packages/**', '**/apps/**', '**/agents/**'], message: 'identity-verification depends only on @r4/persistence-postgres and the live-ops ports (decision rev. 02 §4).' },
           ],
         },
       ],
