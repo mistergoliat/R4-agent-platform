@@ -26,6 +26,24 @@ CUSTOMER_REAL_DATA_ACCESS_BLOCKED
 J4_ROADMAP_READY_FOR_OWNER_REVIEW
 ```
 
+## Adenda — decisión del owner (2026-10-22, mandato `R4-J4-R4-COMPOSITION-AND-PROFILE-09`)
+
+El owner acepta este informe con correcciones. Prevalecen sobre el texto original:
+
+| Tema | Decisión |
+|---|---|
+| Perfil y definición | Se confirman `sales-production@8` y la definición Sales v8 |
+| J4-R4 | Autorizado para implementación y validación **sintética**. Sin activación productiva ni despliegue |
+| Hitos | J5 = Sales Autonomy; J6 = Benchmark & Reviewer; J7 = Production Readiness; Checkout pertenece a R4-L y es desarrollo paralelo independiente |
+| `R4_CONTEXT_EXPIRED_EVIDENCE` | `exclude` en el canary J4, **no en producción**. Es una variable del proceso worker: afecta a las observaciones vencidas de **todas** las capacidades del canary, no solo de Customer. Siguen persistidas (ADR-039 F8) |
+| D7 del canary | Datos exclusivamente sintéticos, aislamiento de producción y purga verificable al cierre. D7 productivo sigue abierto (J7) |
+| RR-1 R-4 | Inmutabilidad de bindings: **requisito obligatorio antes de J4-R5** (corrige §5, que lo marcaba como recomendado) |
+| G-16 y AP-* | Siguen pendientes de aceptación formal del owner de CP |
+| Producción | Sin cambios: `sales-production@3`, rollout no autorizado, sin datos reales |
+
+Con esto se resuelven P0-1 y P0-4 (§6). Siguen pendientes la conciliación de J4.5 frente a J5 y la
+revisión de la rama `docs/r4-j55-roadmap-registration`.
+
 **Convención.** Un estado **DONE** exige código en `main`. Nada se marca DONE solo porque exista un
 documento o una rama sin integrar. "Sintético" significa que no se probó con servicios desplegados
 ni con datos reales.
@@ -246,7 +264,7 @@ La campaña S7 en verde **no cierra** ninguno de estos gates.
 |---|---|---|---|---|
 | RS-01..04 (cobertura textual residual; correos con 4–8 dígitos redactados durante la protección) | S3 §4; S1 §9 | No | No (datos sintéticos) | **Sí**: el owner elige la opción 1, 2 o 3 |
 | RR-1 R-1..R-3 (residuos; requieren aceptación escrita) | `R4_J4_RR1_BINDING_RACE_ANALYSIS.md` §7–§8; S6 §7 | No | No | **Sí** |
-| RR-1 R-4 / inmutabilidad de bindings (sin trigger) | RR-1 §8; S4 R4-05; S2 R2-06 | No | Recomendado antes del canary (es precondición de la idempotencia de `confirm`) | **Sí** |
+| RR-1 R-4 / inmutabilidad de bindings (sin trigger) | RR-1 §8; S4 R4-05; S2 R2-06 | No | **Sí: obligatorio antes de J4-R5** (decisión del owner, adenda; es precondición de la idempotencia de `confirm`) | **Sí** |
 | BA-01..06 (entradas alternativas E-2..E-9) | S3 §5 | No | No, si el canary no conecta canal real ni shadow con tráfico real | **Sí** |
 | OA-10 (claves, roles de BD, nginx/PM2) | SEC decisión :662 | No | No, con claves sintéticas | **Sí** |
 | D7 (R4): retención y purga | ADR-039 §8; R0 :300 («definir antes de J4-R5») | No | **Sí**, como decisión que limita el canary a datos sintéticos y define su purga | **Sí** |
@@ -323,12 +341,12 @@ Checkout       : en paralelo, sin cambios (§8)
 | A | Alcance |
 |---|---|
 | **J5 — Sales Autonomy** | Comportamiento del modelo con Customer: cuándo pedir verificación, uso del historial en la recomendación, personalización, estrategia comercial, prompts y goals. J4 solo exige compatibilidad mínima (§3.2) |
-| **J6 — Benchmark** | Evaluación comercial amplia, comparaciones A/B de estrategia, benchmark de proveedores o modelos con Customer |
+| **J6 — Benchmark & Reviewer** | Evaluación comercial amplia, comparaciones A/B de estrategia, benchmark de proveedores o modelos con Customer |
 | **J7 — Production Rollout** | Rollout de `@8` desde `@3` con su propio rollback; datos y clientes reales; gates P2; RR-1, RS, BA, OA-10, D7 productivo; CRM-agent y `enforce` en producción; versión de PrestaShop; gates de `@7` |
 | **Checkout** (hoy registrado como J5.5 en la rama sin fusionar `docs/r4-j55-roadmap-registration`) | Creación de cliente y onboarding (OD-08), carrito, pago, orden. Avanza en paralelo; **no bloquea J4**. Este mandato no lo cambia |
 | **CP-V2** | Área E: Snapshot Set, RFM V2, affinity, clustering, CLV, audiences, Commercial Signals. **No es dependencia de J4** |
 
-**Nota para el owner.** El roadmap vigente no define J5 ni J6. La rama sin fusionar `d8a6b94`
+**Nota para el owner** (texto original; la adenda confirma J5 y J6 y asigna Checkout a R4-L). El roadmap vigente no define J5 ni J6. La rama sin fusionar `d8a6b94`
 afirma que «no los hay» y usa J5.5 como identificador provisional de Checkout dentro de R4-L. Este
 mandato registra J5, J6 y J7 tal como los enuncian sus principios. La relación con J4.5 (Catalog) y
 con J5.5 queda **como propuesta pendiente de conciliación por el owner** (ver roadmap §1.1).
