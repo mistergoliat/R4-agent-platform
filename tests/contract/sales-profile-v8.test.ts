@@ -128,7 +128,7 @@ describe('B. the @8 action policy: @7 plus the approved OA-05 rule only', () => 
     expect(new ActionPolicyEngine(SALES_PRODUCTION_V8_ACTION_POLICY).identity.hash).toBe(PINNED.v8Policy);
     expect(SALES_PRODUCTION_V8_ACTION_POLICY.riskClasses).toBe(SALES_PRODUCTION_AUTONOMOUS_ACTION_POLICY.riskClasses);
     expect(SALES_PRODUCTION_V8_ACTION_POLICY.riskClasses.EXTERNAL_COMMUNICATION).toEqual({ autonomy: 'require_approval' });
-    const { ['identity.start_verification']: start, ...others } = SALES_PRODUCTION_V8_ACTION_POLICY.capabilities;
+    const { ['identity.start_verification']: start, ...others } = SALES_PRODUCTION_V8_ACTION_POLICY.capabilities!;
     expect(start).toEqual({ autonomy: 'allow' });
     expect(others).toEqual(SALES_PRODUCTION_AUTONOMOUS_ACTION_POLICY.capabilities);
     expect(salesActionPolicyFor(SALES_PRODUCTION_PROFILE_V8)).toBe(SALES_PRODUCTION_V8_ACTION_POLICY);

@@ -24,7 +24,7 @@ import { OpenAICompatibleModelProvider, describeModelConfig, loadOpenAICompatibl
 import { loadProductionConfig, profileFingerprint, profileLabel } from '@r4/live-ops';
 import { FakeModelProvider } from '@r4/model-gateway';
 import { createSilentLogger } from '@r4/observability';
-import { AUTONOMOUS_QUOTE_CAPABILITY_IDS, CAPABILITY_IDS, ContextView, read, renderOfferMessage, respond } from '@r4-sales/agent';
+import { AUTONOMOUS_QUOTE_CAPABILITY_IDS, CAPABILITY_IDS, ContextView, read, respond } from '@r4-sales/agent';
 import { initCanary, loadCanaryEnvironment, sendSynthetic, startCanaryRuntime } from '@r4-sales/agent/canary';
 import { SALES_PRODUCTION_PROFILES, SALES_PRODUCTION_PROFILE_V8, salesProductionAgentVersion } from '@r4-sales/agent/production';
 
@@ -93,7 +93,7 @@ const CUSTOMER_ENV = {
 };
 const utcSecond = (ms) => new Date(Math.floor(ms / 1000) * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
 function identityStub(sc) {
-  const json = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
+  const json = (status, body) => new globalThis.Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } });
   return async (url) => {
     const now = Date.now();
     sc.ownerCalls.push(url.replace(/^https?:\/\/[^/]+/, ''));
@@ -148,7 +148,7 @@ function plan(family, n) {
       // @8 only: a scripted start, then the inspector's marker in place of the customer's code (the model never sees it).
       return {
         texts: [`Necesito revisar mis compras anteriores, mi correo es ${EMAILS[n % EMAILS.length]}`, PLATFORM_MARKERS.codeReceived],
-        steps: [(v) => ({ type: 'propose_action', capabilityId: 'identity.start_verification', arguments: { email: EMAILS[n % EMAILS.length] } }), respond('Te envié un código de 6 dígitos a tu correo. Respóndeme solo con ese código.'), REAL],
+        steps: [() => ({ type: 'propose_action', capabilityId: 'identity.start_verification', arguments: { email: EMAILS[n % EMAILS.length] } }), respond('Te envié un código de 6 dígitos a tu correo. Respóndeme solo con ese código.'), REAL],
       };
     default:
       throw new Error(family);

@@ -55,10 +55,10 @@ function owners() {
     if (url.startsWith(CIA)) {
       state.calls.push('cia');
       if (state.cia === 'down') throw new TypeError('fetch failed');
-      if (state.cia === 'hang') return new Promise((_resolve, reject) => init.signal?.addEventListener('abort', () => reject(init.signal!.reason)));
+      if (state.cia === 'hang') return new Promise((_resolve, reject) => init.signal?.addEventListener('abort', () => reject(init.signal!.reason as Error)));
       const resolvedAt = new Date(now - 1_000).toISOString();
       if (state.cia === 'not_verified') return json(200, { schemaVersion: 1, status: 'not_verified', resolvedAt });
-      const { purposes } = JSON.parse(String(init.body)) as { purposes: string[] };
+      const { purposes } = JSON.parse(init.body as string) as { purposes: string[] };
       return json(200, { schemaVersion: 1, status: 'verified', customerRef: 'prestashop_customer:900000201', grant: { token: GRANT_TOKEN, expiresAt: new Date(now + 240_000).toISOString(), purposes }, resolvedAt });
     }
     if (url.startsWith(CP)) {
