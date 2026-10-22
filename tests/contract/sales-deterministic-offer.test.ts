@@ -119,7 +119,7 @@ describe('B. sales-production@7', () => {
     expect(profileFingerprint(SALES_PRODUCTION_PROFILE_V7)).toBe(PINNED.v7);
     expect(salesProductionAgentVersion(SALES_PRODUCTION_PROFILE_V7)).toBe(7);
     expect(salesProductionActionPolicy(SALES_PRODUCTION_PROFILE_V7)).toBe(SALES_PRODUCTION_AUTONOMOUS_ACTION_POLICY);
-    expect(SALES_PRODUCTION_PROFILES.map(profileLabel)).toEqual(['sales-production@1', 'sales-production@2', 'sales-production@3', 'sales-production@4', 'sales-production@5', 'sales-production@6', 'sales-production@7']);
+    expect(SALES_PRODUCTION_PROFILES.map(profileLabel)).toEqual(['sales-production@1', 'sales-production@2', 'sales-production@3', 'sales-production@4', 'sales-production@5', 'sales-production@6', 'sales-production@7', 'sales-production@8']);
   });
 
   it('composes quote.create@5 and quote.preview@3 only with the v6 limits, under the autonomous policy; only quote.create is an autonomous write', () => {

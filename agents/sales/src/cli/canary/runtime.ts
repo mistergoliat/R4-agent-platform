@@ -27,11 +27,12 @@ import { createWorkerPlatform, type WorkerConfig, type WorkerPlatform } from '@r
 import { SALES_AGENT_DIR, SALES_MIGRATIONS_DIR } from '../../definition.js';
 import { SALES_AGENT_ID } from '../../ids.js';
 import { migrateSales } from '../../migrate.js';
-import { composeSalesProductionWorker, salesConversationTaskFactory } from '../../production/composition.js';
+import { composeSalesProductionWorker, salesConversationTaskFactory, type SalesProductionWorkerOptions } from '../../production/composition.js';
 import { SALES_PRODUCTION_PROFILE_V4 } from '../../production/profile-v4.js';
 import { SALES_PRODUCTION_PROFILE_V5, isAutonomousQuoteProfile } from '../../production/profile-v5.js';
 import { SALES_PRODUCTION_PROFILE_V6, isConfirmedIntentProfile } from '../../production/profile-v6.js';
-import { SALES_PRODUCTION_PROFILE_V7, salesProductionAgentVersion } from '../../production/profile-v7.js';
+import { SALES_PRODUCTION_PROFILE_V7 } from '../../production/profile-v7.js';
+import { salesProductionAgentVersion } from '../../production/profile-v8.js';
 import { loadAutonomousQuoteLimits, loadAutonomousQuoteLimitsV6, type AutonomousQuoteLimits, type AutonomousQuoteLimitsV6 } from '../../capabilities/autonomy-limits.js';
 import type { ApprovalInspection } from '../../production/approvals.js';
 import { openApprovalInspection } from '../approval-inspection.js';
@@ -198,6 +199,8 @@ export interface CanaryRuntimeOptions {
   readonly logger: Logger;
   /** How often the running canary re-proves its isolation (it stops on a violation). */
   readonly isolationCheckMs?: number;
+  /** (R4-J4-R4) Passed through to the worker composition. Only tests use it: loadCanaryEnvironment does not accept sales-production@8 (the J4-R5 canary is not built). */
+  readonly customer?: SalesProductionWorkerOptions["customer"];
 }
 
 export interface CanaryRuntime {
@@ -233,7 +236,7 @@ export async function startCanaryRuntime(canary: CanaryEnvironment, options: Can
     const canaryId = await assertIsolatedCanaryDatabase(pool);
     await assertCurrentSchema(pool);
     const store = new PostgresProductionStore(pool);
-    const composed = composeSalesProductionWorker({ pool, store, production: canary.production, modelProvider: options.modelProvider, logger, catalog: options.catalog, shipping: options.shipping, quotes: options.quotes, ...(canary.autonomousQuoteLimits ? { autonomousQuoteLimits: canary.autonomousQuoteLimits } : {}) });
+    const composed = composeSalesProductionWorker({ pool, store, production: canary.production, modelProvider: options.modelProvider, logger, catalog: options.catalog, shipping: options.shipping, quotes: options.quotes, ...(canary.autonomousQuoteLimits ? { autonomousQuoteLimits: canary.autonomousQuoteLimits } : {}), ...(options.customer ? { customer: options.customer } : {}) });
     worker = await createWorkerPlatform(options.worker, { ...composed.bindings, admission: new CanaryAdmission(pool, composed.controls) }, { logger });
     scheduler = options.scheduler ? await createSchedulerPlatform(options.scheduler, { logger }) : null;
     const capture = new CaptureOutboundAdapter(typeof options.captureFile === 'string' ? options.captureFile : options.captureFile(canaryId));

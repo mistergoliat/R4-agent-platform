@@ -49,3 +49,23 @@ Un cambio incompatible del puerto exige `version: 2` y una enmienda de este ADR.
 - **El harness no cambia.** Ningún paquete de `agent-kernel`, `task-runtime`, `capability-runtime`, `context-compiler`, `model-gateway`, `policy-engine`, `contracts` u `observability` se modifica.
 - **Entradas alternativas.** `POST /v1/tasks/:id/inputs` y las demás rutas E-2 a E-8 **no** pasan por el inspector. No son entradas equivalentes de canal protegidas: siguen siendo gates de activación real (BA-01 a BA-06).
 - **Cobertura textual.** El clasificador no reconoce toda representación de un código (informe SEC-S1 §9; `SEC_OTP_TEXT_COVERAGE_REVIEW_PENDING`). Este ADR no declara que una fuga sea imposible.
+
+## Adenda R4-J4-R4 (2026-10-22): sin inspector tampoco con el componente en `full`
+
+**Motivo.** El worker solo inicia una verificación si el modo durable del componente (`identity_verification.component_mode`) es `full`. Ese registro lo escribe el gateway que compone el inspector y sobrevive a ese gateway. Antes de esta adenda, un gateway compuesto **sin** inspector podía arrancar sin ventanas de protección abiertas mientras el registro seguía en `full`. En ese caso el worker podía iniciar una verificación cuyo código llegaría a un gateway sin protección. Un indicador declarativo no basta.
+
+**Decisión.** `assertNoOpenProtection` también rechaza el arranque sin inspector mientras el modo durable sea `full` (`identity_verification_mode_full`). Para retirar el inspector hay que recomponerlo antes en `protect_only`, como ya exige el procedimiento del plan §5: `protect_only` → esperar a que expire la protección → `absent`. No hay override. El orden de las comprobaciones se mantiene: una ventana abierta se informa primero.
+
+**Comprobación entre procesos de `sales-production@8`:**
+
+1. El gateway `@8` compone siempre el inspector y lo pide en `full`. Sin el keyring o sin el cliente `confirm`, la composición se rechaza. Un keyring inválido, o un breaker abierto por credenciales rechazadas, lo dejan en `protect_only`; nunca queda sin inspector.
+2. El worker `@8` comprueba al arrancar que el esquema `identity_verification` está al día. Antes de cada inicio, `identity.start_verification@1` lee el modo durable y rechaza (`verification_disabled`) si no es `full`.
+3. Un gateway sin inspector no arranca mientras ese modo sea `full` ni mientras haya ventanas abiertas (esta adenda e inv. 6).
+
+**Residual (R3-04, réplicas mixtas).** Un gateway sin inspector que **ya estaba corriendo** cuando otro arranca en `full` no se detecta, porque no existe presencia durable de gateways. Esto queda excluido por el procedimiento de despliegue: todas las réplicas del gateway deben componer el inspector antes de seleccionar `@8`, y el canary de J4-R5 usa un único gateway. Cerrarlo en código exige presencia de gateways, que queda fuera del alcance de J4-R4.
+
+**Pruebas.**
+- `tests/integration/sales-profile-v8.test.ts` C.
+- `identity-verification-ingress.test.ts` («absent is allowed … and the component left full»).
+- Contrato en `identity-verification-boundaries.test.ts`.
+- Mutación PV8-M7.

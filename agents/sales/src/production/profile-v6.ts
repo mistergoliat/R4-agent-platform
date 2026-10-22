@@ -33,7 +33,7 @@ export const SALES_PRODUCTION_PROFILE_V6: ProductionProfile = Object.freeze({
  * Profiles that issue only on a customer confirmation read from the conversation and need the v6 limits:
  * @6 (quote.create@4, quote.preview@2) and @7 (R4-J3E-C1: quote.create@5, quote.preview@3, the exact offer).
  */
-export const SALES_CONFIRMED_INTENT_PROFILES: ReadonlySet<string> = new Set(['sales-production@6', 'sales-production@7']);
+export const SALES_CONFIRMED_INTENT_PROFILES: ReadonlySet<string> = new Set(['sales-production@6', 'sales-production@7', 'sales-production@8']);
 
 export function isConfirmedIntentProfile(profile: ProductionProfile): boolean {
   return SALES_CONFIRMED_INTENT_PROFILES.has(profileLabel(profile));
@@ -50,4 +50,4 @@ export const SALES_PRODUCTION_PROFILE_V6_GATE = Object.freeze([
   { id: 'explicit-authorization', blocking: true, requirement: 'explicit user authorization to deploy and select sales-production@6' },
 ] as const);
 
-// The selectable profile registry (v1–v7) and the pinned definition versions live in profile-v7.ts (R4-J3E-C1).
+// The selectable profile registry (v1–v8) and the pinned definition versions live in profile-v8.ts (R4-J4-R4).

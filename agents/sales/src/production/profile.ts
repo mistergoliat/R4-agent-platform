@@ -4,7 +4,7 @@ import { WHATSAPP_CHANNEL_ID, WHATSAPP_CLOUD_CONTRACT_REF } from '@r4-adapters/w
 import { CAPABILITY_IDS } from '../ids.js';
 
 /** The Sales pack's domains as its production profile names them. */
-export const SALES_DOMAINS = { customer: 'customer', catalog: 'catalog', shipping: 'shipping', quote: 'quote', workspace: 'sales-workspace' } as const;
+export const SALES_DOMAINS = { customer: 'customer', catalog: 'catalog', shipping: 'shipping', quote: 'quote', workspace: 'sales-workspace', identity: 'customer-identity' } as const;
 
 /**
  * Sales production profile, version 1 (R4-I canary). Intentionally
