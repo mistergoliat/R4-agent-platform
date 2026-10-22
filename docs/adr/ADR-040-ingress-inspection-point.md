@@ -52,6 +52,8 @@ Un cambio incompatible del puerto exige `version: 2` y una enmienda de este ADR.
 
 ## Adenda R4-J4-R4 (2026-10-22): sin inspector tampoco con el componente en `full`
 
+**Estado: APPROVED** por el owner (2026-10-22, `R4-J4-R4-OWNER-ACCEPTANCE-AND-R5-PREPARATION-10`). El riesgo de réplicas activas previamente (R3-04, abajo) sigue **abierto** y **bloquea los despliegues mixtos**: ningún despliegue puede tener a la vez un gateway con inspector y otro sin él.
+
 **Motivo.** El worker solo inicia una verificación si el modo durable del componente (`identity_verification.component_mode`) es `full`. Ese registro lo escribe el gateway que compone el inspector y sobrevive a ese gateway. Antes de esta adenda, un gateway compuesto **sin** inspector podía arrancar sin ventanas de protección abiertas mientras el registro seguía en `full`. En ese caso el worker podía iniciar una verificación cuyo código llegaría a un gateway sin protección. Un indicador declarativo no basta.
 
 **Decisión.** `assertNoOpenProtection` también rechaza el arranque sin inspector mientras el modo durable sea `full` (`identity_verification_mode_full`). Para retirar el inspector hay que recomponerlo antes en `protect_only`, como ya exige el procedimiento del plan §5: `protect_only` → esperar a que expire la protección → `absent`. No hay override. El orden de las comprobaciones se mantiene: una ventana abierta se informa primero.
