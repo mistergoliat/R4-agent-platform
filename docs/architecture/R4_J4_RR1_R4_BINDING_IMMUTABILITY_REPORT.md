@@ -7,7 +7,7 @@ date: 2026-10-22
 # RR-1 R-4: inmutabilidad de la identidad de `channel_conversation_bindings`
 
 ```text
-RR1_R4_TRIGGER_IMPLEMENTED            (rama feat/r4-j4-rr1-r4-binding-immutability, base main 3e04b4f; sin push ni PR)
+RR1_R4_TRIGGER_IMPLEMENTED            (rama feat/r4-j4-rr1-r4-binding-immutability, base main 3e04b4f; PR de revisión, sin merge)
 RR1_R4_SYNTHETIC_VALIDATION_PASS
 RR1_R4_MUTATIONS_5_OF_5_DETECTED
 R4_HARNESS_UNCHANGED
