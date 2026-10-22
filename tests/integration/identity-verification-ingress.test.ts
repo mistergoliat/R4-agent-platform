@@ -493,9 +493,12 @@ describe('modes and rollback (ADR-040 inv. 6: no override)', () => {
 });
 
 describe('without the inspector, or with no open protection, ingress is exactly R4-I', () => {
-  it('absent is allowed when no protection window exists, and then nothing is inspected', async () => {
+  // R4-J4-R4 (ADR-040 addendum): from full, absent is refused until the component is recomposed in protect_only.
+  it('absent is allowed when no protection window exists and the component left full, and then nothing is inspected', async () => {
     const clean = await LiveOpsTestbed.start({ identityVerification: FULL });
     try {
+      await expect(clean.recomposeGateway(undefined)).rejects.toMatchObject({ code: 'identity_verification_mode_full' });
+      await clean.recomposeGateway({ requested: 'protect_only', codeKeys: null });
       await clean.recomposeGateway(undefined);
       expect(clean.gateway.inspection).toBeNull();
       const wa = nextWa();

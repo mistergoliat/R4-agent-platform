@@ -170,7 +170,9 @@ describe('package boundaries', () => {
   // only composition, the synthetic one (customer-synthetic.ts). Nothing else in Sales may reach them:
   // no production profile, CLI, bootstrap, composition root or agent definition (J4-R4 is not authorized).
   // SEC-S6: the RR-1 versions (customer-v3.ts: get_context@3, get_purchase_history@2) are under the same rule.
-  it('no Sales profile, registry or definition binds the adapters or the boundary-C readers (J4-R4 is not authorized)', () => {
+  // R4-J4-R4: sales-production@8 is the only profile that binds them (profile-v8.ts, its composition branch, the
+  // gateway's confirm client and definition v8); @1–@7 never do (tests/contract/sales-profile-v8.test.ts).
+  it('only sales-production@8 (profile, composition, gateway inspection, definition v8) binds the adapters or the boundary-C readers', () => {
     const salesFiles = (dir: string): string[] =>
       readdirSync(dir, { withFileTypes: true }).flatMap((entry) => (entry.isDirectory() ? salesFiles(join(dir, entry.name)) : entry.name.endsWith('.ts') || entry.name.endsWith('.json') ? [join(dir, entry.name)] : []));
     const users = salesFiles(join(ROOT, 'agents', 'sales'))
@@ -179,12 +181,18 @@ describe('package boundaries', () => {
       .map((file) => file.slice(ROOT.length + 1).replace(/\\/g, '/'));
     expect(users.sort()).toEqual([
       'agents/sales/package.json',
+      // R4-J4-R4: definition v8 names customer.get_purchase_history.
+      'agents/sales/sales.v8.agent.json',
       'agents/sales/src/capabilities/customer-profile-outputs.ts',
       'agents/sales/src/capabilities/customer-synthetic.ts',
       'agents/sales/src/capabilities/customer-v2.ts',
       'agents/sales/src/capabilities/customer-v3.ts',
       // SEC-S5: the identity verification capabilities (CIA start client types), synthetic composition only.
       'agents/sales/src/capabilities/identity-verification.ts',
+      // R4-J4-R4: the @8 branch of the worker composition, the gateway's confirm client and the @8 profile.
+      'agents/sales/src/production/composition.ts',
+      'agents/sales/src/production/gateway-identity.ts',
+      'agents/sales/src/production/profile-v8.ts',
     ]);
   });
 });

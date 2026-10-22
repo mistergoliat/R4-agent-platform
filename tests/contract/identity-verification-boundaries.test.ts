@@ -48,17 +48,27 @@ const INTEGRATIONS: readonly string[] = [
   // S5: the commercial layer reads and opens expectations (types and the store only), synthetic composition only.
   'agents/sales/src/capabilities/customer-synthetic.ts',
   'agents/sales/src/capabilities/identity-verification.ts',
+  // R4-J4-R4: the @8 worker checks the schema is current; the @8 gateway composes the inspection (keyring, confirm).
+  'agents/sales/src/production/composition.ts',
+  'agents/sales/src/production/gateway-identity.ts',
 ];
 
 describe('SEC-S4: only the gateway composition ever reaches the decryption, the dispatcher or the confirm credential (AT-19)', () => {
   const SECRET_SURFACE = /SecretBox|Keyring|VerificationConfirmDispatcher|CiaVerificationConfirmClient|loadCiaVerificationConfirmConfig|R4_CHANNEL_IDENTITY_CONFIRM_BEARER_TOKEN|R4_PROD_VERIFICATION_CODE_KEYS/;
 
-  it('no agent pack, worker, API, scheduler or Core package references them', () => {
+  // R4-J4-R4: the only exception is the Sales GATEWAY composition of sales-production@8, isolated in one module that
+  // the worker composition never calls (it only imports the variable names, to refuse them).
+  it('no agent pack, worker, API, scheduler or Core package references them, except the @8 gateway inspection module', () => {
     const offenders = ['agents', 'apps', 'packages']
       .flatMap((dir) => files(join(ROOT, dir)))
       .filter((path) => SECRET_SURFACE.test(readFileSync(path, 'utf8')))
-      .map((path) => relative(ROOT, path));
-    expect(offenders).toEqual([]);
+      .map((path) => relative(ROOT, path).replace(/\\/g, '/'));
+    expect(offenders).toEqual(['agents/sales/src/production/gateway-identity.ts']);
+    const composition = readFileSync(join(ROOT, 'agents/sales/src/production/composition.ts'), 'utf8');
+    const worker = composition.slice(composition.indexOf('export function composeSalesProductionWorker('), composition.indexOf('export async function assertSalesProductionPrerequisites('));
+    expect(worker).toMatch(/composeCustomerIdentity\(profile, options, capabilities\)/);
+    expect(worker).not.toMatch(/salesGatewayInspection/);
+    expect(composition.match(/salesGatewayInspection\(/g)).toHaveLength(1);
   });
 
   it('the CIA confirm client lives in identity-http and is used only through the injected ConfirmPort', () => {
@@ -71,12 +81,19 @@ describe('SEC-S4: only the gateway composition ever reaches the decryption, the 
 });
 
 describe('SEC-S5: the commercial capabilities exist only in the synthetic composition (R4_LIVE_CUSTOMER_CAPABILITIES_DISABLED)', () => {
-  it('no Sales profile, definition, registry, CLI or bootstrap names them', () => {
+  // R4-J4-R4: and sales-production@8 (profile, composition and definition v8); @1–@7 never compose them.
+  it('no Sales profile, definition, registry, CLI or bootstrap names them, except sales-production@8', () => {
     const named = files(join(ROOT, 'agents'))
       .concat(files(join(ROOT, 'agents/sales'), '.json'))
       .filter((path) => /identity\.start_verification|identity\.verification_status|identityStartVerificationCapability|identityVerificationStatusCapability|composeSyntheticIdentityVerificationCapabilities|IDENTITY_VERIFICATION_CAPABILITY_IDS/.test(readFileSync(path, 'utf8')))
       .map((path) => relative(ROOT, path).replace(/\\/g, '/'));
-    expect(named.sort()).toEqual(['agents/sales/src/capabilities/customer-synthetic.ts', 'agents/sales/src/capabilities/identity-verification.ts']);
+    expect(named.sort()).toEqual([
+      'agents/sales/sales.v8.agent.json',
+      'agents/sales/src/capabilities/customer-synthetic.ts',
+      'agents/sales/src/capabilities/identity-verification.ts',
+      'agents/sales/src/production/composition.ts',
+      'agents/sales/src/production/profile-v8.ts',
+    ]);
   });
 });
 
@@ -155,13 +172,17 @@ describe('identity-verification (SEC-S1/S2/S3) boundaries', () => {
     expect(store).toMatch(/pg_advisory_xact_lock\(\$1::bigint\)', \[conversationLockKey\(e\.channel, conversationKey\)\]/);
   });
 
-  it('the gateway offers no override of the protection guard, and no production composition enables the inspector', () => {
+  it('the gateway offers no override of the protection guard, and only sales-production@8 enables the inspector, in full', () => {
     const gateway = ['apps/channel-gateway/src/inspection.ts', 'apps/channel-gateway/src/platform.ts', 'apps/channel-gateway/src/config.ts'].map((f) => readFileSync(join(ROOT, f), 'utf8'));
     for (const source of [...gateway, readFileSync(join(PACKAGE, 'src/gateway.ts'), 'utf8')]) expect(source).not.toMatch(/FORCE|OVERRIDE|BYPASS|SKIP_PROTECTION|UNSAFE/);
     // Without a composed inspector, the guard runs unconditionally before ingress exists.
     expect(gateway[1]).toMatch(/const inspection = bindings\.inspection \? await bindings\.inspection\(\{[^}]*\}\) : null;\r?\n\s+if \(!inspection\) await assertNoOpenProtection\(pool\);/);
     expect(gateway[0]).toMatch(/throw new PlatformError\('precondition', 'identity_verification_protection_active'/);
-    // No pack, profile or CLI plugs an inspection in (synthetic test composition only).
-    for (const path of files(join(ROOT, 'agents'))) expect(readFileSync(path, 'utf8'), relative(ROOT, path)).not.toMatch(/identityVerificationInspection|GatewayInspectionFactory|VerificationInspector/);
+    // R4-J4-R4 (ADR-040 addendum): without an inspector the gateway also refuses while the component mode is full.
+    expect(gateway[0]).toMatch(/if \(full\.rows\[0\]\?\.full === true\) \{\r?\n\s+throw new PlatformError\('precondition', 'identity_verification_mode_full'/);
+    // Only the @8 gateway module plugs an inspection in, and only ever requests full.
+    const plugs = files(join(ROOT, 'agents')).filter((path) => /identityVerificationInspection|GatewayInspectionFactory|VerificationInspector/.test(readFileSync(path, 'utf8'))).map((path) => relative(ROOT, path).replace(/\\/g, '/'));
+    expect(plugs).toEqual(['agents/sales/src/production/gateway-identity.ts']);
+    expect(readFileSync(join(ROOT, plugs[0]!), 'utf8')).toMatch(/identityVerificationInspection\(\{ requested: 'full', codeKeys, confirm \}\)/);
   });
 });
