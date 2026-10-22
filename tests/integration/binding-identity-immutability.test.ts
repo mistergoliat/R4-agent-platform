@@ -27,21 +27,26 @@ import { InMemoryObservationStore } from '../support/memory-observation-store.js
 import { REPO_AGENTS_DIR, validTaskBody } from '../support/platform.js';
 
 // RR-1 R-4 (ADR-038; R4_J4_RR1_BINDING_RACE_ANALYSIS.md §8 R-4): migration 0011_binding_identity_immutability
-// freezes channel, conversation_key, account_ref, recipient_ref and task_id (assigned once) of
-// channel_conversation_bindings. Real PostgreSQL, real ProductionStore, real ingress; synthetic only.
+// freezes binding_id, channel, conversation_key, account_ref, recipient_ref, created_at and task_id (assigned
+// once) of channel_conversation_bindings, keeps the lifecycle monotonic and refuses DELETE. Real PostgreSQL, real ProductionStore, real ingress; synthetic only.
 // Every LiveOpsTestbed / test database is created fresh, so a mutated migration is always applied.
 
 const KEYS = `k0:${randomBytes(32).toString('base64')}`;
 const RIGHT = '482913';
 const NOT_STARTED: ConfirmPort = { confirm: () => Promise.reject(new Error('the composed dispatcher is not started in this suite')) };
 const IMMUTABLE = { code: '55000', message: expect.stringContaining('identity is immutable') as string };
+const MONOTONIC = (rule: string) => ({ code: '55000', message: expect.stringContaining(`lifecycle is monotonic (${rule}`) as string });
+const UNDELETABLE = { code: '55000', message: expect.stringContaining('cannot be deleted') as string };
 
-type Column = 'channel' | 'conversation_key' | 'account_ref' | 'recipient_ref' | 'task_id';
-const IDENTITY = 'select binding_id, channel, conversation_key, account_ref, recipient_ref, task_id from channel_conversation_bindings where binding_id = $1';
+type Column = 'binding_id' | 'channel' | 'conversation_key' | 'account_ref' | 'recipient_ref' | 'created_at' | 'task_id';
+type Lifecycle = 'status' | 'closed_at' | 'closed_reason' | 'last_inbound_at';
+const IDENTITY = 'select binding_id, channel, conversation_key, account_ref, recipient_ref, created_at, task_id from channel_conversation_bindings where binding_id = $1';
 
 /** An UPDATE of one column that keeps binding_id (raw SQL: no store path writes these columns). */
-const rewrite = (pool: Pool, bindingId: string, column: Column, value: string | null) =>
+const rewrite = (pool: Pool, bindingId: string, column: Column | Lifecycle, value: string | null) =>
   pool.query(`update channel_conversation_bindings set ${column} = $2 where binding_id = $1`, [bindingId, value]);
+const LIFECYCLE = 'select status, closed_at, closed_reason, last_inbound_at from channel_conversation_bindings where binding_id = $1';
+const lifecycleOf = async (pool: Pool, bindingId: string) => (await pool.query(LIFECYCLE, [bindingId])).rows[0] as Record<string, unknown>;
 const identityOf = async (pool: Pool, bindingId: string) => (await pool.query(IDENTITY, [bindingId])).rows[0] as Record<string, unknown>;
 
 let bed: LiveOpsTestbed;
@@ -88,10 +93,12 @@ afterAll(async () => {
 
 describe('R4-T01: every frozen column refuses a rewrite that keeps binding_id; the row is unchanged', () => {
   const values: Record<Column, () => Promise<string>> = {
+    binding_id: () => Promise.resolve(randomUUID()),
     channel: () => Promise.resolve('telegram'),
     conversation_key: () => Promise.resolve(randomBytes(32).toString('hex')),
     account_ref: () => Promise.resolve('9999999999'),
     recipient_ref: () => Promise.resolve('56999999999'),
+    created_at: () => Promise.resolve('2020-01-01T00:00:00.000Z'),
     task_id: bareTask,
   };
   for (const column of Object.keys(values) as Column[]) {
@@ -257,9 +264,12 @@ describe('R4-T06: migration over a 0010 database that already holds bindings', (
 
       const spare = await task();
       for (const b of [open, closed]) {
+        await expect(rewrite(pool, b.bindingId, 'binding_id', randomUUID())).rejects.toMatchObject(IMMUTABLE);
         await expect(rewrite(pool, b.bindingId, 'recipient_ref', '56999999999')).rejects.toMatchObject(IMMUTABLE);
         await expect(rewrite(pool, b.bindingId, 'task_id', spare)).rejects.toMatchObject(IMMUTABLE);
+        await expect(pool.query('delete from channel_conversation_bindings where binding_id = $1', [b.bindingId])).rejects.toMatchObject(UNDELETABLE);
       }
+      await expect(rewrite(pool, closed.bindingId, 'status', 'open')).rejects.toMatchObject(MONOTONIC('closed is final'));
       await store.closeBinding(open.bindingId, 'test_closed');
       expect((await pool.query(all)).rows.map((r: Record<string, unknown>) => [r.binding_id, r.status, r.recipient_ref, r.task_id])).toEqual(
         before.map((r: Record<string, unknown>) => [r.binding_id, 'closed', r.recipient_ref, r.task_id]),
@@ -269,5 +279,77 @@ describe('R4-T06: migration over a 0010 database that already holds bindings', (
       await db.drop();
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('R4-T07: the lifecycle only moves forward', () => {
+  it('R4-T07 closed is final: reopen, a new closed_at and a new closed_reason are refused; a second close is a no-op', async () => {
+    const binding = await openBinding(bed.store, nextWa());
+    await bed.store.closeBinding(binding.bindingId, 'test_closed');
+    const before = await lifecycleOf(bed.pool, binding.bindingId);
+    await expect(bed.pool.query(`update channel_conversation_bindings set status = 'open', closed_at = null where binding_id = $1`, [binding.bindingId])).rejects.toMatchObject(MONOTONIC('closed is final'));
+    await expect(rewrite(bed.pool, binding.bindingId, 'closed_at', '2020-01-01T00:00:00.000Z')).rejects.toMatchObject(MONOTONIC('closed is final'));
+    await expect(rewrite(bed.pool, binding.bindingId, 'closed_reason', 'rewritten')).rejects.toMatchObject(MONOTONIC('closed is final'));
+    await expect(rewrite(bed.pool, binding.bindingId, 'closed_reason', null)).rejects.toMatchObject(MONOTONIC('closed is final'));
+    await bed.store.closeBinding(binding.bindingId, 'second_close');
+    expect(await lifecycleOf(bed.pool, binding.bindingId)).toEqual(before);
+  });
+
+  it('R4-T07 closed_reason is written only by the closure', async () => {
+    const binding = await openBinding(bed.store, nextWa());
+    await expect(rewrite(bed.pool, binding.bindingId, 'closed_reason', 'early')).rejects.toMatchObject(MONOTONIC('closed_reason is set only by the closure'));
+    expect(await lifecycleOf(bed.pool, binding.bindingId)).toMatchObject({ status: 'open', closed_reason: null });
+  });
+
+  it('R4-T07 last_inbound_at never moves back nor returns to null; forward (also after closure) is accepted', async () => {
+    const binding = await openBinding(bed.store, nextWa());
+    const t0 = new Date(Date.now() - 60_000).toISOString();
+    await bed.store.touchBinding(binding.bindingId, t0);
+    await expect(rewrite(bed.pool, binding.bindingId, 'last_inbound_at', new Date(Date.now() - 120_000).toISOString())).rejects.toMatchObject(MONOTONIC('last_inbound_at never moves back'));
+    await expect(rewrite(bed.pool, binding.bindingId, 'last_inbound_at', null)).rejects.toMatchObject(MONOTONIC('last_inbound_at never moves back'));
+    await bed.store.touchBinding(binding.bindingId, new Date(Date.now() - 120_000).toISOString()); // the store's greatest() keeps t0
+    expect(await lifecycleOf(bed.pool, binding.bindingId)).toMatchObject({ last_inbound_at: new Date(t0) });
+    await bed.store.closeBinding(binding.bindingId, 'test_closed');
+    const t1 = new Date().toISOString();
+    await bed.store.touchBinding(binding.bindingId, t1);
+    expect(await lifecycleOf(bed.pool, binding.bindingId)).toMatchObject({ status: 'closed', last_inbound_at: new Date(t1) });
+  });
+});
+
+describe('R4-T08: an ordinary DELETE is refused', () => {
+  it('R4-T08 a binding with no dependents (so no foreign key answers first) cannot be deleted, open or closed', async () => {
+    const open = await openBinding(bed.store, nextWa());
+    const closed = await openBinding(bed.store, nextWa());
+    await bed.store.closeBinding(closed.bindingId, 'test_closed');
+    for (const b of [open, closed]) {
+      const before = await identityOf(bed.pool, b.bindingId);
+      await expect(bed.pool.query('delete from channel_conversation_bindings where binding_id = $1', [b.bindingId])).rejects.toMatchObject(UNDELETABLE);
+      expect(await identityOf(bed.pool, b.bindingId)).toEqual(before);
+    }
+  });
+});
+
+describe('R4-T09: concurrent writers', () => {
+  it('R4-T09 racing unguarded task assignments (no store guard): exactly one commits, the others are refused by the trigger', async () => {
+    const binding = await openBinding(bed.store, nextWa());
+    const tasks = await Promise.all([bareTask(), bareTask(), bareTask(), bareTask()]);
+    const results = await Promise.allSettled(tasks.map((t) => rewrite(bed.pool, binding.bindingId, 'task_id', t)));
+    const won = results.flatMap((r, i) => (r.status === 'fulfilled' ? [tasks[i]] : []));
+    expect(won).toHaveLength(1);
+    for (const r of results) if (r.status === 'rejected') expect(r.reason).toMatchObject(IMMUTABLE);
+    expect(await identityOf(bed.pool, binding.bindingId)).toMatchObject({ task_id: won[0] });
+  });
+
+  it('R4-T09 racing closes and touches: one closure wins and stays final; last_inbound_at ends at the latest', async () => {
+    const binding = await openBinding(bed.store, nextWa());
+    const stamps = [3, 1, 4, 2].map((m) => new Date(Date.now() - m * 1_000).toISOString());
+    await Promise.all([
+      ...['race_a', 'race_b', 'race_c'].map((reason) => bed.store.closeBinding(binding.bindingId, reason)),
+      ...stamps.map((at) => bed.store.touchBinding(binding.bindingId, at)),
+    ]);
+    const row = await lifecycleOf(bed.pool, binding.bindingId);
+    expect(row.status).toBe('closed');
+    expect(['race_a', 'race_b', 'race_c']).toContain(row.closed_reason);
+    expect(row.last_inbound_at).toEqual(new Date([...stamps].sort().at(-1)!));
   });
 });

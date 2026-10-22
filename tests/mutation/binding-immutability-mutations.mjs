@@ -18,7 +18,14 @@ const MUTATIONS = [
   { name: 'R4-M2 conversation_key is no longer frozen', edits: [{ file: SQL, from: rule('new.conversation_key '), to: '' }], tests: ['R4-T01 conversation_key:'] },
   { name: 'R4-M3 account_ref is no longer frozen', edits: [{ file: SQL, from: rule('new.account_ref '), to: '' }], tests: ['R4-T01 account_ref:', 'R4-T04', 'R4-T05'] },
   { name: 'R4-M4 recipient_ref is no longer frozen', edits: [{ file: SQL, from: rule('new.recipient_ref '), to: '' }], tests: ['R4-T01 recipient_ref:', 'R4-T04', 'R4-T05', 'R4-T06'] },
-  { name: 'R4-M5 task_id may be reassigned', edits: [{ file: SQL, from: rule('old.task_id '), to: '' }], tests: ['R4-T01 task_id:', 'R4-T02', 'R4-T06'] },
+  { name: 'R4-M5 task_id may be reassigned', edits: [{ file: SQL, from: rule('old.task_id '), to: '' }], tests: ['R4-T01 task_id:', 'R4-T02', 'R4-T06', 'R4-T09 racing unguarded'] },
+  { name: 'R4-M6 binding_id is no longer frozen', edits: [{ file: SQL, from: rule('new.binding_id '), to: '' }], tests: ['R4-T01 binding_id:', 'R4-T06'] },
+  { name: 'R4-M7 created_at is no longer frozen', edits: [{ file: SQL, from: rule('new.created_at '), to: '' }], tests: ['R4-T01 created_at:'] },
+  { name: 'R4-M8 DELETE is allowed', edits: [{ file: SQL, from: rule("tg_op = 'DELETE'"), to: '' }], tests: ['R4-T08', 'R4-T06'] },
+  { name: 'R4-M9 a closed binding may change', edits: [{ file: SQL, from: rule("old.status = 'closed'"), to: '' }], tests: ['R4-T07 closed is final', 'R4-T06'] },
+  { name: 'R4-M10 closed_reason may be set on an open binding', edits: [{ file: SQL, from: rule("new.status = 'open'"), to: '' }], tests: ['R4-T07 closed_reason is written'] },
+  { name: 'R4-M11 last_inbound_at may move back', edits: [{ file: SQL, from: rule('old.last_inbound_at '), to: '' }], tests: ['R4-T07 last_inbound_at'] },
+  { name: 'R4-M12 the trigger no longer fires on DELETE', edits: [{ file: SQL, from: 'before update or delete on channel_conversation_bindings', to: 'before update on channel_conversation_bindings' }], tests: ['R4-T08', 'R4-T06'] },
 ];
 
 /** Runs the tests whose name matches `pattern`; returns the passed/failed counts vitest reports. */
