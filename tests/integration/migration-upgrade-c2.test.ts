@@ -69,8 +69,9 @@ afterAll(async () => {
 
 describe('upgrade from the R4-C1 schema', () => {
   it('reports exactly the C2 migration as pending and applies it without touching C1 rows', async () => {
-    expect((await migrationStatus(pool)).pending).toEqual(['0003_context_and_memory', '0004_governed_execution', '0005_temporal_human_runtime', '0007_governed_production', '0008_worker_presence', '0009_run_step_origin', '0010_platform_step_decisions']);
-    expect(await migrate(pool)).toEqual({ applied: ['0003_context_and_memory', '0004_governed_execution', '0005_temporal_human_runtime', '0007_governed_production', '0008_worker_presence', '0009_run_step_origin', '0010_platform_step_decisions'] });
+    // RR-1 R-4: 0011_binding_identity_immutability is the Core head (binding identity trigger).
+    expect((await migrationStatus(pool)).pending).toEqual(['0003_context_and_memory', '0004_governed_execution', '0005_temporal_human_runtime', '0007_governed_production', '0008_worker_presence', '0009_run_step_origin', '0010_platform_step_decisions', '0011_binding_identity_immutability']);
+    expect(await migrate(pool)).toEqual({ applied: ['0003_context_and_memory', '0004_governed_execution', '0005_temporal_human_runtime', '0007_governed_production', '0008_worker_presence', '0009_run_step_origin', '0010_platform_step_decisions', '0011_binding_identity_immutability'] });
     const steps = await new PostgresExecutionStore(pool).transaction((uow) => uow.listRunSteps(runId));
     expect(steps).toEqual([expect.objectContaining({ iteration: 1, outcome: 'recorded', contextSnapshotId: null })]);
   });
