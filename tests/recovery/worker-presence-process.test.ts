@@ -60,9 +60,10 @@ describe('worker process SIGKILL', () => {
     await until(async () => (await r4()).execution.workers.ready === 2);
     expect((await r4()).code).toBe(200);
     // R4_BUILD_REF from the process environment lands verbatim; blank ⇒ NULL; the contract is the same for both.
+    // RR-1 R-4: 0011_binding_identity_immutability is the Core head (binding identity trigger).
     expect(await bed.rows(`select worker_id, build_ref, compatibility from worker_presence order by worker_id`)).toEqual([
-      { worker_id: 'proc-a', build_ref: '0337a34b712b1bf9e758b8335ee532d6cf29ab05', compatibility: '0010_platform_step_decisions:sales-production@1' },
-      { worker_id: 'proc-b', build_ref: null, compatibility: '0010_platform_step_decisions:sales-production@1' },
+      { worker_id: 'proc-a', build_ref: '0337a34b712b1bf9e758b8335ee532d6cf29ab05', compatibility: '0011_binding_identity_immutability:sales-production@1' },
+      { worker_id: 'proc-b', build_ref: null, compatibility: '0011_binding_identity_immutability:sales-production@1' },
     ]);
 
     a.kill('SIGKILL');
