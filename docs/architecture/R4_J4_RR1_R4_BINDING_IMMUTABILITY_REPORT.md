@@ -136,4 +136,18 @@ Resultado: ver §7.
 
 ## 7. Resultados
 
-(Se completan con la corrida del HEAD final; ver el informe de merge.)
+Corrida del candidato `081e4f1` (rebasado sobre `main` `485df2b`), worktree `r4-j4-rr1-r4`, PostgreSQL local, en serie (recovery al final y solo):
+
+| Suite | Resultado |
+|---|---|
+| build / lint / typecheck | OK |
+| test:unit | 1519 pasan, 4 omitidos |
+| test:contract | 443/443 |
+| test:integration | 43 archivos ok (1 omitido); **601 pasan**, 12 omitidos, 0 fallos |
+| archivo nuevo aislado | 19/19 |
+| test:sales / test:shadow | 29/29, 5/5 |
+| test:mutation:binding-immutability | **12/12 detectadas**; fuentes restauradas |
+| test:mutation:rr1 | 5/5 detectadas |
+| test:recovery | 10 archivos ok; 17 pasan, **1 falla**: `production-bootstrap-process.test.ts` |
+
+**Clasificación del fallo de recovery (no se dispensa en silencio).** El mismo test, corrido en un worktree limpio de `main` `485df2b` (sin `0011`), falla con la misma aserción: espera `registered: sales@3` y recibe `sales@3, sales@4, … sales@8`. Es un inventario desactualizado desde J2D (`sales@4`), no relacionado con bindings ni migraciones: **preexistente, no es regresión de este PR**. Queda como deuda de test fuera de alcance.
