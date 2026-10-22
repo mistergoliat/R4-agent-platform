@@ -2,7 +2,7 @@
 title: R4 — Delivery Roadmap
 status: active
 owner: architecture
-last_reviewed: 2026-10-15
+last_reviewed: 2026-10-22
 source: ../architecture/R4_AGENTIC_PLATFORM_PRD_AND_ROADMAP.md §40
 ---
 
@@ -25,7 +25,7 @@ requiere autorización explícita (AGENTS.md).
 | R4-G | Quality & Learning | Completado (sobre R4-F LIVE-VALIDATED BASELINE `001b7a8`) |
 | R4-H | Shadow / E2E (PRD §40: "Shadow Production") | Cerrado (R4-H BASELINE `80a1733`) |
 | R4-I | Governed Production | **En progreso** — implementado sobre R4 POST-H RECOVERY BASELINE `dd06a68`; pendiente de auditoría (§3.11) |
-| R4-J | Sales Autonomy | **En progreso**: J3 cerrado (2026-10-15, `main` `b5fd288`); hitos en §1.1 |
+| R4-J | Sales Autonomy | **En progreso**: J3 cerrado (2026-10-15, `main` `b5fd288`); J4 en progreso (`main` `caa3926`, 2026-10-22); hitos en §1.1 |
 | R4-K | Platform Generalization Test (Marketing Analyst) | No iniciado |
 | R4-L | Extended Platform | No iniciado |
 
@@ -41,10 +41,51 @@ automáticamente.
 | Hito | Estado | Alcance |
 |---|---|---|
 | J3 — Quote Integration & Autonomous Issuance | **CLOSED** (`CLOSED_WITH_RESCOPED_ACCEPTANCE`) | Integración comercial y emisión autónoma. [Registro de cierre](../acceptance/R4_J3_CLOSURE_RECORD.md) |
-| J4 — Customer Profile | **NEXT** (no iniciado) | Perfil de cliente |
+| J4 — Customer Profile | **IN PROGRESS** (R1–R3 y SEC-OTP integrados en sintético; R4–R6 no iniciados) | Integración y acceso a Customer Profile vía CIA. Desglose en §1.2 |
 | J4.5 — Catalog | **PLANNED** | Optimización e integración de Catalog; después se reevalúa la eficiencia del agente (aceptación J3 §17) |
+| J5 — Sales Autonomy | **PLANNED** (registro de alcance, mandato REBASE-08) | Comportamiento del modelo con Customer: verificación, uso del historial, personalización, estrategia comercial. Parte de `@8` (J4-R4) |
+| J6 — Commercial Benchmark | **PLANNED** (registro de alcance, mandato REBASE-08) | Benchmark y evaluación comercial |
 | R4 Media & Communications | **DEFERRED** | Capacidades multimedia y entrega de documentos (J3F, §4.2) |
-| J7 — Production Readiness | **NOT PRODUCTION READY** | Gobernanza operacional y habilitación de clientes reales (gates del registro de brechas J3) |
+| J7 — Production Readiness | **NOT PRODUCTION READY** | Gobernanza operacional y habilitación de clientes reales (gates del registro de brechas J3). Hereda los gates de datos reales de J4 (§1.2) y el rollout de `@8` desde `@3` |
+
+**J5 y J6** se registran tal como los enuncian los principios del mandato
+`R4-J4-CROSS-REPO-ROADMAP-REBASE-08`, sin autorización de inicio. **Propuesta pendiente del owner:**
+- conciliar su secuencia con J4.5 (Catalog);
+- conciliar el identificador provisional J5.5 (Checkout & Payments, R4-L) de la rama sin fusionar
+  `docs/r4-j55-roadmap-registration` (`d8a6b94`), que afirma que J5 y J6 no estaban definidos.
+
+**Checkout** se desarrolla en paralelo, fuera de R4-J. No bloquea J4 y este registro no lo modifica.
+
+### 1.2 J4 — Customer Profile: desglose (auditoría cruzada, 2026-10-22)
+
+Fuente: [informe de auditoría cruzada](../architecture/R4_J4_CROSS_REPO_ROADMAP_REBASE_REPORT.md).
+Definición original: `R4-J4-R1_DESIGN_REPORT.md` §5 y ADR-039 §8–§10.
+
+**DONE** exige código en `main`. Todos los entregables DONE se probaron solo con servicios locales e
+identidades sintéticas.
+
+| Entregable | Estado | Evidencia | Pendiente |
+|---|---|---|---|
+| J4-R1A — Diseño del consumidor | **DONE** (diseño) | ADR-039 aceptado (interno R4) | Actualizar el bloque de estado del informe de diseño |
+| J4-R1B — Contratos externos | **PARTIAL** | CIA v1-d2 aceptado solo para interop sintética (CIA `7525395`); CP sales-context v1-rc2 `candidate` (CP `bbd766e`) | G-16 y AP-* (owner CP); contratos `approved` (datos reales) |
+| J4-R2 — Adaptador CP | **DONE** (sintético) | PR #11; pin v1-rc2 en PR #12 | — |
+| J4-R3 — Resolver CIA y grant | **DONE** (sintético) | PR #12 (`ad2c39b`) | — |
+| SEC-OTP S1–S7 | **DONE** (sintético) | PR #15, #16, #17 (`caa3926`); campaña S7 41/41 ×3 | Gates de datos reales (abajo) |
+| J4-R4 — Capacidades y perfil | **PARTIAL**: los bloques están en main; el perfil no existe | `customer.get_context@3`, `customer.get_purchase_history@2`, `identity.start_verification@1`, `identity.verification_status@1`, registrados solo en la composición sintética. Último perfil: `sales-production@7` | **No autorizado.** Perfil `sales-production@8` (identificador a confirmar), definición v8, dominio `identity`, composición fail-closed con inspector `full`, pruebas de compatibilidad worker/modelo (no evaluación comercial) |
+| J4-R5 — Canary aislado | **BLOCKED** | — | J4-R4. CIA y CP desplegables en prueba (hoy CIA es solo loopback). CP `enforce`/X5–X7. Decisiones D7 (R4) y `R4_CONTEXT_EXPIRED_EVIDENCE`. Autorización EC2. Solo datos sintéticos |
+| J4-R6 — Rollback y aceptación del canary | **BLOCKED** | — | R5 PASS. Ensayo `@8 → @7` **del canary** con el protocolo de protección (`protect_only` → espera → `absent`). El rollback productivo desde `@3` es J7 |
+
+**Gates.**
+- **Para el cierre técnico sintético de J4:** G-16 y AP-* (owner CP), además de J4-R4.
+- **Para el canary aislado:** desplegabilidad de CIA y CP, X5–X7, D7 (R4),
+  `R4_CONTEXT_EXPIRED_EVIDENCE`, procedimiento contra réplicas mixtas y autorización EC2.
+- **Solo para datos reales (J7):**
+  - de R4: RR-1 R-1..R-3 (y R-4, inmutabilidad de bindings); RS-01..04; BA-01..06; OA-10;
+  - de CP: L-1;
+  - de CIA: DEP-2/3/5/6/10 y OD-CIA-2..5;
+  - versión de PrestaShop (1.7.8.3 vs 8.2.3) sin validar.
+
+**Condiciones de `J4_RELEASE_CANDIDATE_ACCEPTED`:** informe §9. No habilita datos reales ni producción.
 
 ## 2. R4-B — criterios de salida
 
