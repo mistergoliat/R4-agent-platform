@@ -78,8 +78,23 @@ identidades sintéticas.
 | J4-R2 — Adaptador CP | **DONE** (sintético) | PR #11; pin v1-rc2 en PR #12 | — |
 | J4-R3 — Resolver CIA y grant | **DONE** (sintético) | PR #12 (`ad2c39b`) | — |
 | SEC-OTP S1–S7 | **DONE** (sintético) | PR #15, #16, #17 (`caa3926`); campaña S7 41/41 ×3 | Gates de datos reales (abajo) |
-| J4-R4 — Capacidades y perfil | **PARTIAL** (autorizado el 2026-10-22 para implementación y validación sintética): los bloques están en main; el perfil no existe | `customer.get_context@3`, `customer.get_purchase_history@2`, `identity.start_verification@1`, `identity.verification_status@1`, registrados solo en la composición sintética. Último perfil: `sales-production@7` | Perfil **`sales-production@8`** y **definición Sales v8** (confirmados por el owner), dominio `identity`, composición fail-closed con inspector `full`, pruebas de compatibilidad worker/modelo (no evaluación comercial). Sin activación productiva |
-| J4-R5 — Canary aislado | **BLOCKED** | — | J4-R4. **RR-1 R-4 (inmutabilidad de bindings), obligatorio.** CIA y CP desplegables en prueba (hoy CIA es solo loopback). CP `enforce`/X5–X7. Autorización EC2. Solo datos sintéticos (D7 del canary, abajo) |
+| J4-R4 — Capacidades y perfil | **DONE (sintético)**. `J4_R4_SYNTHETIC_ACCEPTED` por el owner, 2026-10-22 | PR #19 (`main` `3e04b4f`). [Informe](../architecture/R4_J4_R4_PROFILE_V8_IMPLEMENTATION_REPORT.md) | Ver el estado por dimensión abajo |
+| J4-R5 — Canary aislado | **BLOCKED** (preparación autorizada: RR-1 R-4 y tooling, sin ejecución) | — | **RR-1 R-4 (inmutabilidad de bindings), obligatorio.** CIA y CP desplegables en prueba (hoy CIA es solo loopback). CP `enforce`/X5–X7. Autorización EC2. Solo datos sintéticos (D7 del canary, abajo) |
+
+**Estado de J4-R4 por dimensión** (2026-10-22):
+
+| Dimensión | Estado |
+|---|---|
+| Código integrado | **Sí**: `sales-production@8`, definición Sales v8, política `sales-production-autonomous-policy@2`, composición fail-closed del worker y del gateway (PR #19, `3e04b4f`) |
+| Perfil disponible para composición | **Sí, solo sintético**: los dominios `customer` y `customer-identity` son `REAL`, **APPROVED** por el owner. `REAL` describe la disponibilidad del dominio y no habilita datos reales: siguen exigidos `R4_CUSTOMER_MODE=synthetic`, credenciales `synthetic-` y la restricción de red vigente. Ninguna configuración productiva selecciona `@8` |
+| Evaluación sintética | **Aceptada**: regresión completa, interop 41/41, mutaciones 8/8, matriz de degradación, comparación pareada `@7`/`@8` con modelo real (técnica, no comercial) |
+| Canary | **Pendiente** (J4-R5): el tooling no acepta `@8` hasta su PR propio; no ejecutado |
+| Datos reales | **Bloqueados** (J7) |
+
+**Limitación conocida de `@7`** (`ACCEPTED_AS_KNOWN_LIMITATION`, owner, 2026-10-22):
+- **Qué ocurre:** la definición Sales v7 menciona `customer.get_context`, pero `sales-production@7` no la registra. Ante una solicitud de Customer, el modelo puede invocarla y la run falla con `unknown_capability`. ADR-028 la recupera, como se observó 2 veces en 17 llamadas en la comparación J4-R4 §7.
+- **Qué no se hace:** ni v7 ni sus huellas se modifican.
+- **Cómo se cubre:** el rollback `@8 → @7` (J4-R6) lleva una prueba específica de este comportamiento.
 | J4-R6 — Rollback y aceptación del canary | **BLOCKED** | — | R5 PASS. Ensayo `@8 → @7` **del canary** con el protocolo de protección (`protect_only` → espera → `absent`). El rollback productivo desde `@3` es J7 |
 
 **Decisiones del owner para el canary J4** (2026-10-22). No se aplican a producción.
@@ -98,7 +113,7 @@ identidades sintéticas.
 
 **Gates.**
 - **Para el cierre técnico sintético de J4:** G-16 y AP-* (siguen pendientes de aceptación formal del
-  owner de CP), además de J4-R4.
+  owner de CP). J4-R4 ya está aceptado en sintético.
 - **Para el canary aislado:** RR-1 R-4; desplegabilidad de CIA y CP; X5–X7; la purga D7 del canary;
   procedimiento contra réplicas mixtas; autorización EC2.
 - **Solo para datos reales (J7):**
