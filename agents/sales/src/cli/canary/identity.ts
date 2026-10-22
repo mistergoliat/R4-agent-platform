@@ -146,8 +146,11 @@ export async function startCanaryGateway(
   const pool = options.openPool(`gateway:${suffix}`);
   let platform: Awaited<ReturnType<typeof createPlatform>> | null = null;
   const releaseLock = async () => {
+    // Unlock synchronously on the server, so the lock is gone when close() returns (destroying the
+    // connection alone frees it only once the backend notices). A dead connection already lost it.
+    await lock.query('select pg_advisory_unlock($1::int, $2::int)', [...CANARY_GATEWAY_LOCK]).catch(() => undefined);
     try {
-      lock.release(true); // destroys the connection: PostgreSQL drops the session lock with it
+      lock.release(true);
     } catch {
       // already gone
     }

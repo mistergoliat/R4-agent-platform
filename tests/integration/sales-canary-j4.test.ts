@@ -187,7 +187,7 @@ describe('the single canary gateway of sales-production@8', () => {
     }
   }, 120_000);
 
-  it('singleton: of concurrent starts exactly one wins; it holds while every other connection of the winner is gone', async () => {
+  it('singleton: of concurrent starts exactly one wins; it still holds after the pool idle timeout', async () => {
     db = await createTestDatabase('r4_it_canary_j4_singleton');
     const canary = canaryFor('sales-production@8');
     await initCanary(canary, logger);
@@ -196,13 +196,8 @@ describe('the single canary gateway of sales-production@8', () => {
     for (const s of starts) if (s.status === 'rejected') expect(s.reason).toMatchObject({ code: 'canary_gateway_replica' });
     const pool = openPool(db.url);
     try {
-      // What a reaped idle pool looks like: the idle connections of the winner go; its lock connection stays.
-      await pool.query(
-        `select pg_terminate_backend(pid) from pg_stat_activity
-          where datname = current_database() and application_name like 'r4-sales-canary:gateway:%' and state = 'idle'
-            and pid not in (select pid from pg_locks where locktype = 'advisory' and classid = $1::oid and objid = $2::oid)`,
-        [...CANARY_GATEWAY_LOCK],
-      );
+      // Past the pool's idle timeout (30 s; idle clients are reaped): the checked-out lock connection stays.
+      await new Promise((r) => setTimeout(r, 31_000));
       expect(await connectedGateways(pool)).toEqual({ canary: 1, platform: 0 });
       await expect(gateway(canary, confirmStub(() => json(503, {})).transport)).rejects.toMatchObject({ code: 'canary_gateway_replica' });
     } finally {

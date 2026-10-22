@@ -17,6 +17,13 @@ R4_HARNESS_UNCHANGED
 CUSTOMER_REAL_DATA_ACCESS_BLOCKED
 ```
 
+> **Nota posterior (2026-10-22, mandato R4-J4-R5-OWNER-REVIEW-AND-MERGE-11).** El owner aceptó el PR #19 y decidió:
+> - PR #20 fusionado → `main` `485df2b`.
+> - PR #21 con sus decisiones aplicadas: `binding_id` y `created_at` inmutables, ciclo de vida monótono y DELETE prohibido; mutaciones 12/12; numeración `0011` auditada y válida. Fusionado → `main` `b18113f`; no desplegado.
+> - PR #22: el singleton del gateway pasa a un advisory lock de sesión atómico, retenido toda la vida del gateway; el gateway falla cerrado si pierde el lock.
+>
+> Las preguntas al owner de §3 quedan resueltas por esas decisiones. Los entregables externos exactos están en `R4_J4_R5_EXTERNAL_DEPENDENCIES_HANDOFF.md`.
+
 ## 1. Integración del PR #19 (fase A)
 
 | Comprobación | Resultado |
