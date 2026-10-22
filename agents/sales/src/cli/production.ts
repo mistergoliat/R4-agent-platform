@@ -22,10 +22,10 @@ import { QuoteV2HttpClient, describeQuoteHttpConfig, loadQuoteHttpConfig, quoteM
 import { describeWhatsAppConfig, loadWhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
 import { adminDatabaseUrl } from '../harness/database.js';
 import { configuredModelProvider } from '../model.js';
-import { composeSalesGateway, composeSalesProductionWorker, selectedSalesProductionProfile } from '../production/composition.js';
+import { assertSalesProductionPrerequisites, composeSalesGateway, composeSalesProductionWorker, selectedSalesProductionProfile } from '../production/composition.js';
 import { isAutonomousQuoteProfile } from '../production/profile-v5.js';
 import { isConfirmedIntentProfile } from '../production/profile-v6.js';
-import { salesProductionAgentVersion } from '../production/profile-v7.js';
+import { isCustomerIdentityProfile, salesProductionAgentVersion } from '../production/profile-v8.js';
 import { loadAutonomousQuoteLimits, loadAutonomousQuoteLimitsV6 } from '../capabilities/autonomy-limits.js';
 import { salesShippingPlan } from '../production/shipping-plan.js';
 import { SALES_DOMAINS, SALES_PRODUCTION_PROFILE } from '../production/profile.js';
@@ -135,12 +135,18 @@ function autonomousLimits(production: ReturnType<typeof loadProductionConfig>) {
 }
 
 function composition() {
-  const noStore = { readControls: () => Promise.reject(new Error('plan only')) } as never;
+  const planOnly = () => Promise.reject(new Error('plan only'));
+  const noStore = { readControls: planOnly, bindingByTask: planOnly, taskState: planOnly, thread: planOnly } as never;
   const production = loadProductionConfig(process.env);
   const catalog = productionCatalog(production);
   const shipping = productionShipping(production);
   const quotes = productionQuotes(production);
-  return composeSalesProductionWorker({ pool: { query: () => Promise.reject(new Error('plan only')) } as never, store: noStore, production, modelProvider: { providerId: 'plan', invoke: () => Promise.reject(new Error('plan only')) }, logger: createLogger({ service: 'plan', level: 'silent' }), ...(catalog ? { catalog } : {}), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production) });
+  return composeSalesProductionWorker({ pool: { query: () => Promise.reject(new Error('plan only')) } as never, store: noStore, production, modelProvider: { providerId: 'plan', invoke: () => Promise.reject(new Error('plan only')) }, logger: createLogger({ service: 'plan', level: 'silent' }), ...(catalog ? { catalog } : {}), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production) });
+}
+
+/** (R4-J4-R4) The worker's R4_CUSTOMER_* configuration, passed only when the selected profile composes Customer (v8). */
+function customerOf(production: ReturnType<typeof loadProductionConfig>) {
+  return isCustomerIdentityProfile(selectedSalesProductionProfile(production.config)) ? { customer: { env: process.env } } : {};
 }
 
 async function plan(production: ReturnType<typeof loadProductionConfig>): Promise<void> {
@@ -227,6 +233,7 @@ async function gateway(production: ReturnType<typeof loadProductionConfig>): Pro
   const config = loadGatewayConfig(process.env);
   const logger = createLogger({ service: 'r4-channel-gateway', level: config.logLevel });
   const pool = createPool({ connectionString: config.databaseUrl, logger, applicationName: 'r4-gateway-bindings', max: 2 });
+  await assertSalesProductionPrerequisites(selectedSalesProductionProfile(production.config), pool);
   const { bindings } = composeSalesGateway({ pool, production, env: process.env });
   await runGatewayProcess(config, bindings, { logger });
 }
@@ -241,7 +248,8 @@ async function worker(production: ReturnType<typeof loadProductionConfig>): Prom
   const catalog = productionCatalog(production, logger);
   const shipping = productionShipping(production, logger);
   const quotes = productionQuotes(production, logger);
-  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...(catalog ? { catalog } : {}), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production) });
+  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...(catalog ? { catalog } : {}), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production) });
+  await assertSalesProductionPrerequisites(selectedSalesProductionProfile(production.config), pool);
   logger.info({ event: 'service.composed', profile: composed.report.profile, profileFingerprint: composed.report.profileFingerprint }, 'production worker composed');
   await runWorkerProcess(config, composed.bindings, { logger });
 }

@@ -62,7 +62,7 @@ export const SALES_PRODUCTION_AUTONOMOUS_ACTION_POLICY: ActionPolicyConfiguratio
  * autonomous action policy): @5 (quote.create@3, model-attested request), @6 (R4-J3E-B: quote.create@4,
  * customer confirmation read from the conversation) and @7 (R4-J3E-C1: quote.create@5, the exact Sales-rendered offer).
  */
-export const SALES_AUTONOMOUS_QUOTE_PROFILES: ReadonlySet<string> = new Set(['sales-production@5', 'sales-production@6', 'sales-production@7']);
+export const SALES_AUTONOMOUS_QUOTE_PROFILES: ReadonlySet<string> = new Set(['sales-production@5', 'sales-production@6', 'sales-production@7', 'sales-production@8']);
 
 export function isAutonomousQuoteProfile(profile: ProductionProfile): boolean {
   return SALES_AUTONOMOUS_QUOTE_PROFILES.has(profileLabel(profile));
@@ -84,4 +84,4 @@ export const SALES_PRODUCTION_PROFILE_V5_GATE = Object.freeze([
   { id: 'explicit-authorization', blocking: true, requirement: 'explicit user authorization to deploy and select sales-production@5' },
 ] as const);
 
-// The selectable profile registry (v1–v7) and the pinned definition versions live in profile-v7.ts (R4-J3E-C1).
+// The selectable profile registry (v1–v8) and the pinned definition versions live in profile-v8.ts (R4-J4-R4).

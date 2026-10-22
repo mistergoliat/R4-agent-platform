@@ -1,6 +1,7 @@
 import type pg from 'pg';
 import type { Logger } from 'pino';
 import { DomainError, type CatalogPort, type QuoteV2Service, type ShippingService } from '@r4-adapters/domains';
+import { identityVerificationSchemaIsCurrent } from '@r4-adapters/identity-verification';
 import { WhatsAppInboundAdapter, WhatsAppOutboundAdapter, describeWhatsAppConfig, loadWhatsAppCloudConfig, type FetchLike, type WhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
 import { CapabilityRegistry } from '@r4/capability-runtime';
 import { systemClock, type Clock, type Principal } from '@r4/contracts';
@@ -28,9 +29,12 @@ import { SALES_ROOT_GOAL } from '../goal.js';
 import { SalesWorkspaceContextSource } from '../workspace/context-source.js';
 import { PostgresSalesStore } from '../workspace/store.js';
 import { SALES_DOMAINS } from './profile.js';
-import { isAutonomousQuoteProfile, salesProductionActionPolicy } from './profile-v5.js';
+import { isAutonomousQuoteProfile } from './profile-v5.js';
 import { isConfirmedIntentProfile } from './profile-v6.js';
-import { SALES_PRODUCTION_PROFILES, isDeterministicOfferProfile, salesProductionAgentVersion, salesProductionProfile } from './profile-v7.js';
+import { isDeterministicOfferProfile } from './profile-v7.js';
+import { SALES_PRODUCTION_PROFILES, isCustomerIdentityProfile, salesActionPolicyFor, salesProductionAgentVersion, salesProductionProfile } from './profile-v8.js';
+import { composeSyntheticCustomerCapabilities, composeSyntheticIdentityVerificationCapabilities } from '../capabilities/customer-synthetic.js';
+import { GATEWAY_ONLY_ENV, salesGatewayInspection } from './gateway-identity.js';
 import { catalogCapabilities } from '../capabilities/catalog.js';
 import { shippingCapability } from '../capabilities/shipping.js';
 import { quoteCreateV2Capability } from '../capabilities/quote-v2.js';
@@ -78,6 +82,8 @@ export interface SalesProductionWorkerOptions {
   readonly quotes?: QuoteV2Service & { readonly bindingKind: string };
   /** (R4-J3E) The configured limits of autonomous issuance; required when the selected profile issues quotes autonomously (v5; v6 also needs the total-units limit and the confirmation window). */
   readonly autonomousQuoteLimits?: AutonomousQuoteLimits | AutonomousQuoteLimitsV6;
+  /** (R4-J4-R4) The R4_CUSTOMER_* configuration of the worker; required when the selected profile composes Customer and identity verification (v8). */
+  readonly customer?: { readonly env: Readonly<Record<string, string | undefined>>; readonly fetch?: (url: string, init: RequestInit) => Promise<Response> };
 }
 
 /** The Sales production profile the deployment declared, or a refusal (nothing is defaulted). */
@@ -176,7 +182,10 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
   } else if (autonomousQuotes) {
     throw new Error(`refusing production composition: ${profileLabel(profile)} issues quotes autonomously without a REAL Quote domain`);
   }
-  // Customer (and Catalog under v1, Shipping under v1/v2, Quote under v1–v3) are UNAVAILABLE: their capabilities are deliberately not registered.
+  // (R4-J4-R4) v8: the Customer reads and the identity verification; every other profile leaves Customer UNAVAILABLE.
+  const customerIdentity = isCustomerIdentityProfile(profile);
+  if (customerIdentity) composeCustomerIdentity(profile, options, capabilities);
+  // Customer (before v8, and Catalog under v1, Shipping under v1/v2, Quote under v1–v3) are UNAVAILABLE: their capabilities are deliberately not registered.
   const report = assertProductionComposition(
     profile,
     [
@@ -184,6 +193,7 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
       { domain: SALES_DOMAINS.catalog, bindingKind: catalogReal ? 'real' : UNAVAILABLE_CATALOG.bindingKind },
       ...(shippingReal ? [{ domain: SALES_DOMAINS.shipping, bindingKind: 'real' as const }] : []),
       ...(quoteReal ? [{ domain: SALES_DOMAINS.quote, bindingKind: 'real' as const }] : []),
+      ...(customerIdentity ? [{ domain: SALES_DOMAINS.customer, bindingKind: 'real' as const }, { domain: SALES_DOMAINS.identity, bindingKind: 'real' as const }] : []),
     ],
     capabilities.list().map((c) => c.capabilityId),
   );
@@ -194,11 +204,44 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
       modelProvider: options.modelProvider,
       capabilities,
       contextSources: [new SalesWorkspaceContextSource(sales), new DeliveryStateContextSource(options.store)],
-      actionPolicy: salesProductionActionPolicy(profile),
+      actionPolicy: salesActionPolicyFor(profile),
       admission: controls,
       presence: { executionMode: 'production', runtimeProfile: profileLabel(profile) },
     },
   };
+}
+
+/**
+ * (R4-J4-R4) The v8 Customer and identity capabilities, through the same compositions the synthetic campaigns
+ * run: R4_CUSTOMER_MODE=synthetic, `synthetic-` credentials and loopback URLs only (`real` is refused by the
+ * adapters), the trusted binding, task state and thread of the production store, and the identity-verification
+ * schema of the platform database. Each missing dependency refuses the composition; nothing is defaulted.
+ */
+function composeCustomerIdentity(profile: ProductionProfile, options: SalesProductionWorkerOptions, capabilities: CapabilityRegistry): void {
+  const refuse = (reason: string, cause?: unknown) => new Error(`refusing production composition: ${profileLabel(profile)} ${reason}`, cause === undefined ? undefined : { cause });
+  if (!options.customer) throw refuse('composes Customer and identity verification but no R4_CUSTOMER_* configuration was provided');
+  const leaked = GATEWAY_ONLY_ENV.filter((name) => options.customer!.env[name]?.trim());
+  if (leaked.length > 0) throw refuse(`must not receive ${leaked.join(', ')}: they belong to the channel gateway only`);
+  const fetch = options.customer.fetch ? { fetch: options.customer.fetch } : {};
+  try {
+    const [context, history] = composeSyntheticCustomerCapabilities({ env: options.customer.env, bindings: options.store, ...fetch });
+    const identity = composeSyntheticIdentityVerificationCapabilities({ env: options.customer.env, bindings: options.store, pool: options.pool, ...fetch });
+    capabilities.register(context);
+    capabilities.register(history);
+    capabilities.register(identity.reads[0]);
+    capabilities.registerWrite(identity.writes[0]);
+  } catch (error) {
+    throw refuse(`cannot compose Customer and identity verification: ${error instanceof Error ? error.message : String(error)}`, error);
+  }
+}
+
+/**
+ * (R4-J4-R4) What a v8 process checks against the database before it starts (worker and gateway): the
+ * identity-verification migrations are applied. Earlier profiles need nothing.
+ */
+export async function assertSalesProductionPrerequisites(profile: ProductionProfile, pool: pg.Pool): Promise<void> {
+  if (!isCustomerIdentityProfile(profile)) return;
+  if (!(await identityVerificationSchemaIsCurrent(pool))) throw new Error(`refusing production composition: ${profileLabel(profile)} needs the identity-verification migrations applied (identity_verification schema not current)`);
 }
 
 /**
@@ -224,6 +267,8 @@ export interface SalesGatewayOptions {
   readonly env: Readonly<Record<string, string | undefined>>;
   /** Tests: an injected fetch (the adapter still refuses non-loopback URLs without the network opt-in). */
   readonly fetch?: FetchLike;
+  /** (R4-J4-R4) Tests: the transport of the CIA confirm client (v8). */
+  readonly identityFetch?: (url: string, init: RequestInit) => Promise<Response>;
 }
 
 /** Gateway bindings of the Sales canary: the WhatsApp Cloud adapter (canary number), the profile and the task factory. */
@@ -240,6 +285,8 @@ export function composeSalesGateway(options: SalesGatewayOptions): { bindings: G
       inbound: [new WhatsAppInboundAdapter(whatsapp)],
       outbound: [new WhatsAppOutboundAdapter(whatsapp, options.fetch ? { fetch: options.fetch } : {})],
       taskFactory: salesConversationTaskFactory(options.pool, salesProductionAgentVersion(profile)),
+      // (R4-J4-R4) v8 never runs without the inbound inspector, requested in full (ADR-040).
+      ...(isCustomerIdentityProfile(profile) ? { inspection: salesGatewayInspection(profile, options.env, options.identityFetch) } : {}),
     },
   };
 }
@@ -267,3 +314,4 @@ export function killSwitchGuardedQuotes(quotes: QuoteV2Service, controls: Autono
 function isV6Limits(limits: AutonomousQuoteLimits | AutonomousQuoteLimitsV6): limits is AutonomousQuoteLimitsV6 {
   return 'maxTotalUnits' in limits && 'confirmationWindowSeconds' in limits;
 }
+
