@@ -1,7 +1,9 @@
+import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { FixtureCatalog, FixtureQuoteV2Service, FixtureShipping } from '@r4-adapters/domains';
 import { PLATFORM_MARKERS } from '@r4-adapters/identity-verification';
@@ -10,7 +12,9 @@ import { createSilentLogger } from '@r4/observability';
 import { createPool, type Pool } from '@r4/persistence-postgres';
 import { CAPABILITY_IDS, ContextView, read, respond, type ScriptedStep } from '@r4-sales/agent';
 import {
+  CANARY_GATEWAY_LOCK,
   canaryRollbackStatus,
+  connectedGateways,
   initCanary,
   loadCanaryEnvironment,
   purgeCanary,
@@ -182,6 +186,59 @@ describe('the single canary gateway of sales-production@8', () => {
       await platformGateway.end();
     }
   }, 120_000);
+
+  it('singleton: of concurrent starts exactly one wins; it holds while every other connection of the winner is gone', async () => {
+    db = await createTestDatabase('r4_it_canary_j4_singleton');
+    const canary = canaryFor('sales-production@8');
+    await initCanary(canary, logger);
+    const starts = await Promise.allSettled([1, 2, 3, 4].map(() => gateway(canary, confirmStub(() => json(503, {})).transport)));
+    expect(starts.filter((s) => s.status === 'fulfilled')).toHaveLength(1);
+    for (const s of starts) if (s.status === 'rejected') expect(s.reason).toMatchObject({ code: 'canary_gateway_replica' });
+    const pool = openPool(db.url);
+    try {
+      // What a reaped idle pool looks like: the idle connections of the winner go; its lock connection stays.
+      await pool.query(
+        `select pg_terminate_backend(pid) from pg_stat_activity
+          where datname = current_database() and application_name like 'r4-sales-canary:gateway:%' and state = 'idle'
+            and pid not in (select pid from pg_locks where locktype = 'advisory' and classid = $1::oid and objid = $2::oid)`,
+        [...CANARY_GATEWAY_LOCK],
+      );
+      expect(await connectedGateways(pool)).toEqual({ canary: 1, platform: 0 });
+      await expect(gateway(canary, confirmStub(() => json(503, {})).transport)).rejects.toMatchObject({ code: 'canary_gateway_replica' });
+    } finally {
+      await pool.end();
+    }
+  }, 120_000);
+
+  it('crash recovery: a killed gateway process releases the lock; a gateway whose lock connection dies stops (fail closed)', async () => {
+    db = await createTestDatabase('r4_it_canary_j4_crash');
+    const canary = canaryFor('sales-production@8');
+    await initCanary(canary, logger);
+    const pool = openPool(db.url);
+    try {
+      // A separate process holds the singleton, then dies without any cleanup (SIGKILL).
+      const holder = `const pg = require('pg'); const c = new pg.Client({ connectionString: process.argv[1], application_name: 'r4-sales-canary:gateway:crashed' });
+        c.connect().then(() => c.query('select pg_try_advisory_lock($1::int, $2::int) as won', [Number(process.argv[2]), Number(process.argv[3])]))
+         .then((r) => { process.stdout.write(r.rows[0].won ? 'locked\\n' : 'refused\\n'); setInterval(() => undefined, 60_000); });`;
+      const child = spawn(process.execPath, ['-e', holder, db.url, ...CANARY_GATEWAY_LOCK.map(String)], { cwd: fileURLToPath(new URL('../..', import.meta.url)), stdio: ['ignore', 'pipe', 'inherit'] });
+      const said = await new Promise<string>((done) => child.stdout.once('data', (b: Buffer) => done(b.toString().trim())));
+      expect(said).toBe('locked');
+      await expect(gateway(canary, confirmStub(() => json(503, {})).transport)).rejects.toMatchObject({ code: 'canary_gateway_replica' });
+      child.kill('SIGKILL');
+      expect(await until(() => connectedGateways(pool), (g) => g.canary === 0)).toEqual({ canary: 0, platform: 0 });
+      const g = await gateway(canary, confirmStub(() => json(503, {})).transport);
+
+      // The server side of a crash (or a network loss): the lock connection dies. The gateway stops itself.
+      await pool.query(`select pg_terminate_backend(pid) from pg_locks where locktype = 'advisory' and classid = $1::oid and objid = $2::oid`, [...CANARY_GATEWAY_LOCK]);
+      await expect(g.lost).resolves.toBe('canary_gateway_lock_lost');
+      expect(await canaryRollbackStatus(pool)).toMatchObject({ liveGateways: 0 });
+      await expect(runtime(canary, new Router(), 'after-lost')).rejects.toMatchObject({ code: 'canary_gateway_not_running' });
+      const next = await gateway(canary, confirmStub(() => json(503, {})).transport);
+      expect(next.mode).toBe('full');
+    } finally {
+      await pool.end();
+    }
+  }, 120_000);
 });
 
 describe('sales-production@8 OTP flow in the canary: inspected ingest, dispatcher restart and recovery', () => {
@@ -261,12 +318,20 @@ describe('rollback @8 → @7 (full → protect_only → absent), the @7 known li
       const protect = await gateway(at8, confirmStub(() => json(503, {})).transport, 'protect_only');
       expect(protect.mode).toBe('protect_only');
       expect(await statusOf()).toMatchObject({ mode: 'protect_only', liveGateways: 1, ready: false });
-      // Gateway stopped, but a protection window is still open: still refused.
+      // Redaction holds in protect_only: a code sent inside the open window reaches no persisted text (the marker does).
+      await sendSynthetic(at8, { conversation: 'otp', text: CODE }, logger, undefined, {});
+      const texts = (await pool.query<{ t: string }>('select x::text as t from inbound_events x union all select y::text from task_inputs y union all select z::text from outbound_messages z union all select w::text from identity_verification.responses w')).rows.map((x) => x.t).join('\n');
+      expect(texts).not.toContain(CODE);
+      const hashes = (await pool.query<{ h: string }>('select content_sha256 as h from inbound_events')).rows.map((x) => x.h);
+      expect(hashes).not.toContain(createHash('sha256').update(CODE).digest('hex'));
+      // Gateway stopped, but a protection window is still open: still refused (no ingest without the inspector).
       await protect.close();
       const waiting = await statusOf();
       expect(waiting).toMatchObject({ mode: 'protect_only', liveGateways: 0, ready: false });
       expect(waiting.openProtections).toBeGreaterThan(0);
       await expect(runtime(at7, router, 'rollback-7-window', { customer: false })).rejects.toMatchObject({ code: 'canary_rollback_not_ready' });
+      await expect(sendSynthetic(at7, { conversation: 'after-rollback', text: CODE }, logger)).rejects.toMatchObject({ code: 'canary_rollback_not_ready' });
+      await expect(sendSynthetic(at8, { conversation: 'otp', text: CODE }, logger, undefined, GATEWAY_ENV)).rejects.toMatchObject({ code: 'canary_gateway_not_running' });
       await elapseProtectionWindows(pool);
       expect(await statusOf()).toEqual({ mode: 'protect_only', openProtections: 0, openStarts: 0, liveGateways: 0, ready: true });
 

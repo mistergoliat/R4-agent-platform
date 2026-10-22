@@ -268,5 +268,9 @@ async function gateway(canary: CanaryEnvironment, env: NodeJS.ProcessEnv, logger
     const stop = () => void handle.close().finally(() => done(0));
     process.once('SIGINT', stop);
     process.once('SIGTERM', stop);
+    void handle.lost.then((code) => {
+      io.err(`error: ${code}: the canary gateway stopped because it lost its singleton lock`);
+      done(1);
+    });
   });
 }

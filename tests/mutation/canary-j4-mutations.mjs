@@ -40,9 +40,27 @@ const MUTATIONS = [
     tests: [[INTEGRATION, '@8 refuses real mode']],
   },
   {
-    name: 'CJ4-M6 a second gateway may start (no replica check)',
-    edits: [{ file: IDENTITY, from: '  if (g.canary > 0 || g.platform > 0) {', to: '  if (false) {' }],
+    name: 'CJ4-M6 a second canary gateway may start (the singleton lock is not enforced)',
+    edits: [{ file: IDENTITY, from: "    if (!won) throw replica('another canary gateway holds the canary gateway lock');\n", to: '' }],
+    tests: [[INTEGRATION, 'refuses a second gateway and a platform gateway'], [INTEGRATION, 'singleton: of concurrent starts'], [INTEGRATION, 'crash recovery']],
+  },
+  {
+    name: 'CJ4-M11 a canary gateway may start next to a platform gateway',
+    edits: [{ file: IDENTITY, from: '    if (g.platform > 0) throw replica(', to: '    if (false) throw replica(' }],
     tests: [[INTEGRATION, 'refuses a second gateway and a platform gateway']],
+  },
+  {
+    name: 'CJ4-M12 a gateway that lost its singleton lock keeps running',
+    edits: [
+      { file: IDENTITY, from: "    lock.on('error', onLost);\n    lock.on('end', onLost);\n", to: "    lock.on('error', () => undefined);\n" },
+      { file: IDENTITY, from: "void lock.query('select 1').catch(onLost)", to: "void lock.query('select 1').catch(() => undefined)" },
+    ],
+    tests: [[INTEGRATION, 'crash recovery']],
+  },
+  {
+    name: 'CJ4-M13 liveness no longer reads the lock (counts nothing)',
+    edits: [{ file: IDENTITY, from: "              where locktype = 'advisory' and granted and classid = $1::oid and objid = $2::oid and objsubid = 2", to: '              where false' }],
+    tests: [[INTEGRATION, 'singleton: of concurrent starts'], [INTEGRATION, '@7 is refused until protect_only']],
   },
   {
     name: 'CJ4-M7 the @8 worker runs without the canary gateway',
@@ -52,7 +70,7 @@ const MUTATIONS = [
   {
     name: 'CJ4-M8 the @8 synthetic ingest bypasses the inbound inspector',
     edits: [{ file: RUNTIME, from: '      ...(inspector ? { inspector } : {}),\n', to: '' }],
-    tests: [[INTEGRATION, 'the code never reaches the conversation']],
+    tests: [[INTEGRATION, 'the code never reaches the conversation'], [INTEGRATION, '@7 is refused until protect_only']],
   },
   {
     name: 'CJ4-M9 the rollback is ready while protection windows are open',

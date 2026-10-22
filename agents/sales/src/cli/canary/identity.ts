@@ -19,19 +19,25 @@ import { SYNTHETIC_CHANNEL, assertIsolatedCanaryDatabase, foreignTraffic, readCa
  *   test hosts   a CLOSED allowlist of synthetic test hosts (R4_CANARY_TEST_HOSTS), exact DNS names, https only,
  *                at most four; empty by default (loopback only). Only the canary passes it to the adapters.
  *   one gateway  the canary's single gateway (`sales:canary gateway`): the inbound inspector in full and the CIA
- *                confirm dispatcher. Before it starts, no other canary gateway and no platform gateway may be
- *                connected to the canary database (pg_stat_activity); the worker and the synthetic ingest of @8
- *                refuse to run without it (mixed replicas are refused, not detected afterwards).
+ *                confirm dispatcher. The singleton is a session advisory lock on the canary database, taken
+ *                atomically (pg_try_advisory_lock) and held by one dedicated connection for the gateway's whole
+ *                life: concurrent starts cannot both win, PostgreSQL releases it when the process dies, and a
+ *                gateway that loses it stops. No platform gateway may be connected either (pg_stat_activity, a
+ *                second guard). The worker and the synthetic ingest of @8 refuse to run unless the lock is held
+ *                (mixed replicas are refused, not detected afterwards).
  *   rollback     @8 → @7 readiness: protect_only first, every protection window expired, no open
  *                identity.start_verification execution, no live canary gateway.
  *   purge        a verifiable purge of the synthetic data (D7 of the canary): counts before, every data table
  *                emptied in one transaction, counts after (all zero), proof of zero real customers, sha256.
  */
 
-/** The application name prefix of a canary gateway's connections; each gateway adds its own suffix (what the replica checks count). */
+/** The application name prefix of a canary gateway's connections; each gateway adds its own suffix. */
 export const CANARY_GATEWAY_APPLICATION = 'r4-sales-canary:gateway:';
+/** The canary gateway singleton: a session advisory lock (two int4 keys: 'R4SC' and the profile, 8). Per database. */
+export const CANARY_GATEWAY_LOCK = Object.freeze([0x52345343, 8] as const);
 /** Connections of a platform channel gateway (apps/channel-gateway: `r4-gateway:<id>`). */
 const PLATFORM_GATEWAY_APPLICATION = 'r4-gateway:%';
+const GATEWAY_LOCK_CHECK_MS = 5_000;
 const MAX_TEST_HOSTS = 4;
 const DNS_NAME = /^(?=.{4,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
 
@@ -49,22 +55,39 @@ export function parseCanaryTestHosts(raw: string | undefined): readonly string[]
   return Object.freeze(hosts);
 }
 
-/** Gateways connected to the canary database right now (distinct application names: one per gateway, whatever its pool size). */
-export async function connectedGateways(pool: pg.Pool): Promise<{ readonly canary: number; readonly platform: number }> {
+/**
+ * Gateways on the canary database right now: canary = holders of the singleton lock (0 or 1, whatever the pool
+ * does with idle connections); platform = distinct platform gateway application names.
+ */
+export async function connectedGateways(pool: pg.Pool | pg.PoolClient): Promise<{ readonly canary: number; readonly platform: number }> {
   const { rows } = await pool.query<{ canary: string; platform: string }>(
-    `select count(distinct application_name) filter (where starts_with(application_name, $1))::text as canary,
-            count(distinct application_name) filter (where application_name like $2)::text as platform
-       from pg_stat_activity where datname = current_database() and pid <> pg_backend_pid()`,
-    [CANARY_GATEWAY_APPLICATION, PLATFORM_GATEWAY_APPLICATION],
+    `select (select count(*) from pg_locks
+              where locktype = 'advisory' and granted and classid = $1::oid and objid = $2::oid and objsubid = 2
+                and database = (select oid from pg_database where datname = current_database()))::text as canary,
+            (select count(distinct application_name) from pg_stat_activity
+              where datname = current_database() and pid <> pg_backend_pid() and application_name like $3)::text as platform`,
+    [CANARY_GATEWAY_LOCK[0], CANARY_GATEWAY_LOCK[1], PLATFORM_GATEWAY_APPLICATION],
   );
   return { canary: Number(rows[0]!.canary), platform: Number(rows[0]!.platform) };
 }
 
-/** Before the canary gateway starts: it must be the only gateway on this database. */
-export async function assertNoOtherGateway(pool: pg.Pool): Promise<void> {
-  const g = await connectedGateways(pool);
-  if (g.canary > 0 || g.platform > 0) {
-    throw new PlatformError('precondition', 'canary_gateway_replica', `another gateway is connected to the canary database (canary ${g.canary}, platform ${g.platform}); the canary runs exactly one gateway (mixed replicas are refused)`);
+const replica = (detail: string) => new PlatformError('precondition', 'canary_gateway_replica', `${detail}; the canary runs exactly one gateway (mixed replicas are refused)`);
+
+/**
+ * Takes the singleton atomically on a connection the caller keeps checked out (an idle pool never reaps it).
+ * Refused when another canary gateway holds it or a platform gateway is connected. On refusal the connection is destroyed.
+ */
+async function acquireGatewayLock(pool: pg.Pool): Promise<pg.PoolClient> {
+  const client = await pool.connect();
+  try {
+    const won = (await client.query<{ won: boolean }>('select pg_try_advisory_lock($1::int, $2::int) as won', [...CANARY_GATEWAY_LOCK])).rows[0]!.won;
+    if (!won) throw replica('another canary gateway holds the canary gateway lock');
+    const g = await connectedGateways(client);
+    if (g.platform > 0) throw replica(`a platform gateway is connected to the canary database (${g.platform})`);
+    return client;
+  } catch (error) {
+    client.release(true);
+    throw error;
   }
 }
 
@@ -79,14 +102,16 @@ export interface CanaryGateway {
   readonly gatewayId: string;
   readonly mode: string;
   readonly degradedReason: string | null;
+  /** Resolves when the gateway stopped because it lost the singleton lock (its connection died). */
+  readonly lost: Promise<string>;
   close(): Promise<void>;
 }
 
 /**
  * The canary's single gateway for an inspected profile (@8): composes the inbound inspection exactly as the
  * production gateway does (salesGatewayInspection: keyring and CIA confirm client, `full`; or `protect_only`, the
- * first step of a rollback) over the canary database, and runs the confirm dispatcher. Refused when another
- * gateway is connected.
+ * first step of a rollback) over the canary database, and runs the confirm dispatcher. Refused unless it wins the
+ * singleton lock; the lock is released last, after the dispatcher stopped, so a successor never overlaps it.
  */
 export async function startCanaryGateway(
   canary: { readonly databaseUrl: string; readonly profile: ProductionProfile; readonly testHosts: readonly string[] },
@@ -97,6 +122,8 @@ export async function startCanaryGateway(
     readonly requested?: 'full' | 'protect_only';
     /** Tests: the CIA confirm transport and the dispatcher tuning. */
     readonly transport?: (url: string, init: RequestInit) => Promise<Response>;
+    /** How often the lock connection is probed (a dead connection stops the gateway). */
+    readonly lockCheckMs?: number;
   },
 ): Promise<CanaryGateway> {
   if (!isCustomerIdentityProfile(canary.profile)) throw new PlatformError('precondition', 'canary_gateway_not_needed', `${profileLabel(canary.profile)} composes no inbound inspector; the canary gateway is for sales-production@8`);
@@ -104,12 +131,28 @@ export async function startCanaryGateway(
   let canaryId: string;
   try {
     canaryId = await assertIsolatedCanaryDatabase(preflight);
-    await assertNoOtherGateway(preflight);
   } finally {
     await preflight.end().catch(() => undefined);
   }
-  const pool = options.openPool(`gateway:${randomBytes(4).toString('hex')}`);
+  const suffix = randomBytes(4).toString('hex');
+  const lockPool = options.openPool(`gateway:${suffix}:lock`);
+  let lock: pg.PoolClient;
+  try {
+    lock = await acquireGatewayLock(lockPool);
+  } catch (error) {
+    await lockPool.end().catch(() => undefined);
+    throw error;
+  }
+  const pool = options.openPool(`gateway:${suffix}`);
   let platform: Awaited<ReturnType<typeof createPlatform>> | null = null;
+  const releaseLock = async () => {
+    try {
+      lock.release(true); // destroys the connection: PostgreSQL drops the session lock with it
+    } catch {
+      // already gone
+    }
+    await lockPool.end().catch(() => undefined);
+  };
   try {
     platform = await createPlatform({ databaseUrl: canary.databaseUrl, host: '127.0.0.1', port: 0, logLevel: 'silent', agentDefinitionsDir: SALES_AGENT_DIR, dbPoolMax: 2 }, { logger: options.logger });
     const gatewayId = `sales-canary-gateway:${canaryId}:${hostname().replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 24) || 'host'}:${process.pid}`;
@@ -120,17 +163,32 @@ export async function startCanaryGateway(
     });
     inspection.start();
     const p = platform;
-    return {
-      gatewayId, mode: inspection.mode, degradedReason: inspection.degradedReason,
-      async close() {
-        await inspection.stop().catch(() => undefined);
-        await p.close().catch(() => undefined);
-        await pool.end().catch(() => undefined);
-      },
+    let closed = false;
+    let reportLost: (code: string) => void = () => undefined;
+    const lost = new Promise<string>((resolve) => (reportLost = resolve));
+    const close = async () => {
+      if (closed) return;
+      closed = true;
+      clearInterval(probe);
+      await inspection.stop().catch(() => undefined);
+      await p.close().catch(() => undefined);
+      await pool.end().catch(() => undefined);
+      await releaseLock();
     };
+    // Fail closed: without the lock another gateway may start, so this one stops.
+    const onLost = () => {
+      if (closed) return;
+      options.logger.error({ event: 'sales_canary.gateway_lock_lost', gatewayId }, 'canary gateway lost its singleton lock; stopping');
+      void close().finally(() => reportLost('canary_gateway_lock_lost'));
+    };
+    lock.on('error', onLost);
+    lock.on('end', onLost);
+    const probe = setInterval(() => void lock.query('select 1').catch(onLost), options.lockCheckMs ?? GATEWAY_LOCK_CHECK_MS);
+    return { gatewayId, mode: inspection.mode, degradedReason: inspection.degradedReason, lost, close };
   } catch (error) {
     await platform?.close().catch(() => undefined);
     await pool.end().catch(() => undefined);
+    await releaseLock();
     throw error;
   }
 }
