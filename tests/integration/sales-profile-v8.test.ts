@@ -11,9 +11,10 @@ import { loadProductionConfig } from '@r4/live-ops';
 import { FakeModelProvider, type FakeModelScript } from '@r4/model-gateway';
 import { createSilentLogger } from '@r4/observability';
 import { AUTONOMOUS_QUOTE_CAPABILITY_IDS, CAPABILITY_IDS, ContextView, read, respond, type ScriptedStep } from '@r4-sales/agent';
-import { initCanary, loadCanaryEnvironment, sendSynthetic, startCanaryRuntime, syntheticConversationKey, type CanaryEnvironment, type CanaryRuntime } from '@r4-sales/agent/canary';
+import { createPool } from '@r4/persistence-postgres';
+import { initCanary, loadCanaryEnvironment, sendSynthetic, startCanaryGateway, startCanaryRuntime, syntheticConversationKey, type CanaryEnvironment, type CanaryRuntime } from '@r4-sales/agent/canary';
 import { SALES_PRODUCTION_PROFILE_V8, assertSalesProductionPrerequisites, composeSalesProductionWorker } from '@r4-sales/agent/production';
-import { createTestDatabase, openPool, type TestDatabase } from '../support/database.js';
+import { createMigratedTestDatabase, createTestDatabase, openPool, type TestDatabase } from '../support/database.js';
 import { FakeClock, idsFrom } from '../support/deterministic.js';
 import { LiveOpsTestbed, OPERATOR, keyOf } from '../support/live-ops.js';
 import { InMemoryObservationStore } from '../support/memory-observation-store.js';
@@ -88,20 +89,20 @@ let captureDir: string;
 function canaryEnv(profile: string): Record<string, string> {
   const base = {
     R4_EXECUTION_MODE: 'production', R4_PROD_POLICY_PROFILE: 'sales-production@7', R4_PROD_ROLLOUT_PERCENT: '0', R4_PROD_IDENTITY_HASH_KEY: IDENTITY_KEY,
-    R4_PROD_ALLOW_NETWORK: 'false', R4_PROD_HOLD_RECHECK_MS: '10', R4_CANARY_DATABASE_URL: canaryDb.url, R4_LOG_LEVEL: 'silent', ...LIMITS,
+    R4_PROD_ALLOW_NETWORK: 'false', R4_PROD_HOLD_RECHECK_MS: '10', R4_CANARY_DATABASE_URL: canaryDb.url, R4_LOG_LEVEL: 'silent', R4_CANARY_CONTEXT_EXPIRED_EVIDENCE: 'exclude', ...LIMITS,
   };
   return { ...base, R4_PROD_POLICY_PROFILE: profile, R4_PROD_ROLLOUT_ALLOWLIST: syntheticConversationKey(loadCanaryEnvironment(base), 'v8-cp-down') };
 }
 
-/**
- * The @8 environment of the local runtime, built here: the canary CLI does not accept @8 (loadCanaryEnvironment
- * refuses it; the J4-R5 canary is not built). Same database, identity key, rollout and limits as @7.
- */
+/** The @8 canary environment (R4-J4-R5 preparation: the J4 expired-evidence policy `exclude`, required for @8). */
 function v8Environment(): CanaryEnvironment {
-  const at7 = loadCanaryEnvironment(canaryEnv('sales-production@7'));
-  expect(() => loadCanaryEnvironment(canaryEnv('sales-production@8'))).toThrow(/runs sales-production@4 or .* only/);
-  return { ...at7, production: loadProductionConfig(canaryEnv('sales-production@8')), profile: SALES_PRODUCTION_PROFILE_V8 };
+  const canary = loadCanaryEnvironment(canaryEnv('sales-production@8'));
+  expect(canary).toMatchObject({ profile: SALES_PRODUCTION_PROFILE_V8, contextExpiredEvidence: 'exclude' });
+  return canary;
 }
+
+/** The gateway-role environment of the canary's single gateway and inspected ingest (the worker never holds it). */
+const GATEWAY_ENV = { R4_CUSTOMER_MODE: 'synthetic', R4_CUSTOMER_IDENTITY_BASE_URL: CIA, R4_CHANNEL_IDENTITY_CONFIRM_BEARER_TOKEN: 'synthetic-channel-confirm-token-0001', R4_PROD_VERIFICATION_CODE_KEYS: `k1:${Buffer.alloc(32, 3).toString('base64')}` };
 
 const http = <T extends object>(port: T): T & { bindingKind: string } =>
   new Proxy(port, { get: (target, key) => (key === 'bindingKind' ? 'http' : typeof Reflect.get(target, key) === 'function' ? (Reflect.get(target, key) as (...a: unknown[]) => unknown).bind(target) : Reflect.get(target, key)) }) as T & { bindingKind: string };
@@ -127,13 +128,24 @@ describe('A. sales-production@8 end to end: Customer Profile down never blocks t
     canaryDb = await createTestDatabase('r4_it_profile_v8_canary');
     const init = await initCanary(loadCanaryEnvironment(canaryEnv('sales-production@7')), logger);
     expect(init.definitions.registered).toEqual(expect.arrayContaining(['sales@8']));
+    // (R4-J4-R5 preparation) The canary init migrates the identity-verification schema, so the v8 prerequisite holds.
+    expect(init.migrations.identityVerification.length).toBeGreaterThan(0);
     const pool = openPool(canaryDb.url);
     try {
-      await expect(assertSalesProductionPrerequisites(SALES_PRODUCTION_PROFILE_V8, pool)).rejects.toThrow(/identity-verification migrations/);
-      await migrateIdentityVerification(pool);
       await assertSalesProductionPrerequisites(SALES_PRODUCTION_PROFILE_V8, pool);
     } finally {
       await pool.end();
+    }
+    // A core database without the identity-verification schema is refused for v8.
+    const bare = await createMigratedTestDatabase();
+    const barePool = openPool(bare.url);
+    try {
+      await expect(assertSalesProductionPrerequisites(SALES_PRODUCTION_PROFILE_V8, barePool)).rejects.toThrow(/identity-verification migrations/);
+      await migrateIdentityVerification(barePool);
+      await assertSalesProductionPrerequisites(SALES_PRODUCTION_PROFILE_V8, barePool);
+    } finally {
+      await barePool.end();
+      await bare.drop();
     }
   });
 
@@ -143,6 +155,10 @@ describe('A. sales-production@8 end to end: Customer Profile down never blocks t
 
   it('CIA verified, Customer Profile 503: customer.get_context fails, the quote is issued for a guest, autonomously, once', async () => {
     const canary = v8Environment();
+    const gateway = await startCanaryGateway(canary, {
+      env: GATEWAY_ENV, logger, openPool: (name) => createPool({ connectionString: canaryDb.url, logger, applicationName: `r4-sales-canary:${name}`, max: 2 }),
+      transport: () => Promise.reject(new Error('no confirm in this scenario')),
+    });
     const stubs = owners();
     stubs.state.cp = 'down';
     const quotes = new FixtureQuoteV2Service();
@@ -162,7 +178,7 @@ describe('A. sales-production@8 end to end: Customer Profile down never blocks t
       worker: {
         databaseUrl: canaryDb.url, logLevel: 'silent', dbPoolMax: 3, workerId: 'profile-v8:cp-down', leaseDurationMs: 60_000, heartbeatIntervalMs: 10_000, pollIntervalMs: 20, maxRunRecoveries: 3, maxRunFailureRecoveries: 1,
         execution: { maxIterations: 20, maxModelCalls: 20, maxReadCapabilityCalls: 20, maxRunDurationMs: 60_000, modelCallTimeoutMs: 10_000, maxWriteActions: 50 },
-        context: { budget: { mode: 'unbounded' } },
+        context: { budget: { mode: 'unbounded' }, expiredEvidence: 'exclude' },
       },
       scheduler: { databaseUrl: canaryDb.url, logLevel: 'silent', dbPoolMax: 2, owner: 'profile-v8:scheduler', leaseMs: 30_000, pollMs: 25, reconciliationPolicy: RECONCILIATION_POLICY },
       captureFile: join(captureDir, 'cp-down.jsonl'), logger, isolationCheckMs: 50,
@@ -177,11 +193,11 @@ describe('A. sales-production@8 end to end: Customer Profile down never blocks t
       await runtime.delivery.tick();
     };
     try {
-      const { taskId } = (await sendSynthetic(canary, { conversation: 'v8-cp-down', text: 'Quiero una barra olímpica y dos barras Z, despacho a Ñuñoa' }, logger)) as { taskId: string };
+      const { taskId } = (await sendSynthetic(canary, { conversation: 'v8-cp-down', text: 'Quiero una barra olímpica y dos barras Z, despacho a Ñuñoa' }, logger, undefined, GATEWAY_ENV)) as { taskId: string };
       await drain();
-      await sendSynthetic(canary, { conversation: 'v8-cp-down', text: 'Fixture Courier normal' }, logger);
+      await sendSynthetic(canary, { conversation: 'v8-cp-down', text: 'Fixture Courier normal' }, logger, undefined, GATEWAY_ENV);
       await drain();
-      await sendSynthetic(canary, { conversation: 'v8-cp-down', text: 'Sí, emítela.' }, logger);
+      await sendSynthetic(canary, { conversation: 'v8-cp-down', text: 'Sí, emítela.' }, logger, undefined, GATEWAY_ENV);
       await drain();
 
       expect((await pool.query('select agent_version from agent_tasks where task_id = $1', [taskId])).rows).toEqual([{ agent_version: 8 }]);
@@ -195,6 +211,7 @@ describe('A. sales-production@8 end to end: Customer Profile down never blocks t
     } finally {
       await pool.end();
       await runtime.close();
+      await gateway.close();
     }
   });
 });

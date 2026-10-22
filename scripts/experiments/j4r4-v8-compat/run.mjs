@@ -19,14 +19,15 @@ import { performance } from 'node:perf_hooks';
 import { parseArgs } from 'node:util';
 import pg from 'pg';
 import { FixtureCatalog, FixtureQuoteV2Service, FixtureShipping } from '@r4-adapters/domains';
-import { IdentityVerificationStore, PLATFORM_MARKERS, migrateIdentityVerification } from '@r4-adapters/identity-verification';
+import { PLATFORM_MARKERS } from '@r4-adapters/identity-verification';
 import { OpenAICompatibleModelProvider, describeModelConfig, loadOpenAICompatibleConfig } from '@r4-adapters/openai-compatible';
-import { loadProductionConfig, profileFingerprint, profileLabel } from '@r4/live-ops';
+import { profileFingerprint, profileLabel } from '@r4/live-ops';
+import { createPool } from '@r4/persistence-postgres';
 import { FakeModelProvider } from '@r4/model-gateway';
 import { createSilentLogger } from '@r4/observability';
 import { AUTONOMOUS_QUOTE_CAPABILITY_IDS, CAPABILITY_IDS, ContextView, read, respond } from '@r4-sales/agent';
-import { initCanary, loadCanaryEnvironment, sendSynthetic, startCanaryRuntime } from '@r4-sales/agent/canary';
-import { SALES_PRODUCTION_PROFILES, SALES_PRODUCTION_PROFILE_V8, salesProductionAgentVersion } from '@r4-sales/agent/production';
+import { initCanary, loadCanaryEnvironment, sendSynthetic, startCanaryGateway, startCanaryRuntime } from '@r4-sales/agent/canary';
+import { SALES_PRODUCTION_PROFILES, salesProductionAgentVersion } from '@r4-sales/agent/production';
 
 const REPO = resolve(import.meta.dirname, '../../..');
 const { values: args } = parseArgs({
@@ -103,6 +104,8 @@ function identityStub(sc) {
     throw new Error(`unexpected owner call ${url}`);
   };
 }
+/** The gateway-role environment of the @8 canary gateway and its inspected ingest (synthetic keyring and credential). */
+const GATEWAY_ENV = { R4_CUSTOMER_MODE: 'synthetic', R4_CUSTOMER_IDENTITY_BASE_URL: CIA, R4_CHANNEL_IDENTITY_CONFIRM_BEARER_TOKEN: 'synthetic-channel-confirm-token-0001', R4_PROD_VERIFICATION_CODE_KEYS: `k1:${randomBytes(32).toString('base64')}` };
 const http = (port) => new Proxy(port, { get: (t, k) => (k === 'bindingKind' ? 'http' : typeof Reflect.get(t, k) === 'function' ? Reflect.get(t, k).bind(t) : Reflect.get(t, k)) });
 
 // ---- scenarios -------------------------------------------------------------------------------------
@@ -246,18 +249,17 @@ for (const label of ['sales-production@7', 'sales-production@8']) {
   const env = (profile) => ({
     R4_EXECUTION_MODE: 'production', R4_PROD_POLICY_PROFILE: profile, R4_PROD_ROLLOUT_PERCENT: '100', R4_PROD_IDENTITY_HASH_KEY: 'r4-v8-compat-experiment-identity-key-0000000001',
     R4_PROD_ALLOW_NETWORK: 'false', R4_PROD_HOLD_RECHECK_MS: '10', R4_CANARY_DATABASE_URL: dbUrl, R4_LOG_LEVEL: 'silent', ...LIMITS,
+    // Paired arms run the same policy (owner decision for the J4 canary; required for @8).
+    R4_CANARY_CONTEXT_EXPIRED_EVIDENCE: 'exclude',
   });
-  const at7 = loadCanaryEnvironment(env('sales-production@7'));
-  await initCanary(at7, logger);
+  const canary = loadCanaryEnvironment(env(label));
+  await initCanary(canary, logger);
   const pool = new pg.Pool({ connectionString: dbUrl, max: 2 });
-  let canary = at7;
-  if (label === 'sales-production@8') {
-    // The canary CLI does not accept @8 (J4-R5 not built): the @8 environment is built here, as in the integration test.
-    await migrateIdentityVerification(pool);
-    await new IdentityVerificationStore(pool).setMode('full', 'j4r4-v8-compat', 'experiment_full');
-    canary = { ...at7, production: loadProductionConfig(env('sales-production@8')), profile: SALES_PRODUCTION_PROFILE_V8 };
-  }
-  arms.push({ profile: label, dbName, dbUrl, canary, pool });
+  // @8 runs behind the canary's single gateway (inbound inspector in full); this experiment never confirms a code.
+  const gateway = label === 'sales-production@8'
+    ? await startCanaryGateway(canary, { env: GATEWAY_ENV, logger, openPool: (name) => createPool({ connectionString: dbUrl, logger, applicationName: `r4-sales-canary:${name}`, max: 2 }), transport: () => Promise.reject(new Error('no confirm in this experiment')) })
+    : null;
+  arms.push({ profile: label, dbName, dbUrl, canary, pool, gateway });
 }
 const git = (...a) => execFileSync('git', ['-C', REPO, ...a], { encoding: 'utf8' }).trim();
 const versionOf = (label) => {
@@ -278,7 +280,7 @@ for (const [family, count] of families) {
       const sc = { id: `${family}-${n}`, family, n, calls: [], ownerCalls: [] };
       const runtime = await startCanaryRuntime(arm.canary, {
         modelProvider: hybrid, catalog: http(new FixtureCatalog()), shipping: http(new FixtureShipping()), quotes: http(new FixtureQuoteV2Service()),
-        worker: { databaseUrl: arm.dbUrl, logLevel: 'silent', dbPoolMax: 3, workerId: `v8c:${sc.id}`, leaseDurationMs: 300_000, heartbeatIntervalMs: 30_000, pollIntervalMs: 20, maxRunRecoveries: 3, maxRunFailureRecoveries: 1, execution: { maxIterations: 20, maxModelCalls: 20, maxReadCapabilityCalls: 20, maxRunDurationMs: 600_000, modelCallTimeoutMs: 180_000, maxWriteActions: 50 }, context: { budget: { mode: 'unbounded' } } },
+        worker: { databaseUrl: arm.dbUrl, logLevel: 'silent', dbPoolMax: 3, workerId: `v8c:${sc.id}`, leaseDurationMs: 300_000, heartbeatIntervalMs: 30_000, pollIntervalMs: 20, maxRunRecoveries: 3, maxRunFailureRecoveries: 1, execution: { maxIterations: 20, maxModelCalls: 20, maxReadCapabilityCalls: 20, maxRunDurationMs: 600_000, modelCallTimeoutMs: 180_000, maxWriteActions: 50 }, context: { budget: { mode: 'unbounded' }, expiredEvidence: 'exclude' } },
         scheduler: null, captureFile: join(tmpdir(), `r4-v8c-${arm.dbName}-${sc.id}.jsonl`), logger, isolationCheckMs: 50,
         ...(arm.profile === 'sales-production@8' ? { customer: { env: CUSTOMER_ENV, fetch: identityStub(sc) } } : {}),
       });
@@ -286,7 +288,7 @@ for (const [family, count] of families) {
       let taskId = null;
       try {
         for (const [i, text] of texts.entries()) {
-          const sent = await sendSynthetic(arm.canary, { conversation: `${sc.id}-${arm.profile.split('@')[1]}`, text }, logger);
+          const sent = await sendSynthetic(arm.canary, { conversation: `${sc.id}-${arm.profile.split('@')[1]}`, text }, logger, undefined, GATEWAY_ENV);
           if (i === 0) {
             taskId = sent.taskId;
             hybrid.routes.set(taskId, { sc, profile: arm.profile, steps, next: 0, segment: null });
@@ -313,6 +315,7 @@ for (const [family, count] of families) {
   }
 }
 for (const arm of arms) {
+  await arm.gateway?.close();
   await arm.pool.end();
   await admin(`drop database if exists ${arm.dbName} with (force)`);
 }

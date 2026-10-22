@@ -1,7 +1,7 @@
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { CanonicalInbound, OutboundChannelAdapter, OutboundSubmission, SubmissionResult } from '@r4/live-ops';
+import type { CanonicalInbound, InboundChannelAdapter, OutboundChannelAdapter, OutboundSubmission, SubmissionResult } from '@r4/live-ops';
 import { SYNTHETIC_CHANNEL } from './isolation.js';
 
 /** The provider-side account of every synthetic conversation (identifies the traffic as canary traffic). */
@@ -32,6 +32,20 @@ export function syntheticInbound(input: { readonly conversation: string; readonl
     metadata: { synthetic: true, canaryId: input.canaryId },
   };
 }
+
+/**
+ * (R4-J4-R5 preparation) The synthetic channel as an inbound adapter, used only for its attestation: every
+ * synthetic conversation is one-to-one by construction (`senderRef === conversationRef`, see syntheticInbound),
+ * so the inbound inspector may treat the sender as the conversation's subject. It accepts no webhook: the
+ * canary injects canonical inbound directly (`sendSynthetic`), and any notification is refused.
+ */
+export const SYNTHETIC_INBOUND_ADAPTER: InboundChannelAdapter = Object.freeze({
+  channel: SYNTHETIC_CHANNEL,
+  directConversations: true,
+  verifySubscription: () => ({ ok: false as const, status: 404, reason: 'synthetic_channel_has_no_subscription' }),
+  authenticate: () => ({ ok: false as const, reason: 'synthetic_channel_has_no_webhook' }),
+  parse: () => ({ inbound: [], statuses: [], rejected: [] }),
+});
 
 export interface CapturedOutbound {
   readonly outboundId: string;

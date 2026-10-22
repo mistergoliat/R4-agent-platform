@@ -32,17 +32,24 @@ import { SALES_PRODUCTION_PROFILE_V4 } from '../../production/profile-v4.js';
 import { SALES_PRODUCTION_PROFILE_V5, isAutonomousQuoteProfile } from '../../production/profile-v5.js';
 import { SALES_PRODUCTION_PROFILE_V6, isConfirmedIntentProfile } from '../../production/profile-v6.js';
 import { SALES_PRODUCTION_PROFILE_V7 } from '../../production/profile-v7.js';
-import { salesProductionAgentVersion } from '../../production/profile-v8.js';
+import { SALES_PRODUCTION_PROFILE_V8, isCustomerIdentityProfile, salesProductionAgentVersion } from '../../production/profile-v8.js';
+import { canaryIngressInspector } from '../../production/gateway-identity.js';
+import { IDENTITY_VERIFICATION_MIGRATIONS_DIR, migrateIdentityVerification } from '@r4-adapters/identity-verification';
 import { loadAutonomousQuoteLimits, loadAutonomousQuoteLimitsV6, type AutonomousQuoteLimits, type AutonomousQuoteLimitsV6 } from '../../capabilities/autonomy-limits.js';
 import type { ApprovalInspection } from '../../production/approvals.js';
 import { openApprovalInspection } from '../approval-inspection.js';
-import { CaptureOutboundAdapter, SYNTHETIC_ACCOUNT, syntheticConversationRef, syntheticInbound } from './channel.js';
+import { CaptureOutboundAdapter, SYNTHETIC_ACCOUNT, SYNTHETIC_INBOUND_ADAPTER, syntheticConversationRef, syntheticInbound } from './channel.js';
+import { assertCanaryGatewayLive, assertUninspectedCanaryAllowed, parseCanaryTestHosts } from './identity.js';
 import { CANARY_ACTOR, CanaryAdmission, SYNTHETIC_CHANNEL, assertIsolatedCanaryDatabase, foreignTraffic, markCanaryDatabase, readCanaryDatabase } from './isolation.js';
 
 /** The governed-approval profile the canary was built for (J3D). */
 export const CANARY_PROFILE: ProductionProfile = SALES_PRODUCTION_PROFILE_V4;
-/** Profiles the canary may run: v4 (human approval, J3D), v5 (autonomous issuance, R4-J3E), v6 (confirmed intent, R4-J3E-B) and v7 (deterministic offer, R4-J3E-C1). Never one a production worker runs today. */
-export const CANARY_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_PRODUCTION_PROFILE_V4, SALES_PRODUCTION_PROFILE_V5, SALES_PRODUCTION_PROFILE_V6, SALES_PRODUCTION_PROFILE_V7]);
+/**
+ * Profiles the canary may run: v4 (human approval, J3D), v5 (autonomous issuance, R4-J3E), v6 (confirmed intent, R4-J3E-B),
+ * v7 (deterministic offer, R4-J3E-C1) and v8 (Customer and identity verification, R4-J4-R4; prepared for J4-R5, not run).
+ * Never one a production worker runs today.
+ */
+export const CANARY_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_PRODUCTION_PROFILE_V4, SALES_PRODUCTION_PROFILE_V5, SALES_PRODUCTION_PROFILE_V6, SALES_PRODUCTION_PROFILE_V7, SALES_PRODUCTION_PROFILE_V8]);
 
 const DATABASE_URL = /^postgres(ql)?:\/\//;
 
@@ -54,6 +61,14 @@ export interface CanaryEnvironment {
   readonly profile: ProductionProfile;
   /** (R4-J3E) The configured limits of autonomous issuance; present exactly for an autonomous profile (v5; v6 and v7 with total units and the confirmation window). */
   readonly autonomousQuoteLimits: AutonomousQuoteLimits | AutonomousQuoteLimitsV6 | null;
+  /**
+   * (R4-J4-R5 preparation) R4_CANARY_CONTEXT_EXPIRED_EVIDENCE: the expired-evidence policy every canary worker of this
+   * environment must run (null: not declared, the worker's own). Required and `exclude` for @8 (owner decision: the J4
+   * canary only; production unchanged); an @7 arm of a paired comparison declares the same value.
+   */
+  readonly contextExpiredEvidence: 'include' | 'exclude' | null;
+  /** (R4-J4-R5 preparation) R4_CANARY_TEST_HOSTS: the closed allowlist of synthetic test hosts (@8 only; empty = loopback only). */
+  readonly testHosts: readonly string[];
 }
 
 function sameDatabase(a: string, b: string): boolean {
@@ -92,7 +107,16 @@ export function loadCanaryEnvironment(env: Readonly<Record<string, string | unde
   if (env.R4_DATABASE_URL && sameDatabase(env.R4_DATABASE_URL, databaseUrl)) {
     throw new ProductionConfigError('canary_shares_production_database', 'R4_CANARY_DATABASE_URL names the same database as R4_DATABASE_URL; the canary needs its own database');
   }
-  return { databaseUrl, production, profile, autonomousQuoteLimits };
+  const evidence = env.R4_CANARY_CONTEXT_EXPIRED_EVIDENCE?.trim();
+  if (evidence !== undefined && evidence !== '' && evidence !== 'include' && evidence !== 'exclude') throw new ProductionConfigError('invalid_production_config', 'R4_CANARY_CONTEXT_EXPIRED_EVIDENCE must be "include" or "exclude"');
+  const contextExpiredEvidence = evidence === 'include' || evidence === 'exclude' ? evidence : null;
+  const testHosts = parseCanaryTestHosts(env.R4_CANARY_TEST_HOSTS);
+  if (isCustomerIdentityProfile(profile)) {
+    if (contextExpiredEvidence !== 'exclude') throw new ProductionConfigError('production_config_incomplete', `the J4 canary of ${profileLabel(profile)} runs R4_CANARY_CONTEXT_EXPIRED_EVIDENCE=exclude (owner decision; production is unchanged)`);
+  } else if (testHosts.length > 0) {
+    throw new ProductionConfigError('invalid_production_config', `R4_CANARY_TEST_HOSTS is for the Customer and identity owners of sales-production@8; ${profileLabel(profile)} has none`);
+  }
+  return { databaseUrl, production, profile, autonomousQuoteLimits, contextExpiredEvidence, testHosts };
 }
 
 function canaryPool(canary: CanaryEnvironment, logger: Logger, name: string): Pool {
@@ -103,7 +127,7 @@ export interface CanaryInitReport {
   readonly canaryId: string;
   readonly database: string;
   readonly markerCreated: boolean;
-  readonly migrations: { readonly core: readonly string[]; readonly sales: readonly string[] };
+  readonly migrations: { readonly core: readonly string[]; readonly sales: readonly string[]; readonly identityVerification: readonly string[] };
   readonly definitions: { readonly registered: readonly string[]; readonly unchanged: readonly string[] };
   readonly autonomy: 'enabled' | 'already_enabled';
 }
@@ -121,6 +145,9 @@ export async function initCanary(canary: CanaryEnvironment, logger: Logger): Pro
     const marker = await markCanaryDatabase(pool);
     const core = await migrate(pool, { logger });
     const sales = await migrateSales(pool, logger);
+    // (R4-J4-R5 preparation) Every canary database carries the identity-verification schema: the same database serves
+    // @8 and its rollback to @7, whose guard reads it. Inert without a gateway composing the inspector.
+    const identityVerification = await migrateIdentityVerification(pool);
     const canaryId = await assertIsolatedCanaryDatabase(pool);
     const definitions = await registerAgentDefinitions({ databaseUrl: canary.databaseUrl, directory: SALES_AGENT_DIR, agentIds: [SALES_AGENT_ID], migrationDirectories: [SALES_MIGRATIONS_DIR], logger });
     const controls = new AutonomyControls({ store: new PostgresProductionStore(pool), logger });
@@ -128,7 +155,7 @@ export async function initCanary(canary: CanaryEnvironment, logger: Logger): Pro
     if (!enabled) await controls.set({ scope: 'global', autonomyEnabled: true, reason: 'isolated Sales canary database (synthetic traffic only)', changedBy: CANARY_ACTOR, correlationId: `sales-canary:${canaryId}:init` });
     return {
       canaryId, database: (await readCanaryDatabase(pool)).database, markerCreated: marker.created,
-      migrations: { core: core.applied, sales: sales.applied }, definitions: { registered: definitions.registered, unchanged: definitions.unchanged }, autonomy: enabled ? 'already_enabled' : 'enabled',
+      migrations: { core: core.applied, sales: sales.applied, identityVerification: identityVerification.applied }, definitions: { registered: definitions.registered, unchanged: definitions.unchanged }, autonomy: enabled ? 'already_enabled' : 'enabled',
     };
   } finally {
     await pool.end().catch(() => undefined);
@@ -136,7 +163,7 @@ export async function initCanary(canary: CanaryEnvironment, logger: Logger): Pro
 }
 
 async function assertCurrentSchema(pool: Pool): Promise<void> {
-  for (const directory of [undefined, SALES_MIGRATIONS_DIR]) {
+  for (const directory of [undefined, SALES_MIGRATIONS_DIR, IDENTITY_VERIFICATION_MIGRATIONS_DIR]) {
     const status = await migrationStatus(pool, directory);
     if (status.pending.length > 0 || status.modified.length > 0) throw new PlatformError('unavailable', 'schema_not_current', 'the canary database schema is not current; run "sales:canary init"');
   }
@@ -156,7 +183,14 @@ export function syntheticConversationKey(canary: CanaryEnvironment, conversation
  * runtimes come from the platform's public composition root (`createPlatform`,
  * never listening, with no operator identity adapter).
  */
-export async function sendSynthetic(canary: CanaryEnvironment, message: { readonly conversation: string; readonly text: string; readonly eventId?: string }, logger: Logger, clock: Clock = systemClock): Promise<IngestOutcome & { readonly conversationKey: string }> {
+export async function sendSynthetic(
+  canary: CanaryEnvironment,
+  message: { readonly conversation: string; readonly text: string; readonly eventId?: string },
+  logger: Logger,
+  clock: Clock = systemClock,
+  /** (R4-J4-R5 preparation) @8 only: the gateway-role environment holding the code keyring. */
+  env: Readonly<Record<string, string | undefined>> = {},
+): Promise<IngestOutcome & { readonly conversationKey: string }> {
   const pool = canaryPool(canary, logger, 'send');
   let platform: Awaited<ReturnType<typeof createPlatform>> | null = null;
   try {
@@ -167,12 +201,19 @@ export async function sendSynthetic(canary: CanaryEnvironment, message: { readon
     if (!eligibility.eligible) {
       throw new PlatformError('precondition', 'synthetic_conversation_not_eligible', `the synthetic conversation is ${eligibility.reason} in the canary rollout; add its key to the canary environment's R4_PROD_ROLLOUT_ALLOWLIST (sales:canary identity-key --conversation ${message.conversation})`);
     }
+    // (R4-J4-R5 preparation) @8 ingests only through the inbound inspector, while the single canary gateway runs; any
+    // other profile ingests without it, and therefore only after a complete rollback (ADR-040 addendum).
+    const inspected = isCustomerIdentityProfile(canary.profile);
+    if (inspected) await assertCanaryGatewayLive(pool);
+    else await assertUninspectedCanaryAllowed(pool);
+    const inspector = inspected ? await canaryIngressInspector(pool, env, (event, fields) => logger.info({ event, ...fields }, 'canary ingress')) : null;
     const ids = uuidV7Generator(clock);
     const store = new PostgresProductionStore(pool);
     platform = await createPlatform({ databaseUrl: canary.databaseUrl, host: '127.0.0.1', port: 0, logLevel: 'silent', agentDefinitionsDir: SALES_AGENT_DIR, dbPoolMax: 2 }, { logger, clock, ids });
     const ingress = new ChannelIngress({
       store, tasks: platform.tasks, temporal: platform.temporal, controls: new AutonomyControls({ store, logger }),
-      adapters: [],
+      adapters: inspected ? [SYNTHETIC_INBOUND_ADAPTER] : [],
+      ...(inspector ? { inspector } : {}),
       // The synthetic channel has no provider, hence no provider status notifications.
       delivery: { applyProviderStatus: () => Promise.reject(new PlatformError('precondition', 'synthetic_channel_has_no_provider', 'the synthetic channel has no provider status')) },
       config: canary.production.config, secrets: canary.production.secrets, profile: canary.profile,
@@ -235,8 +276,18 @@ export async function startCanaryRuntime(canary: CanaryEnvironment, options: Can
   try {
     const canaryId = await assertIsolatedCanaryDatabase(pool);
     await assertCurrentSchema(pool);
+    // (R4-J4-R5 preparation) The declared expired-evidence policy, identical for every arm of a paired comparison.
+    if (canary.contextExpiredEvidence !== null && (options.worker.context.expiredEvidence ?? 'include') !== canary.contextExpiredEvidence) {
+      throw new PlatformError('precondition', 'canary_expired_evidence_mismatch', `the canary environment declares R4_CANARY_CONTEXT_EXPIRED_EVIDENCE=${canary.contextExpiredEvidence}; the canary worker must run it`);
+    }
+    if (isCustomerIdentityProfile(canary.profile)) {
+      if (!options.customer) throw new PlatformError('precondition', 'canary_customer_config_missing', `${profileLabel(canary.profile)} needs the worker's R4_CUSTOMER_* configuration`);
+      await assertCanaryGatewayLive(pool);
+    } else {
+      await assertUninspectedCanaryAllowed(pool);
+    }
     const store = new PostgresProductionStore(pool);
-    const composed = composeSalesProductionWorker({ pool, store, production: canary.production, modelProvider: options.modelProvider, logger, catalog: options.catalog, shipping: options.shipping, quotes: options.quotes, ...(canary.autonomousQuoteLimits ? { autonomousQuoteLimits: canary.autonomousQuoteLimits } : {}), ...(options.customer ? { customer: options.customer } : {}) });
+    const composed = composeSalesProductionWorker({ pool, store, production: canary.production, modelProvider: options.modelProvider, logger, catalog: options.catalog, shipping: options.shipping, quotes: options.quotes, ...(canary.autonomousQuoteLimits ? { autonomousQuoteLimits: canary.autonomousQuoteLimits } : {}), ...(options.customer ? { customer: { ...options.customer, allowedHosts: canary.testHosts } } : {}) });
     worker = await createWorkerPlatform(options.worker, { ...composed.bindings, admission: new CanaryAdmission(pool, composed.controls) }, { logger });
     scheduler = options.scheduler ? await createSchedulerPlatform(options.scheduler, { logger }) : null;
     const capture = new CaptureOutboundAdapter(typeof options.captureFile === 'string' ? options.captureFile : options.captureFile(canaryId));

@@ -54,7 +54,11 @@ export function customerModeOf(env: Readonly<Record<string, string | undefined>>
   throw new CustomerProfileConfigError('invalid_customer_profile_config', 'R4_CUSTOMER_MODE must be "synthetic" or unset');
 }
 
-export function loadCustomerProfileHttpConfig(env: Readonly<Record<string, string | undefined>>, options: { readonly allowNetwork: boolean }): CustomerProfileHttpConfig {
+/**
+ * `allowedHosts` (R4-J4-R5 preparation): a CLOSED allowlist of synthetic test hosts, given only by the isolated
+ * canary, which composes with `allowNetwork: false`. A listed host is accepted by its exact name, over https.
+ */
+export function loadCustomerProfileHttpConfig(env: Readonly<Record<string, string | undefined>>, options: { readonly allowNetwork: boolean; readonly allowedHosts?: readonly string[] }): CustomerProfileHttpConfig {
   if (customerModeOf(env) !== 'synthetic') {
     throw new CustomerProfileConfigError('customer_profile_config_incomplete', 'refusing to compose the Customer Profile adapter: R4_CUSTOMER_MODE is not set');
   }
@@ -70,7 +74,7 @@ export function loadCustomerProfileHttpConfig(env: Readonly<Record<string, strin
     throw new CustomerProfileConfigError('invalid_customer_profile_config', 'R4_CUSTOMER_PROFILE_BASE_URL must not carry credentials, a query or a fragment');
   }
   if (base.protocol !== 'https:' && base.protocol !== 'http:') throw new CustomerProfileConfigError('invalid_customer_profile_config', 'R4_CUSTOMER_PROFILE_BASE_URL must be http(s)');
-  if (!isLoopback(base) && !options.allowNetwork) {
+  if (!isLoopback(base) && !options.allowNetwork && !(options.allowedHosts ?? []).includes(base.hostname)) {
     throw new CustomerProfileConfigError('network_not_allowed', 'refusing a non-local Customer Profile URL without R4_PROD_ALLOW_NETWORK=true');
   }
   if (!isLoopback(base) && base.protocol !== 'https:') throw new CustomerProfileConfigError('invalid_customer_profile_config', 'a non-local Customer Profile URL must use https');

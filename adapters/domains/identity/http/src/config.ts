@@ -38,7 +38,17 @@ export const CUSTOMER_IDENTITY_TIMEOUT_MAX_MS = 3_000;
 
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
 
-export function loadCustomerIdentityHttpConfig(env: Readonly<Record<string, string | undefined>>): CustomerIdentityHttpConfig {
+/**
+ * R4-J4-R5 preparation: a CLOSED allowlist of synthetic test hosts, given explicitly by the isolated
+ * canary only (never by a production composition). Empty by default: loopback only, as before.
+ * A listed host is accepted only over https and only by its exact name; the credential must still
+ * be synthetic and R4_CUSTOMER_MODE=real stays refused.
+ */
+export interface CustomerIdentityNetworkOptions {
+  readonly allowedHosts?: readonly string[];
+}
+
+export function loadCustomerIdentityHttpConfig(env: Readonly<Record<string, string | undefined>>, options: CustomerIdentityNetworkOptions = {}): CustomerIdentityHttpConfig {
   const mode = env.R4_CUSTOMER_MODE?.trim();
   if (mode === 'real') {
     throw new CustomerIdentityConfigError('customer_real_data_blocked', 'R4_CUSTOMER_MODE=real is refused: real customer identity resolution is blocked');
@@ -49,7 +59,7 @@ export function loadCustomerIdentityHttpConfig(env: Readonly<Record<string, stri
   const missing = CUSTOMER_IDENTITY_ENV.filter((name) => !env[name]?.trim());
   if (missing.length > 0) throw new CustomerIdentityConfigError('customer_identity_config_incomplete', `refusing to compose the CIA adapter: missing ${missing.join(', ')}`);
 
-  const base = loopbackBase(env.R4_CUSTOMER_IDENTITY_BASE_URL!);
+  const base = ciaBase(env.R4_CUSTOMER_IDENTITY_BASE_URL!, options);
   const bearerToken = syntheticToken(env.R4_CUSTOMER_IDENTITY_BEARER_TOKEN!, 'R4_CUSTOMER_IDENTITY_BEARER_TOKEN');
   const raw = env.R4_CUSTOMER_IDENTITY_TIMEOUT_MS!.trim();
   const timeoutMs = /^\d{1,5}$/.test(raw) ? Number(raw) : Number.NaN;
@@ -59,7 +69,7 @@ export function loadCustomerIdentityHttpConfig(env: Readonly<Record<string, stri
   return { baseUrl: base.origin, bearerToken, timeoutMs, lifecycle: 'synthetic' };
 }
 
-function loopbackBase(raw: string): URL {
+function ciaBase(raw: string, options: CustomerIdentityNetworkOptions): URL {
   let base: URL;
   try {
     base = new URL(raw.trim());
@@ -70,7 +80,9 @@ function loopbackBase(raw: string): URL {
     throw new CustomerIdentityConfigError('invalid_customer_identity_config', 'R4_CUSTOMER_IDENTITY_BASE_URL must be scheme://host[:port] with no credentials, path, query or fragment');
   }
   if (base.protocol !== 'http:' && base.protocol !== 'https:') throw new CustomerIdentityConfigError('invalid_customer_identity_config', 'R4_CUSTOMER_IDENTITY_BASE_URL must be http(s)');
-  if (!LOOPBACK.has(base.hostname)) throw new CustomerIdentityConfigError('network_not_allowed', 'the CIA is reachable on loopback only in this slice');
+  if (LOOPBACK.has(base.hostname)) return base;
+  if (!(options.allowedHosts ?? []).includes(base.hostname)) throw new CustomerIdentityConfigError('network_not_allowed', 'the CIA is reachable on loopback only, or on an explicitly allowed synthetic test host');
+  if (base.protocol !== 'https:') throw new CustomerIdentityConfigError('invalid_customer_identity_config', 'an allowed non-local CIA host must use https');
   return base;
 }
 
@@ -102,7 +114,7 @@ export interface CiaVerificationConfirmConfig {
 export const CIA_CONFIRM_ENV = ['R4_CUSTOMER_MODE', 'R4_CUSTOMER_IDENTITY_BASE_URL', 'R4_CHANNEL_IDENTITY_CONFIRM_BEARER_TOKEN'] as const;
 export const CIA_CONFIRM_TIMEOUT_MS = 3_000;
 
-export function loadCiaVerificationConfirmConfig(env: Readonly<Record<string, string | undefined>>): CiaVerificationConfirmConfig {
+export function loadCiaVerificationConfirmConfig(env: Readonly<Record<string, string | undefined>>, options: CustomerIdentityNetworkOptions = {}): CiaVerificationConfirmConfig {
   const mode = env.R4_CUSTOMER_MODE?.trim();
   if (mode === 'real') throw new CustomerIdentityConfigError('customer_real_data_blocked', 'R4_CUSTOMER_MODE=real is refused: real identity verification is blocked');
   if (mode !== 'synthetic') {
@@ -110,7 +122,7 @@ export function loadCiaVerificationConfirmConfig(env: Readonly<Record<string, st
   }
   const missing = CIA_CONFIRM_ENV.filter((name) => !env[name]?.trim());
   if (missing.length > 0) throw new CustomerIdentityConfigError('customer_identity_config_incomplete', `refusing to compose the CIA confirm client: missing ${missing.join(', ')}`);
-  const base = loopbackBase(env.R4_CUSTOMER_IDENTITY_BASE_URL!);
+  const base = ciaBase(env.R4_CUSTOMER_IDENTITY_BASE_URL!, options);
   const bearerToken = syntheticToken(env.R4_CHANNEL_IDENTITY_CONFIRM_BEARER_TOKEN!, 'R4_CHANNEL_IDENTITY_CONFIRM_BEARER_TOKEN');
   return { baseUrl: base.origin, bearerToken, timeoutMs: CIA_CONFIRM_TIMEOUT_MS, lifecycle: 'synthetic' };
 }
