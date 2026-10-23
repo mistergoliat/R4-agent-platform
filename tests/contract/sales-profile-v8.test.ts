@@ -220,8 +220,9 @@ describe('E. definition v8 and what stays out of scope', () => {
     expect(added.join('\n')).toMatch(/Never write, repeat or guess a verification code/);
   });
 
-  it('the isolated canary tooling is unchanged (J4-R5 not started): it accepts @4–@7 only', () => {
-    expect(CANARY_PROFILES.map(profileLabel)).toEqual(['sales-production@4', 'sales-production@5', 'sales-production@6', 'sales-production@7']);
+  // R4-J4-R5 preparation (separate PR): the canary accepts @8, only with the J4 expired-evidence policy; it is not run.
+  it('the isolated canary accepts @4–@8; @8 only with R4_CANARY_CONTEXT_EXPIRED_EVIDENCE=exclude', () => {
+    expect(CANARY_PROFILES.map(profileLabel)).toEqual(['sales-production@4', 'sales-production@5', 'sales-production@6', 'sales-production@7', 'sales-production@8']);
   });
 
   it('the deployment gate is complete and blocking; real data stays J7', () => {

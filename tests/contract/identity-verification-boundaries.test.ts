@@ -51,6 +51,8 @@ const INTEGRATIONS: readonly string[] = [
   // R4-J4-R4: the @8 worker checks the schema is current; the @8 gateway composes the inspection (keyring, confirm).
   'agents/sales/src/production/composition.ts',
   'agents/sales/src/production/gateway-identity.ts',
+  // R4-J4-R5 preparation: the canary migrates the schema and checks it is current.
+  'agents/sales/src/cli/canary/runtime.ts',
 ];
 
 describe('SEC-S4: only the gateway composition ever reaches the decryption, the dispatcher or the confirm credential (AT-19)', () => {
@@ -91,6 +93,8 @@ describe('SEC-S5: the commercial capabilities exist only in the synthetic compos
       'agents/sales/sales.v8.agent.json',
       'agents/sales/src/capabilities/customer-synthetic.ts',
       'agents/sales/src/capabilities/identity-verification.ts',
+      // R4-J4-R5 preparation: the canary rollback readiness counts open identity.start_verification executions.
+      'agents/sales/src/cli/canary/identity.ts',
       'agents/sales/src/production/composition.ts',
       'agents/sales/src/production/profile-v8.ts',
     ]);

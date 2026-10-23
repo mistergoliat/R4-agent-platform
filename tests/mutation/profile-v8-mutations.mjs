@@ -37,7 +37,7 @@ const MUTATIONS = [
   },
   {
     name: 'PV8-M5 the @8 gateway composes no inspector',
-    edits: [{ file: COMPOSITION, from: '      ...(isCustomerIdentityProfile(profile) ? { inspection: salesGatewayInspection(profile, options.env, options.identityFetch) } : {}),\n', to: '' }],
+    edits: [{ file: COMPOSITION, from: '      ...(isCustomerIdentityProfile(profile) ? { inspection: salesGatewayInspection(profile, options.env, { transport: options.identityFetch, allowedHosts: options.allowedHosts }) } : {}),\n', to: '' }],
     tests: [[CONTRACT, 'composes the inspection factory with a complete gateway configuration'], [CONTRACT, 'refuses no code keyring']],
   },
   {

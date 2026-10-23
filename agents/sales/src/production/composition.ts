@@ -83,7 +83,12 @@ export interface SalesProductionWorkerOptions {
   /** (R4-J3E) The configured limits of autonomous issuance; required when the selected profile issues quotes autonomously (v5; v6 also needs the total-units limit and the confirmation window). */
   readonly autonomousQuoteLimits?: AutonomousQuoteLimits | AutonomousQuoteLimitsV6;
   /** (R4-J4-R4) The R4_CUSTOMER_* configuration of the worker; required when the selected profile composes Customer and identity verification (v8). */
-  readonly customer?: { readonly env: Readonly<Record<string, string | undefined>>; readonly fetch?: (url: string, init: RequestInit) => Promise<Response> };
+  readonly customer?: {
+    readonly env: Readonly<Record<string, string | undefined>>;
+    readonly fetch?: (url: string, init: RequestInit) => Promise<Response>;
+    /** (R4-J4-R5 preparation) The isolated canary's closed test-host allowlist. The production CLI never sets it. */
+    readonly allowedHosts?: readonly string[];
+  };
 }
 
 /** The Sales production profile the deployment declared, or a refusal (nothing is defaulted). */
@@ -222,7 +227,7 @@ function composeCustomerIdentity(profile: ProductionProfile, options: SalesProdu
   if (!options.customer) throw refuse('composes Customer and identity verification but no R4_CUSTOMER_* configuration was provided');
   const leaked = GATEWAY_ONLY_ENV.filter((name) => options.customer!.env[name]?.trim());
   if (leaked.length > 0) throw refuse(`must not receive ${leaked.join(', ')}: they belong to the channel gateway only`);
-  const fetch = options.customer.fetch ? { fetch: options.customer.fetch } : {};
+  const fetch = { ...(options.customer.fetch ? { fetch: options.customer.fetch } : {}), ...(options.customer.allowedHosts ? { allowedHosts: options.customer.allowedHosts } : {}) };
   try {
     const [context, history] = composeSyntheticCustomerCapabilities({ env: options.customer.env, bindings: options.store, ...fetch });
     const identity = composeSyntheticIdentityVerificationCapabilities({ env: options.customer.env, bindings: options.store, pool: options.pool, ...fetch });
@@ -269,6 +274,8 @@ export interface SalesGatewayOptions {
   readonly fetch?: FetchLike;
   /** (R4-J4-R4) Tests: the transport of the CIA confirm client (v8). */
   readonly identityFetch?: (url: string, init: RequestInit) => Promise<Response>;
+  /** (R4-J4-R5 preparation) The isolated canary's closed test-host allowlist for the CIA confirm client. */
+  readonly allowedHosts?: readonly string[];
 }
 
 /** Gateway bindings of the Sales canary: the WhatsApp Cloud adapter (canary number), the profile and the task factory. */
@@ -286,7 +293,7 @@ export function composeSalesGateway(options: SalesGatewayOptions): { bindings: G
       outbound: [new WhatsAppOutboundAdapter(whatsapp, options.fetch ? { fetch: options.fetch } : {})],
       taskFactory: salesConversationTaskFactory(options.pool, salesProductionAgentVersion(profile)),
       // (R4-J4-R4) v8 never runs without the inbound inspector, requested in full (ADR-040).
-      ...(isCustomerIdentityProfile(profile) ? { inspection: salesGatewayInspection(profile, options.env, options.identityFetch) } : {}),
+      ...(isCustomerIdentityProfile(profile) ? { inspection: salesGatewayInspection(profile, options.env, { transport: options.identityFetch, allowedHosts: options.allowedHosts }) } : {}),
     },
   };
 }

@@ -28,11 +28,14 @@ export interface SyntheticCustomerCompositionOptions {
   readonly onIdentityCall?: (event: CustomerIdentityCallTelemetry) => void;
   readonly onProfileCall?: (event: CustomerProfileCallTelemetry) => void;
   readonly now?: () => Date;
+  /** (R4-J4-R5 preparation) The closed allowlist of synthetic test hosts; only the isolated canary passes it. Default: loopback only. */
+  readonly allowedHosts?: readonly string[];
 }
 
 export function composeSyntheticCustomerCapabilities(options: SyntheticCustomerCompositionOptions) {
-  const identityConfig = loadCustomerIdentityHttpConfig(options.env);
-  const profileConfig = loadCustomerProfileHttpConfig(options.env, { allowNetwork: false });
+  const allowedHosts = options.allowedHosts ?? [];
+  const identityConfig = loadCustomerIdentityHttpConfig(options.env, { allowedHosts });
+  const profileConfig = loadCustomerProfileHttpConfig(options.env, { allowNetwork: false, allowedHosts });
   if (!profileConfig.bearerToken.startsWith('synthetic-')) {
     throw new CustomerCapabilityCompositionError('refusing a non-synthetic Customer Profile credential in the synthetic composition');
   }
@@ -59,10 +62,12 @@ export interface SyntheticIdentityVerificationCompositionOptions {
   readonly onStartCall?: (event: CiaStartCallTelemetry) => void;
   /** Tests against a CIA instance with a shorter resend interval only; the default is the contract's 60 s. */
   readonly resendIntervalMs?: number;
+  /** (R4-J4-R5 preparation) The closed allowlist of synthetic test hosts; only the isolated canary passes it. Default: loopback only. */
+  readonly allowedHosts?: readonly string[];
 }
 
 export function composeSyntheticIdentityVerificationCapabilities(options: SyntheticIdentityVerificationCompositionOptions) {
-  const config = loadCustomerIdentityHttpConfig(options.env);
+  const config = loadCustomerIdentityHttpConfig(options.env, { allowedHosts: options.allowedHosts ?? [] });
   const transport = options.fetch ?? ((url: string, init: RequestInit) => fetch(url, init));
   const adapt = (url: string, init: RequestInit) => transport(url, init).then((response) => ({ status: response.status, headers: response.headers, body: response.body }));
   const start = new CiaVerificationStartClient({ config, fetch: adapt, ...(options.onStartCall ? { onCall: options.onStartCall } : {}) });

@@ -20,7 +20,8 @@ const importsOf = (f: string) => [...text(f).matchAll(/from '([^']+)'/g)].map((m
 
 describe('R4-J3D-R boundaries: the isolated Sales canary', () => {
   it('never composes a channel provider or the production gateway', () => {
-    expect(CANARY.length).toBe(6);
+    // R4-J4-R5 preparation: + identity.ts (the @8 single gateway, rollback readiness and purge).
+    expect(CANARY.length).toBe(7);
     for (const f of CANARY) {
       expect(importsOf(f).filter((s) => /whatsapp|@r4\/channel-gateway/.test(s)), f).toEqual([]);
       expect(text(f), f).not.toMatch(/whatsapp|graph\.facebook|R4_WHATSAPP_|composeSalesGateway|createGatewayPlatform|runGatewayProcess/i);
@@ -40,8 +41,12 @@ describe('R4-J3D-R boundaries: the isolated Sales canary', () => {
     for (const f of CANARY) expect(code(f), f).not.toMatch(/\.register(Write)?\(|\.execute\(|\.reconcile\(|CapabilityInvoker|ActionRuntime|new ActionPolicyEngine|actionPolicy:/);
   });
 
-  it('writes no runtime state of its own: the only statement it issues is the database marker', () => {
-    for (const f of CANARY) expect(code(f), f).not.toMatch(/\b(insert into|delete from|truncate|drop)\b|\bupdate\s+[a-z_]+\s+set\b/i);
+  // R4-J4-R5 preparation: plus exactly one purge statement (D7 of the canary, owner decision), inside purgeCanary only.
+  it('writes no runtime state of its own: the only statements it issues are the database marker and the purge', () => {
+    for (const f of CANARY) expect(code(f).replace(/await client\.query\(`truncate \$\{/, ''), f).not.toMatch(/\b(insert into|delete from|truncate|drop)\b|\bupdate\s+[a-z_]+\s+set\b/i);
+    const identity = code(join(DIR, 'identity.ts'));
+    expect([...identity.matchAll(/\btruncate\b/gi)]).toHaveLength(1);
+    expect(identity.slice(identity.indexOf('export async function purgeCanary('))).toMatch(/await client\.query\(`truncate \$\{/);
     const isolation = code(join(DIR, 'isolation.ts'));
     expect([...isolation.matchAll(/comment on database/g)]).toHaveLength(1);
   });

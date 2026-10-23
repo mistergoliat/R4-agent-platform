@@ -8,7 +8,9 @@ import { loadWorkerConfig } from '@r4/worker';
 import { HttpCatalogAdapter, loadCatalogHttpConfig } from '@r4-adapters/catalog-http';
 import { ProductionShippingAdapter, loadShippingHttpConfig } from '@r4-adapters/shipping-http';
 import { QuoteV2HttpClient, loadQuoteHttpConfig, quoteModeOf } from '@r4-adapters/quote-http';
-import { assertCanaryReady, canaryStatus, initCanary, loadCanaryEnvironment, openCanaryApprovals, sendSynthetic, startCanaryRuntime, syntheticConversationKey, type CanaryEnvironment } from './index.js';
+import { createPool } from '@r4/persistence-postgres';
+import { assertCanaryReady, canaryRollbackStatus, canaryStatus, initCanary, loadCanaryEnvironment, openCanaryApprovals, purgeCanary, sendSynthetic, startCanaryGateway, startCanaryRuntime, syntheticConversationKey, type CanaryEnvironment } from './index.js';
+import { isCustomerIdentityProfile } from '../../production/profile-v8.js';
 import { configuredModelProvider } from '../../model.js';
 import { loadOperatorAuthConfig } from '../../operator-auth/index.js';
 import { decideApproval } from '../operator-approval.js';
@@ -33,6 +35,9 @@ export const CANARY_USAGE = [
   '  identity-key --conversation <name>         (the key to put in the canary R4_PROD_ROLLOUT_ALLOWLIST)',
   '  send --conversation <name> --text "<text>"   (one synthetic inbound through the real channel ingress)',
   '  run                                        (canary worker + scheduler + local outbound capture; until SIGINT/SIGTERM)',
+  '  gateway [--mode full|protect_only]         (sales-production@8 only: the single canary gateway, inbound inspector and confirm dispatcher; until SIGINT/SIGTERM)',
+  '  rollback-status                            (@8 → @7 readiness: mode, open protection windows, open verification starts, live gateways)',
+  '  purge --confirm <canaryId>                 (empties every synthetic data table and prints the verifiable evidence; all canary components stopped)',
   '  approvals list | approvals show --request <request-id>   (read-only)',
   '  approvals approve|reject --request <request-id> --arguments-hash <hash> --reason "<reason>"   (OIDC operator sign-in)',
 ].join('\n');
@@ -43,6 +48,9 @@ export type CanaryCommand =
   | { readonly kind: 'identity-key'; readonly conversation: string }
   | { readonly kind: 'send'; readonly conversation: string; readonly text: string }
   | { readonly kind: 'run' }
+  | { readonly kind: 'gateway'; readonly mode: 'full' | 'protect_only' }
+  | { readonly kind: 'rollback-status' }
+  | { readonly kind: 'purge'; readonly confirm: string }
   | { readonly kind: 'approvals-list' }
   | { readonly kind: 'approvals-show'; readonly requestId: string }
   | { readonly kind: 'approvals-decide'; readonly decision: 'approve' | 'reject'; readonly requestId: string; readonly argumentsHash: string; readonly reason: string };
@@ -70,6 +78,14 @@ export function parseCanaryCommand(argv: readonly string[]): CanaryCommand {
   if (group === 'init' && verb === undefined) return { kind: 'init' };
   if (group === 'status' && verb === undefined) return { kind: 'status' };
   if (group === 'run' && verb === undefined) return { kind: 'run' };
+  if (group === 'gateway' && verb === undefined) return { kind: 'gateway', mode: 'full' };
+  if (group === 'gateway') {
+    const mode = options(argv.slice(1), ['mode']).mode!;
+    if (mode !== 'full' && mode !== 'protect_only') throw new CanaryUsageError('--mode must be full or protect_only');
+    return { kind: 'gateway', mode };
+  }
+  if (group === 'rollback-status' && verb === undefined) return { kind: 'rollback-status' };
+  if (group === 'purge') return { kind: 'purge', confirm: options(argv.slice(1), ['confirm']).confirm! };
   if (group === 'identity-key') return { kind: 'identity-key', conversation: options(argv.slice(1), ['conversation']).conversation! };
   if (group === 'send') {
     const o = options(argv.slice(1), ['conversation', 'text']);
@@ -147,7 +163,8 @@ export async function runCanary(argv: readonly string[], env: NodeJS.ProcessEnv,
         print({ conversation: command.conversation, conversationKey: syntheticConversationKey(canary, command.conversation), use: 'add it to R4_PROD_ROLLOUT_ALLOWLIST of the CANARY environment only' });
         return 0;
       case 'send': {
-        const outcome = await sendSynthetic(canary, { conversation: command.conversation, text: command.text }, logger);
+        // @8: the synthetic ingest is a gateway-role process (the keyring seals captured codes).
+        const outcome = await sendSynthetic(canary, { conversation: command.conversation, text: command.text }, logger, undefined, env);
         print({ ...outcome, conversationKey: `${outcome.conversationKey.slice(0, 12)}…`, next: 'the canary worker (sales:canary run) claims the task; replies are captured locally' });
         return outcome.kind === 'failed' ? 1 : 0;
       }
@@ -174,6 +191,26 @@ export async function runCanary(argv: readonly string[], env: NodeJS.ProcessEnv,
       }
       case 'run':
         return await run(canary, env, logger, io);
+      case 'gateway':
+        return await gateway(canary, env, logger, io, command.mode);
+      case 'rollback-status': {
+        const pool = createPool({ connectionString: canary.databaseUrl, logger, applicationName: 'r4-sales-canary:rollback-status', max: 1 });
+        try {
+          print(await canaryRollbackStatus(pool));
+        } finally {
+          await pool.end();
+        }
+        return 0;
+      }
+      case 'purge': {
+        const pool = createPool({ connectionString: canary.databaseUrl, logger, applicationName: 'r4-sales-canary-purge', max: 1 });
+        try {
+          print(await purgeCanary(pool, command.confirm));
+        } finally {
+          await pool.end();
+        }
+        return 0;
+      }
     }
   } catch (error) {
     const { code, message } = describeError(error);
@@ -189,7 +226,8 @@ async function run(canary: CanaryEnvironment, env: NodeJS.ProcessEnv, logger: Re
   const host = hostname().replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 40) || 'host';
   // The canary database only: the production R4_DATABASE_URL is never handed to a canary component.
   const scoped = { ...env, R4_DATABASE_URL: canary.databaseUrl };
-  const worker = loadWorkerConfig({ ...scoped, R4_WORKER_ID: env.R4_CANARY_WORKER_ID ?? `sales-canary:${host}:${process.pid}` });
+  // The canary's declared expired-evidence policy (R4_CANARY_CONTEXT_EXPIRED_EVIDENCE; `exclude` for @8) overrides the worker's own.
+  const worker = loadWorkerConfig({ ...scoped, R4_WORKER_ID: env.R4_CANARY_WORKER_ID ?? `sales-canary:${host}:${process.pid}`, ...(canary.contextExpiredEvidence ? { R4_CONTEXT_EXPIRED_EVIDENCE: canary.contextExpiredEvidence } : {}) });
   const scheduler = loadSchedulerConfig({ ...scoped, R4_SCHEDULER_ID: env.R4_CANARY_SCHEDULER_ID ?? `sales-canary-scheduler:${host}:${process.pid}` });
   const runtime = await startCanaryRuntime(canary, {
     modelProvider: model.provider,
@@ -198,6 +236,8 @@ async function run(canary: CanaryEnvironment, env: NodeJS.ProcessEnv, logger: Re
     scheduler,
     captureFile: (canaryId) => env.R4_CANARY_CAPTURE_FILE ?? join(resolve('artifacts'), 'sales-canary', canaryId, 'outbound.jsonl'),
     logger,
+    // @8: the worker's R4_CUSTOMER_* (the composition refuses the gateway-only credentials).
+    ...(isCustomerIdentityProfile(canary.profile) ? { customer: { env } } : {}),
   });
   runtime.start();
   io.out(JSON.stringify({ canaryId: runtime.canaryId, profile: canary.production.config.policyProfile, workerId: worker.workerId, schedulerId: scheduler.owner, capture: runtime.capture.file, stop: 'SIGINT or SIGTERM' }, null, 2));
@@ -213,6 +253,24 @@ async function run(canary: CanaryEnvironment, env: NodeJS.ProcessEnv, logger: Re
     void runtime.violation.then((code) => {
       io.err(`error: ${code}: the canary stopped because its isolation no longer holds`);
       stop(1);
+    });
+  });
+}
+
+/** (R4-J4-R5 preparation) The single canary gateway of sales-production@8, until SIGINT/SIGTERM. */
+async function gateway(canary: CanaryEnvironment, env: NodeJS.ProcessEnv, logger: ReturnType<typeof createLogger>, io: CanaryIo, mode: 'full' | 'protect_only'): Promise<number> {
+  const handle = await startCanaryGateway(canary, {
+    env, logger, requested: mode,
+    openPool: (name) => createPool({ connectionString: canary.databaseUrl, logger, applicationName: `r4-sales-canary:${name}`, max: 2 }),
+  });
+  io.out(JSON.stringify({ gatewayId: handle.gatewayId, profile: canary.production.config.policyProfile, mode: handle.mode, degradedReason: handle.degradedReason, stop: 'SIGINT or SIGTERM' }, null, 2));
+  return new Promise<number>((done) => {
+    const stop = () => void handle.close().finally(() => done(0));
+    process.once('SIGINT', stop);
+    process.once('SIGTERM', stop);
+    void handle.lost.then((code) => {
+      io.err(`error: ${code}: the canary gateway stopped because it lost its singleton lock`);
+      done(1);
     });
   });
 }
