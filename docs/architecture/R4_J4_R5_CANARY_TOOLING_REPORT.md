@@ -93,7 +93,28 @@ El conteo de gateways de plataforma (`r4-gateway:*` en `pg_stat_activity`) se co
 - **Purga.** Vacía todas las tablas de datos de los esquemas `public`, `sales` e `identity_verification`; conserva el ledger de migraciones, las definiciones y el marcador. Rechaza si hay componentes conectados, si el `--confirm` no coincide o si existen bindings fuera de la cuenta sintética del canary: los datos ajenos se investigan, no se borran.
 - **Harness sin cambios** (`packages/*`, `apps/worker`, `apps/api`, `apps/scheduler`). Cambios fuera del pack de Sales: solo los loaders de los adaptadores CIA y CP (opción de allowlist, por defecto vacía).
 
-## 5. Resultados (candidato `36a58cc` y el commit de cierre; PostgreSQL local)
+## 5. Resultados
+
+### 5.1 Candidato integrado `3e142ad` (sobre `main` `b18113f` con PR #20 y #21; mandato 11)
+
+| Suite | Resultado |
+|---|---|
+| lint, typecheck | ✓ |
+| unit | 1519 passed, 4 skipped |
+| contract | 450 passed |
+| integration | **607 passed**, 12 skipped, **0 fallos** (`sales-canary-j4` 6/6) |
+| sales, shadow | 29, 5 |
+| `test:mutation:canary-j4` | **13/13** (M6 reescrita para el lock; M11 gateway de plataforma; M12 gateway sin lock sigue corriendo; M13 vida del gateway sin el lock; M8 ampliada al rollback) |
+| `test:mutation:profile-v8` | 8/8 |
+| `test:mutation:binding-immutability` (PR #21) | 12/12 |
+| S3 ingress, S4 dispatch, S5 commercial, RR-1 | 13/13, 11/11, 9/9, 5/5 |
+| recovery (al final, solo) | 17 passed, 1 fallo: `production-bootstrap-process.test.ts`, misma aserción que en `main` `485df2b` (`registered: sales@3` vs `sales@3…@8`). **Preexistente**, clasificado por comparación; no es regresión |
+
+**Hallazgos de la primera corrida integrada (corregidos en `3e142ad`):**
+- Rollback con `liveGateways: 1` justo después de `close()`: destruir la conexión no libera el lock hasta que el backend lo nota. Ahora `close()` hace `pg_advisory_unlock` en el servidor antes de cerrar la conexión.
+- La prueba del singleton terminaba conexiones `idle` del gateway, incluidas algunas tomadas por el dispatcher (un reaper real no las cierra), y provocaba un error no manejado. Se reemplazó por la condición real: el gateway sigue siendo único después del timeout de inactividad del pool (31 s).
+
+### 5.2 Corrida anterior (candidato `36a58cc` y el commit de cierre; PostgreSQL local)
 
 | Suite | Resultado |
 |---|---|
