@@ -113,6 +113,6 @@ El aviso dice: «Disculpa, tuve un problema técnico y no pude responder tu últ
 | `run-failure-fallback` (nuevo) | 14/14 |
 | sales, shadow | 29, 5 |
 | `test:mutation:run-failure-fallback` | **6/6** detectadas, fuentes restauradas |
-| recovery | Pendiente: se corre al final y solo, porque termina conexiones de otras sesiones de la misma base |
+| recovery (al final, solo) | **18/18** tras actualizar el inventario de cabeza Core de `worker-presence-process` (0012) |
 
 La máquina estaba cargada con otras corridas en paralelo. Por eso `run-failure-fallback` declara un timeout de 90 s por prueba, igual que otras suites lentas de integración.
