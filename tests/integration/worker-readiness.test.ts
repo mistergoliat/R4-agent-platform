@@ -74,8 +74,8 @@ describe('dead worker (the central regression)', () => {
     const r4 = await get('/ready/r4');
     expect(r4.code).toBe(503);
     expect(r4.body).toMatchObject({ status: 'not_ready', checks: { channel: { ok: true }, execution: { ok: false, status: 'no_worker', expected: { executionMode: 'production' } } } });
-    // RR-1 R-4: 0011_binding_identity_immutability is the Core head (binding identity trigger).
-    expect(r4.body.checks.execution.expected.compatibility).toMatch(/^0011_binding_identity_immutability:sales-production@1$/);
+    // ADR-041: 0012_platform_fallback_outbound is the Core head (platform fallback outbound), after RR-1 R-4 0011.
+    expect(r4.body.checks.execution.expected.compatibility).toMatch(/^0012_platform_fallback_outbound:sales-production@1$/);
   });
 });
 
@@ -88,7 +88,7 @@ describe('worker presence lifecycle', () => {
     w.worker.start();
     await waitFor(async () => (await row('A'))?.state === 'ready');
     const first = (await row('A'))!;
-    expect(first).toMatchObject({ execution_mode: 'production', compatibility: '0011_binding_identity_immutability:sales-production@1', build_ref: null, reason: null, fresh: true, window_ms: 1000 });
+    expect(first).toMatchObject({ execution_mode: 'production', compatibility: '0012_platform_fallback_outbound:sales-production@1', build_ref: null, reason: null, fresh: true, window_ms: 1000 });
     await waitFor(async () => (await row('A'))!.heartbeat_at.getTime() > first.heartbeat_at.getTime());
     expect((await row('A'))!.window_ms).toBe(1000);
     expect(await get('/ready/r4')).toMatchObject({ code: 200, body: { status: 'ready', checks: { execution: { ok: true, status: 'ready', workers: { ready: 1 } } } } });
@@ -166,7 +166,7 @@ describe('who counts toward production execution readiness', () => {
     bed = await LiveOpsTestbed.start();
     await started('S', { ...FAST, presence: { executionMode: 'shadow', runtimeProfile: 'sales-production@1' } });
     await started('T', { ...FAST, presence: { executionMode: 'test', runtimeProfile: 'sales-production@1' } });
-    expect(await row('S')).toMatchObject({ execution_mode: 'shadow', compatibility: '0011_binding_identity_immutability:sales-production@1', fresh: true });
+    expect(await row('S')).toMatchObject({ execution_mode: 'shadow', compatibility: '0012_platform_fallback_outbound:sales-production@1', fresh: true });
     expect(await get('/ready/r4')).toMatchObject({ code: 503, body: { checks: { execution: { status: 'no_worker', workers: { ready: 0, otherMode: 2 } } } } });
     await started('P', FAST);
     expect((await get('/ready/r4')).code).toBe(200);
@@ -185,7 +185,7 @@ describe('who counts toward production execution readiness', () => {
     await started('NULL', FAST);
     expect(await execution()).toMatchObject({ ok: true, workers: { buildRefs: [] } });
     await started('REF', { ...FAST, presence: { executionMode: 'production', runtimeProfile: 'sales-production@1', buildRef: 'git-0123abc' } });
-    expect(await row('REF')).toMatchObject({ build_ref: 'git-0123abc', compatibility: '0011_binding_identity_immutability:sales-production@1' });
+    expect(await row('REF')).toMatchObject({ build_ref: 'git-0123abc', compatibility: '0012_platform_fallback_outbound:sales-production@1' });
     expect(await execution()).toMatchObject({ ok: true, workers: { ready: 2, buildRefs: ['git-0123abc'] } });
   });
 });

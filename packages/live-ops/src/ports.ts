@@ -158,6 +158,8 @@ export interface OutboundRecord {
   readonly leaseExpiresAt: string | null;
   readonly errorClass: string | null;
   readonly errorCode: string | null;
+  /** Platform origin (ADR-041): the run-failure handoff this fallback announces. */
+  readonly handoffRequestId: string | null;
   /** Operator origin: who wrote it; operator resolution: who settled it. */
   readonly humanRef: string | null;
   readonly resolvedBy: string | null;
@@ -338,6 +340,13 @@ export interface ProductionStore {
    * candidate snapshot includes every currently durable task input.
    */
   materializeResponses(command: { readonly limit: number }): Promise<OutboundRecord[]>;
+  /**
+   * (ADR-041) Creates the one platform fallback outbound (`text`) of every
+   * still-requested platform handoff of a bound task whose reason is a run
+   * failure (ADR-028: recovery exhausted, or a non-retryable model failure).
+   * At most one per handoff, by unique constraint.
+   */
+  materializeRunFailureFallbacks(command: { readonly text: string; readonly limit: number }): Promise<OutboundRecord[]>;
   createOperatorOutbound(command: NewOperatorOutbound): Promise<{ readonly record: OutboundRecord; readonly replayed: boolean }>;
   claimNextOutbound(command: ClaimOutboundCommand): Promise<DispatchClaim | null>;
   /** Fenced by the token; a lost lease still records provider acceptance as evidence (unknown → accepted). */

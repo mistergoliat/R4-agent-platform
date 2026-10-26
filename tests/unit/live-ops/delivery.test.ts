@@ -59,6 +59,35 @@ describe('delivery gate', () => {
 
 const result = (over: Partial<SubmissionResult>): SubmissionResult => ({ outcome: 'accepted', providerMessageId: 'p1', httpStatus: 200, errorClass: null, errorCode: null, retryAfterMs: null, latencyMs: 5, ...over });
 
+describe('delivery gate of the platform fallback (ADR-041)', () => {
+  // A run-failure handoff made the task human-owned: that alone must not cancel the platform's notice.
+  const fallback = (over: Partial<DispatchFacts> = {}) => facts({ origin: 'platform', task: { status: 'blocked', humanOwned: true }, handoffPending: true, ...over });
+
+  it('is sent while its handoff is still requested, although the task is human-owned', () => {
+    expect(decideDispatch(fallback(), policy)).toEqual({ kind: 'dispatch' });
+  });
+
+  it('is cancelled once a human took the task or the handoff ended (or the fact is missing)', () => {
+    expect(decideDispatch(fallback({ handoffPending: false }), policy)).toEqual({ kind: 'cancel', reason: CANCEL_REASONS.supersededByOperator });
+    const { handoffPending: _, ...missing } = fallback();
+    expect(decideDispatch(missing, policy)).toEqual({ kind: 'cancel', reason: CANCEL_REASONS.supersededByOperator });
+  });
+
+  it('obeys the kill switch, deny and rollout like agent output (hold, never send)', () => {
+    expect(decideDispatch(fallback({ controls: { globalEnabled: false, channels: {}, version: 'v' } }), policy)).toEqual({ kind: 'hold', reason: DISPATCH_HOLD_REASONS.killSwitch });
+    expect(decideDispatch(fallback({ binding: { status: 'open', autonomous: true, deniedNow: true } }), policy)).toEqual({ kind: 'hold', reason: DISPATCH_HOLD_REASONS.denied });
+    expect(decideDispatch(fallback({ binding: { status: 'open', autonomous: false, deniedNow: false } }), policy)).toEqual({ kind: 'hold', reason: DISPATCH_HOLD_REASONS.rolloutExcluded });
+  });
+
+  it('is cancelled for a terminal task, a closed conversation, age and a closed window; newer inputs do not supersede it', () => {
+    expect(decideDispatch(fallback({ task: { status: 'cancelled', humanOwned: true } }), policy)).toEqual({ kind: 'cancel', reason: CANCEL_REASONS.taskTerminal });
+    expect(decideDispatch(fallback({ binding: { status: 'closed', autonomous: true, deniedNow: false } }), policy)).toEqual({ kind: 'cancel', reason: CANCEL_REASONS.conversationClosed });
+    expect(decideDispatch(fallback({ createdAt: '2026-09-24T10:00:00.000Z' }), policy)).toEqual({ kind: 'cancel', reason: CANCEL_REASONS.expired });
+    expect(decideDispatch(fallback({ windowOpen: false }), policy)).toEqual({ kind: 'cancel', reason: CANCEL_REASONS.windowClosed });
+    expect(decideDispatch(fallback({ supersededByNewerInput: true }), policy)).toEqual({ kind: 'dispatch' });
+  });
+});
+
 describe('after a submission', () => {
   it('unknown is never retried; only definitely-not-sent is, within a bounded budget', () => {
     expect(dispositionAfterSubmission(result({}), 1, { maxAttempts: 3 })).toEqual({ status: 'accepted' });
