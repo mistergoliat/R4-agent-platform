@@ -259,7 +259,7 @@ describe('R4-T06: migration over a 0010 database that already holds bindings', (
       const before = (await pool.query(all)).rows;
       expect(before.map((r: Record<string, unknown>) => r.status)).toEqual(['open', 'closed']);
 
-      expect(await migrate(pool)).toEqual({ applied: ['0011_binding_identity_immutability'] });
+      expect(await migrate(pool)).toEqual({ applied: ['0011_binding_identity_immutability', '0012_platform_fallback_outbound'] });
       expect((await pool.query(all)).rows).toEqual(before);
 
       const spare = await task();

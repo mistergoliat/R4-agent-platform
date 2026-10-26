@@ -278,6 +278,14 @@ export interface SalesGatewayOptions {
   readonly allowedHosts?: readonly string[];
 }
 
+/**
+ * (R4-J5 P0, ADR-041) The notice the delivery owner sends once when a model failure hands the conversation to a
+ * person (ADR-028 recovery exhausted, or a non-retryable model failure). Fixed text, never model output. It claims
+ * no effect: whatever was or was not done (a quote, a verification) stays for the person to confirm.
+ */
+export const SALES_RUN_FAILURE_FALLBACK_TEXT =
+  'Disculpa, tuve un problema técnico y no pude responder tu último mensaje. Ya avisé a una persona del equipo de PesasChile, que seguirá la conversación por este mismo chat. No hace falta que repitas lo que escribiste.';
+
 /** Gateway bindings of the Sales canary: the WhatsApp Cloud adapter (canary number), the profile and the task factory. */
 export function composeSalesGateway(options: SalesGatewayOptions): { bindings: GatewayBindings; whatsapp: WhatsAppCloudConfig; describe: Record<string, string | boolean> } {
   const config = assertProductionMode(options.production.config);
@@ -292,6 +300,7 @@ export function composeSalesGateway(options: SalesGatewayOptions): { bindings: G
       inbound: [new WhatsAppInboundAdapter(whatsapp)],
       outbound: [new WhatsAppOutboundAdapter(whatsapp, options.fetch ? { fetch: options.fetch } : {})],
       taskFactory: salesConversationTaskFactory(options.pool, salesProductionAgentVersion(profile)),
+      runFailureFallback: { text: SALES_RUN_FAILURE_FALLBACK_TEXT },
       // (R4-J4-R4) v8 never runs without the inbound inspector, requested in full (ADR-040).
       ...(isCustomerIdentityProfile(profile) ? { inspection: salesGatewayInspection(profile, options.env, { transport: options.identityFetch, allowedHosts: options.allowedHosts }) } : {}),
     },
