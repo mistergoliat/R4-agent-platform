@@ -52,5 +52,5 @@ Fuera del alcance del canary (J7): L-1, lector PrestaShop real, contrato `approv
 | # | Ítem | Estado |
 |---|---|---|
 | R4-1 | RR-1 R-4 (inmutabilidad de bindings, `0011`) | **Fusionado** (PR #21, `main` `b18113f`); no desplegado |
-| R4-2 | Tooling del canary `@8` | PR #22 (ver informe de merge) |
-| R4-3 | Autorización del owner para **desplegar y ejecutar** J4-R5 | Pendiente: la preparación no la autoriza |
+| R4-2 | Tooling del canary `@8` | **Fusionado** (PR #22, `main` `4c97ba0`); no ejecutado |
+| R4-3 | Autorización del owner para **desplegar y ejecutar** J4-R5 | **Condicional** (2026-10-26): solo en un entorno sintético aislado, aprobado explícitamente y con todos los gates del preflight cumplidos. Estado: `R4_J4_R5_EXECUTION_PREFLIGHT_REPORT.md` |

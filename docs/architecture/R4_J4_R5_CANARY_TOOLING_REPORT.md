@@ -1,20 +1,26 @@
 ---
 title: R4-J4-R5 — Preparación del tooling del canary de sales-production@8 (sin ejecución)
-status: for-owner-review
-mandate: R4-J4-R4-OWNER-ACCEPTANCE-AND-R5-PREPARATION-10
+status: merged
+mandate: R4-J4-R4-OWNER-ACCEPTANCE-AND-R5-PREPARATION-10; R4-J4-R5-OWNER-REVIEW-AND-MERGE-11 (merge)
 date: 2026-10-22
+last_updated: 2026-10-26 (corrección documental de metadatos y conteos; mandato R4-J4-R5 Resume Execution)
 ---
 
 # R4-J4-R5: tooling del canary de `sales-production@8`
 
 ```text
-J4_R5_CANARY_TOOLING_READY_FOR_REVIEW
+J4_R5_TOOLING_MERGED                 (PR #22, main 4c97ba0, 2026-10-22)
 J4_R5_NOT_RUN                        (no se ejecutó el canary; nada desplegado)
 R4_HARNESS_UNCHANGED
 CUSTOMER_REAL_DATA_ACCESS_BLOCKED
 ```
 
-Base: `main` `b18113f` (PR #20 y PR #21 integrados; rebase del mandato R4-J4-R5-OWNER-REVIEW-AND-MERGE-11). Rama `feat/r4-j4-r5-canary-tooling`. **Preparación solamente:** esta rama no autoriza ni ejecuta el canary.
+Base de la rama: `main` `b18113f` (PR #20 y PR #21 integrados; rebase del mandato R4-J4-R5-OWNER-REVIEW-AND-MERGE-11). Rama `feat/r4-j4-r5-canary-tooling` (head `9cc41a7`), **fusionada** por PR #22 en `main` `4c97ba0`. **Preparación solamente:** el merge no autoriza ni ejecuta el canary.
+
+**Corrección documental (2026-10-26).** Se corrigieron el estado (`for-owner-review` → `merged`), el marcador de estado y los conteos de pruebas de §1 y §3, que describían la rama antes de mandato 11. La evidencia histórica de §5 no cambia. Conteos vigentes en `main` `4c97ba0`:
+- contrato `sales-canary-j4`: 7 pruebas;
+- integración `sales-canary-j4`: 6 pruebas en 4 grupos (gateway único: 3; OTP: 1; rollback y purga: 1; guardas: 1);
+- mutaciones J4 del candidato: **71/71 detectadas** = canary-j4 13 + profile-v8 8 + binding-immutability 12 + S3 ingress 13 + S4 dispatch 11 + S5 commercial 9 + RR-1 5.
 
 **Corrección del owner (mandato 11): singleton atómico.** La versión revisada contaba gateways en `pg_stat_activity` antes de arrancar. Eso no es atómico (dos arranques concurrentes pasan ambos) y no dura todo el ciclo de vida (el pool cierra conexiones ociosas a los 30 s y el gateway desaparece del conteo). Se reemplazó por un **advisory lock de sesión** (`pg_try_advisory_lock(0x52345343, 8)`, por base) tomado en una conexión dedicada que el gateway mantiene tomada del pool durante toda su vida:
 - dos arranques concurrentes no pueden ganar ambos (la adquisición es atómica en PostgreSQL);
@@ -32,7 +38,7 @@ El conteo de gateways de plataforma (`r4-gateway:*` en `pg_stat_activity`) se co
 | Habilitar `@8` en la configuración del canary | `CANARY_PROFILES` incluye `@8`. `loadCanaryEnvironment` exige `R4_CANARY_CONTEXT_EXPIRED_EVIDENCE=exclude` para `@8` | contrato `sales-canary-j4` |
 | Hosts de prueba con allowlist cerrada, sin relajar el default | Lista `R4_CANARY_TEST_HOSTS`: nombres DNS exactos en minúscula, sin IP, comodín, puerto ni nombre loopback, máximo 4, solo para `@8`. Los loaders de CIA (`resolve`, `start`, `confirm`) y de CP aceptan un host no-loopback solo si está listado y usa `https`. **Por defecto la lista está vacía**: loopback, igual que antes. Ningún camino productivo la pasa | contrato `sales-canary-j4` (incluye una búsqueda de fuente: solo el canary lee la variable) |
 | `exclude` solo en el worker del canary; misma configuración en comparaciones pareadas | `sales:canary run` fija `R4_CONTEXT_EXPIRED_EVIDENCE` del worker al valor declarado del canary. `startCanaryRuntime` rechaza un worker con otro valor (`canary_expired_evidence_mismatch`). Un brazo `@7` pareado declara el mismo valor. La herramienta J4-R4 de comparación pareada ya lo usa en ambos brazos. Producción no cambia | integración «guards», contrato |
-| Un único gateway con inspector `full`; ausencia de réplicas incompatibles | Nuevo comando `sales:canary gateway`, solo para `@8`. Compone la inspección exactamente como el gateway productivo (`salesGatewayInspection`: keyring y cliente `confirm`) y corre el dispatcher. Singleton: advisory lock de sesión atómico, retenido toda la vida del gateway (ver arriba); además ningún gateway de plataforma conectado. Si no, `canary_gateway_replica`. El worker y la ingesta de `@8` no corren sin el lock tomado (`canary_gateway_not_running`) | integración «single canary gateway» (4 escenarios: réplica y plataforma; 4 arranques concurrentes → 1; conexiones ociosas reapeadas → sigue único; SIGKILL de un proceso con el lock → se libera; pérdida del lock → el gateway se detiene) |
+| Un único gateway con inspector `full`; ausencia de réplicas incompatibles | Nuevo comando `sales:canary gateway`, solo para `@8`. Compone la inspección exactamente como el gateway productivo (`salesGatewayInspection`: keyring y cliente `confirm`) y corre el dispatcher. Singleton: advisory lock de sesión atómico, retenido toda la vida del gateway (ver arriba); además ningún gateway de plataforma conectado. Si no, `canary_gateway_replica`. El worker y la ingesta de `@8` no corren sin el lock tomado (`canary_gateway_not_running`) | integración «single canary gateway» (3 pruebas: réplica y gateway de plataforma rechazados; 4 arranques concurrentes → 1 y sigue único tras el timeout de inactividad del pool; SIGKILL de un proceso con el lock → se libera, y pérdida del lock → el gateway se detiene) |
 | Ingesta protegida | La ingesta sintética de `@8` (`sales:canary send`) es un proceso con rol de gateway. Usa el inspector en el modo durable que escribió el gateway y **nunca** lo escribe (un `protect_only` del breaker o de un rollback no se deshace). El canal sintético se atesta como 1:1 (`SYNTHETIC_INBOUND_ADAPTER`) | integración «OTP flow»: el código no queda en ningún texto persistido; el hash del inbound es el del marcador |
 | Purga verificable de datos sintéticos | `sales:canary purge --confirm <canaryId>` | integración «rollback … purge» |
 | Pruebas de reinicio y recuperación del dispatcher | Un `confirm` interrumpido por el reinicio del gateway (CIA 503 → reinicio → CIA disponible) se reanuda con **la misma clave de idempotencia y el mismo cuerpo**, enlaza la cuenta y reanuda la tarea con el marcador sin resultado | integración «OTP flow» |
@@ -52,6 +58,8 @@ El conteo de gateways de plataforma (`r4-gateway:*` en `pg_stat_activity`) se co
 
 ## 2. Procedimiento (cuando J4-R5 se autorice; no se ejecutó)
 
+Preflight de ejecución (2026-10-26): `R4_J4_R5_EXECUTION_PREFLIGHT_REPORT.md`.
+
 1. Base dedicada cuyo nombre contenga `canary`. Correr `sales:canary init` con `R4_PROD_POLICY_PROFILE=sales-production@8` y `R4_CANARY_CONTEXT_EXPIRED_EVIDENCE=exclude`. Si la CIA y CP de prueba no corren en loopback, declarar `R4_CANARY_TEST_HOSTS` con sus nombres exactos.
 2. **Un** proceso `sales:canary gateway`, con el entorno de gateway: keyring sintético y credencial `confirm` sintética.
 3. `sales:canary run`, con el entorno del worker: `R4_CUSTOMER_*` sintéticos, sin keyring ni `confirm`.
@@ -70,8 +78,8 @@ El conteo de gateways de plataforma (`r4-gateway:*` en `pg_stat_activity`) se co
 ## 3. Validación (rama local, PostgreSQL local)
 
 - Contrato `sales-canary-j4`: 7/7.
-- Integración `sales-canary-j4`: 4/4. Escenarios:
-  - gateway único y réplicas;
+- Integración `sales-canary-j4`: 6/6, en 4 grupos:
+  - gateway único y réplicas (3 pruebas);
   - OTP con reinicio del dispatcher;
   - rollback, limitación de `@7` y purga;
   - guardas.
