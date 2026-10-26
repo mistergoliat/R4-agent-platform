@@ -91,6 +91,8 @@ describe('SEC-S5: the commercial capabilities exist only in the synthetic compos
       .map((path) => relative(ROOT, path).replace(/\\/g, '/'));
     expect(named.sort()).toEqual([
       'agents/sales/sales.v8.agent.json',
+      // R4-J5: definition v9 = v8 plus the shipping promotion guidance (same capability rules).
+      'agents/sales/sales.v9.agent.json',
       'agents/sales/src/capabilities/customer-synthetic.ts',
       'agents/sales/src/capabilities/identity-verification.ts',
       // R4-J4-R5 preparation: the canary rollback readiness counts open identity.start_verification executions.

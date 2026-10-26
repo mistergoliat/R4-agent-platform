@@ -69,7 +69,7 @@ describe('the closed test-host allowlist (R4_CANARY_TEST_HOSTS)', () => {
 
 describe('the canary environment of sales-production@8', () => {
   it('accepts @8 only with R4_CANARY_CONTEXT_EXPIRED_EVIDENCE=exclude; the allowlist is for @8 only', () => {
-    expect(CANARY_PROFILES.map(profileLabel)).toEqual(['sales-production@4', 'sales-production@5', 'sales-production@6', 'sales-production@7', 'sales-production@8']);
+    expect(CANARY_PROFILES.map(profileLabel)).toEqual(['sales-production@4', 'sales-production@5', 'sales-production@6', 'sales-production@7', 'sales-production@8', 'sales-production@9']);
     expect(() => loadCanaryEnvironment(base('sales-production@8'))).toThrow(/R4_CANARY_CONTEXT_EXPIRED_EVIDENCE=exclude/);
     expect(() => loadCanaryEnvironment(base('sales-production@8', { R4_CANARY_CONTEXT_EXPIRED_EVIDENCE: 'include' }))).toThrow(/R4_CANARY_CONTEXT_EXPIRED_EVIDENCE=exclude/);
     expect(() => loadCanaryEnvironment(base('sales-production@8', { R4_CANARY_CONTEXT_EXPIRED_EVIDENCE: 'maybe' }))).toThrow(/include" or "exclude/);
