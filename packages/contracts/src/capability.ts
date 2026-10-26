@@ -173,10 +173,23 @@ export const CAPABILITY_REJECTION_CODES = [
   'execution_not_permitted',
   'invalid_arguments',
 ] as const;
+/**
+ * (R4-J5) A READ handler's dependency (the capability owner) failed, as the owner classified it:
+ * unreachable/5xx, no answer in time, refused the platform credential, or answered outside its contract.
+ * Set by the handler through CapabilityFailure; never inferred by the runtime from a message.
+ */
+export const DEPENDENCY_FAILURE_CODES = [
+  'dependency_unavailable',
+  'dependency_timeout',
+  'dependency_unauthorized',
+  'dependency_contract_violation',
+] as const;
 export const CAPABILITY_FAILURE_CODES = [
   'handler_error',
   'timeout',
   'invalid_capability_output',
+  ...DEPENDENCY_FAILURE_CODES,
 ] as const;
+export type DependencyFailureCode = (typeof DEPENDENCY_FAILURE_CODES)[number];
 export type CapabilityRejectionCode = (typeof CAPABILITY_REJECTION_CODES)[number];
 export type CapabilityFailureCode = (typeof CAPABILITY_FAILURE_CODES)[number];

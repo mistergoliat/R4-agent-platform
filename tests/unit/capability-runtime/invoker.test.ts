@@ -107,6 +107,13 @@ describe('CapabilityInvoker (invocation contract)', () => {
     expect(o).toMatchObject({ outcome: 'failed', payload: null, validUntil: null, error: { code: 'handler_error', message: 'source did not answer', details: { category: 'temporarily_unavailable', retryable: true } } });
   });
 
+  it.each(['dependency_unavailable', 'dependency_timeout', 'dependency_unauthorized', 'dependency_contract_violation'] as const)('records an owner-typed failure code (%s) instead of handler_error (R4-J5)', async (code) => {
+    const { invoker } = setup(getTestFactCapability(() => Promise.reject(new CapabilityFailure('owner failed', { category: 'x' }, code))));
+    const o = await invoker.invoke({ capabilityId: GET_TEST_FACT_ID, arguments: { factKey: 'alpha' } }, context);
+    expect(observationSchema.safeParse(o).success).toBe(true);
+    expect(o).toMatchObject({ outcome: 'failed', error: { code, message: 'owner failed', details: { category: 'x' } } });
+  });
+
   it('drops non-JSON failure details instead of recording them', async () => {
     const { invoker } = setup(getTestFactCapability(() => Promise.reject(new CapabilityFailure('odd', { at: new Date() } as never))));
     const o = await invoker.invoke({ capabilityId: GET_TEST_FACT_ID, arguments: { factKey: 'alpha' } }, context);

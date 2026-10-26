@@ -9,6 +9,7 @@ import {
   type CapabilityInvocationRequest,
   type CapabilityRejectionCode,
   type Clock,
+  type DependencyFailureCode,
   type IdGenerator,
   type JsonValue,
   type Observation,
@@ -183,7 +184,7 @@ export class CapabilityInvoker {
       if (controller.signal.aborted) return fail('timeout', `capability exceeded ${definition.timeoutMs}ms`);
       // The owner's own classification survives as structured evidence; any other error is only a message.
       const details = error instanceof CapabilityFailure ? jsonValueSchema.safeParse(error.details) : null;
-      return fail('handler_error', truncate(error instanceof Error ? error.message : 'capability handler failed'), details?.success ? details.data : null);
+      return fail(error instanceof CapabilityFailure ? error.code : 'handler_error', truncate(error instanceof Error ? error.message : 'capability handler failed'), details?.success ? details.data : null);
     } finally {
       clearTimeout(timer);
     }
@@ -233,11 +234,14 @@ function earliest(a: string | null, b: string | null): string | null {
  */
 export class CapabilityFailure extends Error {
   readonly details: JsonValue;
+  /** (R4-J5) The observation's error code: a dependency failure the owner classified, else handler_error. */
+  readonly code: DependencyFailureCode | 'handler_error';
 
-  constructor(message: string, details: JsonValue) {
+  constructor(message: string, details: JsonValue, code: DependencyFailureCode | 'handler_error' = 'handler_error') {
     super(message);
     this.name = 'CapabilityFailure';
     this.details = details;
+    this.code = code;
   }
 }
 

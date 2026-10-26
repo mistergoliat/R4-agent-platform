@@ -229,7 +229,15 @@ function composeCustomerIdentity(profile: ProductionProfile, options: SalesProdu
   if (leaked.length > 0) throw refuse(`must not receive ${leaked.join(', ')}: they belong to the channel gateway only`);
   const fetch = { ...(options.customer.fetch ? { fetch: options.customer.fetch } : {}), ...(options.customer.allowedHosts ? { allowedHosts: options.customer.allowedHosts } : {}) };
   try {
-    const [context, history] = composeSyntheticCustomerCapabilities({ env: options.customer.env, bindings: options.store, ...fetch });
+    // R4-J5: the owner-call diagnostics (category, adapter code, HTTP status, owner code; no identifiers) go to the
+    // operator log, since the observation the model reads carries only the typed code.
+    const [context, history] = composeSyntheticCustomerCapabilities({
+      env: options.customer.env,
+      bindings: options.store,
+      ...fetch,
+      onIdentityCall: (event) => options.logger.info({ event: 'customer_identity.call', ...event }, 'customer identity call'),
+      onProfileCall: (event) => options.logger.info({ event: 'customer_profile.call', ...event }, 'customer profile call'),
+    });
     const identity = composeSyntheticIdentityVerificationCapabilities({ env: options.customer.env, bindings: options.store, pool: options.pool, ...fetch });
     capabilities.register(context);
     capabilities.register(history);
