@@ -31,6 +31,34 @@ Firmado por Felipe Porte el 2026-10-20 (`docs/reviews/J4_D2_CP_ACCEPTANCE_RECORD
 Ese registro declara que **no** regulariza G-16 ni AP-01..AP-11. Tampoco cubren G-16: la excepción de
 desarrollo de 02C, la posición de R4 en R4-J4-R1C ni la atribución retirada de `7b2e7f7`.
 
+## 1b. Posiciones de R4 ratificadas por el owner de R4 (2026-10-27)
+
+Decisión 4 del mandato «R4-J4-R6 — Evidence Verification and Contract Acceptance»: el owner de R4 **ratifica**
+las posiciones internas de R4 sobre AP-01..AP-08 y AP-11, con las condiciones de R4-J4-R1C §3. Es una decisión
+del **consumidor** (R4). **No** es la conformidad de CP, no cierra G-16 y no habilita datos reales.
+
+| AP | Posición de R4 ratificada | Condiciones que conserva (R4-J4-R1C §3) |
+|---|---|---|
+| AP-01 | Una ruta `POST /v1/capabilities/customer/sales-context` con `purpose`; R4 mantiene dos capacidades | Las versiones vigentes son `customer.get_context@3` y `customer.get_purchase_history@2` (R1C nombraba `@2`/`@1`). R4 no necesita montos, ids de PrestaShop ni SKU |
+| AP-02 | Identificadores en el cuerpo; `POST` de solo lectura; `no-store` | Ningún identificador comercial en paths, queries, URLs de logs ni trazas |
+| AP-03 | Minimización en tres fronteras; sin montos, componentes monetarios ni predictivos en el cable J4 | Validación estructural por propósito y allowlist; un componente prohibido es `contract_violation`. **Sigue pendiente la aprobación de negocio de los propósitos** |
+| AP-04 | `r4-sales` solo con `customer.sales_context.read` | Ni transitoriamente otros scopes. AP-04-H aparte, con inventario de impacto |
+| AP-05 | Ciclo de vida y `authorizationBasis` | `authorizationBasis` nunca basta sola; `service_scope_only` nunca para datos reales; `customer_grant_verified` es necesario, no suficiente |
+| AP-06 | Error plano de CP; R4 mapea por status y código | 503/504 → `temporarily_unavailable`; 401/403 → `unauthorized`; una denegación nunca se confunde con un cliente inexistente |
+| AP-07 | Bytes UTF-8; R4 pide ≤ 10 ítems (`offset` ≤ 40) | CP mantiene un máximo explícito y verificable para el propósito J4 |
+| AP-08 | Puerto sin `degraded`; `withheld` con `reason` propio | Tabla de estados de R1C §3 AP-08; historial parcial = fallo, nunca lista parcial |
+| AP-11 | Presupuesto de CP ≤ timeout de R4 − 500 ms | Timeout de R4 entre 3 000 y 5 000 ms; ninguno es SLO productivo |
+
+```text
+R4_INTERNAL_POSITIONS_AP01_AP08_AP11=RATIFIED_BY_R4_OWNER (2026-10-27)
+CP_CONFORMITY=PENDING
+```
+
+**Solicitud a CP.** Se redactó una solicitud de conformidad por ítem (acepta, rechaza o devuelve con ajustes) como
+§9.1.1 de `CP_J4_R4_CONTRACT_ALIGNMENT.md`. El commit en CP quedó **pendiente**: el repositorio CP no tiene una
+identidad de autor configurada para este mandato y no se usó ninguna sin autorización (borrador local en la rama
+`docs/cp-j4-g16-conformity-request`).
+
 ## 2. Requiere nueva decisión del owner de CP (G-16)
 
 Texto de cada AP: `CP_J4_R4_CONTRACT_ALIGNMENT.md` §9 (CP `bbd766e`). La columna «Implementado» indica lo que

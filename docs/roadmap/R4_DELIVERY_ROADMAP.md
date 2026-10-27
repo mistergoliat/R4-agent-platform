@@ -79,8 +79,8 @@ identidades sintéticas.
 | J4-R3 — Resolver CIA y grant | **DONE** (sintético) | PR #12 (`ad2c39b`) | — |
 | SEC-OTP S1–S7 | **DONE** (sintético) | PR #15, #16, #17 (`caa3926`); campaña S7 41/41 ×3 | Gates de datos reales (abajo) |
 | J4-R4 — Capacidades y perfil | **DONE (sintético)**. `J4_R4_SYNTHETIC_ACCEPTED` por el owner, 2026-10-22 | PR #19 (`main` `3e04b4f`). [Informe](../architecture/R4_J4_R4_PROFILE_V8_IMPLEMENTATION_REPORT.md) | Ver el estado por dimensión abajo |
-| J4-R5 — Canary aislado | **EXECUTED, NOT PASS** (2026-10-26, EC2 único, aislado, sintético). Integración en verde; `J4_R5_CONVERSATION_RELIABILITY_FAIL` (F-1 P0) | RR-1 R-4: PR #21 (`b18113f`). Tooling `@8`: PR #22 (`4c97ba0`). Ejecución: PR #25 (`e6debe8`, revisado 2026-10-27, merge pendiente del owner). [Informe de ejecución](../architecture/R4_J4_R5_INTEGRATED_CANARY_REPORT.md) | Fix P0 (PR #27, ADR-041) revisado y fusionado; repetir el canary; evidencia desplegada faltante (BG-3 de la [decisión J4-R6](../acceptance/R4_J4_R6_FINAL_DECISION_RECORD.md)) |
-| J4-R6 — Rollback y aceptación del canary | **BLOCKED** (`J4_R6_BLOCKED`, 2026-10-27) | Rollback `@8 → @7` protegido y purga ejecutados en J4-R5. [Decisión](../acceptance/R4_J4_R6_FINAL_DECISION_RECORD.md); [auditoría CP](../architecture/R4_J4_R6_CUSTOMER_PROFILE_STATE_AUDIT.md) | BG-1 G-16 ([registro preparado, sin firmar](../acceptance/R4_J4_G16_CP_ACCEPTANCE_RECORD.md)); BG-2 J4-R5 PASS; BG-3 evidencia desplegada; BG-4 regresión sobre el candidato final; BG-5 registro firmado. El rollback productivo es J7 |
+| J4-R5 — Canary aislado | **EXECUTED, NOT PASS** (2026-10-26, EC2 único, aislado, sintético). Integración en verde; `J4_R5_CONVERSATION_RELIABILITY_FAIL` (F-1 P0) | RR-1 R-4: PR #21 (`b18113f`). Tooling `@8`: PR #22 (`4c97ba0`). Ejecución: PR #25 (head `e6debe8`, `main` `e9a9bcb`, 2026-10-27). [Informe de ejecución](../architecture/R4_J4_R5_INTEGRATED_CANARY_REPORT.md); [verificación de la evidencia en el EC2](../acceptance/R4_J4_R5_EVIDENCE_VERIFICATION.md) (23/23 hashes; erratas EV-1..EV-3) | Corrección de la causa de F-1: PR #30 (adaptador; replay local 8/63 → 0/99), pendiente de revisión, merge y canary repetido. El aviso determinista del PR #27 no basta (owner, 2026-10-27); evidencia desplegada faltante (BG-3 de la [decisión J4-R6](../acceptance/R4_J4_R6_FINAL_DECISION_RECORD.md)) |
+| J4-R6 — Rollback y aceptación del canary | **BLOCKED** (`J4_R6_BLOCKED`, 2026-10-27) | Rollback `@8 → @7` protegido y purga ejecutados en J4-R5. [Decisión](../acceptance/R4_J4_R6_FINAL_DECISION_RECORD.md); [auditoría CP](../architecture/R4_J4_R6_CUSTOMER_PROFILE_STATE_AUDIT.md) | BG-1 G-16 (posiciones de R4 ratificadas; conformidad de CP pendiente, [registro](../acceptance/R4_J4_G16_CP_ACCEPTANCE_RECORD.md)); BG-2 F-1 en el entorno integrado; BG-3 evidencia desplegada; BG-4 regresión sobre el candidato final; BG-5 registro firmado; BG-6 tasks `@8` tras el rollback. El rollback productivo es J7 |
 
 **Estado de J4-R4 por dimensión** (2026-10-22):
 
@@ -125,8 +125,9 @@ identidades sintéticas.
 **Condiciones de `J4_RELEASE_CANDIDATE_ACCEPTED`:** informe §9. No habilita datos reales ni producción.
 
 **Restricciones productivas vigentes.**
-- Producción sigue en `ef5a354`. El perfil documentado es `sales-production@3`, pero el preflight J4-R5 observó
-  `sales-production@2` en el host (F-5, sin re-verificar). Lo resuelve el owner antes de cualquier rollout J7.
+- Producción sigue en `ef5a354`. El perfil documentado era `sales-production@3`, pero el host corre
+  **`sales-production@2`** (`R4_PROD_POLICY_PROFILE`, verificado en solo lectura el 2026-10-27; F-5). Un rollout J7
+  de `@8` parte de `@2`.
 - `PRODUCTION_ROLLOUT=NOT_AUTHORIZED`.
 - `R4_CUSTOMER_MODE=real` está rechazado por los adaptadores.
 - No hay datos reales, despliegue, cuentas PrestaShop ni envíos de correo u OTP reales sin autorización J7.
