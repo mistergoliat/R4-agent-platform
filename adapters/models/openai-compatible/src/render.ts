@@ -31,7 +31,7 @@ export function renderMessages(request: ModelRequest): ChatMessage[] {
  * stays agent-neutral; the reminder closes the user message, right where the model decides.
  */
 export const ONE_DOCUMENT_RULE =
-  'One answer carries one document, never two or more. When several pieces of information or several steps are needed, return only the first one now: its result arrives in the next turn and you will be asked again. Write nothing before or after the document: no prose, no notes, no code fences.';
+  'One answer carries one document, never two or more. When several pieces of information or several steps are needed, return only the first one now; its result arrives in the next turn. Write nothing before or after the document: no prose, no notes, no code fences.';
 export const ONE_DOCUMENT_REMINDER = 'Answer with exactly one JSON document and nothing else. If you need several steps, return only the first one.';
 
 export function renderContext(context: CompiledContext): string {
