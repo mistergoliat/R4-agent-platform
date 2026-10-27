@@ -55,9 +55,9 @@ CP_CONFORMITY=PENDING
 ```
 
 **Solicitud a CP.** Se redactó una solicitud de conformidad por ítem (acepta, rechaza o devuelve con ajustes) como
-§9.1.1 de `CP_J4_R4_CONTRACT_ALIGNMENT.md`. El commit en CP quedó **pendiente**: el repositorio CP no tiene una
-identidad de autor configurada para este mandato y no se usó ninguna sin autorización (borrador local en la rama
-`docs/cp-j4-g16-conformity-request`).
+§9.1.1 de `CP_J4_R4_CONTRACT_ALIGNMENT.md`. Se publicó en CP el 2026-10-27 con la identidad de la cuenta
+autenticada (`mistergoliat`), **no** con la del owner de CP: commit `585b69d`, PR CP #28, sin fusionar. G-16 se
+cierra solo cuando el owner de CP registre su conformidad en el repositorio de CP.
 
 ## 2. Requiere nueva decisión del owner de CP (G-16)
 

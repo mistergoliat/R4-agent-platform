@@ -28,7 +28,7 @@ Los nueve criterios originales (`R4_J4_CROSS_REPO_ROADMAP_REBASE_REPORT.md` §9)
 |---|---|---|
 | A — Evidencia en el EC2 | 23/23 hashes OK. Integración, OTP, dispatcher, rollback protegido, ausencia de huérfanas, purga (0 filas) y aislamiento de `@2`: **verificados**. Brechas desplegadas **confirmadas**: grant ajeno o provisional, 401/403 hacia R4 y quote `guest` con CP caído. Erratas EV-1..EV-3 | [Verificación](R4_J4_R5_EVIDENCE_VERIFICATION.md) |
 | B — PR #25 | Preflight final: head `e6debe8`, base `09d6579`, diff sin cambios, GitGuardian en verde. Build, typecheck, lint, unit 1519 y contract 450 sobre ese head. Fusionado con `--match-head-commit`: **`main` `e9a9bcb`**. Archiva un canary con un fallo de confiabilidad conocido; **no** acepta J4 | PR #25 |
-| C — G-16 | Posiciones de R4 ratificadas con sus condiciones. Solicitud de conformidad por ítem para CP §9.1 redactada; su commit en CP espera una identidad de autor autorizada. **G-16 PENDIENTE** | [Registro G-16](R4_J4_G16_CP_ACCEPTANCE_RECORD.md) |
+| C — G-16 | Posiciones de R4 ratificadas con sus condiciones. Solicitud de conformidad por ítem publicada en CP §9.1.1 (PR CP #28, cuenta `mistergoliat`, no el owner). **G-16 PENDIENTE** | [Registro G-16](R4_J4_G16_CP_ACCEPTANCE_RECORD.md) |
 | D — F-1 | Causa reproducida y corregida en el adaptador DeepSeek existente, sin tocar el parser, el kernel, el protocolo v5 ni el proveedor. Replay local de 21 peticiones: **8/63 → 0/99** malformadas (familias difíciles 8/36 → 0/72, p = 8,6e-5). Regresión completa en la rama. **Sin merge ni canary repetido** | PR #30; `R4_J4_R6_F1_STRUCTURED_OUTPUT_CORRECTION_REPORT.md` (en esa rama) |
 
 ## 2. Los nueve criterios
