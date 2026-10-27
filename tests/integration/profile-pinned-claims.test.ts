@@ -6,9 +6,15 @@ import type { Platform } from '@r4/api';
 import type { ServedAgents } from '@r4/task-runtime';
 import { createMigratedTestDatabase, type TestDatabase } from '../support/database.js';
 import { actionCapabilities, createActionTask, ledgerOf, startActionPlatform, WRITES } from '../support/actions.js';
-import { expireLease, leaseRow, startTestWorker, type TestWorker } from '../support/worker.js';
+import { FakeModelProvider, type FakeModelStep } from '@r4/model-gateway';
+import { createSilentLogger } from '@r4/observability';
+import { createWorkerPlatform } from '@r4/worker';
+import { expireLease, leaseRow, startTestWorker, testCapabilities, testWorkerConfig, type TestWorker } from '../support/worker.js';
 import { complete, propose, respond, sequence } from '../support/decisions.js';
-import { PARTICIPANT, drain, input, testScheduler } from '../support/temporal.js';
+import { HUMAN, PARTICIPANT, drain, input, testScheduler } from '../support/temporal.js';
+
+/** A decision followed by prose: invalid_structured_output (ADR-008), recoverable (ADR-028). */
+const TRAILING_PROSE: FakeModelStep = { type: 'text', content: '{"type":"respond","content":"x"}\n\nEspero que te sirva.' };
 import { ensureTestLedger, handlerCalls, SET_TEST_RECORD_ID } from '../fixtures/capabilities/test-ledger.js';
 
 let db: TestDatabase;
@@ -97,7 +103,45 @@ describe('rollback, suspension and worker restart', () => {
   });
 });
 
+describe('fail-closed composition and operator recovery', () => {
+  it('a production worker without servedAgents refuses to start', async () => {
+    await expect(
+      createWorkerPlatform(testWorkerConfig(db.url, { workerId: 'unprofiled-production' }), { modelProvider: new FakeModelProvider(sequence([])), capabilities: testCapabilities(), presence: { executionMode: 'production', runtimeProfile: 'probe-production@1' } }, { logger: createSilentLogger() }),
+    ).rejects.toMatchObject({ code: 'served_agents_required' });
+  });
+
+  it('an operator can cancel a task no live worker serves', async () => {
+    const taskId = await createActionTask(platform);
+    const { other } = await pins(taskId);
+    const after = await worker({ servedAgents: other, script: sequence([]) });
+    expect(await after.platform.worker.runOnce()).toEqual({ kind: 'idle' });
+    await platform.temporal.cancelTask(taskId, HUMAN);
+    expect((await platform.tasks.getTask(taskId)).task.status).toBe('cancelled');
+    expect(await runsOf(taskId)).toEqual([]);
+  });
+});
+
 describe('recovery', () => {
+  it('ADR-028: after a failed run, the recovery run happens only on a compatible worker', async () => {
+    const taskId = await createActionTask(platform);
+    const { own, other } = await pins(taskId);
+    const before = await worker({ servedAgents: own, script: sequence([TRAILING_PROSE]) });
+    await before.platform.worker.runOnce();
+    const failed = await platform.tasks.getTask(taskId);
+    expect(failed.task.status).toBe('running');
+    expect(failed.runs.map((r) => r.status)).toEqual(['failed']);
+    await stop(before);
+
+    const after = await worker({ servedAgents: other, script: sequence([]) });
+    expect(await after.platform.worker.runOnce()).toEqual({ kind: 'idle' });
+    expect((await runsOf(taskId)).map((r) => r.status)).toEqual(['failed']);
+    await stop(after);
+
+    const restarted = await worker({ servedAgents: own, script: sequence([complete('recovered')]) });
+    expect(await restarted.platform.worker.runOnce()).toMatchObject({ kind: 'executed', taskId, claim: 'started' });
+    expect((await platform.tasks.getTask(taskId)).task.status).toBe('completed');
+  });
+
   it('an expired lease is taken over only by a compatible worker (same run resumed)', async () => {
     const taskId = await createActionTask(platform);
     const { own, other } = await pins(taskId);

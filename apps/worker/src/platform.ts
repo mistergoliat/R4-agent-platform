@@ -95,6 +95,10 @@ export interface WorkerPlatform {
  */
 export async function createWorkerPlatform(config: WorkerConfig, bindings: WorkerBindings, overrides: WorkerOverrides = {}): Promise<WorkerPlatform> {
   validateWorkerConfig(config);
+  // R4-J4-R6 EV-2: a production worker must say which definitions it runs; unprofiled it would claim any task.
+  if (bindings.presence?.executionMode === 'production' && bindings.servedAgents === undefined) {
+    throw new PlatformError('precondition', 'served_agents_required', 'a production worker must declare servedAgents (the agent definitions its profile runs)');
+  }
   const logger = overrides.logger ?? createLogger({ service: 'r4-worker', level: config.logLevel });
   const clock = overrides.clock ?? systemClock;
   const ids = overrides.ids ?? uuidV7Generator(clock);

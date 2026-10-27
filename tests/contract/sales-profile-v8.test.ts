@@ -15,6 +15,7 @@ import {
   SALES_PRODUCTION_PROFILES,
   SALES_PRODUCTION_PROFILE_V7,
   SALES_PRODUCTION_PROFILE_V8,
+  SALES_PRODUCTION_AGENT_VERSIONS,
   SALES_PRODUCTION_PROFILE_V8_GATE,
   SALES_PRODUCTION_V8_ACTION_POLICY,
   SALES_PRODUCTION_V8_CAPABILITY_VERSIONS,
@@ -172,6 +173,12 @@ describe('C. fail-closed worker composition (each missing dependency refuses)', 
   it('R4-J4-R6 EV-2: each worker serves exactly its pinned Sales definition, so @7 never runs an @8 task', () => {
     expect(v8().bindings.servedAgents).toEqual([{ agentId: 'sales', version: 8 }]);
     expect(compose('sales-production@7').bindings.servedAgents).toEqual([{ agentId: 'sales', version: 7 }]);
+  });
+
+  it('R4-J4-R6 EV-2: the guard is exact for @8 → @7 only because v7 and v8 each belong to one profile (@1/@2 and @3/@4 share a definition)', () => {
+    const profilesOf = (version: number) => Object.entries(SALES_PRODUCTION_AGENT_VERSIONS).filter(([, v]) => v === version).map(([p]) => p);
+    expect(profilesOf(7)).toEqual(['sales-production@7']);
+    expect(profilesOf(8)).toEqual(['sales-production@8']);
   });
 
   it('the worker composition never composes the gateway inspection; the CLI checks the identity-verification schema before running @8', () => {

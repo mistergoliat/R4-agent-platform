@@ -35,8 +35,13 @@ El cruce ocurre en la **selección**: definición de la task y capacidades del w
 
 **Una task nunca se ejecuta (ni se reconcilia) con un perfil de runtime incompatible con su definición fijada.**
 Compatibilidad: el worker declara las definiciones que sirve (`servedAgents`) y solo toma tasks fijadas a una de
-ellas. Cada perfil Sales sirve exactamente su definición (`salesProductionAgentVersion`). Los perfiles que comparten
-definición (`@1`/`@2` → v3, `@3`/`@4` → v4) son compatibles por construcción.
+ellas. Cada perfil Sales sirve exactamente su definición (`salesProductionAgentVersion`).
+
+**Límite conocido (revisión F1).** La definición no identifica siempre al perfil: `@1`/`@2` comparten v3 y `@3`/`@4`
+comparten v4, con capacidades distintas (`@2` agrega Catalog REAL; `@4` agrega Quote REAL). Un rollback `@4 → @3`
+podría ejecutar tasks v4 sin Quote. **Para J4 no hay riesgo:** v7 y v8 pertenecen cada una a un solo perfil, y un
+test de contrato lo fija. La corrección completa (fijar la etiqueta de perfil en la task, con migración) queda
+para J7.
 
 | Cambio | Archivo |
 |---|---|
@@ -50,7 +55,11 @@ definición (`@1`/`@2` → v3, `@3`/`@4` → v4) son compatibles por construcci�
 - **Sin cambios en el kernel** (`packages/agent-kernel`), en el parser, en el protocolo v5 ni en la autorización de
   acciones. Los puntos de extensión existentes no alcanzaban: `admission` decide por worker, no por task, y la
   sesión se construye después de que el claim ya creó la run.
-- **Sin migración.** Sin `servedAgents`, el worker sirve toda definición, como antes (runtimes sin perfil, tests).
+- **Sin migración.** Sin `servedAgents`, el worker sirve toda definición, como antes (runtimes sin perfil, shadow,
+  tests). **Un worker en modo `production` sin `servedAgents` se niega a arrancar** (`served_agents_required`,
+  revisión F2), así que una composición productiva futura no puede reabrir el defecto en silencio.
+- Pendiente para J7 (revisión F3/F4): exponer el conteo de tasks sin worker compatible también en el estado
+  productivo, e índice parcial si el número de tasks varadas creciera.
 
 **Qué pasa con una task incompatible:**
 - **Durable:** su estado, inputs y runs quedan intactos (`pending`, `running` sin run activa, `waiting` o `blocked`).
@@ -71,10 +80,13 @@ definición (`@1`/`@2` → v3, `@3`/`@4` → v4) son compatibles por construcci�
 | Rollback + suspensión + reinicio | Task en `waiting` con el perfil original; rollback; llega un input; el worker del otro perfil queda `idle` (×3) y no crea runs; el worker compatible reiniciado la completa. Todas las runs con la versión fijada |
 | Recuperación (takeover) | Lease vencido: el incompatible no lo toma (el dueño no cambia); el compatible reanuda la **misma** run |
 | Reconciliación | Efecto incierto: el worker incompatible no reconcilia (0 llamadas, schedule `dispatched`); el compatible lo resuelve |
+| Recuperación ADR-028 | Run fallida por salida malformada: el incompatible no crea la run de recuperación; el compatible la ejecuta y completa |
+| Operador | Una task que ningún worker vivo sirve se puede cancelar |
+| Composición fail-closed | Un worker `production` sin `servedAgents` no arranca |
 
 Además, `tests/contract/sales-profile-v8.test.ts`: `@8` sirve `sales@8` y `@7` sirve `sales@7`.
 
-**Mutación:** con el filtro SQL anulado (`true or …`) en ambas selecciones, fallan las 5 pruebas de integración.
+**Mutación:** con el filtro SQL anulado (`true or …`) en ambas selecciones, fallan las 5 pruebas de selección, rollback, takeover y reconciliación (las de ADR-028 y operador se agregaron después de la revisión).
 Fuentes restauradas.
 
 ## 5. Lo que no cambia
