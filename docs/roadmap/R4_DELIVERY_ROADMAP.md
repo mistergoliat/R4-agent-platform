@@ -2,7 +2,7 @@
 title: R4 — Delivery Roadmap
 status: active
 owner: architecture
-last_reviewed: 2026-10-26
+last_reviewed: 2026-10-27
 source: ../architecture/R4_AGENTIC_PLATFORM_PRD_AND_ROADMAP.md §40
 ---
 
@@ -41,12 +41,12 @@ automáticamente.
 | Hito | Estado | Alcance |
 |---|---|---|
 | J3 — Quote Integration & Autonomous Issuance | **CLOSED** (`CLOSED_WITH_RESCOPED_ACCEPTANCE`) | Integración comercial y emisión autónoma. [Registro de cierre](../acceptance/R4_J3_CLOSURE_RECORD.md) |
-| J4 — Customer Profile | **IN PROGRESS** (**P0**, owner 2026-10-26. R1–R4 y SEC-OTP integrados en sintético; tooling J4-R5 fusionado sin ejecución; R5–R6 no ejecutados) | Integración y acceso a Customer Profile vía CIA. Desglose en §1.2 |
+| J4 — Customer Profile | **IN PROGRESS** (**P0**). R1–R4 y SEC-OTP integrados en sintético; J4-R5 ejecutado el 2026-10-26 (integración en verde, confiabilidad conversacional en FAIL). **J4-R6: `J4_R6_BLOCKED`** (2026-10-27; [decisión](../acceptance/R4_J4_R6_FINAL_DECISION_RECORD.md)) | Integración y acceso a Customer Profile vía CIA. Desglose en §1.2 |
 | J4.5 — Catalog | **PLANNED** | Optimización e integración de Catalog; después se reevalúa la eficiencia del agente (aceptación J3 §17) |
 | J5 — Sales Autonomy | **PLANNED** (confirmado por el owner, 2026-10-22; no iniciado) | Comportamiento del modelo con Customer: cuándo verificar, uso del historial, personalización, estrategia comercial. Parte de `sales-production@8` (J4-R4) |
 | J6 — Benchmark & Reviewer | **PLANNED** (confirmado por el owner, 2026-10-22; no iniciado) | Benchmark y evaluación comercial; revisión de calidad |
 | R4 Media & Communications | **DEFERRED** | Capacidades multimedia y entrega de documentos (J3F, §4.2) |
-| J7 — Production Readiness | **NOT PRODUCTION READY** | Gobernanza operacional y habilitación de clientes reales (gates del registro de brechas J3). Hereda los gates de datos reales de J4 (§1.2) y el rollout de `@8` desde `@3` |
+| J7 — Production Readiness | **NOT PRODUCTION READY** | Gobernanza operacional y habilitación de clientes reales (gates del registro de brechas J3). Hereda los gates de datos reales de J4 (§1.2), el paquete [J7-CP](../architecture/R4_J7_CUSTOMER_PROFILE_PRODUCTION_DATA_BACKLOG.md) (Customer Profile con datos reales, no autorizado) y el rollout de `@8` desde el perfil productivo vigente |
 
 **Separación normativa** (owner, 2026-10-22, mandato `R4-J4-R4-COMPOSITION-AND-PROFILE-09`).
 Ningún hito se inicia sin autorización explícita. Esta tabla no declara entregables implementados.
@@ -79,8 +79,8 @@ identidades sintéticas.
 | J4-R3 — Resolver CIA y grant | **DONE** (sintético) | PR #12 (`ad2c39b`) | — |
 | SEC-OTP S1–S7 | **DONE** (sintético) | PR #15, #16, #17 (`caa3926`); campaña S7 41/41 ×3 | Gates de datos reales (abajo) |
 | J4-R4 — Capacidades y perfil | **DONE (sintético)**. `J4_R4_SYNTHETIC_ACCEPTED` por el owner, 2026-10-22 | PR #19 (`main` `3e04b4f`). [Informe](../architecture/R4_J4_R4_PROFILE_V8_IMPLEMENTATION_REPORT.md) | Ver el estado por dimensión abajo |
-| J4-R5 — Canary aislado | **BLOCKED** (código listo; ejecución condicionalmente autorizada el 2026-10-26, solo en entorno sintético aislado y aprobado) | RR-1 R-4: PR #21 (`b18113f`). Tooling `@8`: PR #22 (`main` `4c97ba0`). [Informe](../architecture/R4_J4_R5_CANARY_TOOLING_REPORT.md). [Preflight](../architecture/R4_J4_R5_EXECUTION_PREFLIGHT_REPORT.md) | Entregables externos CIA-H1..H5, CP-H1..H4, OP-H1..H5 ([handoff](../architecture/R4_J4_R5_EXTERNAL_DEPENDENCIES_HANDOFF.md)): hoy CIA es solo loopback y CP S5 no está desplegado. Aprobación explícita del entorno. Solo datos sintéticos (D7 del canary, abajo) |
-| J4-R6 — Rollback y aceptación del canary | **BLOCKED** | — | R5 PASS. Ensayo `@8 → @7` **del canary** con el protocolo de protección (`protect_only` → espera → `absent`). El rollback productivo desde `@3` es J7 |
+| J4-R5 — Canary aislado | **EXECUTED, NOT PASS** (2026-10-26, EC2 único, aislado, sintético). Integración en verde; `J4_R5_CONVERSATION_RELIABILITY_FAIL` (F-1 P0) | RR-1 R-4: PR #21 (`b18113f`). Tooling `@8`: PR #22 (`4c97ba0`). Ejecución: PR #25 (head `e6debe8`, `main` `e9a9bcb`, 2026-10-27). [Informe de ejecución](../architecture/R4_J4_R5_INTEGRATED_CANARY_REPORT.md); [verificación de la evidencia en el EC2](../acceptance/R4_J4_R5_EVIDENCE_VERIFICATION.md) (23/23 hashes; erratas EV-1..EV-3) | Corrección de la causa de F-1: PR #30 (adaptador; replay local 8/63 → 0/99), pendiente de revisión, merge y canary repetido. El aviso determinista del PR #27 no basta (owner, 2026-10-27); evidencia desplegada faltante (BG-3 de la [decisión J4-R6](../acceptance/R4_J4_R6_FINAL_DECISION_RECORD.md)) |
+| J4-R6 — Rollback y aceptación del canary | **BLOCKED** (`J4_R6_BLOCKED`, 2026-10-27) | Rollback `@8 → @7` protegido y purga ejecutados en J4-R5. [Decisión](../acceptance/R4_J4_R6_FINAL_DECISION_RECORD.md); [auditoría CP](../architecture/R4_J4_R6_CUSTOMER_PROFILE_STATE_AUDIT.md) | BG-1 G-16 (posiciones de R4 ratificadas; conformidad de CP pendiente, [registro](../acceptance/R4_J4_G16_CP_ACCEPTANCE_RECORD.md)); BG-2 F-1 en el entorno integrado; BG-3 evidencia desplegada; BG-4 regresión sobre el candidato final; BG-5 registro firmado; BG-6 tasks `@8` tras el rollback. El rollback productivo es J7 |
 
 **Estado de J4-R4 por dimensión** (2026-10-22):
 
@@ -89,7 +89,7 @@ identidades sintéticas.
 | Código integrado | **Sí**: `sales-production@8`, definición Sales v8, política `sales-production-autonomous-policy@2`, composición fail-closed del worker y del gateway (PR #19, `3e04b4f`) |
 | Perfil disponible para composición | **Sí, solo sintético**: los dominios `customer` y `customer-identity` son `REAL`, **APPROVED** por el owner. `REAL` describe la disponibilidad del dominio y no habilita datos reales: siguen exigidos `R4_CUSTOMER_MODE=synthetic`, credenciales `synthetic-` y la restricción de red vigente. Ninguna configuración productiva selecciona `@8` |
 | Evaluación sintética | **Aceptada**: regresión completa, interop 41/41, mutaciones 8/8, matriz de degradación, comparación pareada `@7`/`@8` con modelo real (técnica, no comercial) |
-| Canary | **Pendiente** (J4-R5): el tooling acepta `@8` desde PR #22 (`4c97ba0`); no ejecutado |
+| Canary | **Ejecutado** (J4-R5, 2026-10-26): integración en verde; confiabilidad conversacional en FAIL (F-1) |
 | Datos reales | **Bloqueados** (J7) |
 
 **Limitación conocida de `@7`** (`ACCEPTED_AS_KNOWN_LIMITATION`, owner, 2026-10-22):
@@ -125,7 +125,9 @@ identidades sintéticas.
 **Condiciones de `J4_RELEASE_CANDIDATE_ACCEPTED`:** informe §9. No habilita datos reales ni producción.
 
 **Restricciones productivas vigentes.**
-- Producción sigue en `sales-production@3` (`ef5a354`).
+- Producción sigue en `ef5a354`. El perfil documentado era `sales-production@3`, pero el host corre
+  **`sales-production@2`** (`R4_PROD_POLICY_PROFILE`, verificado en solo lectura el 2026-10-27; F-5). Un rollout J7
+  de `@8` parte de `@2`.
 - `PRODUCTION_ROLLOUT=NOT_AUTHORIZED`.
 - `R4_CUSTOMER_MODE=real` está rechazado por los adaptadores.
 - No hay datos reales, despliegue, cuentas PrestaShop ni envíos de correo u OTP reales sin autorización J7.
