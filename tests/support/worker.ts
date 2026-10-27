@@ -7,6 +7,7 @@ import type { ActionPolicyConfigurationInput } from '@r4/policy-engine';
 import { FakeModelProvider, type FakeModelScript } from '@r4/model-gateway';
 import { createSilentLogger } from '@r4/observability';
 import { PostgresExecutionStore, PostgresObservationStore, type Pool } from '@r4/persistence-postgres';
+import type { ServedAgents } from '@r4/task-runtime';
 import { createWorkerPlatform, type WorkerConfig, type WorkerPlatform } from '@r4/worker';
 import { getTestFactCapability } from '../fixtures/capabilities/get-test-fact.js';
 import { TEST_POLICY } from './kernel-fixtures.js';
@@ -33,6 +34,8 @@ export interface TestWorkerOptions {
   readonly actionPolicy?: ActionPolicyConfigurationInput;
   /** R4-E: injected process clock (C2 freshness), e.g. shifted for long-wait scenarios. */
   readonly clock?: Clock;
+  /** R4-J4-R6: the definitions this worker serves (absent: every definition). */
+  readonly servedAgents?: ServedAgents;
 }
 
 /** Same as a worker booted from an empty environment (loadWorkerConfig): unbounded budget. */
@@ -91,6 +94,7 @@ export async function startTestWorker(databaseUrl: string, options: TestWorkerOp
       ...(options.compactor ? { compactor: options.compactor } : {}),
       ...(options.contextSources ? { contextSources: options.contextSources } : {}),
       ...(options.actionPolicy ? { actionPolicy: options.actionPolicy } : {}),
+      ...(options.servedAgents ? { servedAgents: options.servedAgents } : {}),
     },
     { logger: options.logger ?? createSilentLogger(), ...(options.clock ? { clock: options.clock } : {}) },
   );

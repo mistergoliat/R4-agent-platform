@@ -18,6 +18,15 @@ import type {
   TaskTransition,
   TaskView,
 } from '@r4/contracts';
+
+/**
+ * The agent definitions (agentId, version) a worker's runtime profile can execute. A task is pinned to one
+ * definition when it is created; a worker leases or reconciles only tasks pinned to a definition it serves,
+ * so a rollback never runs a task with another profile's capabilities (R4-J4-R6 EV-2). Tasks no live
+ * worker serves stay durable and visible until a compatible worker or an operator takes them.
+ * Absent: the worker serves every definition (unprofiled runtimes, tests).
+ */
+export type ServedAgents = readonly { readonly agentId: string; readonly version: number }[];
 import type { TemporalPersistence } from './temporal-ports.js';
 
 /**
@@ -123,8 +132,10 @@ export interface ExecutionUnitOfWork extends TaskUnitOfWork {
    * Atomic under concurrency: candidates are row-locked with SKIP LOCKED and
    * the lease condition is re-evaluated on the locked row, so two workers can
    * never both obtain the same task. Increments the fencing generation.
+   * With `served`, only tasks pinned to one of those agent definitions are
+   * candidates: a worker never leases a task it cannot run as pinned.
    */
-  claimRunnableTask(owner: string, leaseDurationMs: number): Promise<ClaimedTask | null>;
+  claimRunnableTask(owner: string, leaseDurationMs: number, served?: ServedAgents): Promise<ClaimedTask | null>;
   /** Row-locks the task; every owner-only write starts here. */
   lockTaskLease(taskId: string): Promise<LockedTaskLease | null>;
   /** Clears the lease if (owner, generation) still match. Keeps the generation. */

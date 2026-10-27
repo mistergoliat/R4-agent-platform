@@ -375,6 +375,9 @@ export async function canaryStatus(canary: CanaryEnvironment, logger: Logger): P
       foreignTraffic: await foreignTraffic(pool),
       autonomy: (await new AutonomyControls({ store: new PostgresProductionStore(pool), logger }).state()).globalEnabled ? 'enabled' : 'disabled',
       tasks: await count('select status as k, count(*)::text as n from agent_tasks group by 1'),
+      // R4-J4-R6 EV-2: open tasks per pinned definition. After a rollback, those not pinned to the running
+      // profile's definition wait here (never run by its worker) until a compatible worker or an operator takes them.
+      openTasksByDefinition: await count(`select agent_id || '@' || agent_version as k, count(*)::text as n from agent_tasks where status in ('pending', 'running', 'waiting', 'blocked') group by 1`),
       openHumanRequests: await count(`select kind as k, count(*)::text as n from human_requests where status in ('requested', 'active') group by 1`),
       outbound: await count('select status as k, count(*)::text as n from outbound_messages group by 1'),
     };

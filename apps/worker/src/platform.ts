@@ -18,7 +18,7 @@ import {
   type Pool,
 } from '@r4/persistence-postgres';
 import { ActionPolicyEngine, DEFAULT_ACTION_POLICY, type ActionPolicyConfigurationInput } from '@r4/policy-engine';
-import { ActionRuntime, ExecutionRuntime, TemporalRuntime, UNPROFILED_RUNTIME, assertBuildRef, workerCompatibility, type WorkerExecutionMode } from '@r4/task-runtime';
+import { ActionRuntime, ExecutionRuntime, TemporalRuntime, UNPROFILED_RUNTIME, assertBuildRef, workerCompatibility, type ServedAgents, type WorkerExecutionMode } from '@r4/task-runtime';
 import { validateWorkerConfig, type WorkerConfig } from './config.js';
 import { DurableKernelSession } from './session.js';
 import { Reconciler } from './reconciliation.js';
@@ -55,6 +55,12 @@ export interface WorkerBindings {
    * readiness. Only a composition that proved its mode declares it.
    */
   readonly presence?: WorkerPresenceBinding;
+  /**
+   * (R4-J4-R6) The agent definitions this composition can execute. The worker claims and reconciles only
+   * tasks pinned to one of them; any other task stays durable and visible for a compatible worker or an
+   * operator. Absent ⇒ every definition (unprofiled).
+   */
+  readonly servedAgents?: ServedAgents;
 }
 
 export interface WorkerPresenceBinding {
@@ -140,8 +146,9 @@ export async function createWorkerPlatform(config: WorkerConfig, bindings: Worke
       heartbeatIntervalMs: config.heartbeatIntervalMs,
       pollIntervalMs: config.pollIntervalMs,
       // R4-E: due reconciliation of uncertain effects runs here (capabilities live in the worker), before any claim.
-      reconciler: new Reconciler({ actions, executor: new ActionExecutor({ registry: bindings.capabilities, logger }), workerId: config.workerId, leaseDurationMs: config.leaseDurationMs, logger }),
+      reconciler: new Reconciler({ actions, executor: new ActionExecutor({ registry: bindings.capabilities, logger }), workerId: config.workerId, leaseDurationMs: config.leaseDurationMs, ...(bindings.servedAgents ? { served: bindings.servedAgents } : {}), logger }),
       ...(bindings.admission ? { admission: bindings.admission } : {}),
+      ...(bindings.servedAgents ? { served: bindings.servedAgents } : {}),
       presence,
       logger: logger.child({ workerId: config.workerId }),
     });

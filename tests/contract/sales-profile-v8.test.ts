@@ -169,6 +169,11 @@ describe('C. fail-closed worker composition (each missing dependency refuses)', 
     expect(at7.filter((id) => /^customer\.|^identity\./.test(id))).toEqual([]);
   });
 
+  it('R4-J4-R6 EV-2: each worker serves exactly its pinned Sales definition, so @7 never runs an @8 task', () => {
+    expect(v8().bindings.servedAgents).toEqual([{ agentId: 'sales', version: 8 }]);
+    expect(compose('sales-production@7').bindings.servedAgents).toEqual([{ agentId: 'sales', version: 7 }]);
+  });
+
   it('the worker composition never composes the gateway inspection; the CLI checks the identity-verification schema before running @8', () => {
     const cli = source('agents/sales/src/cli/production.ts');
     expect(cli.match(/await assertSalesProductionPrerequisites\(selectedSalesProductionProfile\(production\.config\), pool\);/g)).toHaveLength(2);

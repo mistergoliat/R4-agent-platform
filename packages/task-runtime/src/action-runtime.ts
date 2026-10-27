@@ -37,7 +37,7 @@ import { emitTelemetry, type StructuredLogger } from '@r4/observability';
 import { assertExecutionTransition, nextActionStep, receiptStatusFor, type ActionNextStep, type UncertainOutcomeCode } from './action-lifecycle.js';
 import { lockOwnedExecution, taskStatusForTermination, workerPrincipal, type OwnedExecution } from './execution-runtime.js';
 import { finishRunWithin, parseOrThrow, transitionTaskWithin, truncate, type PendingEvent } from './mutations.js';
-import type { ExecutionStore, ExecutionUnitOfWork } from './ports.js';
+import type { ExecutionStore, ExecutionUnitOfWork, ServedAgents } from './ports.js';
 import { temporalOf, type TemporalRuntime } from './temporal-runtime.js';
 
 export interface ActionRuntimeOptions {
@@ -515,9 +515,9 @@ export class ActionRuntime {
    * dispatched; work found already settled or out of attempts/time is closed
    * on the way (exhausted work waits for an operator, the outcome stays unknown).
    */
-  async claimReconciliation(command: { workerId: string; leaseDurationMs: number }): Promise<ReconciliationGrant | null> {
+  async claimReconciliation(command: { workerId: string; leaseDurationMs: number; served?: ServedAgents }): Promise<ReconciliationGrant | null> {
     for (;;) {
-      const claimed = await this.#store.transaction((uow) => temporalOf(uow).claimReconciliation(command.workerId, command.leaseDurationMs));
+      const claimed = await this.#store.transaction((uow) => temporalOf(uow).claimReconciliation(command.workerId, command.leaseDurationMs, command.served));
       if (!claimed) return null;
       const token: ScheduleToken = { scheduleId: claimed.scheduleId, taskId: claimed.taskId, owner: command.workerId, generation: claimed.generation };
       const grant = await this.#scheduleWrite(token, async (uow, schedule, events, timestamp) => {

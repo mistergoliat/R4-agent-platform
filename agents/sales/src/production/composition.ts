@@ -212,6 +212,9 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
       actionPolicy: salesActionPolicyFor(profile),
       admission: controls,
       presence: { executionMode: 'production', runtimeProfile: profileLabel(profile) },
+      // R4-J4-R6 EV-2: only tasks pinned to this profile's definition; after a rollback, tasks of another
+      // definition wait (durable, visible) instead of running with this profile's capabilities.
+      servedAgents: [{ agentId: SALES_AGENT_ID, version: salesProductionAgentVersion(profile) }],
     },
   };
 }

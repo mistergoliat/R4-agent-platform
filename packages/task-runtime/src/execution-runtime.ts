@@ -46,7 +46,7 @@ import {
   type PendingEvent,
   type TerminationInput,
 } from './mutations.js';
-import type { ExecutionStore, ExecutionUnitOfWork } from './ports.js';
+import type { ExecutionStore, ExecutionUnitOfWork, ServedAgents } from './ports.js';
 import type { InteractionRecords } from './temporal-ports.js';
 
 export interface ExecutionRuntimeOptions {
@@ -95,6 +95,8 @@ export interface RunFailureHandoff {
 export interface ClaimCommand {
   readonly workerId: string;
   readonly leaseDurationMs: number;
+  /** Only tasks pinned to one of these definitions are claimed (`ServedAgents`). */
+  readonly served?: ServedAgents;
 }
 
 export type ClaimOutcome =
@@ -303,7 +305,7 @@ export class ExecutionRuntime {
   async claimNext(command: ClaimCommand): Promise<ClaimOutcome | null> {
     const events: PendingEvent[] = [];
     const outcome = await this.#store.transaction(async (uow): Promise<ClaimOutcome | null> => {
-      const claimed = await uow.claimRunnableTask(command.workerId, command.leaseDurationMs);
+      const claimed = await uow.claimRunnableTask(command.workerId, command.leaseDurationMs, command.served);
       if (!claimed) return null;
       const { lease, previousOwner } = claimed;
       let task = claimed.task;

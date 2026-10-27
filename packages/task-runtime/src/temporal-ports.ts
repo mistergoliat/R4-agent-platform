@@ -1,4 +1,5 @@
 import type { ActionExecution, ApprovalRequest, Goal, Handoff, HumanRequest, RunStep, Schedule, ScheduleToken, TaskWait, TemporalEvent, WaitResolution } from '@r4/contracts';
+import type { ServedAgents } from './ports.js';
 
 /** A task's deferred terminal status (`task_terminal_intents`). */
 export interface TerminalIntent {
@@ -47,7 +48,7 @@ export interface TemporalPersistence {
   /** Scheduler claim: the oldest due pending (or lease-expired claimed) schedule, SKIP LOCKED; generation + 1. */
   claimDueSchedule(owner: string, leaseMs: number): Promise<Schedule | null>;
   /** Worker claim: the oldest dispatched (or lease-expired in-progress) reconciliation, SKIP LOCKED; generation + 1. */
-  claimReconciliation(owner: string, leaseMs: number): Promise<Schedule | null>;
+  claimReconciliation(owner: string, leaseMs: number, served?: ServedAgents): Promise<Schedule | null>;
   /** Row-locks a schedule and verifies the token (owner, generation, unexpired lease on the temporal clock). */
   lockSchedule(token: ScheduleToken): Promise<Schedule>;
   scheduleFor(kind: Schedule['kind'], referenceId: string): Promise<Schedule | null>;
