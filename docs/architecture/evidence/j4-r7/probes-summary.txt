@@ -1,0 +1,17 @@
+ RUN  v4.1.11 C:/Users/dell/Pesaschile IA/dev/r4-j4-r7-design
+ ✓ |integration| tests/integration/r4-j4-r7-probes.test.ts > R4-J4-R7 audit probes on main d0bb7a7 (current behavior) > P01 (B1) complete without a reply to an explicit question: task completed, 0 outbound; next message opens a context-less task 3725ms
+ ✓ |integration| tests/integration/r4-j4-r7-probes.test.ts > R4-J4-R7 audit probes on main d0bb7a7 (current behavior) > P02 (B9) input arriving during the model call that decides complete is orphaned on the completed task 2828ms
+ ✓ |integration| tests/integration/r4-j4-r7-probes.test.ts > R4-J4-R7 audit probes on main d0bb7a7 (current behavior) > P03 (B5) a per-run budget exhausted inside one turn fails the task: no reply, no handoff; next message is a new task 6686ms
+ ✓ |integration| tests/integration/r4-j4-r7-probes.test.ts > R4-J4-R7 audit probes on main d0bb7a7 (current behavior) > P04 (B7) two invalid outputs: ADR-028 exhausted → blocked + platform handoff, 0 outbound; follow-up input not answered 3071ms
+ ✓ |integration| tests/integration/r4-j4-r7-probes.test.ts > R4-J4-R7 audit probes on main d0bb7a7 (current behavior) > P05 (B3) agent WAIT_FOR_INPUT without a reply to an explicit question: both sides wait, 0 outbound 3041ms
+ ✓ |integration| tests/integration/r4-j4-r7-probes.test.ts > R4-J4-R7 audit probes on main d0bb7a7 (current behavior) > P06 (R6-3) consultation without expiresAt: no expiry schedule; customer follow-ups do not wake the task, 0 outbound 3290ms
+ ✓ |integration| tests/integration/r4-j4-r7-probes.test.ts > R4-J4-R7 audit probes on main d0bb7a7 (current behavior) > P07 consultation with an expiresAt already past: a model-chosen value fails the task terminally (internal_failure) 2941ms
+ ✓ |integration| tests/integration/r4-j4-r7-probes.test.ts > R4-J4-R7 audit probes on main d0bb7a7 (current behavior) > P08 (B12) a reply cancelled at the delivery gate (expired) does not wake the task: it stays in WAIT_FOR_INPUT 4359ms
+ ✓ |integration| tests/integration/r4-j4-r7-probes.test.ts > R4-J4-R7 audit probes on main d0bb7a7 (current behavior) > P09 finish_reason=length is not recorded: a truncated output is an ordinary invalid_structured_output (ADR-028 recoverable) 3342ms
+ ✓ |integration| tests/integration/r4-j4-r7-probes.test.ts > R4-J4-R7 audit probes on main d0bb7a7 (current behavior) > P11 (B2) legitimate social close after a delivered reply: completed silently; a later return loses the conversation 5396ms
+ ✓ |integration| tests/integration/r4-j4-r7-probes.test.ts > R4-J4-R7 audit probes on main d0bb7a7 (current behavior) > P12 (control) input arriving during the model call that decides wait wakes the task at once (horizon rule works for wait) 4866ms
+ ✓ |integration| tests/integration/r4-j4-r7-probes.test.ts > R4-J4-R7 audit probes on main d0bb7a7 (current behavior) > P13 (control) input arriving while a respond is drafted: draft cancelled superseded_by_newer_input, task woken, next run replies 4246ms
+ ✓ |integration| tests/integration/r4-j4-r7-probes.test.ts > R4-J4-R7 audit probes on main d0bb7a7 (current behavior) > P10 (B10) agent request_handoff: blocked, no message to the customer; follow-ups recorded as human_owned, never answered 3108ms
+      Tests  13 passed (13)
+   Start at  17:11:40
+   Duration  61.16s (transform 3.78s, setup 0ms, import 9.56s, tests 50.91s, environment 0ms)
