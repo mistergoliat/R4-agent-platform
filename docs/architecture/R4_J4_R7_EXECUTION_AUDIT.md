@@ -1,7 +1,7 @@
 ---
 title: R4-J4-R7 — Auditoría de ejecución, continuidad y recuperación conversacional
-status: R4_J4_R7_G0_REVIEW_READY (addendum §10 por DESIGN-02)
-mandate: R4-J4-R7-DESIGN-01 — Agent Conversation Reliability & Recovery (owner, 2026-10-28), modalidad read-only; addendum por R4-J4-R7-DESIGN-02
+status: R4_J4_R7_G0_FINAL_REVIEW (addendum §10 por DESIGN-02 y §10.3 por la G0 Resolution)
+mandate: R4-J4-R7-DESIGN-01 — Agent Conversation Reliability & Recovery (owner, 2026-10-28), modalidad read-only; addenda por R4-J4-R7-DESIGN-02 y Owner G0 Resolution
 date: 2026-10-28
 base: main d0bb7a7 (d0bb7a7d5bd7e4d69c2f7a113ee1d9f8a6618676, 2026-10-27 21:41 -0300)
 companions: R4_J4_R7_DESIGN.md, R4_J4_R7_TEST_PLAN.md
@@ -415,7 +415,7 @@ No ejecutar en paralelo con `npm run test:recovery`.
 | `complete` | Sin control: entrada huérfana | [V P02] | Confirmado (defecto) |
 | Finales terminales por falla | Entrada adjunta a una task `failed` | [C][I de P02 + P03] | Inferido |
 | Suspensiones humanas | Registrada, sin wake ni aviso | [V P06, P10] | Confirmado |
-| **Resolución de una aprobación** | Tras aprobar, `load()` carga la propuesta aprobada como `carriedAction` y el kernel la ejecuta **antes** de cualquier llamada al modelo: las entradas recibidas durante la espera no la afectan | [C `apps/worker/src/session.ts:110`, `agent-kernel/src/context.ts:116-117`, `kernel.ts:125-131`] | Confirmado por código; no por sonda |
+| **Resolución de una aprobación** | Tras aprobar, `load()` carga la propuesta aprobada como `carriedAction` y el kernel la ejecuta **antes** de cualquier llamada al modelo: las entradas recibidas durante la espera (W1) o después de la decisión (W2) no la afectan | [C `apps/worker/src/session.ts:110`, `agent-kernel/src/context.ts:116-117`, `kernel.ts:125-131`][**V A-W1, A-W2**] | **Confirmado por ejecución** (§10.3) |
 | Llamada al modelo y escrituras en vuelo | Nunca se interrumpen (la interrupción sólo llega por lease o stop) | [C `worker.ts:186-224`] | Confirmado por código |
 | Autorización de escritura (J3) | El dominio exige que la última entrada del cliente sea una confirmación explícita posterior a la oferta | [C `quote-v4.ts:192-206`] | Confirmado por código |
 | Precondiciones de cierre ante efecto incierto | `transitionTaskWithin` difiere sólo `cancelled`/`failed` (`mutations.ts:77-82`). Hoy un `completed` con efecto incierto no es alcanzable porque el claim excluye esas tasks | [C][I] | Inferido |
@@ -429,3 +429,28 @@ No ejecutar en paralelo con `npm run test:recovery`.
 | DeepSeek Harness (`agent/request-error`, `assistant/attempt`) | Sigue sin fuente local: INCONCLUSIVE (§3.4) | — |
 
 Nuevo nivel de evidencia: **[M]** = sección del manual tahan-tech leída en este mandato (describe tahan-tech, no R4).
+
+### 10.3 Addendum G0 Resolution — aprobación pendiente y modificación de la solicitud
+
+**Sondas A-W1 y A-W2** (`docs/architecture/evidence/j4-r7/r4-j4-r7-approval-probes.test.ts.txt`, salida en
+`approval-probes-evidence.jsonl.txt`; 2/2 sobre `d0bb7a7`, 2026-10-28 18:27:03 -0300). Usan el harness de
+`tests/integration/human-collaboration.test.ts` con la capacidad IRREVERSIBLE_WRITE de prueba y la política `WRITES`.
+
+| Sonda | Guion | Observado |
+|---|---|---|
+| A-W1 | Propuesta (100 kg) ⇒ `require_approval`; **antes** de decidir entra «Mejor que sean 120 kg»; el humano aprueba; corre el worker | Task `requires_approval` tras la entrada (sin wake). Decisiones `[require_approval, allow/human_approved]`; **1** ejecución con los argumentos originales; receipt `succeeded`. La **primera** llamada al modelo ya contiene la observación `succeeded` **y** el cambio |
+| A-W2 | Ídem, pero la entrada llega **después** de aprobar y antes de que corra el worker | Idéntico |
+
+**Garantías verificadas por componente** (detalle en diseño §5.4.1):
+- **ActionRuntime:** re-prepara argumentos y pide una decisión nueva (`action-runtime.ts:299-321, 879-882`).
+- **Policy Engine:** liga la aprobación a propuesta, versión y hash de argumentos y re-evalúa la política
+  (`policy-engine/src/engine.ts:31-77`). No recibe hechos de la conversación, por diseño.
+- **J3 `quote.create@2`:** verifica los hechos del dueño en el primer intento, pero **no** la conversación.
+- **J3E `@6`–`@8`:** sí verifica que la última entrada sea la confirmación (`quote-v4.ts:192-206`), pero no usa
+  aprobaciones.
+- **Inspección de aprobaciones:** no muestra el hilo (`agents/sales/src/production/approvals.ts:74-82`).
+- **Unicidad:** `human_requests.proposal_id` es único (`0005_temporal_human_runtime.sql:43`).
+
+**Conclusión:** la brecha existe y es **BLK-AP1** (diseño §5.4): ningún componente impide hoy ejecutar una acción
+aprobada después de que el cliente cambió la solicitud. **No se asume que el modelo la resuelva:** las sondas muestran
+que el modelo no es consultado antes de la ejecución.

@@ -1,7 +1,7 @@
 ---
 title: R4-J4-R7 — Plan de pruebas de confiabilidad conversacional
-status: R4_J4_R7_G0_REVIEW_READY (acompaña al diseño; no autoriza implementación)
-mandate: R4-J4-R7-DESIGN-01 y R4-J4-R7-DESIGN-02 (owner, 2026-10-28)
+status: R4_J4_R7_G0_FINAL_REVIEW (acompaña al diseño; no autoriza implementación)
+mandate: R4-J4-R7-DESIGN-01, R4-J4-R7-DESIGN-02 y Owner G0 Resolution (owner, 2026-10-28)
 date: 2026-10-28
 base: main d0bb7a7
 depends-on: R4_J4_R7_EXECUTION_AUDIT.md, R4_J4_R7_DESIGN.md
@@ -76,7 +76,10 @@ Nivel: **U** unitaria · **C** contrato · **I** integración (PostgreSQL) · **
 | **S23** | **Cierre social sin respuesta:** «Ok, gracias» tras una respuesta `accepted`; guion: `wait`, `wait` | S4, L2 | I | 1.º `wait` `refused` + `reconsider`; 2.º ⇒ task `waiting` + `closed_without_reply`; la continuidad se mantiene (misma task) | Sin evento; dos `reconsider` |
 | S24 | «Ok, gracias»; guion: `wait`, `complete` | S4 | I | `completed` + evento (decisiones distintas, misma frontera) | — |
 | S25 | «Ok, gracias»; guion: `respond` | — | I | `covered`; sin evento | Evento espurio |
-| S26 | Una frontera nueva reinicia la reconsideración | S4, L3 | I | Una entrada nueva tras un cierre explícito ⇒ un `reconsider` nuevo para la nueva `L` | Reutiliza el anterior |
+| S26 | Una frontera nueva reinicia la reconsideración | S4, L3 | I | Una entrada nueva tras un cierre ratificado ⇒ un `reconsider` nuevo para la nueva `L`; el cierre anterior no cubre la entrada nueva | Reutiliza el anterior |
+| **S35** | **Entrada nueva entre la reconsideración y el segundo cierre** (condición 3 de G0). Guion: `wait` ⇒ `reconsider(L)`; se inyecta `L'` durante la 2.ª llamada; 2.º `wait` | S4 | I | Sin `closed_without_reply`; la espera despierta por UNSEEN y luego hay un `reconsider(L')` nuevo; `reconsider(L)` queda sin efecto | Cierre aceptado con la ratificación de `L` |
+| **S36** | **La reconsideración identifica la entrada** (condición 2) | S4 | I | El episodio y el evento llevan `inputId`, `memoryItemId` y `receivedAt` de `L`; el `memoryItemId` es un ítem presente en el snapshot de la 2.ª decisión | Episodio genérico sin entrada |
+| **S37** | **La ratificación no se presenta como verificación** (condición 1) | S4 | U+I | Evento con `basis: 'model_ratification'`; ni telemetría ni atención usan "verified" | Marca de verificación |
 | S27 | `wait` ante una pregunta (P05 invertida); guion: `wait`, `respond` | L1 | I | Rechazo y luego respuesta | `waiting` sin outbound |
 | S28 | Cierre con request humano abierto o efecto incierto (forzado por fixture) | S3 | U+I | Contingencia `turn_closure_blocked` | `completed` |
 | S29 | El episodio `turn.closure.reconsider` aparece en el snapshot (ítem OBSERVED) | — | I | Ítem presente con `inputId` | Ausente |
@@ -127,7 +130,7 @@ Nivel: **U** unitaria · **C** contrato · **I** integración (PostgreSQL) · **
 | **S70** | **Mensaje nuevo durante búsquedas** (perfil con catálogo): entrada inyectada durante el 2.º READ | S2, §3.2 F1 | I | La 3.ª llamada al modelo la contiene; el ledger de steering registra la entrada y la iteración; un `respond` cubre ambas | Huérfana o ignorada hasta la run siguiente |
 | **S71** | **Mensaje nuevo antes de emitir una cotización:** «Mejor que sean 120 kg» tras la oferta; guion: el modelo propone `quote.create` igual | S5, AD-07 | I (J3E) | El dominio niega (`customer_confirmation_not_explicit` o `superseded`); 0 cotizaciones emitidas; observación al modelo | Emisión |
 | **S72** | **Mensaje posterior a una escritura confirmada:** tras el receipt, «gracias, ¿me la mandas?»; guion: el modelo re-propone la misma escritura | S5 | I (J3E) | Una nueva propuesta no reutiliza ni regenera la clave de la ejecutada; los límites J3 la niegan (cupo autónomo [D]). Si no la niegan, **hallazgo** para J3, no para R7 | Segunda emisión |
-| S73 | Entrada durante la espera de una aprobación (F7) | S5 | I | Al aprobar, la acción aprobada se ejecuta (comportamiento vigente, AD-07); la vista del operador marca la entrada posterior | Ejecución sin marca |
+| S73 | Ver §3.8 (aprobación pendiente con modificación del cliente) | S6 | I | — | — |
 | **S74** | **Aviso `platform` entre la oferta y la confirmación** (D-4) | S5 | I (J3E) | La confirmación válida del cliente sigue autorizando; el aviso no invalida la oferta | Oferta invalidada |
 | S75 | Ráfaga de 3 mensajes durante una run | S2 | I | Los 3 incorporados en la siguiente frontera; ninguno perdido | Pérdida |
 | S76 | Dos workers y una conversación | S2 | I | A lo sumo una run activa; orden serializado | Dos runs |
@@ -145,6 +148,28 @@ respuesta) y verifica la plataforma, no la interpretación.
 | «Necesito cotizar el rack» (sin signo de pregunta) | Sin selección | READ y `respond` | `reconsider` → cierre explícito **aceptado y registrado** (residuo B1, S21) |
 | «Gracias, pero agrégale dos discos» | Selección existente | `sales.workspace.update` y `respond` | ídem |
 | «Mejor que sean 120 kg» | Tras una oferta de 100 kg | Actualización y nueva vista previa; emisión de la oferta anterior negada (S71) | ídem |
+
+### 3.8 Aprobación pendiente y modificación de la solicitud (G0 Resolution; diseño §5.4, BLK-AP1)
+
+Fixture: perfil con `quote.create@2` (REQUIRE_APPROVAL, `@4`) sobre el testbed con stand-ins de Catalog, Shipping y
+Quote; o el harness `governed.ts` con una capacidad IRREVERSIBLE_WRITE de prueba que requiera aprobación y una
+verificación de dueño simulada. Decisiones humanas vía `respondHuman` con `TrustedHumanContext` de prueba.
+
+| ID | Escenario | INV | Nivel | Hoy (`d0bb7a7`) | PASS después de AH | FAIL |
+|---|---|---|---|---|---|---|
+| **S73a** | **W1:** solicitud `requested` (100 kg); el cliente escribe «Mejor que sean 120 kg»; el humano aprueba con la inspección **anterior** (`expectedInputHorizon` viejo) | S6 | I | Se aprueba y se ejecuta la acción original; el modelo la ve después [**V A-W1**, capacidad de prueba]; para `quote.create@2`, [C] | `409 approval_horizon_moved`; nada se aprueba ni se emite; la inspección muestra la entrada nueva | Emisión de 100 kg |
+| **S73b** | W1 con inspección actualizada: el humano ve «120 kg» y **rechaza** | S5, S6 | I | — | `approval_rejected` observado; la run nueva ve el rechazo y la entrada; el agente actualiza el workspace y hace una nueva propuesta (nueva aprobación) | Emisión de 100 kg |
+| **S73c** | **W2:** aprobada; «Mejor que sean 120 kg» llega antes de `authorizeAction` (inyectada entre la decisión y el claim) | S6 | I | Se ejecuta la acción original [**V A-W2**, capacidad de prueba] | Decisión `require_approval` `approval_horizon_moved`; **sin comando**; task `requires_approval` sobre la **misma** solicitud (sigue `approved`, no invalidada); aviso o atención | Comando creado |
+| **S73d** | W2 con un mensaje irrelevante («gracias») | S6 | I | Se emite [C] | Igual que S73c: retención (sin clasificador); el humano `reconfirm` ⇒ se autoriza la **misma** propuesta y se crea su único comando (una sola clave de ejecución) | Se emite sin re-ratificar; o se invalida |
+| **S73e** | Retenida y vence el TTL (60 min, reloj congelado) | S6, L4 | I | n/a (sin TTL) | `approval_expired` observado; el agente atiende con la entrada en contexto | Ejecución tras el vencimiento |
+| **S73f** | **W3:** la entrada llega con el intento en vuelo (Quote `hang`) | F9 | I/R | La escritura se completa | Igual (aceptado por diseño); el agente atiende el cambio después; ningún segundo comando para la propuesta | Interrupción o segundo comando |
+| **S73g** | Re-autorización tras `reconfirm`: la política cambió entre tanto | S5 | I | n/a | La re-evaluación aplica la política vigente (DENY si es más estricta) | ALLOW por la aprobación vieja |
+| **S73h** | El modelo **no** puede liberar una retención | S6 | U+C | n/a | Ninguna decisión del modelo cambia el estado de la solicitud ni `horizonCurrent`; prueba de contrato: sólo `respondHuman` con `TrustedHumanContext` | Liberación por el modelo |
+| **S73i** | J3E `@8` (sin aprobación): «Mejor que sean 120 kg» entre la confirmación y la ejecución | S5 | I | Negado por el dominio (`quote-v4.ts:192-206`) [C] | Sin cambio | Emisión |
+
+**Evidencia del estado actual:** las sondas A-W1 y A-W2 (`docs/architecture/evidence/j4-r7/approval-probes-*`, 2/2
+sobre `d0bb7a7`) ya reproducen W1 y W2 con la capacidad IRREVERSIBLE_WRITE del harness. Se convierten en S73a y S73c
+con la aserción invertida. Falta, como primer paso de G3, la variante con `quote.create@2` y stand-ins de los dueños.
 
 ## 4. Suite semántica (proveedor real; autorización independiente)
 
@@ -170,8 +195,13 @@ respuesta) y verifica la plataforma, no la interpretación.
 | Pregunta ambigua con impacto comercial («el mismo de antes») | Dos candidatos | Una pregunta de aclaración breve | Elegir y cotizar sin aclarar |
 | Episodio de reconsideración por una solicitud real | Guion de contexto con un cierre previo | Responder tras la reconsideración | Repetir el cierre |
 
-**Métricas que se reportan:** tasa de fallos críticos por celda; reconsideraciones disparadas; cierres explícitos por
-contexto; aclaraciones ante ambigüedad comercial. **Umbral propuesto** (decide el owner en el pre-registro): 0 fallos
+**Evaluación de cierres silenciosos (condición 4 de G0):** **todos** los `turn.closed_without_reply` producidos por la
+suite se revisan uno por uno (humano). Para cada uno se registra: entrada, contexto, ambas decisiones y un veredicto
+`legítimo | solicitud desatendida | dudoso`. Un cierre ratificado sobre una solicitud real cuenta como fallo crítico,
+aunque el runtime lo haya aceptado: la ratificación no es verificación.
+
+**Métricas que se reportan:** tasa de fallos críticos por celda; reconsideraciones disparadas; cierres ratificados por
+contexto y su veredicto; aclaraciones ante ambigüedad comercial. **Umbral propuesto** (decide el owner en el pre-registro): 0 fallos
 críticos en las celdas «Necesito cotizar el rack», «agrégale dos discos» y «120 kg». Esta suite **no** hace
 correctos a los cierres; mide el residuo B1 (diseño §14).
 
@@ -194,6 +224,12 @@ correctos a los cierres; mide el residuo B1 (diseño §14).
 | Sin TTL por defecto (consulta / aprobación) | S40 / S44 |
 | `actor_kind` no filtrado | S33 |
 | Reintroducir una heurística sintáctica (p. ej. rechazar si la entrada contiene `?`) | S34 y los casos guionados de §3.7 rama B |
+| La ratificación sobrevive a una entrada nueva | S35 |
+| Episodio sin `inputId` ni `memoryItemId` | S36 |
+| AH: `authorizeAction` ignora `horizonCurrent` | S73c, S73d |
+| AH: `respondHuman` acepta una aprobación con `expectedInputHorizon` desactualizado | S73a |
+| AH: la retención invalida la solicitud (`approved → cancelled` automático) | S73c, S73d |
+| AH: `reconfirm` permitido sobre una solicitud no retenida, o sin `TrustedHumanContext` | S73h |
 
 ## 6. Verificadores (consultas de sólo lectura; no son un proceso)
 
@@ -270,11 +306,11 @@ y la nueva `turn-guard`; `lint` y `typecheck`. Línea base en `d0bb7a7` [D `R4_J
 
 | Gate | Fase | Criterio PASS |
 |---|---|---|
-| **G0** | Diseño | Revisión del owner de los tres documentos con D-1..D-8 fijados; confirmación de la nota sobre la gramática J3 (diseño §3.1). Estado: `R4_J4_R7_G0_REVIEW_READY` |
+| **G0** | Diseño | `G0_CONDITIONALLY_APPROVED` (gramática J3 confirmada; ratificación con condiciones 1–4). Cierre formal pendiente: aceptación de BLK-AP1 como requisito de G3 y de la dependencia operativa sobre perfiles REQUIRE_APPROVAL; confirmación de que producción corre `@2`. Estado: `R4_J4_R7_G0_FINAL_REVIEW` |
 | **G1** | R7-1 | S01–S16, S50–S54, S57, S58 verdes; mutaciones de R7-1 detectadas; regresión §7 verde; verificadores con 0 violaciones; PR #27 verificado antes de generalizarlo (D-8) |
-| **G2** | R7-2 | S20–S34, S56, S70, S75, S76 y la rama B de §3.7 verdes; mutaciones del guard detectadas; verificadores §6 congelados; `observe` probado (S32) |
-| **G-sem** | Tras G2 (autorización independiente) | Pre-registro aprobado; suite §4 ejecutada; umbrales del pre-registro cumplidos. Si no se cumplen, el owner decide entre ajustar las instrucciones (v9), adoptar O5 (v6) o mantener `observe` |
-| **G3** | R7-3 | S40–S47, S73 verdes; TTL configurados (30 / 60 min) |
+| **G2** | R7-2 | S20–S37, S56, S70, S75, S76 y la rama B de §3.7 verdes; mutaciones del guard detectadas; verificadores §6 congelados; `observe` probado (S32) |
+| **G-sem** | Tras G2 (autorización independiente) | Pre-registro aprobado; suite §4 ejecutada; **100 % de los cierres ratificados revisados** con su veredicto; umbrales del pre-registro cumplidos. Si no se cumplen, el owner decide entre ajustar las instrucciones (v9), adoptar O5 (v6) o mantener `observe` |
+| **G3** | R7-3 | S40–S47 y **S73a–S73i** verdes (BLK-AP1 cerrado por AH), incluida la variante con `quote.create@2`; TTL configurados (30 / 60 min). **Sin AH, G3 no pasa** |
 | **G4** | R7-4 | S60, S61, S71, S72, S74 verdes; Sales v9 con su regresión; revisión de `maxWriteActions` (D-7) |
 | **G-canary** (autorización aparte) | Tras G-sem, con `observe` y luego `enforce` | En EC2, datos sintéticos: verificadores con 0 violaciones sobre todas las tasks; 0 tasks `failed` por terminación de run; cada handoff con su aviso entregado o su causa de gate registrada; formas R6 repetidas; tasa de cierres explícitos y su muestreo manual (residuo B1) |
 

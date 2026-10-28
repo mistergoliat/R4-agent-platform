@@ -1,7 +1,7 @@
 ---
 title: R4-J4-R7 — Diseño de confiabilidad y recuperación conversacional
-status: R4_J4_R7_G0_REVIEW_READY (no autoriza implementación; detenerse antes de R7-1)
-mandate: R4-J4-R7-DESIGN-01 (2026-10-28) y R4-J4-R7-DESIGN-02 «Owner Architecture Decisions — Steering & Semantic Interpretation» (2026-10-28)
+status: R4_J4_R7_G0_FINAL_REVIEW (G0_CONDITIONALLY_APPROVED por el owner; R7-1 sin autorización hasta el cierre formal de G0)
+mandate: R4-J4-R7-DESIGN-01 (2026-10-28), R4-J4-R7-DESIGN-02 «Owner Architecture Decisions — Steering & Semantic Interpretation» (2026-10-28) y «R4-J4-R7 — Owner G0 Resolution» (2026-10-28)
 date: 2026-10-28
 base: main d0bb7a7
 depends-on: R4_J4_R7_EXECUTION_AUDIT.md (B1–B12, X1–X5, L-1..L-13, §10 steering), R4_J4_R7_TEST_PLAN.md
@@ -13,7 +13,9 @@ depends-on: R4_J4_R7_EXECUTION_AUDIT.md (B1–B12, X1–X5, L-1..L-13, §10 stee
 DIRECTION            ARCHITECTURE_DIRECTION_APPROVED (DESIGN-02): el modelo interpreta, el runtime garantiza estructura
 MECHANISMS           Turn Completion Guard · cierre explícito por reconsideración · Durable Steering (nivel 1) ·
                      Runtime Recovery (ADR-028 + contingencia) · Durable Conversation Continuity
-SEMANTIC_GUARANTEE   ninguna determinista: el cierre sin respuesta es explícito, informado y registrado, no "correcto"
+SEMANTIC_GUARANTEE   ninguna determinista: el cierre sin respuesta es RATIFICADO por el mismo modelo (no verificado), informado y registrado
+APPROVALS            BLOQUEO BLK-AP1: hoy una acción aprobada puede ejecutarse aunque el cliente haya cambiado su solicitud
+                     durante la espera; propuesta Approval Horizon Hold (§5.4), requisito de G3
 KERNEL               sin cambio de puerto (KernelSession) ni de protocolo (r4.agent_decision.v5);
                      2 cambios de código no contractuales propuestos (KC-0, KC-2), no implementados
 MIGRATIONS           0 propias; reutiliza la 0012 de ADR-041 (PR #27) con `human_request_id` (D-8, pendiente de verificar)
@@ -34,6 +36,8 @@ J5-A                 steering interactivo (nivel 2) no implementado; compatibili
 | 7 | **D-4 invertida:** un aviso `platform` es informativo y **no** invalida ofertas; sólo los cambios comerciales (mensajes del cliente) lo hacen, a través del contrato J3 | AD-07, D-4 |
 | 8 | Valores de D-1..D-8 fijados por el owner (§15) | §4 del mandato |
 | 9 | Contraste con el manual tahan-tech (capítulos 7, 9 y 14 leídos) | §3 del mandato |
+| 10 | **G0 Resolution:** el owner confirma que la gramática J3 es una compuerta comercial (§3.1). El segundo cierre es una **ratificación del mismo modelo**, no una verificación semántica independiente. La reconsideración identifica la entrada pendiente; una entrada nueva invalida cualquier ratificación anterior; los cierres silenciosos se evalúan en G-sem (§3.3, §4.2) | G0 Resolution, condiciones 1–4 |
+| 11 | **G0 Resolution:** escenario de aprobación pendiente con modificación del cliente. Se verificaron las garantías de J3, Policy Engine y ActionRuntime; la brecha queda como **BLK-AP1**, con la propuesta *Approval Horizon Hold* (§5.4) | G0 Resolution |
 
 ## 1. Principio
 
@@ -82,12 +86,12 @@ Implementación: `TemporalPersistence.turnObligation(taskId, horizonSnapshotId)`
 | Responsabilidades de Checkout | **Checkout** (ADR-0002 del servicio) | — | AD-07; R7 no las toca |
 | Entrega del mensaje | **Dueño de la entrega** | Sí | Outbox existente |
 
-**Nota interpretativa para confirmación del owner.** La gramática cerrada de confirmación J3
-(`r4-sales-confirmation-es-v1`, `agents/sales/src/capabilities/quote-v4.ts:185-215`) es determinista, pero no es una
-autoridad semántica sobre la conversación. Es una **compuerta comercial fail-closed** del contrato J3 (ADR-035): sólo
-puede negar un efecto; nunca cierra una conversación ni decide si hace falta respuesta. Se mantiene por AD-07 y por
-la última línea de AD-01. Cuando la compuerta rechaza «Ya, dale», el modelo pide una confirmación explícita (AD-04
-puntos 4 y 5).
+**Confirmado por el owner (G0 Resolution).** La gramática cerrada de confirmación J3 (`r4-sales-confirmation-es-v1`,
+`agents/sales/src/capabilities/quote-v4.ts:185-215`) es una **compuerta comercial** que puede negar operaciones. No
+es una autoridad semántica sobre la conversación y **no concede por sí sola** autorización para ejecutar: Policy
+Engine, ActionRuntime y las verificaciones del dueño siguen aplicándose. El modelo conserva la interpretación
+contextual de los mensajes ambiguos; el runtime y los contratos comerciales conservan la autoridad sobre las
+operaciones. Cuando la compuerta rechaza «Ya, dale», el modelo pide una confirmación explícita (AD-04 puntos 4 y 5).
 
 ### 3.2 Durable Steering — nivel 1 (J4-R7)
 
@@ -103,7 +107,7 @@ huérfanas, y la conversación se serializa por task.**
 | F4 | `complete` | **Sin control:** entrada huérfana | UNSEEN ⇒ diferir; UNANSWERED ⇒ reconsideración | [V P02] |
 | F5 | Finales de plataforma (presupuesto, fallas) | Task `failed`: entrada huérfana | No terminal: la entrada queda en una task viva, con aviso | [V P03][I] |
 | F6 | Suspensiones humanas (consulta, handoff, aprobación) | Registrada sin wake y sin aviso | Registrada; aviso N una vez; TTL ⇒ wake | [V P06, P10] |
-| F7 | Resolución de una aprobación | La acción aprobada se ejecuta **antes** de que el modelo vea las entradas posteriores a la solicitud | **Sin invalidación automática** (la autoridad es humana, AD-07). La vista del operador marca las entradas posteriores a la solicitud (derivado) | [C `apps/worker/src/session.ts:110`, `kernel.ts:127-131`] |
+| F7 | Resolución de una aprobación | La acción aprobada se ejecuta **antes** de que el modelo vea las entradas posteriores a la solicitud, y ningún componente lo comprueba (**BLK-AP1**) | **Approval Horizon Hold** (§5.4): sin invalidación automática, pero tampoco ejecución con un horizonte desactualizado; un humano ratifica viendo las entradas nuevas | [C `apps/worker/src/session.ts:110`, `kernel.ts:127-131`, `action-runtime.ts:299-321`, `policy-engine/src/engine.ts:66-77`] |
 | F8 | Llamada al modelo en vuelo | No se interrumpe | Sin cambio (lo evalúa J5-A) | [C] |
 | F9 | Escritura en vuelo | Nunca se interrumpe | Nunca, en ningún nivel | [C ADR-016/018] |
 | F10 | Antes de autorizar una escritura consecuente | Core no lo verifica; el dominio J3 exige que la última entrada del cliente sea una confirmación explícita posterior a la oferta | Sin cambio en Core (lo evalúa J5-A) | [C `quote-v4.ts:192-206`] |
@@ -128,13 +132,22 @@ equivalente durable del `en-turno → hecha` de tahan-tech (7.4, 9.8), sin tabla
 | O5 | Campo tipado de cierre en `wait` y `complete` (protocolo v6) | Declaración explícita en un solo paso | No | **Opción futura.** Ahorra la llamada de reconsideración; tampoco verifica la corrección |
 | O6 | Juez LLM post-hoc (evaluación, ADR-025) | Estadística, offline | n/a | Sólo medición; nunca autoridad de runtime (AD-06) |
 
+**Condiciones del owner (G0 Resolution), incorporadas:**
+
+| # | Condición | Cómo la cumple el diseño |
+|---|---|---|
+| 1 | El segundo cierre es una **ratificación del mismo modelo**, no una verificación semántica independiente | El evento se llama `turn.closed_without_reply` con `basis: 'model_ratification'`. Ningún documento, métrica ni gate lo presenta como verificación. INV-S4 lo define como ratificación |
+| 2 | La reconsideración **identifica la entrada pendiente** | El episodio y el evento `turn.closure.reconsider` llevan `inputId`, `memoryItemId` (`memory:<entry>`, el mismo ítem de conversación que el modelo tiene en el contexto) y `receivedAt` (§4.2) |
+| 3 | **Una entrada nueva invalida cualquier ratificación anterior** | La reconsideración está ligada a la frontera `L`. Si entre la reconsideración y el segundo cierre llega `L'`, el segundo cierre ve UNSEEN o una frontera distinta: se difiere o se reconsidera de nuevo y la reconsideración de `L` no sirve. Un cierre registrado sobre `L` no cubre ninguna entrada posterior (`covered(i)` exige `entity_id = i.input_id`). Además, el evento de cierre sólo es válido si **ninguna** entrada conversacional es posterior al `reconsider` que ratifica (INV-S4, comprobado en la misma tx) |
+| 4 | Los cierres silenciosos quedan **registrados y se evalúan en G-sem** | Todos los `turn.closed_without_reply` de la suite semántica se revisan uno por uno; en el canary se muestrean (plan de pruebas §4 y §8) |
+
 **Limitación documentada (no se inventa una garantía).** Ni v5 ni v6 permiten distinguir de forma **verificable** un
 cierre social de una solicitud comercial. Esa distinción es semántica y AD-01 la asigna al modelo. R7 garantiza que
 todo silencio frente a una entrada pendiente es:
-1. explícito: dos decisiones sobre la misma frontera;
-2. informado: el modelo vio el episodio con la entrada concreta;
+1. ratificado: dos decisiones del mismo modelo sobre la misma frontera, sin entradas nuevas entre ellas;
+2. informado: el modelo vio el episodio que identifica la entrada concreta;
 3. estructuralmente admisible: nada sin ver, sin requests humanos abiertos ni efectos inciertos;
-4. durable y auditable.
+4. durable, auditable y evaluado en G-sem.
 
 **No** garantiza que el silencio sea correcto. Ese residuo (B1 persistente) se mide con la suite semántica con
 proveedor real (plan de pruebas §4) y con la evaluación post-hoc. Es el mismo compromiso de tahan-tech: un aviso y
@@ -258,16 +271,22 @@ por UNSEEN sólo se repite si llega otra entrada, y eso es progreso del cliente.
 presupuestos de la run, que son el techo duro y llevan a contingencia, no a `failed`.
 
 **Registro durable** (`temporal_events`, tipo libre, sin migración):
-- `turn.closure.reconsider`: `{ entity: L.input_id, decision, stepId }`.
-- `turn.closed_without_reply`: `{ entity: L.input_id, decision, stepIds: [primero, segundo], reconsiderEventId,
-  hadPriorReply, trailingCount, policy: 'closure.v1' }`.
+- `turn.closure.reconsider`: `{ entity: L.input_id, memoryItemId, receivedAt, decision, stepId }`.
+- `turn.closed_without_reply`: `{ entity: L.input_id, basis: 'model_ratification', decision, stepIds: [primero,
+  segundo], reconsiderEventId, hadPriorReply, trailingCount, policy: 'closure.v1' }`.
+
+**Invalidación por entrada nueva (condición 3).** En la tx del segundo cierre, el guard exige que `L` siga siendo la
+frontera y que no exista ninguna entrada conversacional con `received_at` posterior al `reconsider(L)`. Si existe, se
+aplica la matriz desde UNSEEN o desde la primera vez, según corresponda. La ratificación anterior queda como evidencia,
+sin efecto.
 
 Son sólo metadatos: ningún texto del modelo se copia (el `reason` de `wait` ya vive en el step). En la run diferida,
 `termination.details.turnGuard = { outcome: 'deferred', code, inputId }`.
 
 **Visibilidad para el modelo.** `interactionRecords` (`temporal-store.ts:240`) incluye `complete`.
 `interactionSource` (`context-compiler/src/sources/platform.ts:149-236`) proyecta un episodio OBSERVED
-`turn.closure.reconsider` `{ inputId, code, decision }`, con texto de plataforma fijo, igual que `goal_rejection`
+`turn.closure.reconsider` `{ inputId, memoryItemId, receivedAt, code, decision }`, con texto de plataforma fijo que
+nombra la entrada pendiente, igual que `goal_rejection`
 (`:171-183`). No es una "pista de reparación" en el sentido de ADR-028: la decisión era válida y la plataforma pide
 reconsiderarla por política.
 
@@ -333,6 +352,86 @@ comportamiento actual, sin bucle (`execution-runtime.ts:639-641`, `kernel.ts:336
 | JSON inválido (`stop`) | Run nueva una vez y luego contingencia | ídem |
 | Presupuesto agotado | Contingencia (D-6); la run de solo-respuesta queda en R7-5 | — |
 
+### 5.4 Aprobación pendiente y modificación de la solicitud (G0 Resolution) — BLK-AP1
+
+**Requisito del owner:** no invalidar automáticamente toda aprobación por un mensaje nuevo, pero **ninguna acción
+aprobada debe ejecutarse si cambiaron las condiciones necesarias para autorizarla**. No se asume que el modelo lo
+resuelva.
+
+#### 5.4.1 Garantías vigentes (verificadas en `d0bb7a7`)
+
+Flujo tras una aprobación: `respondHuman(approve)` ⇒ wake ⇒ run nueva ⇒ `load()` carga la propuesta aprobada como
+`carriedAction` ⇒ el kernel la resuelve **antes de cualquier llamada al modelo** ⇒ `ActionExecutor.prepare` re-valida
+los argumentos ⇒ `ActionRuntime.authorizeAction` vuelve a evaluar la política con la aprobación como evidencia ⇒
+ALLOW ⇒ comando con clave nueva de ejecución ⇒ handler.
+
+| Condición que podría cambiar | ActionRuntime | Policy Engine | J3 `quote.create@2` (único camino con aprobación humana, perfil `@4`) | J3E `@6`–`@8` (sin aprobación) |
+|---|---|---|---|---|
+| Argumentos distintos de los aprobados | Re-prepara y valida (`apps/worker/src/session.ts:254-258`) | `argumentsMatch` contra `argumentsHash`, o DENY `approval_scope_mismatch` (`engine.ts:66-67`) | — | n/a |
+| Versión de la capacidad | — | Comprobada (`engine.ts:66`) | — | n/a |
+| Política vigente (por ejemplo, más estricta) | Decisión **nueva**: la aprobación es evidencia, nunca ALLOW por sí sola (`action-runtime.ts:879-882`) | Re-evaluada [T `human-collaboration.test.ts:157`] | — | ✓ |
+| Task `running`, scopes, identidad | — | Comprobados (`engine.ts:37-58`) | — | ✓ |
+| Hechos del dueño: precio, catálogo, despacho, aritmética, versión del workspace | — | No los conoce (pura, sin dominio) | **Verificados en el primer intento**; ante cualquier diferencia se rechaza sin enviar (`quote-v2.ts`, doc de `quoteCreateV2Capability`) | `preview_stale` (`quote-v4.ts:142`) |
+| **Intención del cliente: mensajes posteriores a la solicitud o a la decisión** | **No** | **No** (no recibe hechos de la conversación, por diseño) | **No** | **Sí**: la última entrada del cliente debe ser la confirmación explícita posterior a la oferta (`quote-v4.ts:192-206`) |
+| Vencimiento de la aprobación | `expiresAt: null` (`action-runtime.ts:409`) | — | — | n/a |
+| Lo que ve quien aprueba | — | — | La inspección muestra la solicitud, los argumentos, el estado de la task y el binding, **no** el hilo ni las entradas posteriores (`agents/sales/src/production/approvals.ts:74-82`) | n/a |
+| Lo que ve el modelo antes de ejecutar | Nada: la acción aprobada se ejecuta antes de cualquier llamada al modelo (`kernel.ts:125-131`) | — | — | El modelo decide la propuesta con el contexto vigente |
+
+Restricción de datos: `human_requests.proposal_id` es **único** (`0005_temporal_human_runtime.sql:43`). Sin migración,
+una propuesta no puede tener una segunda solicitud de aprobación.
+
+#### 5.4.2 Ventanas y brecha
+
+| Ventana | Ejemplo | Hoy | Clasificación |
+|---|---|---|---|
+| **W1** Solicitud `requested`, el cliente modifica | Aprobación pendiente de una cotización por 100 kg; el cliente escribe «Mejor que sean 120 kg» | La entrada se registra sin wake (task sigue `requires_approval`); el aprobador no la ve; al aprobar, la acción original se ejecuta **una vez** y el modelo recibe su primera llamada **después**, con la observación `succeeded` y el cambio en contexto **[V A-W1]**. Para `quote.create@2` el workspace no cambia porque el agente no corrió, así que la verificación del dueño también pasa [C] | **BLK-AP1** |
+| **W2** Aprobada, antes de la autorización (segundos: wake, claim, `authorizeAction`) | La misma modificación llega justo después de la decisión | Nadie la comprueba: misma ejecución y mismo orden **[V A-W2]** | **BLK-AP1** |
+| **W3** Autorizada (comando existe) o intento en vuelo | La modificación llega durante el POST a Quote | Escritura en vuelo: nunca se interrumpe (F9); la petición está congelada bajo la clave | **Aceptado por diseño.** La cotización emitida es inmutable (Quote, AD-07); el cambio da lugar a una solicitud nueva que el modelo atiende |
+
+Evidencia [V]: `docs/architecture/evidence/j4-r7/approval-probes-*` (2 sondas sobre `d0bb7a7`, harness de
+`human-collaboration` con una capacidad IRREVERSIBLE_WRITE de prueba bajo la política `WRITES`; 2/2, 2026-10-28
+18:27 -0300). No se ejecutó con `quote.create@2` real: su comportamiento adicional (verificación del dueño) está
+establecido por código.
+
+**BLK-AP1 (bloqueo de implementación).** Para capacidades con aprobación humana, la garantía «ninguna acción aprobada
+se ejecuta si cambiaron las condiciones» **no se cumple hoy** en W1 y W2. No la proveen J3 V2, Policy Engine ni
+ActionRuntime. No se puede cerrar sólo con documentación ni delegándola al modelo. Requiere los cambios de contrato de
+§5.4.3.
+
+#### 5.4.3 Propuesta: Approval Horizon Hold (AH)
+
+La "condición necesaria para autorizar" que hoy nadie liga es el **horizonte conversacional** que vio quien aprobó.
+Decidir si un mensaje nuevo cambia la sustancia es semántico. AD-01 no lo deja al runtime, y la resolución G0 no lo
+deja al modelo. Por eso la decisión vuelve a **la autoridad que aprobó (un humano)**, con la información nueva a la
+vista. No se invalida nada automáticamente.
+
+| Paso | Qué hace | Dónde | Contrato |
+|---|---|---|---|
+| AH-1 Horizonte en la decisión | Al aprobar, se registra `inputHorizon` = última entrada conversacional de la task en ese instante, en los datos del evento `approval.approved` (`temporal_events.data`, JSON libre). El cliente de la decisión debe enviar `expectedInputHorizon` (lo que mostró); si cambió, `409 approval_horizon_moved` y no hay aprobación | `TemporalRuntime.respondHuman` | `humanResponseSchema` + campo opcional (aditivo, versionado) |
+| AH-2 Inspección con contexto | La vista de aprobación lista las entradas conversacionales posteriores al snapshot de la propuesta (`action_proposals.context_snapshot_id`) | Sales `production/approvals.ts`, `ProductionStore.thread` | Aditivo (pack / live-ops) |
+| AH-3 Retención en la ejecución | En `authorizeAction`, con aprobación: si existe una entrada conversacional posterior a `inputHorizon`, **no** se crea el comando. Se registra una decisión `require_approval` con razón `approval_horizon_moved`; la run se suspende (`approval_required`); la task pasa a `requires_approval` con `WAIT_FOR_APPROVAL` sobre **la misma** solicitud, que conserva su estado `approved` (no se invalida). Atención y aviso (D-3) | `ActionRuntime`; `PolicyInput.approval.horizonCurrent: boolean` (hecho estructural, no lenguaje natural) | `PolicyInput` aditivo; regla nueva en el engine (puro) |
+| AH-4 Re-ratificación humana | Resultados nuevos sobre una aprobación retenida: `reconfirm` (nuevo `inputHorizon`, idempotente por `responseKey`) ⇒ wake ⇒ re-autorización; o `reject` / `cancel` ⇒ el agente observa el resultado con las entradas nuevas en contexto y atiende la modificación (nueva propuesta ⇒ nueva aprobación) | `TemporalRuntime.respondHuman` (transiciones `approved → rejected/cancelled` sólo mientras está retenida y sin comando) | `humanResponseSchema.outcome` + `reconfirm`; máquina de estados de la solicitud |
+| AH-5 Vencimiento | El TTL de 60 min (D-2) también corre durante la retención: al vencer, `approval_expired` ⇒ el agente atiende con todo en contexto | Existente + D-2 | — |
+| AH-6 W3 | Sin cambio: la escritura en vuelo se completa; el cambio se atiende después | — | — |
+
+**Propiedades:** sin migración (`unique(proposal_id)` se respeta: misma fila; evidencia en `temporal_events`); sin
+heurísticas; sin autoridad del modelo; un mensaje irrelevante («gracias») también retiene y cuesta una
+re-ratificación humana. Esa fricción es el precio de no usar un clasificador. La alternativa, que el modelo decida la
+relevancia, la descarta la resolución G0.
+
+**Alternativas descartadas:** (a) DENY automático ante cualquier entrada nueva: invalida toda aprobación, contra la
+resolución; (b) que el modelo juzgue la relevancia y libere: autoridad del modelo, contra la resolución; (c) una
+segunda solicitud de aprobación por propuesta: exige migrar `unique(proposal_id)`, y AH logra lo mismo sobre la misma
+fila; (d) despertar al modelo durante la espera de aprobación: le daría una run con una acción aprobada pendiente y
+complica el ciclo de vida sin dar autoridad.
+
+**Fase y gate:** AH entra en **R7-3**. **G3 no se aprueba sin AH.** Mientras tanto, **dependencia operativa
+explícita:** ningún perfil con capacidades REQUIRE_APPROVAL sobre un canal autónomo (hoy `quote.create@2`, perfil
+`@4`) debe habilitarse con clientes reales. `@2` no registra `quote.create`: hereda el dominio
+Quote como UNAVAILABLE [C `agents/sales/src/production/profile.ts:34`, `profile-v2.ts:25-29`,
+`composition.ts:156-188`]. Que producción corra `@2` es un dato del registro del canary R6 [D]; el owner debe
+confirmarlo al cerrar G0.
+
 ## 6. Durable Conversation Continuity
 
 | Mecanismo | Resuelve | Estructura nueva |
@@ -356,8 +455,9 @@ pruebas, el endpoint de atención y el cierre del canary), **no** un proceso que
 | **INV-S1** Durabilidad | Todo inbound de texto autenticado da exactamente una `task_input` (deduplicada), o queda `failed`/`rejected` visible en atención |
 | **INV-S2** Sin huérfanas | Ninguna task terminal tiene una entrada conversacional ausente del snapshot de la decisión que la cerró |
 | **INV-S3** Cierre admisible | Una task llega a `completed` sólo con `Obligación = NONE` o con un `turn.closed_without_reply(L)` válido. Ninguna terminación de run produce `failed`; `failed`/`cancelled` sólo por actos humanos o de administración |
-| **INV-S4** Cierre explícito | Todo `turn.closed_without_reply(L)` referencia un `turn.closure.reconsider(L)` previo y dos steps de decisión; en ambos, P-1..P-3 se cumplían |
+| **INV-S4** Cierre ratificado | Todo `turn.closed_without_reply(L)` es una **ratificación del mismo modelo** (`basis: model_ratification`, nunca "verificado"): referencia un `turn.closure.reconsider(L)` previo que identifica `L` y dos steps de decisión; en ambos, P-1..P-3 se cumplían; **ninguna entrada conversacional es posterior al `reconsider(L)`**; y no cubre ninguna entrada distinta de `L` |
 | **INV-S5** Autoridad preservada | Guard, steering e interpretación nunca crean, alteran ni re-ejecutan escrituras comerciales (misma propuesta ⇒ misma clave); un `human_request` abierto sólo cambia por respuesta humana, vencimiento programado o cancelación de la task; ningún valor del modelo produce una transición terminal; un aviso `platform` no invalida ofertas |
+| **INV-S6** Aprobación con horizonte vigente | Ninguna acción aprobada crea su comando si existe una entrada conversacional posterior al `inputHorizon` de su aprobación (o de su última re-ratificación). Tampoco se invalida automáticamente: queda retenida hasta una re-ratificación, rechazo, cancelación o vencimiento humanos (§5.4). **Estado: BLK-AP1, no se cumple hoy; requisito de G3** |
 
 ### 7.2 Liveness — existe una vía durable y verificable de progreso, recuperación o intervención
 
@@ -397,7 +497,11 @@ INV-12 → O1.
 | `TemporalPersistence` | `task-runtime` | `+turnObligation` | No | Puerto interno de Core |
 | `finishExecution`, `claimNext` | `task-runtime` | Diferimiento, reconsideración, disposiciones | No | ADR nuevo (TCG) + ADR-028 |
 | `TemporalRuntime.decide` | `task-runtime` | Guard de `wait`, validaciones ⇒ `refused`, TTL | No | ADR nuevo (TCG) |
-| `ActionRuntime` | `task-runtime` | TTL de aprobación | No | ídem |
+| `ActionRuntime` | `task-runtime` | TTL de aprobación; **AH-3**: retención por horizonte movido | No | ídem + ADR de aprobaciones (enmienda ADR-021/033) |
+| `humanResponseSchema` | `contracts/src/temporal.ts:217-221` | **AH-1/AH-4**: `expectedInputHorizon?`; resultado `reconfirm` | No (contracts Core) | Aditivo, versionado; enmienda ADR-021 |
+| `TemporalRuntime.respondHuman` | `task-runtime` | Horizonte en `approval.approved`; `reconfirm`; `approved → rejected/cancelled` sólo mientras está retenida | No | ídem |
+| `PolicyInput.approval` / `ActionPolicyEngine` | `contracts`, `policy-engine` | `horizonCurrent: boolean` (hecho estructural); regla nueva (`approval_horizon_moved`) | No | Enmienda ADR-017 |
+| `ApprovalInspection` | `agents/sales/src/production/approvals.ts` | **AH-2**: entradas posteriores al snapshot de la propuesta | No (pack) | Aditivo |
 | `visibleCapabilities` (KC-0) | `agent-kernel` | Restantes | **Sí, no contractual** | Nota en ADR-016 |
 | `AgentKernel.decide`/`#finish` (KC-2) | `agent-kernel` | `finishReason` en details | **Sí, no contractual** | Nota en ADR-008 |
 | `KernelSession`, protocolo v5 | `agent-kernel` | **Ninguno** | — | — |
@@ -466,7 +570,7 @@ forzar la reanudación) sigue rechazada: abusa de la semántica de apagado.
 |---|---|---|---|
 | **R7-1** | Enmienda ADR-028; ADR-041 verificado, fusionado y generalizado (D-8); abandono ⇒ handoff; validaciones ⇒ `refused`; KC-0; KC-2; atención (+cancelados) | B4–B8 (exceso), X1, X2, X5, parte de B12 | G1 |
 | **R7-2** | `turnObligation`; diferimiento y reconsideración de `complete` y `wait`; eventos; episodio; modo `observe`; ledger de steering; instrucciones Sales §3.4 si el owner las adelanta | B1, B2 (explícito), B3a, B9 | G2 (runtime) + G-sem (semántica, con autorización aparte) |
-| **R7-3** | TTL (D-2); avisos N para consulta, handoff del agente y aprobación (D-3); marca de entradas posteriores en aprobaciones (F7) | B3c, B3d, B10, B11 | G3 |
+| **R7-3** | TTL (D-2); avisos N para consulta, handoff del agente y aprobación (D-3); **Approval Horizon Hold AH-1..AH-5 (BLK-AP1)** | B3c, B3d, B10, B11, F7/W1/W2 | G3 (**no pasa sin AH**) |
 | **R7-4** | Linaje y predecesor; `disposition`; pack Sales v9 completo; revisión de `maxWriteActions` (D-7) | B1/B2 al volver, X3 | G4 |
 | **R7-5** (opcional, con datos) | Run de solo-respuesta; detector de no-progreso; contadores por clase; reintento de transporte en el mismo step; evaluar O5 | X4, costo | Decisión del owner |
 
@@ -477,11 +581,13 @@ forzar la reanudación) sigue rechazada: abusa de la semántica de apagado.
 | **B1 persistente:** el modelo cierra en silencio dos veces una solicitud real | La semántica es del modelo (AD-01); no existe distinción verificable (§3.3) | Episodio concreto en la reconsideración; instrucciones §3.4; suite semántica G-sem; evaluación post-hoc; métrica de canary sobre `turn.closed_without_reply` | `R4_TURN_GUARD=observe` |
 | Costo: una llamada extra por cierre silencioso legítimo, y una run extra si fue `complete` | O2 | Medir en canary; O5 si importa | — |
 | Más handoffs (presupuestos y fallas llegan a humanos) | D-6 | Avisos y atención | Redeploy (las tasks `blocked` son válidas para el código anterior) |
-| Aprobación ejecutada con entradas posteriores que el modelo no vio (F7) | La autoridad es humana (AD-07) | Marca en la vista del operador; J5-A | — |
+| **BLK-AP1:** una acción aprobada se ejecuta aunque el cliente haya cambiado su solicitud (W1/W2) | No lo comprueban J3 V2, Policy Engine ni ActionRuntime (§5.4.1) | AH en R7-3; mientras tanto, dependencia operativa: ningún perfil con REQUIRE_APPROVAL en un canal autónomo con clientes reales | No habilitar `@4` |
+| Fricción de AH: un mensaje irrelevante también retiene la aprobación | No se usa un clasificador (AD-01) ni el juicio del modelo (G0) | TTL de 60 min; aviso; atención | — |
+| W3: la modificación llega durante una escritura en vuelo | F9: no se interrumpen escrituras | La cotización es inmutable (Quote); el cambio se atiende como solicitud nueva | — |
 | Avisos fuera de ventana | Restricción del canal | `window_closed` ⇒ atención | Sin la opción del pack no se materializa nada |
 | Handoffs sin vencimiento | Decisión de producto | L1-e: atención + aviso + SLA operativo | — |
 | `maxWriteActions` de alcance task en conversaciones longevas | D-7 | Revisión antes de R7-4 | — |
-| La interpretación de la gramática J3 como compuerta comercial (§3.1) no es confirmada | Interpretación | Confirmación del owner en G0 | — |
+| Que el segundo cierre se tome como verificación | Lectura errónea de la ratificación | `basis: model_ratification` en el evento; INV-S4; evaluación en G-sem | — |
 | Migración 0012 | Aditiva | — | El gate antiguo cancela los `platform` por `humanOwned` (`delivery.ts:87-91`) |
 | Pruebas existentes que esperan `failed` | Cambio intencional | Plan de pruebas §7 | — |
 
@@ -498,7 +604,16 @@ forzar la reanudación) sigue rechazada: abusa de la semántica de apagado.
 | **D-7** | `maxWriteActions` sigue siendo de alcance task; revisar antes de R7-4 | §5.3, §13 |
 | **D-8** | `human_request_id` aprobado conceptualmente; verificar el PR #27 antes de modificarlo o fusionarlo | §5.2 (estado leído); sin cambios al PR |
 
-**Pendiente de confirmación en G0:** la nota interpretativa sobre la gramática J3 (§3.1).
+**G0 Resolution (owner, 2026-10-28): `G0_CONDITIONALLY_APPROVED`.**
+- Gramática J3: confirmada como compuerta comercial (§3.1).
+- Reconsideración en v5: aceptada con las condiciones 1–4 (§3.3).
+- Steering: durable en J4-R7 e interactivo en J5-A.
+- Aprobación con modificación del cliente: incorporada como BLK-AP1 / AH (§5.4).
+
+**Pendientes para el cierre formal de G0:**
+1. Aceptar BLK-AP1 como requisito de G3 y la dependencia operativa sobre perfiles REQUIRE_APPROVAL.
+2. Confirmar que producción corre `@2`.
+3. Autorizar R7-1.
 
 ---
 
