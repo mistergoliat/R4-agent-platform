@@ -1,5 +1,5 @@
 import type { ActionAttempt, ActionExecution, ActionProposal, ActionReceipt, ContextSnapshot, LeaseToken, MemoryEntry, Observation, PolicyDecision, RunStep, TaskLease } from '@r4/contracts';
-import type { ClaimedTask, ExecutionStore, ExecutionUnitOfWork, LockedTaskLease } from '@r4/task-runtime';
+import type { ClaimedTask, ExecutionStore, ExecutionUnitOfWork, LockedTaskLease, ServedAgents } from '@r4/task-runtime';
 import {
   attemptFromRow,
   executionFromRow,
@@ -67,7 +67,7 @@ class PostgresExecutionUnitOfWork extends PostgresTaskUnitOfWork implements Exec
    * re-checked against the WHERE clause once locked, so a freshly taken lease
    * is never overwritten.
    */
-  async claimRunnableTask(owner: string, leaseDurationMs: number): Promise<ClaimedTask | null> {
+  async claimRunnableTask(owner: string, leaseDurationMs: number, served?: ServedAgents): Promise<ClaimedTask | null> {
     const result = await this.client.query<Row>(
       `with clock as (select clock_timestamp() as now),
        candidate as (
@@ -77,6 +77,8 @@ class PostgresExecutionUnitOfWork extends PostgresTaskUnitOfWork implements Exec
             and not exists (select 1 from schedules s where s.task_id=agent_tasks.task_id and s.kind='action_retry' and s.status in ('pending','claimed'))
             and not exists (select 1 from action_executions e where e.task_id=agent_tasks.task_id and e.status='needs_reconciliation')
             and (lease_expires_at is null or lease_expires_at <= (select now from clock))
+            and ($3::jsonb is null or exists (select 1 from jsonb_to_recordset($3::jsonb) as s("agentId" text, version int)
+                                              where s."agentId" = agent_tasks.agent_id and s.version = agent_tasks.agent_version))
           order by created_at, task_id
           limit 1
           for update skip locked
@@ -90,7 +92,7 @@ class PostgresExecutionUnitOfWork extends PostgresTaskUnitOfWork implements Exec
          from candidate c
         where t.task_id = c.task_id
         returning t.*, c.previous_owner`,
-      [owner, leaseDurationMs],
+      [owner, leaseDurationMs, jsonb(served)],
     );
     const row = result.rows[0];
     if (!row) return null;

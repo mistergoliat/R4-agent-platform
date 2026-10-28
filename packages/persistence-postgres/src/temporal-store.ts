@@ -12,7 +12,7 @@ import {
   type TemporalEvent,
   type WaitResolution,
 } from '@r4/contracts';
-import type { InteractionRecords, TemporalPersistence, TerminalIntent } from '@r4/task-runtime';
+import type { InteractionRecords, ServedAgents, TemporalPersistence, TerminalIntent } from '@r4/task-runtime';
 import { executionFromRow, one } from './action-store.js';
 import type { PoolClient } from './pool.js';
 import { goalFromRow, iso, jsonb, stepFromRow, type Row } from './rows.js';
@@ -113,16 +113,18 @@ export class PostgresTemporalPersistence implements TemporalPersistence {
     return r.rows[0] ? scheduleFromRow(r.rows[0]) : null;
   }
 
-  async claimReconciliation(owner: string, leaseMs: number): Promise<Schedule | null> {
+  async claimReconciliation(owner: string, leaseMs: number, served?: ServedAgents): Promise<Schedule | null> {
     const r = await this.client.query<Row>(
       `with candidate as (
          select schedule_id from schedules
           where kind = 'reconciliation' and (status = 'dispatched' or (status = 'in_progress' and lease_expires_at <= r4_now()))
+            and ($3::jsonb is null or exists (select 1 from agent_tasks t, jsonb_to_recordset($3::jsonb) as s("agentId" text, version int)
+                                              where t.task_id = schedules.task_id and s."agentId" = t.agent_id and s.version = t.agent_version))
           order by updated_at, schedule_id limit 1 for update skip locked)
        update schedules s set status = 'in_progress', owner = $1, generation = s.generation + 1,
               lease_expires_at = r4_now() + $2::int * interval '1 millisecond', updated_at = r4_now()
          from candidate c where s.schedule_id = c.schedule_id returning s.*`,
-      [owner, leaseMs],
+      [owner, leaseMs, jsonb(served)],
     );
     return r.rows[0] ? scheduleFromRow(r.rows[0]) : null;
   }

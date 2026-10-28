@@ -1,7 +1,7 @@
 import type { AgentTask, TaskLease } from '@r4/contracts';
 import { KernelInterrupt, type AgentKernel, type KernelOutcome, type KernelSession } from '@r4/agent-kernel';
 import { emitTelemetry, runWithCorrelation, type StructuredLogger } from '@r4/observability';
-import type { ExecutionRuntime } from '@r4/task-runtime';
+import type { ExecutionRuntime, ServedAgents } from '@r4/task-runtime';
 import type { Reconciler } from './reconciliation.js';
 import type { WorkerPresence } from './presence.js';
 
@@ -16,6 +16,8 @@ export interface WorkerOptions {
   readonly pollIntervalMs: number;
   /** (R4-E) Settles due reconciliation of uncertain effects before any task is claimed. */
   readonly reconciler?: Reconciler;
+  /** (R4-J4-R6) Claims only tasks pinned to these definitions. Absent ⇒ any definition. */
+  readonly served?: ServedAgents;
   /**
    * (R4-I) Operational admission of new autonomous work, asked before every
    * claim (never mid-run). Refused ⇒ this cycle claims nothing (reconciliation
@@ -116,14 +118,14 @@ export class Worker {
 
   /** Settles one due reconciliation, or claims at most one task and executes it until the run ends or is interrupted. */
   async runOnce(): Promise<WorkerCycle> {
-    const { execution, workerId, leaseDurationMs, reconciler } = this.#options;
+    const { execution, workerId, leaseDurationMs, reconciler, served } = this.#options;
     // Reconciliation before cognition: no effect stays ambiguous while this worker could settle it.
     if (reconciler) {
       const reconciled = await reconciler.runOnce();
       if (reconciled.kind === 'reconciled') return reconciled;
     }
     if (!(await this.#admitted())) return { kind: 'idle' };
-    const claim = await execution.claimNext({ workerId, leaseDurationMs });
+    const claim = await execution.claimNext({ workerId, leaseDurationMs, ...(served ? { served } : {}) });
     if (!claim) return { kind: 'idle' };
     if (claim.kind === 'abandoned') return { kind: 'abandoned', taskId: claim.task.taskId, runId: claim.run.runId };
 

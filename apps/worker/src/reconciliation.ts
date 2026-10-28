@@ -1,6 +1,6 @@
 import type { ActionExecutor } from '@r4/capability-runtime';
 import { emitTelemetry, type StructuredLogger } from '@r4/observability';
-import type { ActionRuntime } from '@r4/task-runtime';
+import type { ActionRuntime, ServedAgents } from '@r4/task-runtime';
 
 export type ReconcileCycle =
   | { readonly kind: 'idle' }
@@ -15,15 +15,16 @@ export type ReconcileCycle =
  * executes a write and never decides an outcome.
  */
 export class Reconciler {
-  readonly #options: { actions: ActionRuntime; executor: ActionExecutor; workerId: string; leaseDurationMs: number; logger: StructuredLogger };
+  readonly #options: { actions: ActionRuntime; executor: ActionExecutor; workerId: string; leaseDurationMs: number; served?: ServedAgents; logger: StructuredLogger };
 
-  constructor(options: { actions: ActionRuntime; executor: ActionExecutor; workerId: string; leaseDurationMs: number; logger: StructuredLogger }) {
+  /** `served`: only effects of tasks pinned to these definitions are reconciled here (same rule as the claim). */
+  constructor(options: { actions: ActionRuntime; executor: ActionExecutor; workerId: string; leaseDurationMs: number; served?: ServedAgents; logger: StructuredLogger }) {
     this.#options = options;
   }
 
   async runOnce(): Promise<ReconcileCycle> {
-    const { actions, executor, workerId, leaseDurationMs, logger } = this.#options;
-    const grant = await actions.claimReconciliation({ workerId, leaseDurationMs });
+    const { actions, executor, workerId, leaseDurationMs, served, logger } = this.#options;
+    const grant = await actions.claimReconciliation({ workerId, leaseDurationMs, ...(served ? { served } : {}) });
     if (!grant) return { kind: 'idle' };
     emitTelemetry(logger, 'reconciliation.claimed', { taskId: grant.token.taskId, executionId: grant.command.executionId, workerId, generation: grant.token.generation, attempt: grant.attempt.attemptNumber });
     const report = await executor.attempt({ command: grant.command, decision: grant.decision }, { attemptNumber: grant.attempt.attemptNumber, kind: 'reconcile', workerId });
