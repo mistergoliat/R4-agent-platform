@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ModelRequest } from '@r4/model-gateway';
 import { DefaultModelGateway } from '@r4/model-gateway';
 import { createSilentLogger } from '@r4/observability';
-import { OpenAICompatibleModelProvider, describeModelConfig, estimateTokens, loadOpenAICompatibleConfig, renderMessages, type FetchLike, type OpenAICompatibleConfig } from '@r4-adapters/openai-compatible';
+import { ONE_DOCUMENT_REMINDER, ONE_DOCUMENT_RULE, OpenAICompatibleModelProvider, describeModelConfig, estimateTokens, loadOpenAICompatibleConfig, renderMessages, type FetchLike, type OpenAICompatibleConfig } from '@r4-adapters/openai-compatible';
 import { captureLogs } from '../../support/logs.js';
 
 const KEY = 'sk-test-DO-NOT-LEAK-0123456789abcdef';
@@ -196,6 +196,22 @@ describe('OpenAICompatibleModelProvider', () => {
     expect(body.tools).toBeUndefined();
     // Reasoning text a server returns is never passed on.
     expect(JSON.stringify(result)).not.toContain('hidden reasoning');
+  });
+
+  it('F-1: with a JSON contract, states the one-document rule before the schema and closes the context with the reminder', () => {
+    // Only the fields the renderer reads; a real CompiledContext comes from the Context Compiler.
+    const context = { schemaVersion: 1, asOf: '2026-10-27T12:00:00.000Z', scope: { iteration: 1 }, sections: {}, conflicts: [], omissions: {} } as unknown as NonNullable<ModelRequest['context']>;
+    const messages = renderMessages(request({ context }));
+    const output = messages.find((m) => m.role === 'system' && m.content.startsWith('Output:'))!;
+    expect(output.content).toContain(ONE_DOCUMENT_RULE);
+    expect(output.content).toMatch(/never two or more/);
+    expect(output.content).toMatch(/return only the first one now/);
+    expect(output.content).toMatch(/nothing before or after the document/);
+    const last = messages.at(-1)!;
+    expect(last.role).toBe('user');
+    expect(last.content.endsWith(`\n${ONE_DOCUMENT_REMINDER}`)).toBe(true);
+    // Agent-neutral: the adapter never names a decision type of the R4 protocol.
+    expect(`${ONE_DOCUMENT_RULE} ${ONE_DOCUMENT_REMINDER}`).not.toMatch(/read_capability|respond|propose_action/);
   });
 
   it('leaves non-JSON output for the platform parser to reject (no silent repair)', async () => {

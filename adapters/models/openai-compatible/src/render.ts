@@ -16,12 +16,23 @@ export interface ChatMessage {
  */
 export function renderMessages(request: ModelRequest): ChatMessage[] {
   const messages: ChatMessage[] = request.messages.map((m) => ({ role: m.role === 'tool' ? 'user' : m.role, content: m.content }));
-  if (request.outputContract.kind === 'json') {
-    messages.push({ role: 'system', content: `Output: exactly one JSON document matching the "${request.outputContract.name}" JSON Schema below. No prose, no code fences.\n${JSON.stringify(request.outputContract.schema)}` });
+  const json = request.outputContract.kind === 'json';
+  if (json) {
+    messages.push({ role: 'system', content: `Output: exactly one JSON document matching the "${request.outputContract.name}" JSON Schema below. ${ONE_DOCUMENT_RULE}\n${JSON.stringify(request.outputContract.schema)}` });
   }
-  if (request.context) messages.push({ role: 'user', content: renderContext(request.context) });
+  if (request.context) messages.push({ role: 'user', content: `${renderContext(request.context)}${json ? `\n${ONE_DOCUMENT_REMINDER}` : ''}` });
   return messages;
 }
+
+/**
+ * R4-J4-R6 F-1: with a JSON output contract, deepseek-flash answered turns that needed several reads with two or
+ * three concatenated JSON documents, or with one document followed by prose; the strict parser rejects both
+ * (ADR-008, no repair). This states the one-document constraint without naming any decision type, so the adapter
+ * stays agent-neutral; the reminder closes the user message, right where the model decides.
+ */
+export const ONE_DOCUMENT_RULE =
+  'One answer carries one document, never two or more. When several pieces of information or several steps are needed, return only the first one now; its result arrives in the next turn. Write nothing before or after the document: no prose, no notes, no code fences.';
+export const ONE_DOCUMENT_REMINDER = 'Answer with exactly one JSON document and nothing else. If you need several steps, return only the first one.';
 
 export function renderContext(context: CompiledContext): string {
   const sections = Object.fromEntries(Object.entries(context.sections).filter(([, items]) => items.length > 0).map(([name, items]) => [name, items.map(renderItem)]));
