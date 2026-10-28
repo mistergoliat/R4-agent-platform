@@ -68,6 +68,7 @@
     "test:mutation:binding-immutability": "node tests/mutation/binding-immutability-mutations.mjs",
     "test:mutation:profile-v8": "node tests/mutation/profile-v8-mutations.mjs",
     "test:mutation:canary-j4": "node tests/mutation/canary-j4-mutations.mjs",
+    "test:mutation:run-failure-fallback": "node tests/mutation/run-failure-fallback-mutations.mjs",
     "production:sales:plan": "node agents/sales/dist/cli/production.js --plan",
     "production:sales:validate": "node agents/sales/dist/cli/production.js --validate",
     "production:sales:smoke": "node agents/sales/dist/cli/production.js --smoke",

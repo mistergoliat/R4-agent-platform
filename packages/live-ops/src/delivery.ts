@@ -24,7 +24,13 @@ import { autonomyEnabledFor, type AutonomyControlsState } from './autonomy.js';
  */
 export const OUTBOUND_STATUSES = ['pending', 'dispatching', 'accepted', 'delivered', 'read', 'failed', 'unknown', 'cancelled'] as const;
 export type OutboundStatus = (typeof OUTBOUND_STATUSES)[number];
-export const OUTBOUND_ORIGINS = ['agent', 'operator'] as const;
+/**
+ * `platform` (ADR-041): the one fallback notice of a platform handoff after a
+ * run failure (ADR-028 recovery exhausted, or a non-retryable model failure),
+ * so a failed model never leaves the contact without an answer. Its text is
+ * the agent pack's, never model output.
+ */
+export const OUTBOUND_ORIGINS = ['agent', 'operator', 'platform'] as const;
 export type OutboundOrigin = (typeof OUTBOUND_ORIGINS)[number];
 
 /** Why a pending outbound was cancelled without being submitted. */
@@ -61,6 +67,8 @@ export interface DispatchFacts {
   readonly supersededByNewerInput: boolean;
   /** Whether the channel's contact-service window is open for free text (null = the channel has none). */
   readonly windowOpen: boolean | null;
+  /** Platform output only: the handoff it announces is still `requested` (no human has taken the task yet). */
+  readonly handoffPending?: boolean;
 }
 
 export interface DispatchPolicy {
@@ -82,9 +90,16 @@ export type DispatchDecision =
  * terminal / binding closed > superseded by newer input > age > window.
  * Operator output is a human act: autonomy controls, rollout, ownership and
  * staleness do not apply; only the channel window does.
+ *
+ * Platform output (ADR-041) is automated speech on a task that a platform
+ * handoff made human-owned: the same controls, rollout, terminal, age and
+ * window rules as agent output, except that it is sent while its handoff is
+ * still `requested`, and cancelled once a human took the task or released it.
+ * Newer inputs do not supersede it: they are the contact still waiting.
  */
 export function decideDispatch(f: DispatchFacts, policy: DispatchPolicy): DispatchDecision {
   if (f.origin === 'operator') return f.windowOpen === false ? { kind: 'cancel', reason: CANCEL_REASONS.windowClosed } : { kind: 'dispatch' };
+  if (f.origin === 'platform') return decidePlatformDispatch(f, policy);
   if (!autonomyEnabledFor(f.controls, f.channel).enabled) return { kind: 'hold', reason: DISPATCH_HOLD_REASONS.killSwitch };
   if (f.binding.deniedNow) return { kind: 'hold', reason: DISPATCH_HOLD_REASONS.denied };
   if (!f.binding.autonomous) return { kind: 'hold', reason: DISPATCH_HOLD_REASONS.rolloutExcluded };
@@ -92,6 +107,18 @@ export function decideDispatch(f: DispatchFacts, policy: DispatchPolicy): Dispat
   if (f.task.status === 'cancelled' || f.task.status === 'failed') return { kind: 'cancel', reason: CANCEL_REASONS.taskTerminal };
   if (f.binding.status === 'closed' && f.task.status !== 'completed') return { kind: 'cancel', reason: CANCEL_REASONS.conversationClosed };
   if (f.supersededByNewerInput) return { kind: 'cancel', reason: CANCEL_REASONS.supersededByNewerInput };
+  if (Date.parse(f.now) - Date.parse(f.createdAt) > policy.maxAgeMs) return { kind: 'cancel', reason: CANCEL_REASONS.expired };
+  if (f.windowOpen === false) return { kind: 'cancel', reason: CANCEL_REASONS.windowClosed };
+  return { kind: 'dispatch' };
+}
+
+function decidePlatformDispatch(f: DispatchFacts, policy: DispatchPolicy): DispatchDecision {
+  if (!autonomyEnabledFor(f.controls, f.channel).enabled) return { kind: 'hold', reason: DISPATCH_HOLD_REASONS.killSwitch };
+  if (f.binding.deniedNow) return { kind: 'hold', reason: DISPATCH_HOLD_REASONS.denied };
+  if (!f.binding.autonomous) return { kind: 'hold', reason: DISPATCH_HOLD_REASONS.rolloutExcluded };
+  if (f.handoffPending !== true) return { kind: 'cancel', reason: CANCEL_REASONS.supersededByOperator };
+  if (f.task.status === 'cancelled' || f.task.status === 'failed') return { kind: 'cancel', reason: CANCEL_REASONS.taskTerminal };
+  if (f.binding.status === 'closed') return { kind: 'cancel', reason: CANCEL_REASONS.conversationClosed };
   if (Date.parse(f.now) - Date.parse(f.createdAt) > policy.maxAgeMs) return { kind: 'cancel', reason: CANCEL_REASONS.expired };
   if (f.windowOpen === false) return { kind: 'cancel', reason: CANCEL_REASONS.windowClosed };
   return { kind: 'dispatch' };
