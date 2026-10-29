@@ -170,14 +170,20 @@ export type AgentRun = z.infer<typeof agentRunSchema>;
 /**
  * What a failed run establishes about its task. A failed run does not
  * terminate durable work unless the failure itself establishes that the work
- * is terminal. Applied only to the classes R4-H evidence justifies:
+ * is terminal:
  *
  *   recoverable  `invalid_decision`; `model_failure` the gateway classified
  *                retryable → the task stays runnable and a NEW run, with a
  *                freshly compiled context, continues it (bounded).
- *   human        `model_failure` not retryable → no automatic run; the task
- *                is handed to a human, not terminated.
- *   terminal     every other failure, including an abandoned run (unchanged since C1).
+ *   human        `model_failure` not retryable; an `invalid_decision` whose
+ *                output the provider filtered (`finishReason: content_filter`,
+ *                the same context would be filtered again); and (R4-J4-R7-1,
+ *                ADR-028 amendment) `budget_exhausted`, `capability_failure`,
+ *                `internal_failure` and `lease_lost` → no automatic run; the
+ *                task is handed to a human (platform contingency), never left
+ *                terminal in silence.
+ *   terminal     no failure since R4-J4-R7-1. Kept for callers: a platform
+ *                without a human runtime falls back to it (`ExecutionRuntime`).
  *
  * `retryable` is the gateway's ModelError classification, recorded by the
  * kernel in `termination.details`; anything but `true` is not retryable.
@@ -189,19 +195,55 @@ export type RunFailureDisposition = 'recoverable' | 'human' | 'terminal';
 export function runFailureDisposition(termination: { readonly reason: TerminationReason; readonly details?: unknown }): RunFailureDisposition | null {
   const status = runStatusForTermination(termination.reason);
   if (status !== 'failed' && status !== 'abandoned') return null;
-  if (termination.reason === 'invalid_decision') return 'recoverable';
-  if (termination.reason === 'model_failure') {
-    const details = termination.details;
-    const retryable = details !== null && typeof details === 'object' && !Array.isArray(details) && (details as { retryable?: unknown }).retryable === true;
-    return retryable ? 'recoverable' : 'human';
-  }
-  return 'terminal';
+  const details = termination.details !== null && typeof termination.details === 'object' && !Array.isArray(termination.details) ? (termination.details as Record<string, unknown>) : {};
+  if (termination.reason === 'invalid_decision') return details.finishReason === 'content_filter' ? 'human' : 'recoverable';
+  if (termination.reason === 'model_failure') return details.retryable === true ? 'recoverable' : 'human';
+  return 'human';
 }
 
 /** Task status reason: recoverable run failures exceeded the recovery budget. */
 export const RUN_FAILURE_RECOVERY_EXHAUSTED = 'run_failure_recovery_exhausted';
 /** Task status reason: a model failure that no automatic run may repeat (nothing was exhausted). */
 export const NON_RETRYABLE_MODEL_FAILURE = 'non_retryable_model_failure';
+/** (R4-J4-R7-1) The provider filtered the model output: the same context would be filtered again. */
+export const RUN_OUTPUT_FILTERED = 'run_output_filtered';
+/** (R4-J4-R7-1) A run budget (model calls, iterations, reads, writes, duration, tokens, context) ran out. */
+export const RUN_BUDGET_EXHAUSTED = 'run_budget_exhausted';
+/** (R4-J4-R7-1) A capability produced no durable evidence. */
+export const RUN_CAPABILITY_FAILURE = 'run_capability_failure';
+/** (R4-J4-R7-1) A platform fault ended the run. */
+export const RUN_INTERNAL_FAILURE = 'run_internal_failure';
+/** (R4-J4-R7-1) The run lost its lease more often than `maxRunRecoveries` allows. */
+export const RUN_ABANDONED = 'run_abandoned';
+
+/** Every reason of a platform handoff after a run failure (each one gets the pack's fallback notice, ADR-041). */
+export const RUN_FAILURE_HANDOFF_REASONS = [
+  RUN_FAILURE_RECOVERY_EXHAUSTED,
+  NON_RETRYABLE_MODEL_FAILURE,
+  RUN_OUTPUT_FILTERED,
+  RUN_BUDGET_EXHAUSTED,
+  RUN_CAPABILITY_FAILURE,
+  RUN_INTERNAL_FAILURE,
+  RUN_ABANDONED,
+] as const;
+
+/** The handoff reason of a failure handed to a human directly (`human` disposition, nothing retried). */
+export function runFailureHandoffReason(reason: TerminationReason): (typeof RUN_FAILURE_HANDOFF_REASONS)[number] {
+  switch (reason) {
+    case 'invalid_decision':
+      return RUN_OUTPUT_FILTERED;
+    case 'budget_exhausted':
+      return RUN_BUDGET_EXHAUSTED;
+    case 'capability_failure':
+      return RUN_CAPABILITY_FAILURE;
+    case 'internal_failure':
+      return RUN_INTERNAL_FAILURE;
+    case 'lease_lost':
+      return RUN_ABANDONED;
+    default:
+      return NON_RETRYABLE_MODEL_FAILURE;
+  }
+}
 
 /** Key under `termination.details` where the platform records how it disposed of a failed run. */
 export const RUN_FAILURE_RECOVERY_KEY = 'runFailureRecovery';

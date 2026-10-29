@@ -253,6 +253,15 @@ export class TemporalRuntime implements RunFailureHandoff {
         return { kind: 'continued' };
       }
 
+      // R4-J4-R7-1: a value the model chose that the platform cannot use (a past expiry, an unknown reference) is
+      // refused and shown back, like a goal rejection — never a terminal internal failure.
+      const rejection = decision.type === 'wait' ? null : await this.#humanRequestRejection(uow, owned.task, decision, now);
+      if (rejection) {
+        await this.#options.execution.appendStepWithin(uow, owned, token, { ...command, outcome: 'refused', error: rejection }, now, events);
+        await this.event(uow, owned.task, owned.run.runId, 'temporal.decision.rejected', now, events, { decisionType: decision.type, code: rejection.code });
+        return { kind: 'continued' };
+      }
+
       await this.#options.execution.appendStepWithin(uow, owned, token, command, now, events);
       let referenceId: string | null = null;
       let kind: TaskWait['kind'];
@@ -261,11 +270,6 @@ export class TemporalRuntime implements RunFailureHandoff {
         kind = decision.condition.kind;
         dueAt = decision.condition.kind === 'WAIT_UNTIL' ? decision.condition.until : null;
       } else {
-        const known = new Set((await uow.listObservations(owned.task.taskId)).map((o) => o.observationId));
-        if (decision.contextRefs.some((id) => !known.has(id))) throw new PlatformError('validation', 'unknown_evidence', 'human context references must be observations of this task');
-        if (decision.type === 'request_consultation' && decision.expiresAt && Date.parse(decision.expiresAt) <= Date.parse(now)) {
-          throw new PlatformError('validation', 'expiry_in_past', 'consultation expiry must be in the future');
-        }
         referenceId = this.#options.ids.next();
         const base = { requestId: referenceId, taskId: owned.task.taskId, runId: owned.run.runId, status: 'requested' as const, humanRef: null, createdAt: now, updatedAt: now, correlationId: owned.task.correlationId };
         const request: HumanRequest =
@@ -293,6 +297,16 @@ export class TemporalRuntime implements RunFailureHandoff {
       }
       return { kind: 'suspended', termination: run.termination! };
     });
+  }
+
+  /** (R4-J4-R7-1) Model-supplied values of a consultation or handoff request the platform refuses, recoverably. */
+  async #humanRequestRejection(uow: ExecutionUnitOfWork, task: AgentTask, decision: Exclude<TemporalDecision, ManageGoalDecision | { type: 'wait' }>, now: string): Promise<{ code: 'unknown_evidence' | 'expiry_in_past'; message: string } | null> {
+    const known = new Set((await uow.listObservations(task.taskId)).map((o) => o.observationId));
+    if (decision.contextRefs.some((id) => !known.has(id))) return { code: 'unknown_evidence', message: 'human context references must be observations of this task' };
+    if (decision.type === 'request_consultation' && decision.expiresAt && Date.parse(decision.expiresAt) <= Date.parse(now)) {
+      return { code: 'expiry_in_past', message: 'consultation expiry must be in the future' };
+    }
+    return null;
   }
 
   /** Recoverable refusals only; anything else (corruption, conflicts) still throws. */
@@ -844,7 +858,9 @@ export class TemporalRuntime implements RunFailureHandoff {
 
   /**
    * (ADR-028) The human fallback of a run failure: recovery was exhausted,
-   * or the model failure is not retryable. The task is not terminated: it
+   * the model failure is not retryable or (R4-J4-R7-1) the platform cannot
+   * continue (budget, capability, internal, abandoned run, filtered output:
+   * a contingency). The task is not terminated: it
    * becomes `blocked` on a platform-initiated handoff — visible in
    * `attention()` — with a WAIT_FOR_HUMAN, exactly like a handoff the agent
    * asked for. An operator accepts and releases it (autonomy resumes: the
@@ -856,9 +872,11 @@ export class TemporalRuntime implements RunFailureHandoff {
     const p = temporalOf(uow);
     const now = await p.now();
     const summary =
-      cause.consecutiveFailures === null
-        ? `Run ${run.sequence} failed (${cause.terminationReason}: ${cause.code}); the failure is not retryable, so no automatic run was started. An operator must decide how the task continues.`
-        : `Run ${run.sequence} failed (${cause.terminationReason}: ${cause.code}); ${cause.consecutiveFailures} consecutive recoverable run failure(s) exhausted automatic recovery. An operator must decide how the task continues.`;
+      cause.consecutiveFailures !== null
+        ? `Run ${run.sequence} failed (${cause.terminationReason}: ${cause.code}); ${cause.consecutiveFailures} consecutive recoverable run failure(s) exhausted automatic recovery. An operator must decide how the task continues.`
+        : cause.terminationReason === 'model_failure'
+          ? `Run ${run.sequence} failed (${cause.terminationReason}: ${cause.code}); the failure is not retryable, so no automatic run was started. An operator must decide how the task continues.`
+          : `Run ${run.sequence} ended (${cause.terminationReason}: ${cause.code}); the platform cannot continue the task autonomously (contingency ${cause.reason}), so no automatic run was started. An operator must decide how the task continues.`;
     const request = parseOrThrow(humanRequestSchema, {
       requestId: this.#options.ids.next(), taskId: task.taskId, runId: run.runId, kind: 'handoff', status: 'requested', humanRef: null,
       createdAt: now, updatedAt: now, expiresAt: null, correlationId: task.correlationId,

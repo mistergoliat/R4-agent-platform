@@ -161,7 +161,7 @@ describe('uncertainty from every exit path', () => {
     expect(healthy.provider.callCount).toBe(0);
   });
 
-  it('a run abandoned mid-call (recovery limit): flagged with its work in the same transaction; failure applies only after reconciliation', async () => {
+  it('a run abandoned mid-call (recovery limit): flagged with its work in the same transaction; the task goes to a human (R4-J4-R7-1), reconciliation still settles the effect', async () => {
     const taskId = await createActionTask(platform);
     let release!: () => void;
     const released = new Promise<void>((resolve) => (release = resolve));
@@ -181,12 +181,16 @@ describe('uncertainty from every exit path', () => {
     expect(ledger.executions.map((e) => e.status)).toEqual(['needs_reconciliation']);
     expect(ledger.receipts).toEqual([]);
     expect(await reconcileSchedule(taskId)).toMatchObject({ status: 'pending' });
-    expect((await platform.tasks.getTask(taskId)).task).toMatchObject({ status: 'blocked', statusReason: 'awaiting_reconciliation' });
-    expect((await platform.temporal.inspect(taskId)).ownership.terminalIntent).toBe('failed');
+    // ADR-028 amendment (R4-J4-R7-1): the abandoned run hands the task to a human; nothing is terminal or deferred-terminal.
+    expect((await platform.tasks.getTask(taskId)).task).toMatchObject({ status: 'blocked', statusReason: 'run_abandoned' });
+    const inspected = await platform.temporal.inspect(taskId);
+    expect(inspected.ownership.terminalIntent).toBeNull();
+    expect(inspected.humans).toEqual([expect.objectContaining({ kind: 'handoff', status: 'requested', payload: expect.objectContaining({ initiatedBy: 'platform', reason: 'run_abandoned' }) })]);
 
     await drain(testScheduler(platform.pool).scheduler);
     expect(await other.platform.worker.runOnce()).toMatchObject({ kind: 'reconciled', outcome: 'resolved' });
-    expect((await platform.tasks.getTask(taskId)).task).toMatchObject({ status: 'failed', statusReason: 'lease_lost' });
+    // The effect is established; the human owner keeps the task.
+    expect((await platform.tasks.getTask(taskId)).task).toMatchObject({ status: 'blocked', statusReason: 'run_abandoned' });
     expect((await ledgerOf(platform.pool, taskId)).receipts.map((r) => r.status)).toEqual(['succeeded']);
     expect(await testRecord(platform.pool, 'abandoned')).toMatchObject({ writeCount: 1 });
   });

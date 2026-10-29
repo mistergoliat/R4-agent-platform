@@ -10,6 +10,7 @@ import { createSilentLogger } from '@r4/observability';
 import { PostgresProductionStore, type Pool } from '@r4/persistence-postgres';
 import { AUTONOMOUS_QUOTE_CAPABILITY_IDS, CAPABILITY_IDS, ContextView, read, respond, type ScriptedStep } from '@r4-sales/agent';
 import { initCanary, loadCanaryEnvironment, sendSynthetic, startCanaryRuntime, syntheticConversationKey, type CanaryEnvironment, type CanaryRuntime } from '@r4-sales/agent/canary';
+import { SALES_RUN_FAILURE_FALLBACK_TEXT } from '@r4-sales/agent/production';
 import { createTestDatabase, openPool, type TestDatabase } from '../support/database.js';
 import { RECONCILIATION_POLICY, freezeTemporalClock } from '../support/temporal.js';
 
@@ -363,7 +364,7 @@ describe('sales-production@7 kill switch: what happens to the issuance, lifecycl
     }
   });
 
-  it('held longer than the run budget: on release the SAME key issues once, but the resumed run ends budget_exhausted before replying — the customer must be told by an operator', async () => {
+  it('held longer than the run budget: on release the SAME key issues once, but the resumed run ends budget_exhausted before replying — R4-J4-R7-1: the task goes to a human and the platform tells the customer once', async () => {
     const canary = loadCanaryEnvironment(canaryEnv());
     const router = new Router();
     const owned = owners();
@@ -388,8 +389,9 @@ describe('sales-production@7 kill switch: what happens to the issuance, lifecycl
       await drain(runtime);
       expect(await quoteLedger(pool, taskId)).toMatchObject({ key: held.key, executions: ['succeeded'], receipts: [{ status: 'succeeded', execution_key: held.key }], sends: 1 });
       expect(owned.quotes.quotes).toHaveLength(1);
-      expect((await pool.query("select r.termination_reason, r.termination_code, t.status from agent_runs r join agent_tasks t using (task_id) where r.task_id = $1 order by r.sequence desc limit 1", [taskId])).rows).toEqual([{ termination_reason: 'budget_exhausted', termination_code: 'max_run_duration_ms', status: 'failed' }]);
-      expect(captured(runtime)).toHaveLength(repliesBefore);
+      expect((await pool.query("select r.termination_reason, r.termination_code, t.status from agent_runs r join agent_tasks t using (task_id) where r.task_id = $1 order by r.sequence desc limit 1", [taskId])).rows).toEqual([{ termination_reason: 'budget_exhausted', termination_code: 'max_run_duration_ms', status: 'blocked' }]);
+      // The one platform fallback notice (ADR-041, generalized by R4-J4-R7-1), never model text.
+      expect(captured(runtime).slice(repliesBefore).map((m) => m.text)).toEqual([SALES_RUN_FAILURE_FALLBACK_TEXT]);
     } finally {
       await restoreTemporalClock(pool);
       await set(true);

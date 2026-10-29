@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { NON_RETRYABLE_MODEL_FAILURE, PlatformError, RUN_FAILURE_RECOVERY_EXHAUSTED, sha256Hex } from '@r4/contracts';
+import { PlatformError, RUN_FAILURE_HANDOFF_REASONS, sha256Hex } from '@r4/contracts';
 import {
   conversationLockKey,
   statusAfterEvidence,
@@ -70,7 +70,7 @@ function outboundFromRow(r: Row): OutboundRecord {
     contentSha256: r.content_sha256 as string, status: r.status as OutboundStatus, holdReason: (r.hold_reason as string | null) ?? null, cancelReason: (r.cancel_reason as string | null) ?? null,
     duplicateOf: (r.duplicate_of as string | null) ?? null, providerMessageId: (r.provider_message_id as string | null) ?? null, attempts: r.attempts as number,
     nextAttemptAt: isoOrNull(r.next_attempt_at), leaseOwner: (r.lease_owner as string | null) ?? null, leaseGeneration: r.lease_generation as number, leaseExpiresAt: isoOrNull(r.lease_expires_at),
-    errorClass: (r.error_class as string | null) ?? null, errorCode: (r.error_code as string | null) ?? null, handoffRequestId: (r.handoff_request_id as string | null) ?? null,
+    errorClass: (r.error_class as string | null) ?? null, errorCode: (r.error_code as string | null) ?? null, humanRequestId: (r.human_request_id as string | null) ?? null,
     humanRef: (r.human_ref as string | null) ?? null, resolvedBy: (r.resolved_by as string | null) ?? null,
     profile: r.profile as string, createdAt: iso(r.created_at), updatedAt: iso(r.updated_at), dispatchedAt: isoOrNull(r.dispatched_at), acceptedAt: isoOrNull(r.accepted_at),
     deliveredAt: isoOrNull(r.delivered_at), readAt: isoOrNull(r.read_at), failedAt: isoOrNull(r.failed_at), correlationId: r.correlation_id as string,
@@ -348,17 +348,17 @@ export class PostgresProductionStore implements ProductionStore {
          join agent_tasks t on t.task_id = h.task_id
         where h.kind = 'handoff' and h.status = 'requested'
           and h.payload->>'initiatedBy' = 'platform' and h.payload->>'reason' = any($1::text[])
-          and not exists (select 1 from outbound_messages o where o.handoff_request_id = h.request_id)
+          and not exists (select 1 from outbound_messages o where o.human_request_id = h.request_id)
         order by h.created_at, h.request_id limit $2`,
-      [[RUN_FAILURE_RECOVERY_EXHAUSTED, NON_RETRYABLE_MODEL_FAILURE], command.limit],
+      [[...RUN_FAILURE_HANDOFF_REASONS], command.limit],
     )).rows;
     const created: OutboundRecord[] = [];
     for (const h of handoffs) {
       const row = (await query<Row>(
         this.#pool,
-        `insert into outbound_messages (outbound_id, origin, handoff_request_id, task_id, run_id, binding_id, channel, idempotency_key, content_sha256, body, status, profile, correlation_id)
+        `insert into outbound_messages (outbound_id, origin, human_request_id, task_id, run_id, binding_id, channel, idempotency_key, content_sha256, body, status, profile, correlation_id)
          values ($1, 'platform', $2, $3, $4, $5, $6, $7, $8, $9, 'pending', $10, $11)
-         on conflict (handoff_request_id) do nothing returning *`,
+         on conflict (human_request_id) do nothing returning *`,
         [randomUUID(), h.request_id, h.task_id, h.run_id, h.binding_id, h.channel, `r4-fallback:${h.request_id as string}`, sha256Hex(command.text), command.text, h.profile, h.correlation_id],
       )).rows[0];
       if (row) created.push(outboundFromRow(row));
@@ -422,7 +422,7 @@ export class PostgresProductionStore implements ProductionStore {
       }
       // ADR-041: a platform fallback is sent only while the handoff it announces is still unanswered.
       const handoffPending = outbound.origin === 'platform'
-        ? (await c.query(`select 1 from human_requests where request_id = $1 and status = 'requested'`, [outbound.handoffRequestId])).rowCount !== 0
+        ? (await c.query(`select 1 from human_requests where request_id = $1 and status = 'requested'`, [outbound.humanRequestId])).rowCount !== 0
         : undefined;
       const windowMs = command.customerWindowMs(outbound.channel);
       const windowOpen = windowMs === null ? null : binding.lastInboundAt !== null && Date.parse(now) - Date.parse(binding.lastInboundAt) < windowMs;
@@ -647,7 +647,7 @@ export class PostgresProductionStore implements ProductionStore {
     for (const r of operator) entries.push(entry(iso(r.created_at), r.outbound_id as string, 'operator', r.body as string, { humanRef: r.human_ref as string }, delivery(r)));
     // ADR-041: the platform fallback is the pack's fixed notice, shown as an event with its delivery state.
     const fallbacks = (await query<Row>(this.#pool, `select * from outbound_messages where task_id = $1 and origin = 'platform'`, [taskId])).rows;
-    for (const r of fallbacks) entries.push(entry(iso(r.created_at), r.outbound_id as string, 'event', null, { type: 'platform.fallback', handoffRequestId: r.handoff_request_id as string }, delivery(r)));
+    for (const r of fallbacks) entries.push(entry(iso(r.created_at), r.outbound_id as string, 'event', null, { type: 'platform.fallback', humanRequestId: r.human_request_id as string }, delivery(r)));
     const events = (await query<Row>(
       this.#pool,
       `select event_id, event_type, occurred_at, actor_ref, data from temporal_events where task_id = $1 and event_type in ('handoff.requested', 'handoff.activated', 'handoff.released', 'handoff.cancelled', 'task.cancelled')`,
@@ -682,6 +682,7 @@ export class PostgresProductionStore implements ProductionStore {
       unknownOutbound: (await q(`select * from outbound_messages where status = 'unknown' order by updated_at`)).map(outboundFromRow),
       heldOutbound: (await q(`select * from outbound_messages where status = 'pending' and hold_reason is not null order by created_at`)).map(outboundFromRow),
       failedOutbound: (await q(`select * from outbound_messages where status = 'failed' order by updated_at desc limit 200`)).map(outboundFromRow),
+      undeliveredOutbound: (await q(`select * from outbound_messages where status = 'cancelled' and origin in ('agent', 'platform') and cancel_reason in ('expired', 'window_closed') order by updated_at desc limit 200`)).map(outboundFromRow),
       failedInbound: (await q(`select * from inbound_events where status = 'failed' order by received_at desc limit 200`)).map(inboundFromRow),
       rejectedInbound: (await q(`select * from inbound_events where status = 'rejected' order by received_at desc limit 200`)).map(inboundFromRow),
       unmatchedStatusEvents: (await q(`select * from outbound_delivery_events where effect = 'unmatched' order by received_at desc limit 200`)).map(eventFromRow),

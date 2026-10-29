@@ -8,7 +8,7 @@ import {
   type RunStep,
   type WaitDecision,
 } from '@r4/contracts';
-import type { ModelError, ModelGateway, ModelUsage } from '@r4/model-gateway';
+import type { ModelError, ModelFinishReason, ModelGateway, ModelUsage } from '@r4/model-gateway';
 import { emitTelemetry, type StructuredLogger } from '@r4/observability';
 import { budgetTerminationCode, checkBeforeModelCall, checkBeforeRead, checkBeforeWrite, modelCallTimeout, type BudgetExhaustion } from './budget.js';
 import type { ExecutionContext } from './context.js';
@@ -42,7 +42,8 @@ export type KernelOutcome =
 /** The result of asking the model for the next decision. */
 export type DecideOutcome =
   | { readonly kind: 'decision'; readonly decision: AgentDecision; readonly usage: ModelUsage }
-  | { readonly kind: 'invalid'; readonly error: DecisionError; readonly usage: ModelUsage }
+  /** `finishReason` (R4-J4-R7-1, KC-2): why the provider stopped generating the rejected output (`length` = truncated). */
+  | { readonly kind: 'invalid'; readonly error: DecisionError; readonly usage: ModelUsage; readonly finishReason: ModelFinishReason }
   | { readonly kind: 'model_failure'; readonly error: ModelError };
 
 const NO_USAGE: ModelUsage = { inputTokens: 0, outputTokens: 0 };
@@ -96,7 +97,7 @@ export class AgentKernel {
     });
     return parsed.ok
       ? { kind: 'decision', decision: parsed.decision, usage: result.response.usage }
-      : { kind: 'invalid', error: parsed.error, usage: result.response.usage };
+      : { kind: 'invalid', error: parsed.error, usage: result.response.usage, finishReason: result.response.finishReason };
   }
 
   async run(session: KernelSession, options: KernelRunOptions = {}): Promise<KernelOutcome> {
@@ -171,7 +172,8 @@ export class AgentKernel {
       if (decided.kind === 'invalid') {
         emitTelemetry(this.#logger, 'agent.decision', { ...telemetry, outcome: 'invalid', errorCode: decided.error.code });
         return this.#finish(session, {
-          termination: { reason: 'invalid_decision', code: decided.error.code, message: decided.error.message, details: null },
+          // KC-2: metadata only (never model text); ADR-028 disposes of a filtered output differently (content_filter → human).
+          termination: { reason: 'invalid_decision', code: decided.error.code, message: decided.error.message, details: { finishReason: decided.finishReason } },
           result: null,
           finalStep: step({ decision: null, outcome: 'invalid', error: decided.error, usage: decided.usage }),
         });

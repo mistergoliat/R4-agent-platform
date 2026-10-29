@@ -338,7 +338,8 @@ describe('durable effects before the failure are preserved, never replayed', () 
     // The task-scoped write budget did not reset with the new run: a second write is refused.
     const [, recovery] = await runs(taskId);
     expect(recovery).toMatchObject({ status: 'failed', termination: { reason: 'budget_exhausted', code: 'max_write_actions' } });
-    expect(await task(taskId)).toMatchObject({ status: 'failed', statusReason: 'budget_exhausted' });
+    // R4-J4-R7-1 (ADR-028 amendment): an exhausted budget is a platform contingency, the task goes to a human.
+    expect(await task(taskId)).toMatchObject({ status: 'blocked', statusReason: 'run_budget_exhausted' });
   });
 
   it('reconciliation before cognition: an uncertain write blocks every claim; only after the outcome is established may cognition (and its recovery) run', async () => {
@@ -396,15 +397,15 @@ describe('what never triggers recovery', () => {
     expect(await w.platform.worker.runOnce()).toEqual({ kind: 'idle' });
     expect((await runs(taskId)).map((r) => r.status)).toEqual(['completed']);
 
-    // budget_exhausted is not a recoverable failure (unchanged since C1): the task fails, no recovery run.
+    // budget_exhausted is not a recoverable failure: no recovery run. R4-J4-R7-1: the task is handed to a human, not failed.
     const other = await createActionTask(platform, { budget: { maxModelCalls: 1 } });
     const w2 = await worker({ script: sequence([read(GET_TEST_FACT_ID, { factKey: 'one' }), read(GET_TEST_FACT_ID, { factKey: 'two' })]) });
     await w2.platform.worker.runOnce();
     expect(await w2.platform.worker.runOnce()).toEqual({ kind: 'idle' });
     const [exhausted] = await runs(other);
     expect(exhausted).toMatchObject({ status: 'failed', termination: { reason: 'budget_exhausted' } });
-    expect(runFailureRecoveryOf(exhausted!.termination)).toBeNull();
-    expect(await task(other)).toMatchObject({ status: 'failed' });
+    expect(runFailureRecoveryOf(exhausted!.termination)).toEqual({ outcome: 'handed_off', consecutiveFailures: null, maxRunFailureRecoveries: 1 });
+    expect(await task(other)).toMatchObject({ status: 'blocked', statusReason: 'run_budget_exhausted' });
   });
 
   it('Quality observes a failed/recovered trajectory and changes nothing: no status, no run, no claim', async () => {

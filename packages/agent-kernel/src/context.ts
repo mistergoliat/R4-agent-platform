@@ -141,10 +141,13 @@ export function readableCapabilities(context: ExecutionContext): CapabilityDescr
 
 /**
  * (R4-D) What the model is offered: READ capabilities, plus write classes
- * when the run's write limit allows any write at all. Visible ≠ executable:
- * a proposed write still goes through policy, and its outcome only through
- * a receipt.
+ * while the task may still perform a write (R4-J4-R7-1, KC-0: the remaining
+ * writes, not the limit — an exhausted write budget hides them instead of
+ * inviting a proposal that can only end the run). Visible ≠ executable: a
+ * proposed write still goes through policy, and its outcome only through a
+ * receipt.
  */
 export function visibleCapabilities(context: ExecutionContext): CapabilityDescriptor[] {
-  return context.budget.limits.maxWriteActions > 0 ? [...context.capabilities] : readableCapabilities(context);
+  const { limits, usage } = context.budget;
+  return limits.maxWriteActions - usage.writeActions > 0 ? [...context.capabilities] : readableCapabilities(context);
 }

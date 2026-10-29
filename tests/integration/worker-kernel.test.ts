@@ -247,7 +247,8 @@ describe('budgets', () => {
     });
     expect((await stepsOf(platform.pool, run.runId)).map((s) => s.outcome)).toEqual(['observed', 'observed', 'observed', 'refused']);
     expect(await observationsOf(platform.pool, taskId)).toHaveLength(3);
-    expect((await platform.tasks.getTask(taskId)).task).toMatchObject({ status: 'failed', statusReason: 'budget_exhausted' });
+    // R4-J4-R7-1: the run fails; the task is handed to a human (contingency), never failed in silence.
+    expect((await platform.tasks.getTask(taskId)).task).toMatchObject({ status: 'blocked', statusReason: 'run_budget_exhausted' });
   });
 
   it('stops a token-heavy loop at the token ceiling (max_tokens), independently of the READ ceiling', async () => {
@@ -263,7 +264,7 @@ describe('budgets', () => {
       usage: { modelCalls: 3, capabilityCalls: 3, inputTokens: 27_000, outputTokens: 300 },
     });
     expect(w.provider.callCount).toBe(3);
-    expect((await platform.tasks.getTask(taskId)).task).toMatchObject({ status: 'failed', statusReason: 'budget_exhausted' });
+    expect((await platform.tasks.getTask(taskId)).task).toMatchObject({ status: 'blocked', statusReason: 'run_budget_exhausted' });
   });
 
   it('applies the task budget when tighter than the policy', async () => {

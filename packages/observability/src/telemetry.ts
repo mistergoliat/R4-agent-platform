@@ -108,6 +108,10 @@ export const TELEMETRY_EVENTS = [
   'task.run_failure.recovered',
   'task.run_failure.recovery_exhausted',
   'task.run_failure.non_retryable',
+  // R4-J4-R7-1: a run failure handed to a human as a platform contingency (budget, capability, internal, abandoned, filtered output).
+  'task.run_failure.contingency',
+  // R4-J4-R7-1: a temporal decision with an unusable model-supplied value (e.g. a past expiry), refused and shown back.
+  'temporal.decision.rejected',
   // R4-I governed production (metadata only: ids, statuses, codes, counts, latencies — never message text, addresses or secrets)
   'worker.admission.refused',
   'worker.admission.restored',

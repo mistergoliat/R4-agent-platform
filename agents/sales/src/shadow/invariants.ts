@@ -173,7 +173,8 @@ function shadowInvariant(i: WorkloadInvariant, state: ConversationState, obs: Ex
       return problems.length === 0 ? pass(`${exhausted.length} exhaustion(s): ${runFailureRecoveryOf(exhausted[0]!.run.termination)!.consecutiveFailures} failed runs → blocked + platform handoff; inputs accepted`) : fail(problems.join('; '));
     }
     case 'shadow.non_retryable_handed_off': {
-      const handed = runs.filter((r) => runFailureRecoveryOf(r.run.termination)?.outcome === 'handed_off');
+      // R4-J4-R7-1: contingency handoffs (budget, capability, internal, abandoned, filtered) are not this invariant's subject.
+      const handed = runs.filter((r) => runFailureRecoveryOf(r.run.termination)?.outcome === 'handed_off' && r.run.termination?.reason === 'model_failure');
       if (handed.length === 0) return notExercised('no non-retryable model failure');
       const problems: string[] = [];
       for (const h of handed) {

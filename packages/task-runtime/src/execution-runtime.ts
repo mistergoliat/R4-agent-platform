@@ -1,13 +1,14 @@
 import {
   EMPTY_RUN_USAGE,
-  NON_RETRYABLE_MODEL_FAILURE,
   PlatformError,
+  RUN_ABANDONED,
   RUN_FAILURE_RECOVERY_EXHAUSTED,
   RUN_FAILURE_RECOVERY_KEY,
   actionProposalSchema,
   contextSnapshotSchema,
   memoryEntrySchema,
   runFailureDisposition,
+  runFailureHandoffReason,
   runFailureRecoveryOf,
   runStatusForTermination,
   runStepSchema,
@@ -71,9 +72,12 @@ export interface ExecutionRuntimeOptions {
 /** ADR-028 default: one recovery run after a recoverable run failure. */
 export const DEFAULT_MAX_RUN_FAILURE_RECOVERIES = 1;
 
+/** Terminations that ended the task (`failed`) before the R4-J4-R7-1 amendment of ADR-028. */
+const FORMERLY_TERMINAL: ReadonlySet<TerminationReason> = new Set(['budget_exhausted', 'capability_failure', 'internal_failure', 'lease_lost']);
+
 /** Why the platform hands a task to a human after a run failure (ADR-028). */
 export interface RunFailureHandoffCause {
-  /** Task status reason and handoff reason: RUN_FAILURE_RECOVERY_EXHAUSTED or NON_RETRYABLE_MODEL_FAILURE. */
+  /** Task status reason and handoff reason: one of RUN_FAILURE_HANDOFF_REASONS. */
   readonly reason: string;
   readonly terminationReason: TerminationReason;
   readonly code: string;
@@ -343,6 +347,9 @@ export class ExecutionRuntime {
       }
 
       if (active.recoveries >= this.#maxRunRecoveries) {
+        // R4-J4-R7-1 (ADR-028 amendment): an abandoned run hands its task to a human; without the human runtime, it fails as before.
+        const handoff = this.#runFailureHandoff;
+        const details: JsonObject = { recoveries: active.recoveries, maxRunRecoveries: this.#maxRunRecoveries, previousOwner };
         const run = await finishRunWithin(
           uow,
           active,
@@ -352,14 +359,19 @@ export class ExecutionRuntime {
               reason: 'lease_lost',
               code: 'max_run_recoveries_exceeded',
               message: `run lost its lease ${active.recoveries + 1} times; limit is ${this.#maxRunRecoveries} recoveries`,
-              details: { recoveries: active.recoveries, maxRunRecoveries: this.#maxRunRecoveries, previousOwner },
+              details: handoff ? withRunFailureRecovery(details, { outcome: 'handed_off', consecutiveFailures: null, maxRunFailureRecoveries: this.#maxRunFailureRecoveries }) : details,
             },
             correlationId: task.correlationId,
           },
           timestamp,
           events,
         );
-        task = await transitionTaskWithin(uow, this.#ids, task, 'failed', 'lease_lost', actor, task.correlationId, timestamp, events);
+        if (handoff) {
+          events.push(['task.run_failure.contingency', { ...base, runId: run.runId, terminationReason: 'lease_lost', code: 'max_run_recoveries_exceeded', handoffReason: RUN_ABANDONED }]);
+          task = await handoff.handOffAfterRunFailureWithin(uow, task, run, { reason: RUN_ABANDONED, terminationReason: 'lease_lost', code: 'max_run_recoveries_exceeded', consecutiveFailures: null, actor }, events);
+        } else {
+          task = await transitionTaskWithin(uow, this.#ids, task, 'failed', 'lease_lost', actor, task.correlationId, timestamp, events);
+        }
         await uow.releaseLease(lease);
         events.push(['run.abandoned', { ...base, runId: run.runId, recoveries: active.recoveries, terminationReason: 'lease_lost' }]);
         return { kind: 'abandoned', task, run, previousOwner };
@@ -640,9 +652,11 @@ export class ExecutionRuntime {
           throw new PlatformError('internal', 'run_failure_handoff_unavailable', 'a run failure that needs a human cannot be handed over without the temporal runtime');
         }
         const exhausted = recovery.outcome === 'exhausted';
-        events.push([exhausted ? 'task.run_failure.recovery_exhausted' : 'task.run_failure.non_retryable', { ...base, consecutiveFailures: recovery.consecutiveFailures, maxRunFailureRecoveries: recovery.maxRunFailureRecoveries }]);
+        const handoffReason = exhausted ? RUN_FAILURE_RECOVERY_EXHAUSTED : runFailureHandoffReason(reason);
+        const event = exhausted ? 'task.run_failure.recovery_exhausted' : reason === 'model_failure' ? 'task.run_failure.non_retryable' : 'task.run_failure.contingency';
+        events.push([event, { ...base, consecutiveFailures: recovery.consecutiveFailures, maxRunFailureRecoveries: recovery.maxRunFailureRecoveries, handoffReason }]);
         task = await this.#runFailureHandoff.handOffAfterRunFailureWithin(uow, owned.task, run, {
-          reason: exhausted ? RUN_FAILURE_RECOVERY_EXHAUSTED : NON_RETRYABLE_MODEL_FAILURE,
+          reason: handoffReason,
           terminationReason: reason,
           code: run.termination?.code ?? reason,
           consecutiveFailures: recovery.consecutiveFailures,
@@ -776,6 +790,9 @@ export class ExecutionRuntime {
   async #runFailureRecovery(uow: ExecutionUnitOfWork, run: AgentRun, termination: TerminationInput): Promise<RunFailureRecovery | null> {
     const disposition = runFailureDisposition({ reason: termination.reason, details: termination.details ?? null });
     const maxRunFailureRecoveries = this.#maxRunFailureRecoveries;
+    // R4-J4-R7-1: the failures that were terminal before the ADR-028 amendment stay terminal without a human runtime
+    // (a platform that cannot hand over must still be able to end the run, never loop on an unrecordable ending).
+    if (disposition === 'human' && !this.#runFailureHandoff && FORMERLY_TERMINAL.has(termination.reason)) return null;
     if (disposition === 'human') return { outcome: 'handed_off', consecutiveFailures: null, maxRunFailureRecoveries };
     if (disposition !== 'recoverable') return null;
     let consecutiveFailures = 1;

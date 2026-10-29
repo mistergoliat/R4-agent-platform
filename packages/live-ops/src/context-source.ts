@@ -44,7 +44,7 @@ function fallbackItem(o: OutboundRecord, taskId: string): ContextContributionInp
   return {
     ...item(o, taskId),
     content: {
-      about: 'After earlier runs of this task failed, the platform (not you) queued a fixed notice to the contact: a technical problem occurred and a person of the team would continue the conversation. It promised nothing else. Do not repeat it.',
+      about: 'After this task could not continue autonomously (a run failed or reached a limit), the platform (not you) queued a fixed notice to the contact: a technical problem occurred and a person of the team would continue the conversation. It promised nothing else. Do not repeat it.',
       status: o.status,
       meaning: MEANING[o.status] ?? 'the provider accepted it',
       reason: o.cancelReason ?? o.holdReason ?? o.errorClass,

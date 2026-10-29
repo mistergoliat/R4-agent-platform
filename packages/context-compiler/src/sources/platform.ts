@@ -181,6 +181,20 @@ export const interactionSource: ContextSource = new MappingSource(PLATFORM_SOURC
         taskId: task.taskId,
       });
     }
+    // (R4-J4-R7-1) A consultation or handoff request the platform refused (e.g. a past expiry), so the agent can recover.
+    if ((decision.type === 'request_consultation' || decision.type === 'request_handoff') && step.outcome === 'refused' && step.error) {
+      items.push({
+        itemId: `decision_rejection:${step.stepId}`,
+        kind: 'episode',
+        authority: 'OBSERVED',
+        temporality: 'point_in_time',
+        content: { event: 'temporal.decision.rejected', decisionType: decision.type, code: step.error.code, text: step.error.message },
+        provenance: { recordType: 'agent_run_step', recordId: step.stepId },
+        createdAt: step.createdAt,
+        observedAt: step.createdAt,
+        taskId: task.taskId,
+      });
+    }
   }
   for (const h of interactions.humans) {
     const said = h.kind === 'consultation' ? { text: h.payload.question, refs: h.payload.contextRefs } : h.kind === 'handoff' && h.payload.initiatedBy === 'agent' ? { text: h.payload.summary, refs: h.payload.contextRefs } : null;

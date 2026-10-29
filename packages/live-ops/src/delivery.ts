@@ -26,7 +26,8 @@ export const OUTBOUND_STATUSES = ['pending', 'dispatching', 'accepted', 'deliver
 export type OutboundStatus = (typeof OUTBOUND_STATUSES)[number];
 /**
  * `platform` (ADR-041): the one fallback notice of a platform handoff after a
- * run failure (ADR-028 recovery exhausted, or a non-retryable model failure),
+ * run failure (ADR-028 recovery exhausted, a non-retryable model failure, or an
+ * R4-J4-R7-1 contingency: budget, capability, internal, abandoned, filtered),
  * so a failed model never leaves the contact without an answer. Its text is
  * the agent pack's, never model output.
  */

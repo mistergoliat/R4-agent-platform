@@ -14,6 +14,9 @@ const EXECUTION = 'packages/task-runtime/src/execution-runtime.ts';
 const TEMPORAL = 'packages/task-runtime/src/temporal-runtime.ts';
 const RUN = 'packages/contracts/src/run.ts';
 
+// R4-J4-R7-1: anchors of "recover budget_exhausted", "recover capability_failure without evidence" and "non-retryable model
+// failure retried" follow the rewritten runFailureDisposition (same intent). "exhaustion without attention" now anchors on
+// handOffAfterRunFailureWithin: its old anchor first matched holdForHumansWithin (R4-I), so it mutated the wrong function.
 const MUTATIONS = [
   {
     name: 'unbounded recovery (the consecutive count never grows)',
@@ -27,12 +30,12 @@ const MUTATIONS = [
   },
   {
     name: 'recover budget_exhausted',
-    edits: [{ file: RUN, from: "  if (termination.reason === 'invalid_decision') return 'recoverable';", to: "  if (termination.reason === 'invalid_decision' || termination.reason === 'budget_exhausted') return 'recoverable';" }],
+    edits: [{ file: RUN, from: "  return 'human';\n}\n\n/** Task status reason: recoverable", to: "  return termination.reason === 'budget_exhausted' ? 'recoverable' : 'human';\n}\n\n/** Task status reason: recoverable" }],
     tests: [UNIT, INTEGRATION],
   },
   {
     name: 'recover capability_failure without evidence',
-    edits: [{ file: RUN, from: "  if (termination.reason === 'invalid_decision') return 'recoverable';", to: "  if (termination.reason === 'invalid_decision' || termination.reason === 'capability_failure') return 'recoverable';" }],
+    edits: [{ file: RUN, from: "  return 'human';\n}\n\n/** Task status reason: recoverable", to: "  return termination.reason === 'capability_failure' ? 'recoverable' : 'human';\n}\n\n/** Task status reason: recoverable" }],
     tests: [UNIT],
   },
   {
@@ -42,7 +45,7 @@ const MUTATIONS = [
   },
   {
     name: 'non-retryable model failure retried',
-    edits: [{ file: RUN, from: "    return retryable ? 'recoverable' : 'human';", to: "    return 'recoverable';" }],
+    edits: [{ file: RUN, from: "return details.retryable === true ? 'recoverable' : 'human';", to: "return 'recoverable';" }],
     tests: [UNIT, INTEGRATION],
   },
   {
@@ -52,7 +55,7 @@ const MUTATIONS = [
   },
   {
     name: 'exhaustion without attention (no platform handoff request)',
-    edits: [{ file: TEMPORAL, from: '    await p.insertHuman(request);\n    await this.event(uow, task, request.requestId, \'handoff.requested\'', to: '    await this.event(uow, task, request.requestId, \'handoff.requested\'' }],
+    edits: [{ file: TEMPORAL, from: '    await p.insertHuman(request);\n    await this.event(uow, task, request.requestId, \'handoff.requested\', now, events, {\n      initiatedBy: \'platform\', reason: cause.reason', to: '    await this.event(uow, task, request.requestId, \'handoff.requested\', now, events, {\n      initiatedBy: \'platform\', reason: cause.reason' }],
     tests: [INTEGRATION],
   },
   {

@@ -79,6 +79,17 @@ describe('kernel termination mapping', () => {
     expect(session.reads).toEqual([]);
   });
 
+  it.each([
+    ['truncated output', 'length'],
+    ['filtered output', 'content_filter'],
+    ['plain prose', 'stop'],
+  ] as const)('(R4-J4-R7-1, KC-2) an invalid output keeps the finish reason of its call in the termination metadata: %s', async (_name, finishReason) => {
+    const { outcome } = await runWith([{ type: 'text', content: '{"type":"respond","content":"Hola, para cotizar nece', finishReason }]);
+    expect(terminated(outcome)).toMatchObject({ reason: 'invalid_decision', code: 'invalid_structured_output', details: { finishReason } });
+    // Metadata only: never the model text.
+    expect(JSON.stringify(terminated(outcome)?.details)).not.toContain('cotizar');
+  });
+
   it('times out a model call using the policy timeout', async () => {
     const { outcome } = await runWith([{ type: 'timeout', ignoreAbort: true }], { policy: { modelCallTimeoutMs: 50 } });
     expect(terminated(outcome)).toMatchObject({ reason: 'model_failure', code: 'timeout' });

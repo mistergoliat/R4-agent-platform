@@ -159,7 +159,7 @@ export interface OutboundRecord {
   readonly errorClass: string | null;
   readonly errorCode: string | null;
   /** Platform origin (ADR-041): the run-failure handoff this fallback announces. */
-  readonly handoffRequestId: string | null;
+  readonly humanRequestId: string | null;
   /** Operator origin: who wrote it; operator resolution: who settled it. */
   readonly humanRef: string | null;
   readonly resolvedBy: string | null;
@@ -265,6 +265,11 @@ export interface ProductionAttention {
   readonly unknownOutbound: readonly OutboundRecord[];
   readonly heldOutbound: readonly OutboundRecord[];
   readonly failedOutbound: readonly OutboundRecord[];
+  /**
+   * (R4-J4-R7-1) Agent or platform output the delivery gate cancelled because it went stale (`expired`) or the
+   * channel window closed (`window_closed`): the contact never received it and nothing re-sends it automatically.
+   */
+  readonly undeliveredOutbound: readonly OutboundRecord[];
   readonly failedInbound: readonly InboundEventRecord[];
   readonly rejectedInbound: readonly InboundEventRecord[];
   readonly unmatchedStatusEvents: readonly DeliveryEventRecord[];
@@ -343,7 +348,8 @@ export interface ProductionStore {
   /**
    * (ADR-041) Creates the one platform fallback outbound (`text`) of every
    * still-requested platform handoff of a bound task whose reason is a run
-   * failure (ADR-028: recovery exhausted, or a non-retryable model failure).
+   * failure (any of RUN_FAILURE_HANDOFF_REASONS: ADR-028 recovery exhausted, a
+   * non-retryable model failure, or an R4-J4-R7-1 contingency).
    * At most one per handoff, by unique constraint.
    */
   materializeRunFailureFallbacks(command: { readonly text: string; readonly limit: number }): Promise<OutboundRecord[]>;
