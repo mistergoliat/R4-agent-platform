@@ -112,6 +112,13 @@ export const TELEMETRY_EVENTS = [
   'task.run_failure.contingency',
   // R4-J4-R7-1: a temporal decision with an unusable model-supplied value (e.g. a past expiry), refused and shown back.
   'temporal.decision.rejected',
+  // R4-J4-R7-2 Turn Completion Guard: a deferred `complete`; the reconsideration asked of the agent; a silent closing
+  // ratified by the same model (basis: model_ratification, never a verification); what `observe` mode would have done.
+  'turn.closure.deferred',
+  'turn.closure.reconsider',
+  'turn.closed_without_reply',
+  'turn.closure.would_defer',
+  'turn.closure.would_refuse',
   // R4-I governed production (metadata only: ids, statuses, codes, counts, latencies — never message text, addresses or secrets)
   'worker.admission.refused',
   'worker.admission.restored',

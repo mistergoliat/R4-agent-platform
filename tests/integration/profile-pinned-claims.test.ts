@@ -94,12 +94,15 @@ describe('rollback, suspension and worker restart', () => {
     expect(held.runs.map((r) => r.status)).toEqual(['suspended']); // no run under the other profile
     await stop(after);
 
-    const restarted = await worker({ servedAgents: own, script: sequence([complete('continued')]) });
+    // R4-J4-R7-2 (Turn Completion Guard): completing without replying to the participant's input is deferred once for
+    // reconsideration; the scripted model ratifies it with a second complete, in a new run.
+    const restarted = await worker({ servedAgents: own, script: sequence([complete('continued'), complete('continued')]) });
+    expect(await restarted.platform.worker.runOnce()).toMatchObject({ kind: 'executed', taskId, claim: 'started' });
     expect(await restarted.platform.worker.runOnce()).toMatchObject({ kind: 'executed', taskId, claim: 'started' });
     const done = await platform.tasks.getTask(taskId);
     expect(done.task.status).toBe('completed');
     const versions = await platform.pool.query<{ agent_version: number }>('select agent_version from agent_runs where task_id = $1', [taskId]);
-    expect(versions.rows.map((r) => r.agent_version)).toEqual([own[0]!.version, own[0]!.version]);
+    expect(versions.rows.map((r) => r.agent_version)).toEqual([own[0]!.version, own[0]!.version, own[0]!.version]);
   });
 });
 

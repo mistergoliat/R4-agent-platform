@@ -96,6 +96,21 @@ export interface RunFailureHandoff {
   handOffAfterRunFailureWithin(uow: ExecutionUnitOfWork, task: AgentTask, run: AgentRun, cause: RunFailureHandoffCause, events: PendingEvent[]): Promise<AgentTask>;
 }
 
+/** (R4-J4-R7-2) What the Turn Completion Guard establishes about a `complete`. */
+export type TurnCompletionVerdict =
+  | { readonly kind: 'complete' }
+  /** The run ends as decided, the task does not: still running, no active run, the next claim starts a new run. */
+  | { readonly kind: 'deferred'; readonly code: 'turn_input_unseen' | 'turn_reply_pending'; readonly inputId: string };
+
+/**
+ * (R4-J4-R7-2) The Turn Completion Guard of `complete`. The Temporal Runtime
+ * attaches itself on construction. Called inside the transaction that ends
+ * the run, with the task row locked and the `complete` step appended.
+ */
+export interface TurnCompletionGuard {
+  completionWithin(uow: ExecutionUnitOfWork, task: AgentTask, step: RunStep, events: PendingEvent[]): Promise<TurnCompletionVerdict>;
+}
+
 export interface ClaimCommand {
   readonly workerId: string;
   readonly leaseDurationMs: number;
@@ -269,6 +284,7 @@ export class ExecutionRuntime {
   readonly #maxRunRecoveries: number;
   readonly #maxRunFailureRecoveries: number;
   #runFailureHandoff: RunFailureHandoff | null = null;
+  #turnGuard: TurnCompletionGuard | null = null;
 
   constructor(options: ExecutionRuntimeOptions) {
     if (!Number.isInteger(options.maxRunRecoveries) || options.maxRunRecoveries < 0) {
@@ -294,6 +310,11 @@ export class ExecutionRuntime {
    */
   attachRunFailureHandoff(handoff: RunFailureHandoff): void {
     this.#runFailureHandoff = handoff;
+  }
+
+  /** (R4-J4-R7-2) Wires the Turn Completion Guard (the Temporal Runtime, on construction). Without one, `complete` is unguarded. */
+  attachTurnCompletionGuard(guard: TurnCompletionGuard): void {
+    this.#turnGuard = guard;
   }
 
   /**
@@ -608,6 +629,11 @@ export class ExecutionRuntime {
    * platform handoff), never failed. The disposition is stamped on the run's
    * termination (`details.runFailureRecovery`). Every other failure is
    * unchanged.
+   *
+   * (R4-J4-R7-2) A `complete` passes the Turn Completion Guard first. When it
+   * defers, the run still completes as decided but the task does not follow:
+   * it stays `running` with no active run (the same pattern), and the next
+   * run sees why (`details.turnGuard`, and the reconsideration episode).
    */
   async finishExecution(token: LeaseToken, command: FinishExecutionCommand): Promise<{ task: AgentTask; run: AgentRun }> {
     const events: PendingEvent[] = [];
@@ -618,15 +644,21 @@ export class ExecutionRuntime {
       const timestamp = this.#clock.now().toISOString();
       const result = command.result ?? null;
       let current = owned.run;
+      let finalStep: RunStep | null = null;
       if (command.finalStep) {
         if (command.finalStep.outcome === 'pending') {
           throw new PlatformError('validation', 'validation_failed', 'a pending READ cannot end a run');
         }
-        await this.appendStepWithin(uow, owned, token, command.finalStep, timestamp, events);
+        finalStep = await this.appendStepWithin(uow, owned, token, command.finalStep, timestamp, events);
         current = (await uow.findActiveRun(owned.task.taskId)) ?? current;
       }
+      const guarded = reason === 'completed' && finalStep?.decision?.type === 'complete' && this.#turnGuard ? await this.#turnGuard.completionWithin(uow, owned.task, finalStep, events) : null;
+      const deferred = guarded?.kind === 'deferred' ? guarded : null;
       const recovery = await this.#runFailureRecovery(uow, current, command.termination);
-      const termination: TerminationInput = recovery === null ? command.termination : { ...command.termination, details: withRunFailureRecovery(command.termination.details, recovery) };
+      const kept = command.termination.details;
+      const termination: TerminationInput = deferred
+        ? { ...command.termination, details: { ...(kept && typeof kept === 'object' && !Array.isArray(kept) ? kept : {}), turnGuard: { outcome: 'deferred', code: deferred.code, inputId: deferred.inputId } } }
+        : recovery === null ? command.termination : { ...command.termination, details: withRunFailureRecovery(command.termination.details, recovery) };
       const run = await finishRunWithin(
         uow,
         current,
@@ -643,7 +675,11 @@ export class ExecutionRuntime {
       const actor = workerPrincipal(token.owner);
       const base = { taskId: owned.task.taskId, runId: run.runId, agentId: owned.task.agentId, workerId: token.owner, terminationReason: reason, failureClass: run.termination?.failureClass ?? null, code: run.termination?.code ?? null };
       let task: AgentTask;
-      if (recovery?.outcome === 'continued') {
+      if (deferred) {
+        // R4-J4-R7-2: the completion is deferred; still running, no active run: the next claim starts a new run.
+        task = owned.task;
+        events.push(['turn.closure.deferred', { ...base, code: deferred.code, inputId: deferred.inputId }]);
+      } else if (recovery?.outcome === 'continued') {
         // Same durable task, still running, no active run: the next claim is the recovery.
         task = owned.task;
         events.push(['task.run_failure.recoverable', { ...base, attempt: recovery.consecutiveFailures, maxRunFailureRecoveries: recovery.maxRunFailureRecoveries }]);

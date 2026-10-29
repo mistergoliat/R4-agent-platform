@@ -230,7 +230,10 @@ describe('handoff', () => {
 
     await platform.temporal.respondHuman(request.requestId, { responseKey: 'release', outcome: 'release', content: 'Constraint clarified; continue autonomously.' }, HUMAN);
     const seen: ModelRequest[] = [];
-    const next = await worker({ script: sequence([(r) => (seen.push(r), complete('resumed'))]) });
+    // R4-J4-R7-2 (Turn Completion Guard): completing without replying to the participant's input is deferred once for
+    // reconsideration; the scripted model ratifies it with a second complete, in a new run.
+    const next = await worker({ script: sequence([(r) => (seen.push(r), complete('resumed')), complete('resumed')]) });
+    await next.platform.worker.runOnce();
     await next.platform.worker.runOnce();
     const conversation = JSON.stringify(items(seen[0]!, 'conversation'));
     for (const said of ['The requester needs human judgment on the constraint.', 'I own this now.', 'Participant clarified the constraint to the operator.', 'Constraint clarified; continue autonomously.']) {

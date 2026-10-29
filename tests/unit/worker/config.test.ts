@@ -34,6 +34,12 @@ describe('worker configuration', () => {
     expect(() => loadWorkerConfig(bad)).toThrow();
   });
 
+  it('(R4-J4-R7-2) R4_TURN_GUARD: enforce by default, observe on request, anything else fails the boot', () => {
+    expect(loadWorkerConfig(env).turnGuard).toBe('enforce');
+    expect(loadWorkerConfig({ ...env, R4_TURN_GUARD: 'observe' }).turnGuard).toBe('observe');
+    expect(() => loadWorkerConfig({ ...env, R4_TURN_GUARD: 'off' })).toThrow();
+  });
+
   describe('R4_BUILD_REF (R4-I deployment build identity, diagnostic only)', () => {
     it('is optional: unset or blank yields no build ref', () => {
       expect(loadWorkerConfig(env).buildRef).toBeNull();

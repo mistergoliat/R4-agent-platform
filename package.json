@@ -70,6 +70,7 @@
     "test:mutation:canary-j4": "node tests/mutation/canary-j4-mutations.mjs",
     "test:mutation:run-failure-fallback": "node tests/mutation/run-failure-fallback-mutations.mjs",
     "test:mutation:runtime-contingency": "node tests/mutation/runtime-contingency-mutations.mjs",
+    "test:mutation:turn-guard": "node tests/mutation/turn-guard-mutations.mjs",
     "production:sales:plan": "node agents/sales/dist/cli/production.js --plan",
     "production:sales:validate": "node agents/sales/dist/cli/production.js --validate",
     "production:sales:smoke": "node agents/sales/dist/cli/production.js --smoke",
