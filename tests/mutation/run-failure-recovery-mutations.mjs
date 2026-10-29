@@ -11,6 +11,7 @@ const UNIT = ['--project', 'unit', 'tests/unit/task-runtime/run-failure-recovery
 const INTEGRATION = ['--project', 'integration', 'tests/integration/run-failure-recovery.test.ts'];
 
 const EXECUTION = 'packages/task-runtime/src/execution-runtime.ts';
+const RECOVERY_KEEP = '        // Same durable task, still running, no active run: the next claim is the recovery.\n        task = owned.task;\n';
 const TEMPORAL = 'packages/task-runtime/src/temporal-runtime.ts';
 const RUN = 'packages/contracts/src/run.ts';
 
@@ -50,7 +51,8 @@ const MUTATIONS = [
   },
   {
     name: 'task becomes failed before the recovery budget is exhausted',
-    edits: [{ file: EXECUTION, from: '        task = owned.task;\n', to: "        task = await transitionTaskWithin(uow, this.#ids, owned.task, 'failed', reason, actor, owned.task.correlationId, timestamp, events);\n" }],
+    // (R4-J4-R7-2: anchored on the recovery branch's comment; the turn guard's deferral also keeps owned.task.)
+    edits: [{ file: EXECUTION, from: RECOVERY_KEEP, to: "        // Same durable task, still running, no active run: the next claim is the recovery.\n        task = await transitionTaskWithin(uow, this.#ids, owned.task, 'failed', reason, actor, owned.task.correlationId, timestamp, events);\n" }],
     tests: [INTEGRATION],
   },
   {
@@ -92,8 +94,8 @@ const MUTATIONS = [
     edits: [
       {
         file: EXECUTION,
-        from: '        task = owned.task;\n',
-        to: "        task = owned.task;\n        await uow.insertGoal({ goalId: this.#ids.next(), taskId: owned.task.taskId, parentGoalId: owned.task.rootGoalId, description: 'recover the conversation', successCriteria: [], status: 'active', origin: 'agent', correlationId: owned.task.correlationId, version: 1, createdAt: timestamp, updatedAt: timestamp });\n",
+        from: RECOVERY_KEEP,
+        to: RECOVERY_KEEP + "        await uow.insertGoal({ goalId: this.#ids.next(), taskId: owned.task.taskId, parentGoalId: owned.task.rootGoalId, description: 'recover the conversation', successCriteria: [], status: 'active', origin: 'agent', correlationId: owned.task.correlationId, version: 1, createdAt: timestamp, updatedAt: timestamp });\n",
       },
     ],
     tests: [INTEGRATION],

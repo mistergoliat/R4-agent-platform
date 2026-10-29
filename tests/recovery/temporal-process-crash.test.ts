@@ -200,7 +200,10 @@ describe('wait survival across process restarts', () => {
     expect((await platform.tasks.getTask(taskId)).task).toMatchObject({ status: 'waiting', rootGoalId: root, currentGoalId: focus });
     await platform.temporal.submitInput(taskId, input('after-restart', 'Value is 7.'), PARTICIPANT, 'after-restart');
     let seenGoals: unknown[] = [];
-    const second = await worker({ script: sequence([(r) => ((seenGoals = r.context!.sections.goals.map((i) => i.content)), complete('done'))]) });
+    // R4-J4-R7-2 (Turn Completion Guard): completing without replying to the participant's input is deferred once for
+    // reconsideration; the scripted model ratifies it with a second complete, in a new run.
+    const second = await worker({ script: sequence([(r) => ((seenGoals = r.context!.sections.goals.map((i) => i.content)), complete('done')), complete('done')]) });
+    await second.platform.worker.runOnce();
     await second.platform.worker.runOnce();
     expect(seenGoals).toEqual(expect.arrayContaining([expect.objectContaining({ goalId: root, isRoot: true }), expect.objectContaining({ goalId: focus, isCurrent: true })]));
     expect((await platform.tasks.getTask(taskId)).task.status).toBe('completed');

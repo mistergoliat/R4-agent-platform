@@ -82,7 +82,9 @@ const MUTATIONS = [
 ];
 
 function vitest({ project, file }, pattern) {
-  const r = spawnSync('npx', ['vitest', 'run', '--project', project, file, '-t', `"${pattern}"`], { shell: true, encoding: 'utf8', env: { ...process.env, NO_COLOR: '1' } });
+  // -t is a regex: test names such as "S31 + S75" or "S27 (invalid wait)" must match literally.
+  const literal = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const r = spawnSync('npx', ['vitest', 'run', '--project', project, file, '-t', `"${literal}"`],{ shell: true, encoding: 'utf8', env: { ...process.env, NO_COLOR: '1' } });
   const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
   const count = (word) => Number(out.match(new RegExp(`Tests\\s+[^\\n]*?(\\d+) ${word}`))?.[1] ?? 0);
   return { status: r.status, passed: count('passed'), failed: count('failed'), out };

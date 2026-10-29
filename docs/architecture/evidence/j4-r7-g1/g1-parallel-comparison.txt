@@ -1,0 +1,26 @@
+# G1-D parallel integration (default file parallelism, 8 cores, nothing else running), alternating R7-1 665b50c (dev/r4-j4-r7-1) and baseline d0bb7a7 (dev/r4-j4-r6-closure)
+r71-1 rc=0 450s       Tests  642 passed | 12 skipped (654)
+base-1 rc=0 317s       Tests  615 passed | 12 skipped (627)
+r71-2 rc=0 413s       Tests  642 passed | 12 skipped (654)
+base-2 rc=0 456s       Tests  615 passed | 12 skipped (627)
+DONE
+
+## r71-1
+ Test Files  47 passed | 1 skipped (48)
+      Tests  642 passed | 12 skipped (654)
+   Duration  448.82s (transform 36.02s, setup 0ms, import 143.95s, tests 2165.61s, environment 26ms)
+
+## base-1
+ Test Files  45 passed | 1 skipped (46)
+      Tests  615 passed | 12 skipped (627)
+   Duration  314.60s (transform 24.25s, setup 0ms, import 118.88s, tests 2036.03s, environment 25ms)
+
+## r71-2
+ Test Files  47 passed | 1 skipped (48)
+      Tests  642 passed | 12 skipped (654)
+   Duration  409.38s (transform 28.76s, setup 0ms, import 150.32s, tests 2671.98s, environment 26ms)
+
+## base-2
+ Test Files  45 passed | 1 skipped (46)
+      Tests  615 passed | 12 skipped (627)
+   Duration  452.22s (transform 32.00s, setup 0ms, import 155.18s, tests 2949.82s, environment 25ms)

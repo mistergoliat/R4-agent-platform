@@ -1,0 +1,191 @@
+# G1 serial reproduction on feat/r4-j4-r7-1-runtime-contingency (worktree dev/r4-j4-r7-1), local PostgreSQL 127.0.0.1:55432 only
+HEAD 665b50ce6d684b8fd96272a0cfca915cb56a2290 2026-10-29T15:13:57-03:00
+clean rc=0 6s
+build rc=0 54s
+typecheck rc=0 35s
+lint rc=0 103s
+unit rc=0 62s
+contract rc=0 20s
+integration rc=0 1065s
+sales rc=0 112s
+shadow rc=0 149s
+recovery rc=0 116s
+mut-runtime-contingency rc=0 494s
+mut-run-failure-fallback rc=0 253s
+mut-recovery rc=0 647s
+mut-production rc=0 657s
+mut-production-control rc=0 170s
+DONE
+
+## dist / tsbuildinfo left by 'npm run clean' (removed before the build)
+./adapters/channels/whatsapp-cloud/dist
+./adapters/domains/catalog/http/dist
+./adapters/domains/customer/http/dist
+./adapters/domains/dist
+./adapters/domains/identity/http/dist
+./adapters/domains/identity/verification/dist
+./adapters/domains/quote/http/dist
+./adapters/domains/shipping/http/dist
+./adapters/models/openai-compatible/dist
+./agents/sales/dist
+./apps/api/dist
+./apps/channel-gateway/dist
+./apps/evaluator/dist
+./apps/scheduler/dist
+./apps/worker/dist
+./packages/agent-kernel/dist
+./packages/agent-registry/dist
+./packages/capability-runtime/dist
+./packages/context-compiler/dist
+./packages/contracts/dist
+./packages/evaluation/dist
+./packages/live-ops/dist
+./packages/model-gateway/dist
+./packages/observability/dist
+./packages/persistence-postgres/dist
+./packages/policy-engine/dist
+./packages/shadow/dist
+./packages/task-runtime/dist
+
+## unit
+ Test Files  85 passed | 1 skipped (86)
+      Tests  1529 passed | 4 skipped (1533)
+   Duration  54.05s (transform 32.66s, setup 0ms, import 219.67s, tests 45.08s, environment 49ms)
+
+## contract
+ Test Files  33 passed (33)
+      Tests  452 passed (452)
+   Duration  18.13s (transform 24.55s, setup 0ms, import 79.35s, tests 14.91s, environment 15ms)
+
+## integration
+ Test Files  47 passed | 1 skipped (48)
+      Tests  642 passed | 12 skipped (654)
+   Duration  1045.97s (transform 6.21s, setup 0ms, import 55.70s, tests 973.73s, environment 10ms)
+
+## sales
+ Test Files  4 passed (4)
+      Tests  29 passed (29)
+   Duration  108.26s (transform 15.86s, setup 0ms, import 34.21s, tests 143.72s, environment 3ms)
+
+## shadow
+ Test Files  1 passed (1)
+      Tests  5 passed (5)
+   Duration  146.14s (transform 3.26s, setup 0ms, import 8.63s, tests 136.85s, environment 1ms)
+
+## recovery
+ Test Files  11 passed (11)
+      Tests  18 passed (18)
+   Duration  114.33s (transform 4.73s, setup 0ms, import 21.07s, tests 89.53s, environment 3ms)
+
+## mut-production-control
+baseline unit: green
+baseline control: green
+baseline contract: green
+baseline: green
+DETECTED: M1 autonomy OFF is not persisted (the control row keeps its previous state)
+DETECTED: M2a the administrator reason is omitted from the control audit (a default is recorded)
+DETECTED: M2b the administrator reason is omitted from the hold release evidence
+DETECTED: M3 autonomy ON automatically releases every held task
+DETECTED: M4 release allowed while autonomy is still OFF
+DETECTED: M5a an agent-created human handoff is eligible for administrative release
+DETECTED: M5b agent handoffs and other causes are listed as releasable autonomy holds
+DETECTED: M6 release bypasses the HumanRequest resolution (the task is made runnable directly)
+DETECTED: M7 release deletes the inbound history received during the hold
+DETECTED: M8 release flushes delivery directly (the CLI composes the channel and dispatches)
+DETECTED: M9 a stale pending agent response becomes sendable after release
+DETECTED: M10 tasks cancel closes the conversation binding itself (ingress no longer owns it)
+DETECTED: M11 a repeated cancel on a terminal task is reported as a fresh cancellation
+13/13 mutations detected; all sources restored
+
+## mut-production
+baseline unit: green
+baseline reference: green
+baseline hardening: green
+baseline contract: green
+baseline: green
+DETECTED: omit the durable HumanRequest for a platform hold
+DETECTED: disable inbound uniqueness (no unique provider event identity)
+DETECTED: allow duplicate outbound dispatch (already submitted messages are claimable again)
+DETECTED: remove response_step_id uniqueness protection
+DETECTED: allow the same response step to create multiple outbound rows
+DETECTED: retry an unknown delivery blindly
+DETECTED: allow a fixture owner in a production profile
+DETECTED: ignore the kill switch (inbound and delivery)
+DETECTED: ignore the kill switch at worker admission (new cognition claims)
+DETECTED: ignore human ownership at delivery
+DETECTED: rewrite a delivered agent outbound during operator takeover
+DETECTED: treat respond as delivered (materialized outbound born delivered)
+DETECTED: allow a shadow/fake outbound binding in production
+DETECTED: drop webhook signature verification
+DETECTED: roll delivered status back to accepted (non-monotonic evidence)
+DETECTED: send a stale response after newer customer input
+DETECTED: dedupe every matching text inside the same Task, across independent turns
+DETECTED: dedupe matching text across different Tasks
+DETECTED: suppress an operator message because its text matches an agent message
+DETECTED: allow ADR-028 replay of the same causal response episode
+DETECTED: treat unknown delivery as no evidence when checking duplicate episodes
+DETECTED: drop provider-confirmed failed outbound from causal evidence
+DETECTED: rollout defaults open (excluded conversations get autonomy)
+23/23 mutations detected; all sources restored
+
+## mut-recovery
+baseline: green
+DETECTED: unbounded recovery (the consecutive count never grows)
+DETECTED: recovery never exhausts (the budget is never compared)
+DETECTED: recover budget_exhausted
+DETECTED: recover capability_failure without evidence
+DETECTED: retry an accepted AgentDecision (a completed run is "recovered")
+DETECTED: non-retryable model failure retried
+DETECTED: task becomes failed before the recovery budget is exhausted
+DETECTED: exhaustion without attention (no platform handoff request)
+DETECTED: recover while a human owns the task (platform handoff does not block)
+DETECTED: recover before reconciliation (claim ignores uncertain effects)
+DETECTED: reuse the failed run’s ContextSnapshot for the recovery run
+DETECTED: ignore customer input that arrives between the failed run and the recovery
+DETECTED: reset maxWriteActions for the new run
+DETECTED: a goal is created during recovery
+14/14 mutations detected; all sources restored
+
+## mut-run-failure-fallback
+baseline "tests/integration/run-failure-fallback.test.ts :: two consecutive failures": green (5 passed)
+baseline "tests/integration/run-failure-fallback.test.ts :: a non-retryable model failure hands off at once": green (1 passed)
+baseline "tests/unit/live-ops/delivery.test.ts :: is sent while its handoff is still requested": green (1 passed)
+baseline "tests/unit/live-ops/delivery.test.ts :: is cancelled once a human took the task": green (1 passed)
+baseline "tests/integration/run-failure-fallback.test.ts :: an operator who takes the conversation before the dispatch": green (1 passed)
+baseline "tests/unit/live-ops/delivery.test.ts :: obeys the kill switch, deny and rollout": green (1 passed)
+baseline "tests/integration/run-failure-fallback.test.ts :: the kill switch holds the fallback": green (1 passed)
+baseline "tests/integration/run-failure-fallback.test.ts :: a worker restart during recovery": green (1 passed)
+DETECTED: RFF-M1 the delivery runtime never materializes the fallback [two consecutive failures: failed (5); a non-retryable model failure hands off at once: failed (1)]
+DETECTED: RFF-M2 the gate treats the fallback as agent output (a human-owned task cancels it) [is sent while its handoff is still requested: failed (1); two consecutive failures: failed (5)]
+DETECTED: RFF-M3 the gate ignores whether the handoff is still pending [is cancelled once a human took the task: failed (1); an operator who takes the conversation before the dispatch: failed (1)]
+DETECTED: RFF-M4 the store reports every fallback handoff as pending [an operator who takes the conversation before the dispatch: failed (1)]
+DETECTED: RFF-M5 the fallback bypasses the kill switch [obeys the kill switch, deny and rollout: failed (1); the kill switch holds the fallback: failed (1)]
+DETECTED: RFF-M6 the Sales gateway composes no fallback text [two consecutive failures: failed (5); a worker restart during recovery: failed (1)]
+6/6 mutations detected; all sources restored
+
+## mut-runtime-contingency
+baseline "tests/unit/task-runtime/run-failure-recovery.test.ts :: recoverable: invalid_decision and retryable model_failure": green (1 passed)
+baseline "tests/integration/runtime-contingency.test.ts :: S08 budget_exhausted": green (1 passed)
+baseline "tests/integration/runtime-contingency.test.ts :: S11 capability_failure": green (1 passed)
+baseline "tests/integration/runtime-contingency.test.ts :: per-run budget exhausted inside a turn": green (1 passed)
+baseline "tests/integration/runtime-contingency.test.ts :: S04: a filtered output": green (1 passed)
+baseline "tests/integration/runtime-contingency.test.ts :: S13 abandonment": green (1 passed)
+baseline "tests/integration/reconciliation.test.ts :: a run abandoned mid-call": green (1 passed)
+baseline "tests/integration/runtime-contingency.test.ts :: S14: a consultation with a past expiry": green (1 passed)
+baseline "tests/unit/agent-kernel/kernel-actions.test.ts :: KC-0": green (1 passed)
+baseline "tests/unit/agent-kernel/kernel.test.ts :: KC-2": green (3 passed)
+baseline "tests/integration/runtime-contingency.test.ts :: S03: two truncated outputs": green (1 passed)
+baseline "tests/integration/runtime-contingency.test.ts :: S15 without the human runtime": green (1 passed)
+baseline "tests/integration/runtime-contingency.test.ts :: S50: a reply cancelled at the gate": green (1 passed)
+DETECTED: RC-M1 budget, capability and internal failures are terminal again (ADR-028 before the amendment) [recoverable: invalid_decision and retryable model_failure: failed (1); S08 budget_exhausted: failed (1); S11 capability_failure: failed (1); per-run budget exhausted inside a turn: failed (1)]
+DETECTED: RC-M2 a filtered output (content_filter) is retried like any invalid output [recoverable: invalid_decision and retryable model_failure: failed (1); S04: a filtered output: failed (1)]
+DETECTED: RC-M3 an abandoned run fails its task instead of handing it over [S13 abandonment: failed (1); a run abandoned mid-call: failed (1)]
+DETECTED: RC-M4 the fallback notice is materialized only for the ADR-041 reasons [per-run budget exhausted inside a turn: failed (1); S04: a filtered output: failed (1)]
+DETECTED: RC-M5 a past consultation expiry is no longer refused recoverably [S14: a consultation with a past expiry: failed (1)]
+DETECTED: RC-M6 a refused consultation is not shown back to the model [S14: a consultation with a past expiry: failed (1)]
+DETECTED: RC-M7 KC-0 reverted: writes stay visible with zero writes remaining [KC-0: failed (1)]
+DETECTED: RC-M8 KC-2 reverted: the finish reason of an invalid output is dropped [KC-2: failed (3); S03: two truncated outputs: failed (1); S04: a filtered output: failed (1)]
+DETECTED: RC-M9 without the human runtime a formerly terminal failure cannot end the run [S15 without the human runtime: failed (1)]
+DETECTED: RC-M10 attention omits replies the gate cancelled as expired or window_closed [S50: a reply cancelled at the gate: failed (1)]
+DETECTED: RC-M11 the contingency handoff is not durable (task blocked without a human request) [S08 budget_exhausted: failed (1); S13 abandonment: failed (1)]
+11/11 mutations detected; all sources restored

@@ -1,0 +1,69 @@
+# R4-J4-R7-2 final regression, chain 1 (clean build) on 59041dc
+HEAD 59041dc13f5bbd4181d0785dba7af19499b5a310 2026-10-29T17:59:27-03:00
+clean rc=0 4s
+build rc=0 61s
+typecheck rc=0 44s
+lint rc=0 81s
+unit rc=0 46s
+contract rc=0 30s
+integration rc=0 1595s
+sales rc=0 147s
+shadow rc=0 137s
+mut-turn-guard rc=1 212s
+mut-runtime-contingency rc=0 556s
+mut-recovery rc=1 667s
+RECOVERY_NEXT
+recovery rc=1 107s
+DONE
+
+== unit
+ Test Files  85 passed | 1 skipped (86)
+      Tests  1531 passed | 4 skipped (1535)
+== contract
+ Test Files  33 passed (33)
+      Tests  452 passed (452)
+== integration
+ Test Files  48 passed | 1 skipped (49)
+      Tests  672 passed | 12 skipped (684)
+== sales
+ Test Files  4 passed (4)
+      Tests  29 passed (29)
+== shadow
+ Test Files  1 passed (1)
+      Tests  5 passed (5)
+== recovery
+ Test Files  1 failed | 10 passed (11)
+      Tests  1 failed | 17 passed (18)
+== recovery failure
+ FAIL  |recovery| tests/recovery/temporal-process-crash.test.ts > wait survival across process restarts > a waiting task survives worker and API restarts and wakes on input submitted to the restarted API
+AssertionError: expected 'running' to be 'completed' // Object.is equality
+
+== leftover dist after clean (O-2)
+./adapters/channels/whatsapp-cloud/dist
+./adapters/domains/catalog/http/dist
+./adapters/domains/customer/http/dist
+./adapters/domains/dist
+./adapters/domains/identity/http/dist
+./adapters/domains/identity/verification/dist
+./adapters/domains/quote/http/dist
+./adapters/domains/shipping/http/dist
+./adapters/models/openai-compatible/dist
+./agents/sales/dist
+./apps/api/dist
+./apps/channel-gateway/dist
+./apps/evaluator/dist
+./apps/scheduler/dist
+./apps/worker/dist
+./packages/agent-kernel/dist
+./packages/agent-registry/dist
+./packages/capability-runtime/dist
+./packages/context-compiler/dist
+./packages/contracts/dist
+./packages/evaluation/dist
+./packages/live-ops/dist
+./packages/model-gateway/dist
+./packages/observability/dist
+./packages/persistence-postgres/dist
+./packages/policy-engine/dist
+./packages/shadow/dist
+./packages/task-runtime/dist
