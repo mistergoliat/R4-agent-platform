@@ -5,6 +5,7 @@
 - **Base:** `main` `09d6579`
 - **Autoridad superior:** Constitución; PRD; ADR-008 (protocolo de decisión), ADR-028 (runs fallidas recuperables), ADR-038 (outbound gobernado)
 - **No modifica:** el kernel (`packages/agent-kernel`), `packages/task-runtime`, ADR-008 ni ADR-028.
+- **Enmienda:** R4-J4-R7-1 (2026-10-28) — avisos generalizados a las contingencias de runtime; columna `human_request_id`. Ver la sección final.
 
 ## Contexto
 
@@ -55,3 +56,32 @@ Lo que nadie decidió es qué ve el **contacto**. El handoff deja la task `block
 - **Invariante nuevo:** una respuesta malformada del modelo nunca abandona en silencio una conversación de canal activa. Tras la recuperación acotada, el contacto recibe un aviso persistido y entregado por el dueño de la entrega.
 - El aviso no sustituye a la persona: el handoff sigue pedido y visible en `attention()`.
 - Producción (`sales-production@2` en EC2) no cambia hasta un despliegue autorizado, con su `db:migrate`.
+
+## Enmienda R4-J4-R7-1 (2026-10-28)
+
+- **Mandato:** «R4 — Implementation Mandate J4-R7-1: Runtime Contingency & Recovery», R7-1B.
+- **Integración:** los commits del PR #27 (`387b720`, `93fe35a`) se integraron por *cherry-pick* en la rama
+  `feat/r4-j4-r7-1-runtime-contingency`, sobre `0356388` (= `main` `d0bb7a7` + documentación R7). El PR #27 **no se
+  modificó ni se fusionó**. Si esta rama se acepta, el PR #27 queda reemplazado por ella.
+
+**Generalización de las razones.** El aviso se materializa para todo handoff de plataforma `requested` cuya razón
+pertenezca a `RUN_FAILURE_HANDOFF_REASONS` (`@r4/contracts`). Desde R4-J4-R7-1 son siete:
+- `run_failure_recovery_exhausted` y `non_retryable_model_failure` (ADR-041 original);
+- `run_output_filtered`, `run_budget_exhausted`, `run_capability_failure`, `run_internal_failure` y `run_abandoned`
+  (ADR-028, enmienda R4-J4-R7-1).
+
+El gate (`decidePlatformDispatch`), la unicidad por solicitud, el texto fijo del pack, el ciclo de vida del outbound y
+la exclusión por kill switch, deny, rollout y ventana no cambian. Las restricciones del canal se respetan igual: fuera
+de ventana el aviso se cancela `window_closed` y aparece en `attention()` (`undeliveredOutbound`).
+
+**Columna `human_request_id` (D-8).** La migración `0012_platform_fallback_outbound` usa `human_request_id` en vez de
+`handoff_request_id`, y `OutboundRecord.humanRequestId` en vez de `handoffRequestId`. Así R7-3 podrá anunciar también
+consultas y aprobaciones sin otra migración. La migración nunca se aplicó en producción (`main` termina en `0011`). Una
+base de canary que la hubiera aplicado con el nombre anterior la verá como `modified` y será rechazada por
+`migrationStatus`; hay que recrearla. Los textos del episodio de contexto (`DeliveryStateContextSource`) se
+generalizaron: "la task no pudo continuar de forma autónoma".
+
+**Condición pendiente (R7-2).** El diseño R7 materializa el aviso sólo si la última entrada del contacto no tiene
+respuesta (`UNANSWERED`). Esa consulta llega con el guard de R7-2. Hasta entonces se conserva la regla de ADR-041: un
+aviso por handoff de falla, aunque no haya entrada pendiente (por ejemplo, un presupuesto agotado en una run
+despertada por un timer).
