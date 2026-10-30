@@ -372,6 +372,34 @@ describe('durable steering (level 1): inputs during work reach the next safe fro
     expect(await task(b, taskId)).toMatchObject({ status: 'waiting' });
   });
 
+  it('G2 A1: an inbound racing the closing transaction is never orphaned, whichever takes the task row first', async () => {
+    const b = await start();
+    for (let round = 0; round < 6; round += 1) {
+      await b.customer(CUSTOMER, `wamid.g2-race-${round}a`, '¿Tienen discos de 20 kg?');
+      b.next(say('Sí, a $45.990.'));
+      await b.runAgent();
+      await b.deliver();
+      const taskId = await b.taskOf(CUSTOMER);
+      await b.api.temporal.submitInput(taskId, { externalKey: `marker-race-${round}`, content: 'identity verified', sourceRef: 'identity-verification', occurredAt: new Date().toISOString() }, { kind: 'system', ref: 'identity-verification' }, 'g2-race');
+      let race: Promise<unknown> = Promise.resolve();
+      // The frontier is covered: only the racing inbound can stop this complete, and it is NOT awaited.
+      b.next(() => ((race = b.customer(CUSTOMER, `wamid.g2-race-${round}b`, 'Una cosa más')), complete()), say('Dime.'));
+      await b.runAgent();
+      await race;
+      await b.runAgent();
+      await b.deliver();
+      // Deferred on the same task, or (C-2) reopened on a new one; in both, a run received the input.
+      const { memory_entry_id: entry } = await input(b, `wamid.g2-race-${round}b`);
+      expect(await b.rows(`select 1 from context_snapshot_items where item_id = $1 and decision = 'included'`, [`memory:${entry}`])).not.toEqual([]);
+    }
+    // No conversational input in a completed task without a decision whose snapshot carried it.
+    expect(await b.rows(
+      `select i.input_id from task_inputs i join agent_tasks t on t.task_id = i.task_id
+        where t.status = 'completed' and i.actor_kind = 'user' and not exists (
+          select 1 from agent_run_steps s join context_snapshot_items c on c.snapshot_id = s.context_snapshot_id and c.item_id = 'memory:' || i.memory_entry_id::text and c.decision = 'included'
+           where s.task_id = i.task_id and s.decision_type is not null)`)).toEqual([]);
+  });
+
   it('S56 + restart during incorporation: a message arrives, the completion is deferred, the worker dies; a new worker incorporates it once', async () => {
     const b = await start();
     await b.customer(CUSTOMER, 'wamid.r72-56a', 'Hola');

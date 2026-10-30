@@ -199,12 +199,17 @@ export class PostgresTemporalPersistence implements TemporalPersistence {
   }
 
   async turnObligation(taskId: string, snapshotId: string | null): Promise<TurnObligation> {
-    // `seen` is the hasUnseenInput rule; a reply covers what its snapshot evaluated unless its outbound was discarded.
+    // `seen` is the hasUnseenInput rule (evaluated). Only `included` is delivery: a reply covers what its snapshot
+    // carried unless its outbound was discarded, and an input counts as received once a decision came from a snapshot carrying it.
     const inputs = (await this.client.query<Row>(
       `select c.input_id, c.memory_entry_id, c.received_at,
               exists (select 1 from context_snapshot_items i where i.snapshot_id = $2 and i.item_id = 'memory:' || c.memory_entry_id::text) as seen,
+              exists (select 1 from context_snapshot_items i where i.snapshot_id = $2 and i.item_id = 'memory:' || c.memory_entry_id::text and i.decision = 'included') as in_horizon,
               exists (select 1 from agent_run_steps s
-                        join context_snapshot_items i on i.snapshot_id = s.context_snapshot_id and i.item_id = 'memory:' || c.memory_entry_id::text
+                        join context_snapshot_items i on i.snapshot_id = s.context_snapshot_id and i.item_id = 'memory:' || c.memory_entry_id::text and i.decision = 'included'
+                       where s.task_id = $1 and s.decision_type is not null) as decided_on,
+              exists (select 1 from agent_run_steps s
+                        join context_snapshot_items i on i.snapshot_id = s.context_snapshot_id and i.item_id = 'memory:' || c.memory_entry_id::text and i.decision = 'included'
                         left join outbound_messages o on o.response_step_id = s.step_id
                        where s.task_id = $1 and s.decision_type = 'respond' and s.outcome = 'recorded'
                          and (o.outbound_id is null or o.status not in ('failed', 'cancelled') or o.cancel_reason = 'duplicate_content')) as replied,
@@ -216,6 +221,8 @@ export class PostgresTemporalPersistence implements TemporalPersistence {
     const ref = (r: Row): ConversationInputRef => ({ inputId: r.input_id as string, memoryEntryId: r.memory_entry_id as string, receivedAt: iso(r.received_at) });
     const unseen = inputs.find((r) => r.seen !== true);
     const frontier = inputs.at(-1);
+    const covered = frontier !== undefined && (frontier.replied === true || frontier.closed === true);
+    const undelivered = inputs.find((r) => r.in_horizon !== true && r.decided_on !== true) ?? (frontier && !covered && frontier.in_horizon !== true ? frontier : undefined);
     const reconsider = frontier
       ? (await this.client.query<Row>(
         `select e.event_id, e.data->>'stepId' as step_id,
@@ -228,8 +235,9 @@ export class PostgresTemporalPersistence implements TemporalPersistence {
     const replies = await this.client.query(`select 1 from agent_run_steps where task_id = $1 and decision_type = 'respond' and outcome = 'recorded' limit 1`, [taskId]);
     return {
       unseen: unseen ? ref(unseen) : null,
+      undelivered: undelivered ? ref(undelivered) : null,
       frontier: frontier ? ref(frontier) : null,
-      covered: frontier !== undefined && (frontier.replied === true || frontier.closed === true),
+      covered,
       reconsider: reconsider ? { eventId: reconsider.event_id as string, stepId: (reconsider.step_id as string | null) ?? null, shown: reconsider.shown === true } : null,
       hadPriorReply: replies.rowCount !== 0,
       trailingCount: inputs.filter((r) => r.replied !== true).length,

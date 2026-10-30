@@ -37,10 +37,17 @@ export interface ConversationInputRef {
 export interface TurnObligation {
   /** The oldest conversational input `H` never evaluated (UNSEEN). Same `seen` rule as `hasUnseenInput`. */
   readonly unseen: ConversationInputRef | null;
+  /**
+   * (G2) The oldest input whose content the model did not receive, though evaluated: raw in no snapshot a decision
+   * came from, or `L` uncovered and not raw in `H`. Snapshots record what they exclude too, and a compacted item
+   * reaches the model only as an excerpt nothing verifies as sufficient: evaluated wakes a task, only delivered can
+   * authorize a closing.
+   */
+  readonly undelivered: ConversationInputRef | null;
   /** The latest conversational input: the frontier `L`. */
   readonly frontier: ConversationInputRef | null;
   /**
-   * `L` is covered: a recorded `respond` whose snapshot evaluated `L` and whose
+   * `L` is covered: a recorded `respond` whose snapshot included `L` and whose
    * outbound was not discarded, or a ratified closing (`turn.closed_without_reply`) of `L`.
    */
   readonly covered: boolean;
@@ -92,7 +99,10 @@ export interface TemporalPersistence {
 
   input(taskId: string, sourceRef: string, externalKey: string): Promise<{ inputId: string; requestHash: string } | null>;
   insertInput(input: { inputId: string; taskId: string; sourceRef: string; externalKey: string; requestHash: string; memoryEntryId: string; actorKind: string; actorRef: string; receivedAt: string; correlationId: string }): Promise<void>;
-  /** Whether the task has an input whose memory entry the given snapshot never evaluated. */
+  /**
+   * Whether the task has an input whose memory entry the given snapshot never evaluated. It decides waking, where
+   * evaluated is the right question: a wake for an excluded input would recompile, exclude it and wake again.
+   */
   hasUnseenInput(taskId: string, snapshotId: string | null): Promise<boolean>;
   /** (R4-J4-R7-2) The task's conversational obligation against the snapshot of a closing decision. */
   turnObligation(taskId: string, snapshotId: string | null): Promise<TurnObligation>;

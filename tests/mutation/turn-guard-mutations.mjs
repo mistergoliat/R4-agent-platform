@@ -7,7 +7,8 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const IT = { project: 'integration', file: 'tests/integration/turn-completion-guard.test.ts' };
-const UNIT_SOURCES = { project: 'unit', file: 'tests/unit/context-compiler/temporal-sources.test.ts' };
+const EXCLUDED = { project: 'integration', file: 'tests/integration/turn-guard-excluded-inputs.test.ts' };
+const UNIT_SOURCES ={ project: 'unit', file: 'tests/unit/context-compiler/temporal-sources.test.ts' };
 const EXECUTION = 'packages/task-runtime/src/execution-runtime.ts';
 const TEMPORAL = 'packages/task-runtime/src/temporal-runtime.ts';
 const STORE = 'packages/persistence-postgres/src/temporal-store.ts';
@@ -78,6 +79,41 @@ const MUTATIONS = [
     name: 'TG-M12 observe mode enforces',
     edits: [{ file: TEMPORAL, from: "    if (this.#options.turnGuard === 'observe') {\n      const code = blocked", to: "    if (false) {\n      const code = blocked" }],
     tests: [[IT, 'S32: records what it would do']],
+  },
+  {
+    name: 'TG-M13 a reply covers an input its snapshot evaluated but excluded (G2)',
+    edits: [{ file: STORE, from: "and i.decision = 'included'\n                        left join outbound_messages", to: '\n                        left join outbound_messages' }],
+    tests: [[EXCLUDED, 'X2g received earlier, left out of the reply']],
+  },
+  {
+    name: 'TG-M14 an input the model did not receive can be closed over (G2)',
+    edits: [{ file: TEMPORAL, from: "    if (o.undelivered) return { kind: 'undelivered', input: o.undelivered };\n", to: '' }],
+    tests: [[EXCLUDED, 'X2a evaluated but excluded by budget, complete'], [EXCLUDED, 'X2b evaluated but excluded by budget, agent wait'], [EXCLUDED, 'X2d an older input excluded'], [EXCLUDED, 'X3b compacted before the model ever received it']],
+  },
+  {
+    name: 'TG-M15 only the deciding snapshot counts: an input received earlier that left the context blocks the closing (false positive)',
+    edits: [{ file: STORE, from: 'inputs.find((r) => r.in_horizon !== true && r.decided_on !== true)', to: 'inputs.find((r) => r.in_horizon !== true)' }],
+    tests: [[EXCLUDED, 'X2e no false positive'], [EXCLUDED, 'X3a compacted after the model received it']],
+  },
+  {
+    name: 'TG-M16 the platform wait closes a turn whose response never received the input (G2)',
+    edits: [{ file: TEMPORAL, from: "(platform && verdict.kind !== 'undelivered')", to: 'platform' }],
+    tests: [[EXCLUDED, 'X2c evaluated but excluded by budget, respond'], [EXCLUDED, 'X2d an older input excluded']],
+  },
+  {
+    name: 'TG-M17 an excluded reconsideration is asked again: complete repeats across runs without a bound (G2)',
+    edits: [{ file: TEMPORAL, from: "    return { kind: 'undelivered', input: o.frontier };", to: "    return { kind: 'reconsider', input: o.frontier, obligation: o };" }],
+    tests: [[EXCLUDED, 'X4a the reconsideration episode excluded, complete'], [EXCLUDED, 'X4b the reconsideration episode excluded, agent wait']],
+  },
+  {
+    name: 'TG-M18 a compacted excerpt counts as delivery (G2)',
+    edits: [{ file: STORE, from: "and i.decision = 'included'\n                       where s.task_id = $1 and s.decision_type is not null) as decided_on", to: "and (i.decision = 'included' or i.exclusion_reason = 'compacted')\n                       where s.task_id = $1 and s.decision_type is not null) as decided_on" }],
+    tests: [[EXCLUDED, 'X3b compacted before the model ever received it']],
+  },
+  {
+    name: 'TG-M19 the wake rule asks for delivery: an excluded input wakes the task again and again (G2)',
+    edits: [{ file: STORE, from: "c.item_id = 'memory:' || i.memory_entry_id::text) limit 1", to: "c.item_id = 'memory:' || i.memory_entry_id::text and c.decision = 'included') limit 1" }],
+    tests: [[EXCLUDED, 'X2f a temporal wait is no closing']],
   },
 ];
 

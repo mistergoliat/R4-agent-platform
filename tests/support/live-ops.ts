@@ -1,6 +1,7 @@
 import type { Logger } from 'pino';
 import { createPlatform, type Platform } from '@r4/api';
 import { createGatewayPlatform, type GatewayPlatform } from '@r4/channel-gateway';
+import type { ContextCompactor, ContextCompilationPolicyInput } from '@r4/context-compiler';
 import type { TrustedHumanContext } from '@r4/contracts';
 import type { CatalogPort } from '@r4-adapters/domains';
 import { FakeModelProvider, type FakeModelStep, type ModelRequest } from '@r4/model-gateway';
@@ -179,6 +180,7 @@ export class LiveOpsTestbed {
       ...composition.bindings,
       ...(overrides.presence ? { presence: overrides.presence } : {}),
       ...(overrides.admission ? { admission: overrides.admission } : {}),
+      ...(overrides.compactor ? { compactor: overrides.compactor } : {}),
     };
     const worker = await createWorkerPlatform(
       {
@@ -186,7 +188,7 @@ export class LiveOpsTestbed {
         ...(overrides.turnGuard === undefined ? {} : { turnGuard: overrides.turnGuard }),
         databaseUrl: this.db.url, logLevel: 'silent', dbPoolMax: 3, workerId, leaseDurationMs: overrides.leaseDurationMs ?? 60_000, heartbeatIntervalMs: overrides.heartbeatIntervalMs ?? 10_000, pollIntervalMs: 20, maxRunRecoveries: 3, maxRunFailureRecoveries: 1,
         execution: { maxIterations: 20, maxModelCalls: 20, maxReadCapabilityCalls: 20, maxRunDurationMs: 60_000, modelCallTimeoutMs: 10_000, maxWriteActions: 50 },
-        context: { budget: { mode: 'unbounded' } },
+        context: overrides.context ?? { budget: { mode: 'unbounded' } },
       },
       bindings,
       { logger: createSilentLogger() },
@@ -264,6 +266,9 @@ export interface WorkerOverridesForTest {
   readonly buildRef?: string | null;
   /** WorkerConfig.turnGuard (what R4_TURN_GUARD becomes). */
   readonly turnGuard?: 'enforce' | 'observe';
+  /** WorkerConfig.context (the R4_CONTEXT_* policy); unbounded otherwise. */
+  readonly context?: ContextCompilationPolicyInput;
+  readonly compactor?: ContextCompactor;
 }
 
 /** Scripted decisions (the model-facing protocol). */

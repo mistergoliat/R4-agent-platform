@@ -85,10 +85,17 @@ export type TurnGuardMode = (typeof TURN_GUARD_MODES)[number];
 type ClosureVerdict =
   | { readonly kind: 'none' }
   | { readonly kind: 'unseen'; readonly input: ConversationInputRef }
+  | { readonly kind: 'undelivered'; readonly input: ConversationInputRef }
   | { readonly kind: 'reconsider'; readonly input: ConversationInputRef; readonly obligation: TurnObligation }
   | { readonly kind: 'ratified'; readonly input: ConversationInputRef; readonly obligation: TurnObligation; readonly reconsider: NonNullable<TurnObligation['reconsider']> };
 
 const TURN_REPLY_PENDING = { code: 'turn_reply_pending', message: 'not applied: the latest conversational input has no reply; reconsider it' } as const;
+const TURN_CLOSURE_UNDELIVERED = 'turn_closure_undelivered';
+
+/** (G2) No run can fix what the compiler keeps leaving out: a platform fault, so R7-1 hands the task to a person with the notice. */
+function closureUndelivered(input: ConversationInputRef): PlatformError {
+  return new PlatformError('conflict', TURN_CLOSURE_UNDELIVERED, `a closing needs what the model did not receive: input ${input.inputId} or its reconsideration was left out of the context`);
+}
 
 export type TemporalDecisionOutcome = { kind: 'continued' } | { kind: 'suspended'; termination: RunTermination };
 
@@ -300,8 +307,9 @@ export class TemporalRuntime implements RunFailureHandoff, TurnCompletionGuard {
       // R4-J4-R7-2 (Turn Completion Guard): an agent WAIT_FOR_INPUT that leaves the latest conversational input without
       // a reply is refused once for reconsideration; repeated with the episode in context, it is ratified and recorded.
       // WAIT_UNTIL is not a closing: its timer is a verifiable resumption and the input stays pending for the next one.
-      const closing = decision.type === 'wait' && decision.condition.kind === 'WAIT_FOR_INPUT' && command.origin !== 'platform';
-      const closure = closing ? await this.#waitClosure(uow, owned.task, command.contextSnapshotId ?? null, now, events) : null;
+      // (G2) The platform wait that closes a turn answers only for what its response never received.
+      const closing = decision.type === 'wait' && decision.condition.kind === 'WAIT_FOR_INPUT';
+      const closure = closing ? await this.#waitClosure(uow, owned.task, command.inputHorizonSnapshotId !== undefined ? command.inputHorizonSnapshotId : (command.contextSnapshotId ?? null), command.origin === 'platform', now, events) : null;
       if (closure?.kind === 'reconsider') {
         const refused = await this.#options.execution.appendStepWithin(uow, owned, token, { ...command, outcome: 'refused', error: TURN_REPLY_PENDING }, now, events);
         await this.#reconsider(uow, owned.task, 'wait', closure, refused.stepId, now, events);
@@ -365,9 +373,11 @@ export class TemporalRuntime implements RunFailureHandoff, TurnCompletionGuard {
    * step appended). P-2/P-3: an open human request, an uncertain effect or a
    * terminal intent refuse it (`turn_closure_blocked`, a platform fault the
    * kernel records; R7-1 hands the task over). P-1: an input the deciding
-   * call never evaluated defers it. The frontier without a reply defers it
-   * for reconsideration; the same frontier closed again with the episode in
-   * context is a ratification by the same model, never a verification.
+   * call never evaluated defers it; one the model did not receive, or a
+   * reconsideration left out of its context, refuses it the same way (G2). The
+   * frontier without a reply defers it for reconsideration; the same frontier
+   * closed again with the episode in context is a ratification by the same
+   * model, never a verification.
    */
   async completionWithin(uow: ExecutionUnitOfWork, task: AgentTask, step: RunStep, events: PendingEvent[]): Promise<TurnCompletionVerdict> {
     const p = temporalOf(uow);
@@ -378,7 +388,7 @@ export class TemporalRuntime implements RunFailureHandoff, TurnCompletionGuard {
       (await p.terminalIntent(task.taskId)) !== null;
     const verdict = await this.#closureVerdict(p, task.taskId, step.contextSnapshotId);
     if (this.#options.turnGuard === 'observe') {
-      const code = blocked ? 'turn_closure_blocked' : verdict.kind === 'unseen' ? 'turn_input_unseen' : verdict.kind === 'reconsider' ? TURN_REPLY_PENDING.code : null;
+      const code = blocked ? 'turn_closure_blocked' : verdict.kind === 'unseen' ? 'turn_input_unseen' : verdict.kind === 'undelivered' ? TURN_CLOSURE_UNDELIVERED : verdict.kind === 'reconsider' ? TURN_REPLY_PENDING.code : null;
       if (code) await this.event(uow, task, verdict.kind === 'none' ? task.taskId : verdict.input.inputId, 'turn.closure.would_defer', now, events, { decision: 'complete', code, stepId: step.stepId });
       return { kind: 'complete' };
     }
@@ -388,6 +398,8 @@ export class TemporalRuntime implements RunFailureHandoff, TurnCompletionGuard {
         return { kind: 'complete' };
       case 'unseen':
         return { kind: 'deferred', code: 'turn_input_unseen', inputId: verdict.input.inputId };
+      case 'undelivered':
+        throw closureUndelivered(verdict.input);
       case 'reconsider':
         await this.#reconsider(uow, task, 'complete', verdict, step.stepId, now, events);
         return { kind: 'deferred', code: TURN_REPLY_PENDING.code, inputId: verdict.input.inputId };
@@ -397,29 +409,32 @@ export class TemporalRuntime implements RunFailureHandoff, TurnCompletionGuard {
     }
   }
 
-  /** An agent `wait`. UNSEEN is left to the existing horizon wake (F3); `observe` only records. */
-  async #waitClosure(uow: ExecutionUnitOfWork, task: AgentTask, horizon: string | null, now: string, events: PendingEvent[]): Promise<ClosureVerdict | null> {
+  /** A `wait` for input. UNSEEN is left to the existing horizon wake (F3); `observe` only records. */
+  async #waitClosure(uow: ExecutionUnitOfWork, task: AgentTask, horizon: string | null, platform: boolean, now: string, events: PendingEvent[]): Promise<ClosureVerdict | null> {
     const verdict = await this.#closureVerdict(temporalOf(uow), task.taskId, horizon);
-    if (verdict.kind === 'none' || verdict.kind === 'unseen') return null;
+    if (verdict.kind === 'none' || verdict.kind === 'unseen' || (platform && verdict.kind !== 'undelivered')) return null;
     if (this.#options.turnGuard === 'observe') {
-      if (verdict.kind === 'reconsider') await this.event(uow, task, verdict.input.inputId, 'turn.closure.would_refuse', now, events, { decision: 'wait', code: TURN_REPLY_PENDING.code });
+      const code = verdict.kind === 'undelivered' ? TURN_CLOSURE_UNDELIVERED : verdict.kind === 'reconsider' ? TURN_REPLY_PENDING.code : null;
+      if (code) await this.event(uow, task, verdict.input.inputId, 'turn.closure.would_refuse', now, events, { decision: 'wait', code });
       return null;
     }
+    if (verdict.kind === 'undelivered') throw closureUndelivered(verdict.input);
     return verdict;
   }
 
   async #closureVerdict(p: TemporalPersistence, taskId: string, horizon: string | null): Promise<ClosureVerdict> {
     const o = await p.turnObligation(taskId, horizon);
     if (o.unseen) return { kind: 'unseen', input: o.unseen };
+    if (o.undelivered) return { kind: 'undelivered', input: o.undelivered };
     if (o.frontier === null || o.covered) return { kind: 'none' };
+    if (o.reconsider === null) return { kind: 'reconsider', input: o.frontier, obligation: o };
     // Informed: the reconsideration of THIS frontier was in the deciding call's context. A newer input is a new frontier.
-    if (o.reconsider?.shown) return { kind: 'ratified', input: o.frontier, obligation: o, reconsider: o.reconsider };
-    return { kind: 'reconsider', input: o.frontier, obligation: o };
+    if (o.reconsider.shown) return { kind: 'ratified', input: o.frontier, obligation: o, reconsider: o.reconsider };
+    // One reconsideration per frontier, and the compiler left this one out: asking again would ask the same call again.
+    return { kind: 'undelivered', input: o.frontier };
   }
 
-  /** One reconsideration per frontier: recorded only if none exists yet (one that was not shown is shown next time). */
   async #reconsider(uow: ExecutionUnitOfWork, task: AgentTask, decision: 'complete' | 'wait', verdict: Extract<ClosureVerdict, { kind: 'reconsider' }>, stepId: string, now: string, events: PendingEvent[]): Promise<void> {
-    if (verdict.obligation.reconsider !== null) return;
     const { input } = verdict;
     await this.event(uow, task, input.inputId, 'turn.closure.reconsider', now, events, { decision, code: TURN_REPLY_PENDING.code, stepId, memoryItemId: `memory:${input.memoryEntryId}`, receivedAt: input.receivedAt });
   }
