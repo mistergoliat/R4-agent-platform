@@ -59,7 +59,7 @@ en el step.
 | # | Desviación | Motivo |
 |---|---|---|
 | DV-1 | **`WAIT_UNTIL` no es un cierre.** La matriz del diseño §4.2 no distinguía la clase de `wait` | Ratificar un `WAIT_UNTIL` registraría `closed_without_reply(L)`, que cubre `L`. Al disparar el timer, un `WAIT_FOR_INPUT` silencioso pasaría sin reconsideración: el abandono que R7-2 debe impedir. En v5 tampoco se puede responder y programar un timer en el mismo turno. Detalle en la auditoría §3.1 (mandato §4.3). Prueba `temporal wait` y mutación TG-M4b |
-| DV-2 | P-2/P-3 no tienen razón de handoff propia | `turn_closure_blocked` es un error de plataforma: el kernel registra `internal_failure` `ending_refused` (`details.refusedReason = completed`) y R7-1 entrega la task con `run_internal_failure` y el aviso. No es alcanzable hoy; la prueba S28 lo fuerza por fixture. Una razón propia exigiría un caso nuevo en R7-1 sin evidencia de necesidad |
+| DV-2 | P-2/P-3 no tienen razón de handoff propia | `turn_closure_blocked` es un error de plataforma: el kernel registra `internal_failure` `ending_refused` (`details.refusedReason = completed`) y R7-1 entrega la task con `run_internal_failure` y el aviso. La prueba S28 lo fuerza por fixture. Una razón propia exigiría un caso nuevo en R7-1 sin evidencia de necesidad. **Corregido en G2:** esta fila decía «no alcanzable» y era falso. Una consulta superada por un takeover sí lo alcanzaba, y dejaba la task imposible de completar. Ahora una consulta abierta no bloquea (`R4_J4_R7_G2_INDEPENDENT_REVIEW.md`, H-5) |
 | DV-3 | S56 y el reinicio durante la incorporación se prueban con el **cierre** del worker, no con SIGKILL | Prueba lo mismo: el diferimiento es durable y otro worker lo continúa una vez. Los SIGKILL reales del camino de recuperación siguen en la suite `recovery` |
 | DV-4 | El ledger de steering es una **consulta** (diseño, anexo A), no una API | Está en la prueba S70 (`steeringLedger`). Se expone como API cuando el hilo del operador o la evaluación lo consuman (R7-4) |
 
@@ -159,12 +159,14 @@ Llamadas reales a modelos: 0. G-sem preparado, no ejecutado.
 | Costo | Una llamada extra por cierre silencioso legítimo, y una run extra si fue `complete` | Medir en canary (`turn.closure.*`); O5/v6 queda como evolución futura |
 | Cadena de `WAIT_UNTIL` sin respuesta | Cada espera está acotada, la cadena no (DV-1) | Detector de no-progreso (R7-5) |
 | Reconsideración tras la respuesta de un operador | Un outbound de operador no cubre la entrada: tras un release, un cierre silencioso se reconsidera una vez | Costo de una llamada, nunca pérdida. Cubrir por respuesta humana exige comparar relojes distintos; se evaluará con datos del canary |
-| Episodio excluido por presupuesto | Si el compilador excluye el episodio (sólo con presupuesto `fixed`), la ratificación no procede: el cierre se rechaza otra vez hasta agotar la run, y luego hay contingencia | El presupuesto por defecto es `unbounded` (`R4_CONTEXT_BUDGET_MODE`); con `fixed`, el episodio compite como cualquier otro |
-| P-2/P-3 | Hoy no son alcanzables; si ocurrieran, terminan en contingencia `run_internal_failure` (DV-2) | S28 |
+| Episodio excluido por presupuesto | **Corregido en G2.** Esta fila subestimaba el problema: `complete` se difería entre runs sin cota. Ahora, con el episodio o la entrada fuera del contexto, el cierre pasa de inmediato a contingencia (`turn_closure_undelivered`) | Revisión G2, H-1 a H-3 |
+| P-2/P-3 | Handoff, aprobación, efecto incierto o intención terminal abiertos terminan en contingencia `run_internal_failure` (DV-2). Una consulta abierta ya no bloquea (G2, H-5) | S28, `G2 P-2` |
 | BLK-AP1 | Sin cambios (R7-3) | Dependencia operativa vigente: ningún perfil REQUIRE_APPROVAL con clientes reales |
 | Instrucciones v9 | No adoptadas. Con v8, el texto de la instrucción no menciona la reconsideración; sólo el episodio la explica | Decisión del owner; G-sem brazo B |
 | Producción | Nada se desplegó. `observe` es la primera compuerta recomendada | — |
 
 ## 7. Estado
 
-`R4_J4_R7_G2_READY_FOR_INDEPENDENT_REVIEW`. No se inició R7-3. G2 no se declara aprobado.
+`R4_J4_R7_G2_READY_FOR_INDEPENDENT_REVIEW` al cerrar R7-2. No se inició R7-3. La revisión posterior está en
+`R4_J4_R7_G2_INDEPENDENT_REVIEW.md`: sus correcciones (`77f0822`, `b12b7d5`, `205a659`) cambian lo que aquí se describe, y
+ese informe prevalece.

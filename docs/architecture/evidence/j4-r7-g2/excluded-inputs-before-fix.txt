@@ -1,0 +1,222 @@
+
+ RUN  v4.1.11 C:/Users/dell/Pesaschile IA/dev/r4-j4-r7-2
+
+ ❯ |integration| tests/integration/turn-guard-excluded-inputs.test.ts (13 tests | 9 failed) 25212ms
+     × X2a evaluated but excluded by budget, complete: never ratified nor deferred forever; a person gets it 1775ms
+     × X2b evaluated but excluded by budget, agent wait: same way out 1715ms
+     × X2c evaluated but excluded by budget, respond: a reply that never received the input covers nothing 1701ms
+     × X2d an older input excluded behind a newer one: the reply covers the frontier, not what it never received 1753ms
+     × X3b compacted before the model ever received it: an excerpt is no delivery (the summary cannot carry the request) 1878ms
+     × X4a the reconsideration episode excluded, complete: the closing does not repeat across runs and is not ratified uninformed 2354ms
+     × X4b the reconsideration episode excluded, agent wait: handed over at once, not refused until the budget runs out 2969ms
+     × X5 a new input during the reconsideration that does not fit: the old ratification is void and the new input is not closed over 1784ms
+     × X6 observe mode records the undelivered closing and behaves as R7-1 1417ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 9 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |integration| tests/integration/turn-guard-excluded-inputs.test.ts > G2 Part B: a closing rests on what the model received > X2a evaluated but excluded by budget, complete: never ratified nor deferred forever; a person gets it
+AssertionError: expected { status: 'completed', …(1) } to deeply equal { status: 'blocked', …(1) }
+
+- Expected
++ Received
+
+  {
+-   "status": "blocked",
+-   "status_reason": "run_internal_failure",
++   "status": "completed",
++   "status_reason": "run_completed",
+  }
+
+ ❯ expectHandedOff tests/integration/turn-guard-excluded-inputs.test.ts:70:33
+     68| async function expectHandedOff(b: LiveOpsTestbed, taskId: string): Pro…
+     69|   await b.deliver();
+     70|   expect(await task(b, taskId)).toEqual({ status: 'blocked', status_re…
+       |                                 ^
+     71|   expect(await handoffs(b, taskId)).toEqual([{ status: 'requested' }]);
+     72|   expect(await eventCount(b, taskId, 'turn.closed_without_reply')).toB…
+ ❯ tests/integration/turn-guard-excluded-inputs.test.ts:99:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/9]⎯
+
+ FAIL  |integration| tests/integration/turn-guard-excluded-inputs.test.ts > G2 Part B: a closing rests on what the model received > X2b evaluated but excluded by budget, agent wait: same way out
+AssertionError: expected { status: 'waiting', …(1) } to deeply equal { status: 'blocked', …(1) }
+
+- Expected
++ Received
+
+  {
+-   "status": "blocked",
+-   "status_reason": "run_internal_failure",
++   "status": "waiting",
++   "status_reason": "waiting",
+  }
+
+ ❯ expectHandedOff tests/integration/turn-guard-excluded-inputs.test.ts:70:33
+     68| async function expectHandedOff(b: LiveOpsTestbed, taskId: string): Pro…
+     69|   await b.deliver();
+     70|   expect(await task(b, taskId)).toEqual({ status: 'blocked', status_re…
+       |                                 ^
+     71|   expect(await handoffs(b, taskId)).toEqual([{ status: 'requested' }]);
+     72|   expect(await eventCount(b, taskId, 'turn.closed_without_reply')).toB…
+ ❯ tests/integration/turn-guard-excluded-inputs.test.ts:111:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/9]⎯
+
+ FAIL  |integration| tests/integration/turn-guard-excluded-inputs.test.ts > G2 Part B: a closing rests on what the model received > X2c evaluated but excluded by budget, respond: a reply that never received the input covers nothing
+AssertionError: expected { status: 'waiting', …(1) } to deeply equal { status: 'blocked', …(1) }
+
+- Expected
++ Received
+
+  {
+-   "status": "blocked",
+-   "status_reason": "run_internal_failure",
++   "status": "waiting",
++   "status_reason": "waiting",
+  }
+
+ ❯ expectHandedOff tests/integration/turn-guard-excluded-inputs.test.ts:70:33
+     68| async function expectHandedOff(b: LiveOpsTestbed, taskId: string): Pro…
+     69|   await b.deliver();
+     70|   expect(await task(b, taskId)).toEqual({ status: 'blocked', status_re…
+       |                                 ^
+     71|   expect(await handoffs(b, taskId)).toEqual([{ status: 'requested' }]);
+     72|   expect(await eventCount(b, taskId, 'turn.closed_without_reply')).toB…
+ ❯ tests/integration/turn-guard-excluded-inputs.test.ts:122:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/9]⎯
+
+ FAIL  |integration| tests/integration/turn-guard-excluded-inputs.test.ts > G2 Part B: a closing rests on what the model received > X2d an older input excluded behind a newer one: the reply covers the frontier, not what it never received
+AssertionError: expected { status: 'waiting', …(1) } to deeply equal { status: 'blocked', …(1) }
+
+- Expected
++ Received
+
+  {
+-   "status": "blocked",
+-   "status_reason": "run_internal_failure",
++   "status": "waiting",
++   "status_reason": "waiting",
+  }
+
+ ❯ expectHandedOff tests/integration/turn-guard-excluded-inputs.test.ts:70:33
+     68| async function expectHandedOff(b: LiveOpsTestbed, taskId: string): Pro…
+     69|   await b.deliver();
+     70|   expect(await task(b, taskId)).toEqual({ status: 'blocked', status_re…
+       |                                 ^
+     71|   expect(await handoffs(b, taskId)).toEqual([{ status: 'requested' }]);
+     72|   expect(await eventCount(b, taskId, 'turn.closed_without_reply')).toB…
+ ❯ tests/integration/turn-guard-excluded-inputs.test.ts:135:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/9]⎯
+
+ FAIL  |integration| tests/integration/turn-guard-excluded-inputs.test.ts > G2 Part B: a closing rests on what the model received > X3b compacted before the model ever received it: an excerpt is no delivery (the summary cannot carry the request)
+AssertionError: expected { status: 'waiting', …(1) } to deeply equal { status: 'blocked', …(1) }
+
+- Expected
++ Received
+
+  {
+-   "status": "blocked",
+-   "status_reason": "run_internal_failure",
++   "status": "waiting",
++   "status_reason": "waiting",
+  }
+
+ ❯ expectHandedOff tests/integration/turn-guard-excluded-inputs.test.ts:70:33
+     68| async function expectHandedOff(b: LiveOpsTestbed, taskId: string): Pro…
+     69|   await b.deliver();
+     70|   expect(await task(b, taskId)).toEqual({ status: 'blocked', status_re…
+       |                                 ^
+     71|   expect(await handoffs(b, taskId)).toEqual([{ status: 'requested' }]);
+     72|   expect(await eventCount(b, taskId, 'turn.closed_without_reply')).toB…
+ ❯ tests/integration/turn-guard-excluded-inputs.test.ts:203:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/9]⎯
+
+ FAIL  |integration| tests/integration/turn-guard-excluded-inputs.test.ts > G2 Part B: a closing rests on what the model received > X4a the reconsideration episode excluded, complete: the closing does not repeat across runs and is not ratified uninformed
+AssertionError: expected 8 to be 2 // Object.is equality
+
+- Expected
++ Received
+
+- 2
++ 8
+
+ ❯ tests/integration/turn-guard-excluded-inputs.test.ts:214:29
+    212|     await drive(worker, 12);
+    213|     // The input reached the model; the reconsideration never did.
+    214|     expect(received.length).toBe(2);
+       |                             ^
+    215|     expect(received.every((c) => c.includes(RACK))).toBe(true);
+    216|     expect(received.some((c) => c.includes('turn.closure.reconsider'))…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/9]⎯
+
+ FAIL  |integration| tests/integration/turn-guard-excluded-inputs.test.ts > G2 Part B: a closing rests on what the model received > X4b the reconsideration episode excluded, agent wait: handed over at once, not refused until the budget runs out
+AssertionError: expected 20 to be 2 // Object.is equality
+
+- Expected
++ Received
+
+- 2
++ 20
+
+ ❯ tests/integration/turn-guard-excluded-inputs.test.ts:228:29
+    226|     b.next(...Array.from({ length: 20 }, () => recording(received, wai…
+    227|     await drive(worker);
+    228|     expect(received.length).toBe(2);
+       |                             ^
+    229|     expect(received.some((c) => c.includes('turn.closure.reconsider'))…
+    230|     await expectHandedOff(b, taskId);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/9]⎯
+
+ FAIL  |integration| tests/integration/turn-guard-excluded-inputs.test.ts > G2 Part B: a closing rests on what the model received > X5 a new input during the reconsideration that does not fit: the old ratification is void and the new input is not closed over
+AssertionError: expected 2 to be 1 // Object.is equality
+
+- Expected
++ Received
+
+- 1
++ 2
+
+ ❯ tests/integration/turn-guard-excluded-inputs.test.ts:249:68
+    247|     await drive(worker);
+    248|     expect(received.some((c) => c.includes('MARKER-5'))).toBe(false);
+    249|     expect(await eventCount(b, taskId, 'turn.closure.reconsider')).toB…
+       |                                                                    ^
+    250|     await expectHandedOff(b, taskId);
+    251|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/9]⎯
+
+ FAIL  |integration| tests/integration/turn-guard-excluded-inputs.test.ts > G2 Part B: a closing rests on what the model received > X6 observe mode records the undelivered closing and behaves as R7-1
+AssertionError: expected [ { code: 'turn_reply_pending' } ] to deeply equal [ Array(1) ]
+
+- Expected
++ Received
+
+  [
+    {
+-     "code": "turn_closure_undelivered",
++     "code": "turn_reply_pending",
+    },
+  ]
+
+ ❯ tests/integration/turn-guard-excluded-inputs.test.ts:265:152
+    263|     await drive(worker);
+    264|     expect(await task(b, taskId)).toMatchObject({ status: 'completed' …
+    265|     expect(await b.rows(`select data->>'code' as code from temporal_ev…
+       |                                                                                                                                                        ^
+    266|   });
+    267| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/9]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  9 failed | 4 passed (13)
+   Start at  11:30:12
+   Duration  29.93s (transform 1.88s, setup 0ms, import 4.43s, tests 25.21s, environment 0ms)
+
