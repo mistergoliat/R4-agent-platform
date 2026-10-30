@@ -36,5 +36,6 @@ more attempt, within the ledger.
 - `summary.md`: metrics M1–M7 and the per-case table.
 - `review/closures-<arm>.md`: every ratified closing, for the designated human reviewer.
 - `review/text-sample-<arm>.md`: reply texts of C03, C09, C10 and C12, plus candidate effect claims.
-- `review/REVIEWED`: the reviewer creates this file when the verdicts are recorded. Until then, a run with closings
-  cannot be `G_SEM_PASS`.
+- `review/REVIEWED`: the reviewer creates this file only when every closing is legitimate and no effect claim stands
+  (`docs/architecture/R4_J4_R7_GSEM_REPORT.md` §6). Until then, a run with closings cannot be `G_SEM_PASS`. Once it
+  exists, `summary` no longer rewrites the sheets; the harness does not read the verdicts.
