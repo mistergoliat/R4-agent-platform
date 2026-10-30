@@ -32,12 +32,12 @@ const MUTATIONS = [
   },
   {
     name: 'TG-M4 an agent wait is never guarded',
-    edits: [{ file: TEMPORAL, from: "decision.condition.kind === 'WAIT_FOR_INPUT' && command.origin !== 'platform';", to: "decision.condition.kind === 'WAIT_FOR_INPUT' && command.origin === 'platform';" }],
+    edits: [{ file: TEMPORAL, from: "const closing = decision.type === 'wait' && decision.condition.kind === 'WAIT_FOR_INPUT';", to: "const closing = decision.type === 'wait' && decision.condition.kind === 'WAIT_FOR_INPUT' && command.origin === 'platform';" }],
     tests: [[IT, 'S23: «Ok, gracias»'], [IT, 'S27 (invalid wait)']],
   },
   {
     name: 'TG-M4b a temporal wait (WAIT_UNTIL) is treated as a closing',
-    edits: [{ file: TEMPORAL, from: "decision.type === 'wait' && decision.condition.kind === 'WAIT_FOR_INPUT' && command.origin", to: "decision.type === 'wait' && command.origin" }],
+    edits: [{ file: TEMPORAL, from: "const closing = decision.type === 'wait' && decision.condition.kind === 'WAIT_FOR_INPUT';", to: "const closing = decision.type === 'wait';" }],
     tests: [[IT, 'temporal wait: WAIT_UNTIL is not a closing']],
   },
   {
