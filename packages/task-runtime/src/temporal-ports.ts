@@ -46,6 +46,8 @@ export interface TurnObligation {
   readonly undelivered: ConversationInputRef | null;
   /** The latest conversational input: the frontier `L`. */
   readonly frontier: ConversationInputRef | null;
+  /** (G2) Every input neither a reply included nor a closing named, oldest first: what a silent closing would leave. */
+  readonly pending: readonly ConversationInputRef[];
   /**
    * `L` is covered: a recorded `respond` whose snapshot included `L` and whose
    * outbound was not discarded, or a ratified closing (`turn.closed_without_reply`) of `L`.

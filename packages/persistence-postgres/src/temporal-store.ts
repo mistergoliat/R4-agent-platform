@@ -211,9 +211,10 @@ export class PostgresTemporalPersistence implements TemporalPersistence {
               exists (select 1 from agent_run_steps s
                         join context_snapshot_items i on i.snapshot_id = s.context_snapshot_id and i.item_id = 'memory:' || c.memory_entry_id::text and i.decision = 'included'
                         left join outbound_messages o on o.response_step_id = s.step_id
+                        left join outbound_messages d on d.outbound_id = o.duplicate_of
                        where s.task_id = $1 and s.decision_type = 'respond' and s.outcome = 'recorded'
-                         and (o.outbound_id is null or o.status not in ('failed', 'cancelled') or o.cancel_reason = 'duplicate_content')) as replied,
-              exists (select 1 from temporal_events e where e.task_id = $1 and e.event_type = 'turn.closed_without_reply' and e.entity_id = c.input_id) as closed
+                         and (o.outbound_id is null or o.status not in ('failed', 'cancelled') or (o.cancel_reason = 'duplicate_content' and d.status not in ('failed', 'cancelled')))) as replied,
+              exists (select 1 from temporal_events e where e.task_id = $1 and e.event_type = 'turn.closed_without_reply' and (e.entity_id = c.input_id or e.data->'inputIds' ? c.input_id::text)) as closed
          from task_inputs c where c.task_id = $1 and c.actor_kind = 'user'
         order by c.received_at, c.input_id`,
       [taskId, snapshotId],
@@ -237,6 +238,7 @@ export class PostgresTemporalPersistence implements TemporalPersistence {
       unseen: unseen ? ref(unseen) : null,
       undelivered: undelivered ? ref(undelivered) : null,
       frontier: frontier ? ref(frontier) : null,
+      pending: inputs.filter((r) => r.replied !== true && r.closed !== true).map(ref),
       covered,
       reconsider: reconsider ? { eventId: reconsider.event_id as string, stepId: (reconsider.step_id as string | null) ?? null, shown: reconsider.shown === true } : null,
       hadPriorReply: replies.rowCount !== 0,
@@ -287,7 +289,11 @@ export class PostgresTemporalPersistence implements TemporalPersistence {
       [taskId],
     );
     const responses = await this.client.query<Row>('select * from temporal_events where task_id = $1 and response_key is not null order by occurred_at, event_id', [taskId]);
-    const closures = await this.client.query<Row>("select * from temporal_events where task_id = $1 and event_type = 'turn.closure.reconsider' order by occurred_at, event_id", [taskId]);
+    // Only the reconsideration still true: once its input is covered or superseded, "has no reply" would be false.
+    const obligation = await this.turnObligation(taskId, null);
+    const closures = obligation.reconsider && !obligation.covered
+      ? await this.client.query<Row>('select * from temporal_events where event_id = $1', [obligation.reconsider.eventId])
+      : { rows: [] as Row[] };
     return {
       steps: steps.rows.map(stepFromRow),
       humans: await this.listHumans(taskId),

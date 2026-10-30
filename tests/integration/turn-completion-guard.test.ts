@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import type { FakeModelStep } from '@r4/model-gateway';
 import { FIXTURE_PRODUCTS, FixtureCatalog, type CatalogPort } from '@r4-adapters/domains';
 import { SALES_RUN_FAILURE_FALLBACK_TEXT } from '@r4-sales/agent/production';
-import { LiveOpsTestbed, complete, say, waitInput } from '../support/live-ops.js';
+import { LiveOpsTestbed, OPERATOR, complete, say, waitInput } from '../support/live-ops.js';
 
 /**
  * R4-J4-R7-2 — Turn Completion Guard and durable steering (runtime suite).
@@ -118,7 +119,7 @@ describe('Turn Completion Guard: complete (F4)', () => {
       data: {
         basis: 'model_ratification', decision: 'complete', policy: 'closure.v1', reconsiderEventId: reconsider!.event_id,
         stepIds: [(await steps(b, first!.run_id))[0]!.step_id, (await steps(b, second!.run_id))[0]!.step_id],
-        hadPriorReply: false, trailingCount: 1,
+        hadPriorReply: false, trailingCount: 1, inputIds: [inputId],
       },
     }]);
     // The documented residue (B1): the runtime accepts an explicit silence; whether it was right is G-sem's question.
@@ -144,15 +145,12 @@ describe('Turn Completion Guard: complete (F4)', () => {
     expect(await outbound(b, taskId)).toEqual([{ origin: 'agent', status: 'accepted' }]);
   });
 
-  it('S28: an open human request (forced by fixture) refuses the completion as a platform contingency, never completed', async () => {
+  it('S28: a terminal intent (forced by fixture) refuses the completion as a platform contingency, never completed', async () => {
     const b = await start();
     await b.customer(CUSTOMER, 'wamid.r72-28a', 'Gracias, eso es todo');
     const taskId = await b.taskOf(CUSTOMER);
     b.next(async () => {
-      const [run] = await b.rows<{ run_id: string }>(`select run_id from agent_runs where task_id = $1 and status = 'running'`, [taskId]);
-      await b.rows(
-        `insert into human_requests (request_id, task_id, run_id, kind, status, payload, created_at, updated_at, correlation_id)
-         values (gen_random_uuid(), $1, $2, 'consultation', 'requested', '{"question":"¿Plazo?","contextRefs":[]}', now(), now(), 'r72-28')`, [taskId, run!.run_id]);
+      await b.rows(`insert into task_terminal_intents (task_id, target_status, reason, actor_kind, actor_ref, correlation_id, requested_at) values ($1, 'failed', 'fixture', 'system', 'test', 'r72-28', now())`, [taskId]);
       return complete();
     });
     await b.runAgent();
@@ -257,6 +255,88 @@ describe('Turn Completion Guard: agent wait (F3)', () => {
     expect((await events(b, taskId, 'turn.closure.reconsider')).map((e) => e.entity_id)).toEqual([l.input_id, l2.input_id]);
     expect(await events(b, taskId, 'turn.closed_without_reply')).toEqual([]);
     expect(await task(b, taskId)).toMatchObject({ status: 'waiting' });
+  });
+
+  it('G2 A2 + A4: a burst closed silently names every unanswered input; the closing covers them all and the next frontier names only itself', async () => {
+    const b = await start();
+    await b.customer(CUSTOMER, 'wamid.g2-burst-a', '¿Cuánto cuesta el rack?');
+    await b.customer(CUSTOMER, 'wamid.g2-burst-b', 'Ok');
+    const taskId = await b.taskOf(CUSTOMER);
+    const [a, l] = [await input(b, 'wamid.g2-burst-a'), await input(b, 'wamid.g2-burst-b')];
+    let shown = '';
+    b.next(waitInput(), (request) => ((shown = JSON.stringify(request.context)), waitInput()));
+    await b.runAgent();
+    const [first] = await events(b, taskId, 'turn.closure.reconsider');
+    expect(first).toMatchObject({ entity_id: l.input_id, data: { pendingItemIds: [`memory:${a.memory_entry_id}`, `memory:${l.memory_entry_id}`] } });
+    expect(shown).toContain(`the conversation messages without a reply are memory:${a.memory_entry_id}, memory:${l.memory_entry_id}`);
+    expect((await events(b, taskId, 'turn.closed_without_reply')).map((e) => e.data.inputIds)).toEqual([[a.input_id, l.input_id]]);
+    await b.customer(CUSTOMER, 'wamid.g2-burst-c', 'Una cosa más');
+    b.next(waitInput(), say('Dime.'));
+    await b.runAgent();
+    const c = await input(b, 'wamid.g2-burst-c');
+    expect((await events(b, taskId, 'turn.closure.reconsider')).at(-1)!.data.pendingItemIds).toEqual([`memory:${c.memory_entry_id}`]);
+  });
+
+  it('G2 A4: a reconsideration that was answered retires: no later call is told the message has no reply', async () => {
+    const b = await start();
+    await b.customer(CUSTOMER, 'wamid.g2-retire-a', 'Necesito cotizar un rack');
+    const taskId = await b.taskOf(CUSTOMER);
+    const shown: string[] = [];
+    const keep = (step: FakeModelStep) => (request: { context?: unknown }) => (shown.push(JSON.stringify(request.context)), step);
+    b.next(waitInput(), keep(say('¿Para qué peso máximo?')));
+    await b.runAgent();
+    await b.deliver();
+    // A wake without a new input, and then a new input: in neither is the old episode true any more.
+    await b.api.temporal.submitInput(taskId, { externalKey: 'marker-retire', content: 'identity verified', sourceRef: 'identity-verification', occurredAt: new Date().toISOString() }, { kind: 'system', ref: 'identity-verification' }, 'g2-retire');
+    b.next(keep(waitInput()));
+    await b.runAgent();
+    await b.customer(CUSTOMER, 'wamid.g2-retire-b', 'Para 200 kg');
+    b.next(keep(say('Perfecto, reviso opciones.')));
+    await b.runAgent();
+    expect(shown[0]).toContain('turn.closure.reconsider');
+    expect(shown.slice(1)).toHaveLength(2);
+    for (const later of shown.slice(1)) expect(later).not.toContain('turn.closure.reconsider');
+  });
+
+  it('G2 P-2: a consultation superseded by a takeover does not make the task uncompletable', async () => {
+    const b = await start();
+    await b.customer(CUSTOMER, 'wamid.g2-orphan-a', '¿Tienen garantía extendida?');
+    const taskId = await b.taskOf(CUSTOMER);
+    b.next({ type: 'structured', data: { type: 'request_consultation', question: '¿Hay garantía extendida?', contextRefs: [] } });
+    await b.runAgent();
+    await b.api.temporal.takeOver(taskId, { responseKey: 'g2-takeover', note: 'Lo veo yo.' }, OPERATOR);
+    const { humans } = await b.api.temporal.inspect(taskId);
+    await b.api.temporal.respondHuman(humans.find((h) => h.kind === 'handoff')!.requestId, { responseKey: 'g2-release', outcome: 'release', content: 'Devuelvo la conversación.' }, OPERATOR);
+    b.next(complete(), complete());
+    await b.runAgent();
+    await b.deliver();
+    expect((await b.api.temporal.inspect(taskId)).humans.find((h) => h.kind === 'consultation')).toMatchObject({ status: 'requested' });
+    expect(await task(b, taskId)).toMatchObject({ status: 'completed' });
+    expect(b.provider.sends.map((s) => s.text)).not.toContain(SALES_RUN_FAILURE_FALLBACK_TEXT);
+  });
+
+  it('INV-D4: a reply cancelled as a duplicate of one that then failed covers nothing', async () => {
+    const b = await start();
+    await b.customer(CUSTOMER, 'wamid.g2-dup-a', '¿Tienen discos de 20 kg?');
+    const taskId = await b.taskOf(CUSTOMER);
+    // Duplicates need a wake without a new input: a takeover handed back to the agent.
+    const handBack = async (key: string) => {
+      const { requestId } = await b.api.temporal.takeOver(taskId, { responseKey: `${key}-t`, note: 'Lo reviso.' }, OPERATOR);
+      await b.api.temporal.respondHuman(requestId, { responseKey: `${key}-r`, outcome: 'release', content: 'Devuelvo la conversación.' }, OPERATOR);
+    };
+    b.next(say('Sí, a $45.990.'));
+    await b.runAgent();
+    await b.gateway.delivery.materialize();
+    await handBack('dup-1');
+    b.next(say('Sí, a $45.990.'));
+    await b.runAgent();
+    await b.gateway.delivery.materialize();
+    expect(await b.rows('select status, cancel_reason from outbound_messages where task_id = $1 order by created_at', [taskId])).toEqual([{ status: 'pending', cancel_reason: null }, { status: 'cancelled', cancel_reason: 'duplicate_content' }]);
+    await b.rows(`update outbound_messages set status = 'failed', error_class = 'permanent', error_code = 'fixture' where task_id = $1 and status = 'pending'`, [taskId]);
+    await handBack('dup-2');
+    b.next(waitInput(), say('Te confirmo: discos de 20 kg a $45.990.'));
+    await b.runAgent();
+    expect((await events(b, taskId, 'turn.closure.reconsider')).map((e) => e.entity_id)).toEqual([(await input(b, 'wamid.g2-dup-a')).input_id]);
   });
 
   it('S33: the identity marker (a system input) creates no obligation', async () => {

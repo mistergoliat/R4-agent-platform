@@ -52,7 +52,7 @@ const MUTATIONS = [
   },
   {
     name: 'TG-M7 a discarded reply still covers its input (INV-D4)',
-    edits: [{ file: STORE, from: "and (o.outbound_id is null or o.status not in ('failed', 'cancelled') or o.cancel_reason = 'duplicate_content')) as replied", to: ') as replied' }],
+    edits: [{ file: STORE, from: "and (o.outbound_id is null or o.status not in ('failed', 'cancelled') or (o.cancel_reason = 'duplicate_content' and d.status not in ('failed', 'cancelled')))) as replied", to: ') as replied' }],
     tests: [[IT, 'INV-D4']],
   },
   {
@@ -73,7 +73,7 @@ const MUTATIONS = [
   {
     name: 'TG-M11 an open human request no longer refuses the completion (P-2)',
     edits: [{ file: TEMPORAL, from: '    if (blocked) throw new PlatformError', to: '    if (blocked && false) throw new PlatformError' }],
-    tests: [[IT, 'S28: an open human request']],
+    tests: [[IT, 'S28: a terminal intent']],
   },
   {
     name: 'TG-M12 observe mode enforces',
@@ -114,6 +114,26 @@ const MUTATIONS = [
     name: 'TG-M19 the wake rule asks for delivery: an excluded input wakes the task again and again (G2)',
     edits: [{ file: STORE, from: "c.item_id = 'memory:' || i.memory_entry_id::text) limit 1", to: "c.item_id = 'memory:' || i.memory_entry_id::text and c.decision = 'included') limit 1" }],
     tests: [[EXCLUDED, 'X2f a temporal wait is no closing']],
+  },
+  {
+    name: 'TG-M20 a reconsideration never retires: the model keeps being told an answered message has no reply (G2)',
+    edits: [{ file: STORE, from: 'const closures = obligation.reconsider && !obligation.covered\n', to: 'const closures = obligation.reconsider\n' }],
+    tests: [[IT, 'G2 A4: a reconsideration that was answered retires']],
+  },
+  {
+    name: 'TG-M21 a consultation superseded by a takeover blocks the completion (G2)',
+    edits: [{ file: TEMPORAL, from: "h.kind !== 'consultation' && (h.status === 'requested' || h.status === 'active')", to: "h.status === 'requested' || h.status === 'active'" }],
+    tests: [[IT, 'G2 P-2: a consultation superseded']],
+  },
+  {
+    name: 'TG-M22 a silent closing names only the frontier: an older unanswered input goes unnamed (G2)',
+    edits: [{ file: STORE, from: 'pending: inputs.filter((r) => r.replied !== true && r.closed !== true).map(ref),', to: 'pending: frontier ? [ref(frontier)] : [],' }],
+    tests: [[IT, 'G2 A2 + A4: a burst closed silently']],
+  },
+  {
+    name: 'TG-M23 a reply cancelled as a duplicate covers its input whatever happened to the original (G2)',
+    edits: [{ file: STORE, from: "(o.cancel_reason = 'duplicate_content' and d.status not in ('failed', 'cancelled'))", to: "o.cancel_reason = 'duplicate_content'" }],
+    tests: [[IT, 'INV-D4: a reply cancelled as a duplicate']],
   },
 ];
 

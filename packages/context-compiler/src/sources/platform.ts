@@ -252,6 +252,7 @@ export const interactionSource: ContextSource = new MappingSource(PLATFORM_SOURC
   // The item id is what the guard looks for (INCLUDED in the deciding call's snapshot) to accept a ratification.
   for (const e of interactions.closures ?? []) {
     const [memoryItemId, receivedAt, code, decision] = [e.data.memoryItemId, e.data.receivedAt, e.data.code, e.data.decision].map(String) as [string, string, string, string];
+    const pending = Array.isArray(e.data.pendingItemIds) ? e.data.pendingItemIds.map(String) : [memoryItemId];
     items.push({
       itemId: `turn_closure:${e.eventId}`,
       kind: 'episode',
@@ -261,10 +262,11 @@ export const interactionSource: ContextSource = new MappingSource(PLATFORM_SOURC
         event: 'turn.closure.reconsider',
         inputId: e.entityId,
         memoryItemId,
+        pendingItemIds: pending,
         receivedAt,
         code,
         decision,
-        text: `The platform did not apply your ${decision === 'complete' ? 'completion of the task' : 'wait without replying'}: the conversation message ${memoryItemId} (received ${receivedAt}) has no reply. Reread it. If it asks for or changes anything, handle it and reply; if no reply is needed, repeat your decision.`,
+        text: `The platform did not apply your ${decision === 'complete' ? 'completion of the task' : 'wait without replying'}: the conversation messages without a reply are ${pending.join(', ')} (latest received ${receivedAt}). Reread them. If any asks for or changes anything, handle it and reply; if no reply is needed, repeat your decision.`,
       },
       provenance: { recordType: 'temporal_event', recordId: e.eventId },
       createdAt: e.occurredAt,

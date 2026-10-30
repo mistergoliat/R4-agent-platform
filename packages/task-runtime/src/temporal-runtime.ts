@@ -383,7 +383,8 @@ export class TemporalRuntime implements RunFailureHandoff, TurnCompletionGuard {
     const p = temporalOf(uow);
     const now = await p.now();
     const blocked =
-      (await p.listHumans(task.taskId)).some((h) => h.status === 'requested' || h.status === 'active') ||
+      // A running task waits for no consultation: one still open was superseded by a takeover or a hold (G2).
+      (await p.listHumans(task.taskId)).some((h) => h.kind !== 'consultation' && (h.status === 'requested' || h.status === 'active')) ||
       (await uow.countUncertainActionExecutions(task.taskId)) > 0 ||
       (await p.terminalIntent(task.taskId)) !== null;
     const verdict = await this.#closureVerdict(p, task.taskId, step.contextSnapshotId);
@@ -435,15 +436,15 @@ export class TemporalRuntime implements RunFailureHandoff, TurnCompletionGuard {
   }
 
   async #reconsider(uow: ExecutionUnitOfWork, task: AgentTask, decision: 'complete' | 'wait', verdict: Extract<ClosureVerdict, { kind: 'reconsider' }>, stepId: string, now: string, events: PendingEvent[]): Promise<void> {
-    const { input } = verdict;
-    await this.event(uow, task, input.inputId, 'turn.closure.reconsider', now, events, { decision, code: TURN_REPLY_PENDING.code, stepId, memoryItemId: `memory:${input.memoryEntryId}`, receivedAt: input.receivedAt });
+    const { input, obligation } = verdict;
+    await this.event(uow, task, input.inputId, 'turn.closure.reconsider', now, events, { decision, code: TURN_REPLY_PENDING.code, stepId, memoryItemId: `memory:${input.memoryEntryId}`, receivedAt: input.receivedAt, pendingItemIds: obligation.pending.map((i) => `memory:${i.memoryEntryId}`) });
   }
 
-  /** INV-S4: covers exactly this frontier; `basis` says what it is — the same model's ratification. */
+  /** INV-S4: covers this frontier and what it left unanswered (`inputIds`), nothing later; `basis` says what it is — the same model's ratification. */
   async #closedWithoutReply(uow: ExecutionUnitOfWork, task: AgentTask, decision: 'complete' | 'wait', verdict: Extract<ClosureVerdict, { kind: 'ratified' }>, stepId: string, now: string, events: PendingEvent[]): Promise<void> {
     const { input, obligation, reconsider } = verdict;
     await this.event(uow, task, input.inputId, 'turn.closed_without_reply', now, events, {
-      basis: 'model_ratification', decision, stepIds: [reconsider.stepId, stepId], reconsiderEventId: reconsider.eventId,
+      basis: 'model_ratification', decision, stepIds: [reconsider.stepId, stepId], reconsiderEventId: reconsider.eventId, inputIds: obligation.pending.map((i) => i.inputId),
       hadPriorReply: obligation.hadPriorReply, trailingCount: obligation.trailingCount, policy: 'closure.v1',
     });
   }
