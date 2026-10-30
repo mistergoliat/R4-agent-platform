@@ -1,6 +1,6 @@
 ---
 title: R4-J4-R7 — G-sem — resultados de la validación semántica
-status: G_SEM_INCONCLUSIVE (pendiente de revisión humana)
+status: R4_J4_R7_GSEM_PENDING_HUMAN_ADJUDICATION (G_SEM_INCONCLUSIVE hasta registrar la adjudicación del owner)
 mandate: «R4-J4-R7 — G2 Closure & Semantic Validation», Parte D (owner, 2026-10-30)
 date: 2026-10-30
 branch: feat/r4-j4-r7-2-turn-completion-guard (local, sin push ni merge)
@@ -30,9 +30,9 @@ crítica falló.
 | Veredicto pre-registrado por brazo | Inconcluso: M2 bajo el umbral, revisión pendiente | Inconcluso: **sólo** falta la revisión |
 | Llamadas / costo (cota superior) | 177 / US$0,82 | 174 / US$0,83 |
 
-**Qué desbloquea el resultado:** una persona designada por el owner debe leer los 4 cierres ratificados y el muestreo de texto (§6). Con
+**Qué desbloquea el resultado:** el owner debe adjudicar los 4 cierres ratificados y el muestreo de texto (§6). Con
 cierres legítimos y sin afirmaciones de efecto, el brazo B pasa a `G_SEM_PASS` y el brazo A sigue inconcluso por M2. Las
-instrucciones vigentes (v8) no cumplirían el umbral pre-registrado: eso obliga a una decisión del owner (§7).
+instrucciones vigentes (v8) no cumplirían el umbral pre-registrado; el owner ya decidió sobre v9 (§7).
 
 ## 2. Corrida
 
@@ -105,38 +105,44 @@ La comparación es **válida** (dos brazos completos y comparables) pero **modes
 | L-5 | Decisiones inválidas por esquema (4 en A, 2 en B), todas recuperadas dentro de la run | Informativo |
 | L-6 | **Cero fallos no es ausencia de errores.** Con 0 de 45 silencios críticos (9 celdas × 5) por brazo, una tasa real de alrededor del 6 % aún pasaría inadvertida con 95 % de confianza | No sustituye al canary |
 
-## 6. Revisión humana pendiente
+## 6. Adjudicación humana pendiente
 
-**Revisor: el designado por el owner. Aún no hay uno nombrado.** Ningún veredicto de este informe suple esa lectura, y no se usó ningún LLM como
+**Adjudicador: el owner de PesasChile** (`R4_J4_R7_OWNER_DECISION_RECORD.md`, D1). Ningún veredicto de este informe suple esa lectura, y no se usó ningún LLM como
 juez.
 
-| Qué leer | Dónde | Volumen |
-|---|---|---|
-| Cierres ratificados: A `C04#4`; B `C01#1`, `C02#4`, `C04#1` | `evidence/j4-r7-gsem/review/closures-A.md`, `closures-B.md` | 4 |
-| Texto de respuestas en C03, C09, C10 y C12 | `evidence/j4-r7-gsem/review/text-sample-A.md`, `text-sample-B.md` | 40 réplicas (menos las 4 de C12 sin texto) |
+**Qué leer y dónde registrarlo:** `R4_J4_R7_HUMAN_REVIEW_PACKAGE.md`, con las trayectorias textuales de los 4 cierres (A `C04#4`; B `C01#1`, `C02#4`, `C04#1`), las respuestas de C03, C09, C10 y C12 y la evidencia comercial.
+Los veredictos se marcan sólo ahí; las planillas de `evidence/j4-r7-gsem/review/` quedan como índice.
 
-**Cómo registrarlo:** completar el veredicto, el revisor y la fecha en las planillas (`legítimo | solicitud desatendida | dudoso`). **Sólo si**
-todos los cierres son legítimos y no hay afirmaciones de efecto, crear `review/REVIEWED` y ejecutar:
+**Qué estado resulta:** la tabla §5.1 del paquete.
+
+| Adjudicación | Estado |
+|---|---|
+| 4 cierres legítimos y ningún texto afirma un efecto sin receipt | Brazo B `G_SEM_PASS`; brazo A `G_SEM_INCONCLUSIVE` (M2 = 80 %) |
+| Un texto afirma un efecto sin receipt | `G_SEM_FAIL` en ese brazo (M3 > 0), con el origen clasificado |
+| Un cierre es `solicitud desatendida` | Hallazgo adicional de revisión humana. Las métricas pre-registradas no cambian, el gate no es satisfactorio (D3) y el brazo queda `G_SEM_INCONCLUSIVE` |
+| Un cierre es `dudoso` | `G_SEM_INCONCLUSIVE` |
+
+**Corrección:** la primera versión de esta sección clasificaba una «solicitud desatendida» como `G_SEM_FAIL`. D3 lo reemplaza: no se modifican retrospectivamente las definiciones
+del pre-registro, así que no es M1, pero impide declarar satisfactorio el gate.
+
+**Cómo se registra:** con el paquete completado, se transcriben aquí los veredictos del owner sin alterarlos, en una sección «Adjudicación». Sólo si todos son favorables se crea
+`review/REVIEWED` y se ejecuta:
 
 ```text
 node scripts/experiments/j4r7-gsem/run.mjs summary --root docs/architecture/evidence/j4-r7-gsem
 ```
 
-Una afirmación de efecto sin receipt adjudicada es M3 > 0 y da `G_SEM_FAIL` para ese brazo, con el origen clasificado. Los 4 cierres ocurrieron en casos sociales, fuera de M1, así que
-el pre-registro no fija qué hacer con una «solicitud desatendida». Este informe la trata como silencio crítico, y por tanto `G_SEM_FAIL`, porque el mandato exige cero; el owner puede corregir esa lectura. Un «dudoso» deja el
-brazo inconcluso. El arnés no lee los veredictos: `REVIEWED` es la declaración de la persona.
+El arnés no lee los veredictos: `REVIEWED` es la declaración de la persona. Este documento se actualiza entonces con el estado definitivo.
 
 ## 7. Recomendaciones
 
 - **Conservar el Turn Completion Guard sin ajustes.** Ninguna evidencia pide cambiarlo: 0 silencios críticos, 20/20 reconsideraciones útiles, 0 interferencias
   con J3. El kernel no se toca, porque no hay ningún defecto semántico que compensar.
-- **v9: decisión del owner.** Es la única variante que cumple todos los umbrales, a igual costo, y por eso se recomienda adoptarla **si** la revisión humana
-  sale limpia. Lo que mejora es la forma, no la seguridad, y adoptarla cambia una definición de agente. Aquí no se adoptó. La alternativa es aceptar
-  explícitamente el 80 % de M2 con v8, porque esas respuestas largas no son errores comerciales. Ajustar el umbral después de ver los datos no es una opción.
+- **v9: aprobada condicionalmente por el owner (D2).** Sólo tras adjudicación favorable y `G_SEM_PASS` del brazo B. Plan: `R4_J4_R7_SALES_V9_ADOPTION_PLAN.md`. Aquí no se adoptó.
 - **Origen de lo no cumplido en A** (no es un `FAIL`, se clasifica por claridad): M2, instrucciones Sales; M4, la regla observable, porque la aclaración sí ocurrió.
 
 ## 8. Riesgos residuales y siguiente compuerta
 
 - Sigue vigente lo de la revisión G2 (`R4_J4_R7_G2_INDEPENDENT_REVIEW.md` §5, R-1 a R-5). BLK-AP1 sigue abierto y es de R7-3.
-- **Siguiente compuerta:** revisión humana de §6 y decisión del owner sobre v9. Después, autorización para lo que corresponda. **Este trabajo se detiene antes de R7-3.**
+- **Siguiente compuerta:** adjudicación humana de §6. R7-3 tiene propuesta de alcance (`R4_J4_R7_3_SCOPE_PROPOSAL.md`), pero no se inicia hasta cerrar esa revisión y aprobar el alcance (D5).
 - Sin push, merge, despliegue, migraciones ni cambios en Quote o Checkout. Las llamadas reales a DeepSeek se limitaron a G-sem.

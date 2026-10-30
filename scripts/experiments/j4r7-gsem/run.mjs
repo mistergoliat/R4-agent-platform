@@ -189,6 +189,8 @@ class Hybrid {
     saveLedger();
     const record = { decisionType: null, capabilityId: null, finishReason: null, inputTokens: 0, outputTokens: 0, error: null, reason: null, summary: null, content: null, previewId: null };
     route.sample.realCalls.push(record);
+    // Dry runs only: the episode as the compiler rendered it, which proves the text the review package reconstructs.
+    if (args['dry-run']) record.episode = Object.values(request.context.sections).flat().find((i) => String(i?.itemId).startsWith('turn_closure:'))?.content?.text ?? null;
     let response;
     let spent = 0;
     try {
@@ -277,7 +279,12 @@ async function run() {
   if (args['dry-run']) {
     // No network. `--dry-decision` walks the paths of the harness: a reply, or a silent closing the guard must ratify.
     const dry = { respond: { type: 'respond', content: '¿Me das más detalle?' }, wait: { type: 'wait', condition: { kind: 'WAIT_FOR_INPUT' }, reason: 'dry run' }, complete: { type: 'complete', result: { summary: 'dry run', evidence: [] } } }[args['dry-decision']];
-    real = new FakeModelProvider(() => ({ type: 'structured', data: dry }));
+    // `propose` replays what J3 answers to the message under test, for the review package (never the model's own arguments).
+    real = new FakeModelProvider((request) => {
+      if (args['dry-decision'] !== 'propose') return { type: 'structured', data: dry };
+      const v = new ContextView(request);
+      return { type: 'structured', data: v.observations(QUOTE_CREATE).length > 0 ? { type: 'respond', content: '(replay)' } : { type: 'propose_action', capabilityId: QUOTE_CREATE, arguments: { previewId: previewOf(v).previewId }, evidenceRefs: v.quoteEvidence() } };
+    });
     describe = { dryRun: true };
   } else {
     // Only R4_MODEL_* lines are read; the API key is never printed. Pinned and checked as in J4-R6 F-1.
@@ -341,8 +348,10 @@ async function run() {
           for (const turn of sc.prior) {
             route.steps = turn.steps;
             route.next = 0;
+            const turnSince = (await pool.query('select clock_timestamp() as now')).rows[0].now;
             await send(turn.text);
             await settle();
+            if (args['dry-run']) (sample.priorTurns ??= []).push({ customer: turn.text, steps: (await pool.query(`select decision_type as "decisionType", decision->>'capabilityId' as "capabilityId", decision->'arguments' as arguments, decision->>'content' as content, outcome from agent_run_steps where task_id = $1 and created_at >= $2 order by created_at, iteration`, [taskId, turnSince])).rows });
             if ((await pool.query(`select status from agent_tasks where task_id = $1`, [taskId])).rows[0]?.status !== 'waiting' || route.next !== turn.steps.length) throw new Error(`the scripted turn "${turn.text}" did not settle`);
           }
           route.steps = sc.first ? [sc.first, REAL] : [REAL];
@@ -351,6 +360,10 @@ async function run() {
           await send(sc.message);
           await settle();
           Object.assign(sample, { taskId }, await trajectory(pool, taskId, since));
+          if (args['dry-run']) {
+            sample.quoteObservations = (await pool.query(`select capability_id as "capabilityId", outcome, error_code as "errorCode", error_message as "errorMessage", error_details as "errorDetails" from observations where task_id = $1 and capability_id = $2 order by created_at`, [taskId, QUOTE_CREATE])).rows;
+            sample.receipts = (await pool.query(`select capability_id as "capabilityId", status, resource_ref as "resourceRef", error_code as "errorCode" from action_receipts where task_id = $1 order by receipt_id`, [taskId])).rows;
+          }
         } catch (error) {
           sample.setupFailed = String(error.message ?? error);
           if (taskId) Object.assign(sample, await trajectory(pool, taskId, new Date(0)).catch(() => ({})));
