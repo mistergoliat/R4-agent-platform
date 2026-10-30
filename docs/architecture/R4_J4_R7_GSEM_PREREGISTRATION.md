@@ -138,3 +138,5 @@ sólo para G-sem, con el presupuesto del §6. Revisor humano: el designado por e
 | PASS exige la revisión humana registrada | Condición 4 de G0 y §9 del mandato |
 | Reparto y regla del brazo B (§6) | Mandato §8. La cota anterior (420 + 420) no cabía en 500 |
 | El brazo B no depende de adelantar v9 al pack | Mantiene la comparabilidad sin tocar la definición |
+| Arnés: el texto de una respuesta se lee del `respond` que la redactó (prueba en seco) | `outbound_messages.body` es `null` en las respuestas del agente. M2 («breve»), M4 (pregunta de C13), las candidatas de M3 y las planillas humanas habrían juzgado un texto vacío. No cambia ninguna regla, sólo hace que se apliquen |
+| Arnés: M6 excluye C14 | Su primer cierre es guionado, no cuesta una llamada extra. M6 es informativo |

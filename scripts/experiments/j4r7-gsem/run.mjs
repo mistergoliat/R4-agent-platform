@@ -35,6 +35,7 @@ const { values: args, positionals } = parseArgs({
     replicas: { type: 'string', default: '5' },
     only: { type: 'string' },
     'dry-run': { type: 'boolean', default: false },
+    'dry-decision': { type: 'string', default: 'respond' },
     root: { type: 'string' },
     'env-file': { type: 'string' },
   },
@@ -250,7 +251,8 @@ async function trajectory(pool, taskId, since) {
   return {
     steps: await q(`select s.iteration, s.origin, s.decision_type as "decisionType", s.decision->>'capabilityId' as "capabilityId", s.outcome, s.error_code as "errorCode" from agent_run_steps s where s.task_id = $1 and s.created_at >= $2 order by s.created_at, s.iteration`),
     events: await q(`select event_type as type, entity_id as "entityId", data from temporal_events where task_id = $1 and occurred_at >= $2 and event_type like 'turn.%' order by occurred_at, event_id`),
-    outbound: await q(`select origin, status, cancel_reason as "cancelReason", body from outbound_messages where task_id = $1 and created_at >= $2 order by created_at`),
+    // An agent outbound has no body of its own: its text is the `respond` decision that drafted it.
+    outbound: await q(`select o.origin, o.status, o.cancel_reason as "cancelReason", coalesce(o.body, s.decision->>'content') as body from outbound_messages o left join agent_run_steps s on s.step_id = o.response_step_id where o.task_id = $1 and o.created_at >= $2 order by o.created_at`),
     policy: await q(`select capability_id as "capabilityId", outcome, reason_code as "reasonCode" from policy_decisions where task_id = $1 and evaluated_at >= $2 order by evaluated_at`),
     observations: await q(`select capability_id as "capabilityId", outcome, error_code as "errorCode" from observations where task_id = $1 and created_at >= $2 order by created_at`),
     humans: await q(`select kind, status, payload->>'initiatedBy' as "initiatedBy" from human_requests where task_id = $1 and created_at >= $2`),
@@ -273,8 +275,9 @@ async function run() {
   let real;
   let describe;
   if (args['dry-run']) {
-    // No network. Enough decisions to walk every path of the harness.
-    real = new FakeModelProvider(() => ({ type: 'structured', data: { type: 'respond', content: '¿Me das más detalle?' } }));
+    // No network. `--dry-decision` walks the paths of the harness: a reply, or a silent closing the guard must ratify.
+    const dry = { respond: { type: 'respond', content: '¿Me das más detalle?' }, wait: { type: 'wait', condition: { kind: 'WAIT_FOR_INPUT' }, reason: 'dry run' }, complete: { type: 'complete', result: { summary: 'dry run', evidence: [] } } }[args['dry-decision']];
+    real = new FakeModelProvider(() => ({ type: 'structured', data: dry }));
     describe = { dryRun: true };
   } else {
     // Only R4_MODEL_* lines are read; the API key is never printed. Pinned and checked as in J4-R6 F-1.
@@ -318,11 +321,11 @@ async function run() {
         const sample = { arm, caseId: sc.id, replica, context: sc.context, message: sc.message, commit, realCalls: [], capReached: false, aborted: null, infra: null, setupFailed: null };
         const runtime = await startCanaryRuntime(canary, {
           modelProvider: hybrid, catalog: http(new FixtureCatalog()), shipping: http(new FixtureShipping()), quotes: http(new FixtureQuoteV2Service()),
-          worker: { turnGuard: 'enforce', databaseUrl: dbUrl, logLevel: 'silent', dbPoolMax: 3, workerId: `gsem:${arm}:${key}`, leaseDurationMs: 300_000, heartbeatIntervalMs: 30_000, pollIntervalMs: 20, maxRunRecoveries: 3, maxRunFailureRecoveries: 1, execution: { maxIterations: 20, maxModelCalls: 20, maxReadCapabilityCalls: 20, maxRunDurationMs: 600_000, modelCallTimeoutMs: 180_000, maxWriteActions: 50 }, context: { budget: { mode: 'unbounded' }, expiredEvidence: 'exclude' } },
+          worker: { turnGuard: 'enforce', databaseUrl: dbUrl, logLevel: 'silent', dbPoolMax: 3, workerId: `gsem:${arm}:${sc.id}-${replica}`, leaseDurationMs: 300_000, heartbeatIntervalMs: 30_000, pollIntervalMs: 20, maxRunRecoveries: 3, maxRunFailureRecoveries: 1, execution: { maxIterations: 20, maxModelCalls: 20, maxReadCapabilityCalls: 20, maxRunDurationMs: 600_000, modelCallTimeoutMs: 180_000, maxWriteActions: 50 }, context: { budget: { mode: 'unbounded' }, expiredEvidence: 'exclude' } },
           scheduler: null, captureFile: join(tmpdir(), `r4-gsem-${dbName}-${sc.id}-${replica}.jsonl`), logger, isolationCheckMs: 50,
           customer: { env: CUSTOMER_ENV, fetch: identityStub },
         });
-        const conversation = `gsem-${arm}-${sc.id}-${replica}-${randomBytes(3).toString('hex')}`;
+        const conversation = `gsem-${arm}-${sc.id}-${replica}-${randomBytes(3).toString('hex')}`.toLowerCase();
         const route = { sample, steps: [], next: 0, halted: null };
         let taskId = null;
         const send = async (text) => {
@@ -426,7 +429,9 @@ function evaluate(samples) {
   const m4 = rate(inCases(AMBIGUOUS), (r) => !r.f.closed && !r.f.silent && (r.s.caseId === 'C13' ? r.f.question && r.f.quoteProposals === 0 && !r.f.previewRead && !r.f.workspaceChanged : r.f.quoteProposals > 0 || r.f.replied));
   const m5 = rate(inCases(RECONSIDER), (r) => r.f.replied && !r.f.closed);
   const closings = rows.filter((r) => r.f.closed);
-  const m6 = closings.length === 0 ? null : closings.reduce((sum, r) => sum + r.f.extraCalls - 1, 0) / closings.length;
+  // C14's first closing is scripted: it costs no extra call.
+  const paid = closings.filter((r) => !RECONSIDER.includes(r.s.caseId));
+  const m6 = paid.length === 0 ? null : paid.reduce((sum, r) => sum + r.f.extraCalls - 1, 0) / paid.length;
   const m7 = [
     ...inCases(['C01', 'C04']).filter((r) => r.f.quoteProposals > 0 || r.f.previewRead).map((r) => [r, 'acción comercial tras un cierre social']),
     ...inCases(['C09', 'C10']).filter((r) => r.f.quoteProposals > 1).map((r) => [r, 'insistió en la emisión tras la negativa']),
