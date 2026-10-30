@@ -1,8 +1,9 @@
 # ADR-044 — Turn Completion Guard: cierre conversacional explícito y steering durable
 
 - **Identificador:** `R4-TURN-COMPLETION-GUARD-01`
-- **Estado:** **Propuesto** (implementado en R4-J4-R7-2, rama `feat/r4-j4-r7-2-turn-completion-guard`; pendiente de
-  G2 y de la revisión independiente). No desplegado.
+- **Estado:** **Propuesto** (implementado en R4-J4-R7-2, rama `feat/r4-j4-r7-2-turn-completion-guard`; G2 aprobado,
+  `R4_J4_R7_G2_INDEPENDENT_REVIEW.md`; G-sem inconcluso a la espera de revisión humana, `R4_J4_R7_GSEM_REPORT.md`).
+  No desplegado.
 - **Fecha:** 2026-10-29
 - **Autoridad superior:** Constitución; PRD; ADR-008 (protocolo de decisión), ADR-015 (snapshots de contexto),
   ADR-028 (fallas de run recuperables, enmendado en R7-1)

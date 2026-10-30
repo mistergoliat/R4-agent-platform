@@ -493,8 +493,11 @@ function summary() {
     if (bad.length > 0) out.push(`Réplicas no válidas: ${bad.map((s) => `${s.caseId}#${s.replica} (${s.aborted ?? s.infra ?? s.setupFailed})`).join('; ')}`, '');
     if (e.rows.some((r) => r.s.uncarried > 0)) out.push(`Decisiones cuyo snapshot no llevaba la entrada: ${e.rows.filter((r) => r.s.uncarried > 0).map((r) => `${r.s.caseId}#${r.s.replica}`).join(' ')}`, '');
     if (arm === 'A') out.push(`Brazo B: ${JSON.stringify(armBRule(e))}`, '');
-    writeFileSync(join(review, `closures-${arm}.md`), closuresSheet(e));
-    writeFileSync(join(review, `text-sample-${arm}.md`), textSheet(e));
+    // Once reviewed, the sheets hold a person's verdicts: never overwrite them.
+    if (!reviewed) {
+      writeFileSync(join(review, `closures-${arm}.md`), closuresSheet(e));
+      writeFileSync(join(review, `text-sample-${arm}.md`), textSheet(e));
+    }
   }
   out.push(`Ledger: ${JSON.stringify(ledger)}`);
   out.push(`Revisión humana registrada: ${reviewed}`);
