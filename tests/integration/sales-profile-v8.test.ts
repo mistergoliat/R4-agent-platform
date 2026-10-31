@@ -202,7 +202,7 @@ describe('A. sales-production@8 end to end: Customer Profile down never blocks t
 
       expect((await pool.query('select agent_version from agent_tasks where task_id = $1', [taskId])).rows).toEqual([{ agent_version: 8 }]);
       expect(stubs.state.calls).toEqual(['cia', 'cp']);
-      expect((await pool.query("select capability_version, outcome, error_code from observations where task_id = $1 and capability_id = 'customer.get_context'", [taskId])).rows).toEqual([{ capability_version: 3, outcome: 'failed', error_code: expect.any(String) as string }]);
+      expect((await pool.query("select capability_version, outcome, error_code from observations where task_id = $1 and capability_id = 'customer.get_context'", [taskId])).rows).toEqual([{ capability_version: 3, outcome: 'failed', error_code: 'dependency_unavailable' }]);
       expect(quotes.quotes).toHaveLength(1);
       expect((await pool.query("select capability_version, outcome, reason_code, policy_id from policy_decisions where task_id = $1 and capability_id = 'quote.create'", [taskId])).rows).toEqual([{ capability_version: 5, outcome: 'allow', reason_code: 'autonomous', policy_id: 'sales-production-autonomous-policy' }]);
       expect((await pool.query("select status from action_receipts where task_id = $1 and capability_id = 'quote.create'", [taskId])).rows).toEqual([{ status: 'succeeded' }]);

@@ -141,11 +141,11 @@ describe('catalog.get_product_context over the HTTP adapter', () => {
   });
 
   it('owner failures become failed observations with their own category (never a fake answer)', async () => {
-    const cases: [number | string, string, boolean][] = [[401, 'unauthorized', false], [503, 'temporarily_unavailable', true], ['{bad', 'contract_violation', false]];
-    for (const [status, category, retryable] of cases) {
+    const cases: [number | string, string, boolean, string][] = [[401, 'unauthorized', false, 'dependency_unauthorized'], [503, 'temporarily_unavailable', true, 'dependency_unavailable'], ['{bad', 'contract_violation', false, 'dependency_contract_violation']];
+    for (const [status, category, retryable, code] of cases) {
       const { invoker } = setup(() => (typeof status === 'number' ? json(status, '') : json(200, status)));
       const o = await invoker.invoke({ capabilityId: 'catalog.get_product_context', arguments: { productKey: 'P10' } }, context);
-      expect(o, String(status)).toMatchObject({ outcome: 'failed', payload: null, validUntil: null, error: { code: 'handler_error', details: { category, retryable } } });
+      expect(o, String(status)).toMatchObject({ outcome: 'failed', payload: null, validUntil: null, error: { code, details: { category, retryable } } });
     }
   });
 });
