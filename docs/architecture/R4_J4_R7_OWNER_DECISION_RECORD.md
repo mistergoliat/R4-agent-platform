@@ -3,6 +3,7 @@ title: R4-J4-R7 — registro de decisiones del owner (G2 y G-sem)
 status: REGISTRADO
 date: 2026-10-30
 state: R4_J4_R7_GSEM_PENDING_HUMAN_ADJUDICATION
+versioning_state: R4_SALES_VERSIONING_DECISION_RECORDED
 ---
 
 # R4-J4-R7 — registro de decisiones del owner
@@ -111,3 +112,89 @@ Sin modificaciones productivas.
 | 3 | Plan de adopción condicionada de v9 | Listo: `R4_J4_R7_SALES_V9_ADOPTION_PLAN.md`. Nada implementado |
 | 4 | Estado definitivo de G-sem | **Bloqueado por la adjudicación.** No puede emitirse antes de ella. El procedimiento está en `R4_J4_R7_GSEM_REPORT.md` §6 |
 | 5 | Propuesta de alcance R7-3 | Lista: `R4_J4_R7_3_SCOPE_PROPOSAL.md`. Nada implementado |
+
+## 4. Decisión de versionado Sales (texto del owner, 2026-10-30)
+
+**Estado:** `OWNER_APPROVED_FOR_LOCAL_COMMIT`
+
+### D1 — Retiro de v9
+
+Se aprueba retirar `sales.v9.agent.json` y `sales-production@9` de la planificación futura.
+
+No reutilizar estos identificadores.
+
+No eliminar ni modificar registros históricos inmutables que pudieran existir.
+
+### D2 — Secuencia de versiones
+
+Se establece:
+
+- v10 = v8 + cláusula comercial Shipping.
+- v11 = v10 + instrucciones conversacionales G-sem.
+- v12+ = versiones posteriores según roadmap.
+
+La aprobación condicionada anterior de Sales v9 pasa a referirse al bloque conversacional incorporado en v11.
+
+La aprobación de v11 como definición desplegable requiere:
+
+1. Adjudicación humana favorable de G-sem.
+2. Resolución del contrato semántico Shipping/Quote en las instrucciones.
+3. Validación de la composición completa.
+4. Pruebas contractuales.
+5. Autorización de activación.
+
+### D3 — PR #28
+
+No fusionar el PR #28 en su estado actual.
+
+Preparar un reemplazo que conserve únicamente los cambios autorizados.
+
+No cerrar el PR hasta que el sustituto esté preparado y verificado.
+
+### D4 — Commit
+
+Se autoriza crear un commit local con:
+
+- `R4_SALES_INSTRUCTIONS_VERSIONING_REVIEW.md`
+- `sales-instruction-versioning.test.ts`
+- `shipping-promotion.txt`
+- Registro de decisiones actualizado.
+
+Verificar que el commit no incluya secretos, archivos temporales ni modificaciones productivas.
+
+### D5 — Verificaciones pendientes
+
+Antes de crear las definiciones finales:
+
+- Consultar qué definiciones Sales están registradas en producción.
+- Confirmar si v9 o `@9` existen históricamente.
+- Resolver la composición de instrucciones.
+- Confirmar compatibilidad con los perfiles autorizados.
+- Verificar qué versión del agente continúa ejecutándose en EC2.
+
+### Restricciones
+
+- Sin despliegue.
+- Sin nuevas llamadas a DeepSeek.
+- Sin modificación de Shipping, Quote o Checkout.
+- Sin cambios del kernel.
+- Sin creación de perfiles definitivos.
+- Sin push ni merge.
+- Sin alteración de registros inmutables.
+
+### Estado final esperado
+
+`R4_SALES_VERSIONING_DECISION_RECORDED`
+
+## 5. Lectura operativa de la decisión de versionado
+
+No es una decisión del owner, y puede corregirla.
+
+| # | Punto | Lectura aplicada | Por qué |
+|---|---|---|---|
+| L-6 | D2 anterior frente a la nueva D2 | Las condiciones se acumulan: el bloque conversacional sigue exigiendo `G_SEM_PASS` para el brazo B, además de las cinco condiciones nuevas | La nueva D2 traslada la aprobación condicionada a v11, no la reemplaza |
+| L-7 | Contrato semántico Shipping/Quote | Resolverlo puede exigir cambiar el bloque o la cláusula. Si cambia un texto, deja de ser idéntico a lo evaluado: se actualizan sus hashes por decisión del owner y debe evaluarse de nuevo | La prueba de contrato fija ambos textos byte a byte |
+| L-8 | L-3 y el plan de adopción | L-3 y el perfil `@9` de `R4_J4_R7_SALES_V9_ADOPTION_PLAN.md` quedan reemplazados. Esos documentos no se reescriben | D1 retira `@9`; los registros históricos se conservan |
+| L-9 | D3 frente a D5 | El reemplazo del PR #28 no está en este commit y no se ha preparado. Su contenido central es v10, y D5 pide verificaciones antes de crear las definiciones finales. El PR sigue abierto, sin fusionar ni modificar | D4 enumera los archivos del commit |
+| L-10 | Verificaciones de D5 | Se registran como pendientes. No se accedió a EC2: el estado esperado es registrar la decisión, y ese acceso requiere autorización explícita por tarea | D5 las titula «pendientes» |
+| L-11 | Fuera del commit | El informe de despliegue, el de validación y su evidencia, en este worktree, y el `sales.v9.agent.json` local, el informe, la evidencia y el arnés de J5 en `dev/r4-j5-shipping` siguen sin confirmar | D4 no los enumera |
