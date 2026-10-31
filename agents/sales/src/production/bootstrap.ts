@@ -4,7 +4,7 @@ import { ProductionConfigError, declaredExecutionMode, loadProductionConfig, pro
 import { createLogger } from '@r4/observability';
 import { SALES_AGENT_DIR, SALES_MIGRATIONS_DIR } from '../definition.js';
 import { SALES_AGENT_ID } from '../ids.js';
-import { SALES_PRODUCTION_PROFILES, salesProductionProfile } from './profile-v8.js';
+import { SALES_PRODUCTION_PROFILES, salesProductionProfile } from './profile-v9.js';
 
 /**
  * `npm run production:sales:bootstrap` — registers the Sales AgentDefinition

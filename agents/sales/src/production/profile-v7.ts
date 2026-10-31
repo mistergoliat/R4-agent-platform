@@ -31,7 +31,7 @@ export const SALES_PRODUCTION_PROFILE_V7: ProductionProfile = Object.freeze({
 } satisfies ProductionProfile);
 
 /** Profiles whose offer message is rendered by Sales and must be presented exactly (quote.preview@3, quote.create@5). */
-export const SALES_DETERMINISTIC_OFFER_PROFILES: ReadonlySet<string> = new Set(['sales-production@7', 'sales-production@8']);
+export const SALES_DETERMINISTIC_OFFER_PROFILES: ReadonlySet<string> = new Set(['sales-production@7', 'sales-production@8', 'sales-production@9']);
 
 export function isDeterministicOfferProfile(profile: ProductionProfile): boolean {
   return SALES_DETERMINISTIC_OFFER_PROFILES.has(profileLabel(profile));
@@ -50,4 +50,4 @@ export const SALES_PRODUCTION_PROFILE_V7_GATE = Object.freeze([
   { id: 'explicit-authorization', blocking: true, requirement: 'explicit user authorization to deploy and select sales-production@7' },
 ] as const);
 
-// The selectable profile registry (v1–v8) and the pinned definition versions live in profile-v8.ts (R4-J4-R4).
+// The selectable profile registry (v1–v9) and the pinned definition versions live in profile-v9.ts (R4-J5).

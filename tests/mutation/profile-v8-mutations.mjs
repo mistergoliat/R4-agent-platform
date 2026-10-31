@@ -32,7 +32,7 @@ const MUTATIONS = [
   },
   {
     name: 'PV8-M4 @7 composes Customer and identity too',
-    edits: [{ file: PROFILE, from: "new Set(['sales-production@8'])", to: "new Set(['sales-production@7', 'sales-production@8'])" }],
+    edits: [{ file: PROFILE, from: "new Set(['sales-production@8', 'sales-production@9'])", to: "new Set(['sales-production@7', 'sales-production@8', 'sales-production@9'])" }],
     tests: [[CONTRACT, '@1–@7 never compose Customer or identity'], [CONTRACT, 'only identity.start_verification is allowed autonomously']],
   },
   {

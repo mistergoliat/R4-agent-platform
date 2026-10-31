@@ -32,7 +32,8 @@ import { SALES_PRODUCTION_PROFILE_V4 } from '../../production/profile-v4.js';
 import { SALES_PRODUCTION_PROFILE_V5, isAutonomousQuoteProfile } from '../../production/profile-v5.js';
 import { SALES_PRODUCTION_PROFILE_V6, isConfirmedIntentProfile } from '../../production/profile-v6.js';
 import { SALES_PRODUCTION_PROFILE_V7 } from '../../production/profile-v7.js';
-import { SALES_PRODUCTION_PROFILE_V8, isCustomerIdentityProfile, salesProductionAgentVersion } from '../../production/profile-v8.js';
+import { SALES_PRODUCTION_PROFILE_V8, isCustomerIdentityProfile } from '../../production/profile-v8.js';
+import { SALES_PRODUCTION_PROFILE_V9, salesProductionAgentVersion } from '../../production/profile-v9.js';
 import { canaryIngressInspector } from '../../production/gateway-identity.js';
 import { IDENTITY_VERIFICATION_MIGRATIONS_DIR, migrateIdentityVerification } from '@r4-adapters/identity-verification';
 import { loadAutonomousQuoteLimits, loadAutonomousQuoteLimitsV6, type AutonomousQuoteLimits, type AutonomousQuoteLimitsV6 } from '../../capabilities/autonomy-limits.js';
@@ -46,10 +47,11 @@ import { CANARY_ACTOR, CanaryAdmission, SYNTHETIC_CHANNEL, assertIsolatedCanaryD
 export const CANARY_PROFILE: ProductionProfile = SALES_PRODUCTION_PROFILE_V4;
 /**
  * Profiles the canary may run: v4 (human approval, J3D), v5 (autonomous issuance, R4-J3E), v6 (confirmed intent, R4-J3E-B),
- * v7 (deterministic offer, R4-J3E-C1) and v8 (Customer and identity verification, R4-J4-R4; prepared for J4-R5, not run).
+ * v7 (deterministic offer, R4-J3E-C1), v8 (Customer and identity verification, R4-J4-R4) and v9 (v8 with the shipping
+ * promotion guidance, R4-J5; prepared, not run).
  * Never one a production worker runs today.
  */
-export const CANARY_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_PRODUCTION_PROFILE_V4, SALES_PRODUCTION_PROFILE_V5, SALES_PRODUCTION_PROFILE_V6, SALES_PRODUCTION_PROFILE_V7, SALES_PRODUCTION_PROFILE_V8]);
+export const CANARY_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_PRODUCTION_PROFILE_V4, SALES_PRODUCTION_PROFILE_V5, SALES_PRODUCTION_PROFILE_V6, SALES_PRODUCTION_PROFILE_V7, SALES_PRODUCTION_PROFILE_V8, SALES_PRODUCTION_PROFILE_V9]);
 
 const DATABASE_URL = /^postgres(ql)?:\/\//;
 

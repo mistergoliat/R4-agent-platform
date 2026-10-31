@@ -28,8 +28,8 @@ describe('agent registry persistence', () => {
   it('registers definitions loaded from configuration, then reports them unchanged on re-sync', async () => {
     const loaded = (await loadAgentDefinitionsFromDirectory(REPO_AGENTS_DIR)).map((l) => l.definition);
     // R4-F: the repository ships the Sales reference agent pack next to the probe.
-    expect(await registry.sync(loaded)).toEqual({ registered: ['platform-probe@1', 'sales@3', 'sales@4', 'sales@5', 'sales@6', 'sales@7', 'sales@8'], unchanged: [] });
-    expect(await registry.sync(loaded)).toEqual({ registered: [], unchanged: ['platform-probe@1', 'sales@3', 'sales@4', 'sales@5', 'sales@6', 'sales@7', 'sales@8'] });
+    expect(await registry.sync(loaded)).toEqual({ registered: ['platform-probe@1', 'sales@3', 'sales@4', 'sales@5', 'sales@6', 'sales@7', 'sales@8', 'sales@9'], unchanged: [] });
+    expect(await registry.sync(loaded)).toEqual({ registered: [], unchanged: ['platform-probe@1', 'sales@3', 'sales@4', 'sales@5', 'sales@6', 'sales@7', 'sales@8', 'sales@9'] });
 
     const stored = await registry.get('platform-probe');
     expect(registeredAgentDefinitionSchema.safeParse(stored).success).toBe(true);
@@ -50,7 +50,7 @@ describe('agent registry persistence', () => {
     await registry.sync([{ ...probe!, version: 2, description: 'second version' }]);
     expect((await registry.get('platform-probe')).version).toBe(2);
     expect((await registry.get('platform-probe', 1)).version).toBe(1);
-    expect(await registry.list()).toMatchObject([{ agentId: 'platform-probe', version: 2, description: 'second version' }, { agentId: 'sales', version: 8 }]); // latest per agent; earlier versions stay registered (R4-J2D, R4-J3E, R4-J3E-B, R4-J3E-C1, R4-J4-R4); production tasks are pinned
+    expect(await registry.list()).toMatchObject([{ agentId: 'platform-probe', version: 2, description: 'second version' }, { agentId: 'sales', version: 9 }]); // latest per agent; earlier versions stay registered (R4-J2D, R4-J3E, R4-J3E-B, R4-J3E-C1, R4-J4-R4, R4-J5); production tasks are pinned
     await expect(registry.get('platform-probe', 7)).rejects.toMatchObject({ code: 'agent_not_found' });
     await expect(registry.get('nobody')).rejects.toMatchObject({ kind: 'not_found' });
   });

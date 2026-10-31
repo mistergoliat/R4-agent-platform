@@ -2,14 +2,9 @@ import { profileLabel, type ProductionProfile } from '@r4/live-ops';
 import type { ActionPolicyConfigurationInput } from '@r4/policy-engine';
 import { CUSTOMER_PURCHASE_HISTORY_CAPABILITY_ID } from '../capabilities/customer-v2.js';
 import { IDENTITY_VERIFICATION_CAPABILITY_IDS } from '../capabilities/identity-verification.js';
-import type { SalesAgentDefinitionVersion } from '../definition.js';
 import { CAPABILITY_IDS } from '../ids.js';
-import { SALES_DOMAINS, SALES_PRODUCTION_PROFILE } from './profile.js';
-import { SALES_PRODUCTION_PROFILE_V2_CANDIDATE } from './profile-v2.js';
-import { SALES_PRODUCTION_PROFILE_V3 } from './profile-v3.js';
-import { SALES_PRODUCTION_PROFILE_V4 } from './profile-v4.js';
-import { SALES_PRODUCTION_AUTONOMOUS_ACTION_POLICY, SALES_PRODUCTION_PROFILE_V5, salesProductionActionPolicy } from './profile-v5.js';
-import { SALES_PRODUCTION_PROFILE_V6 } from './profile-v6.js';
+import { SALES_DOMAINS } from './profile.js';
+import { SALES_PRODUCTION_AUTONOMOUS_ACTION_POLICY, salesProductionActionPolicy } from './profile-v5.js';
 import { SALES_PRODUCTION_PROFILE_V7 } from './profile-v7.js';
 
 export const CUSTOMER_PROFILE_CONTRACT_REF = 'customer-profile:docs/contracts/customer-sales-context-v1-rc2 (sales-context v1-rc2, candidate; owner commit bbd766e; pinned R4-J4-R3)';
@@ -73,7 +68,7 @@ export const SALES_PRODUCTION_V8_ACTION_POLICY: ActionPolicyConfigurationInput =
 } satisfies ActionPolicyConfigurationInput);
 
 /** Profiles that compose Customer and identity verification (J4-R4). */
-export const SALES_CUSTOMER_IDENTITY_PROFILES: ReadonlySet<string> = new Set(['sales-production@8']);
+export const SALES_CUSTOMER_IDENTITY_PROFILES: ReadonlySet<string> = new Set(['sales-production@8', 'sales-production@9']);
 
 export function isCustomerIdentityProfile(profile: ProductionProfile): boolean {
   return SALES_CUSTOMER_IDENTITY_PROFILES.has(profileLabel(profile));
@@ -97,43 +92,4 @@ export const SALES_PRODUCTION_PROFILE_V8_GATE = Object.freeze([
   { id: 'explicit-authorization', blocking: true, requirement: 'explicit user authorization to deploy and select sales-production@8' },
 ] as const);
 
-/** The Sales production profiles a deployment may select with R4_PROD_POLICY_PROFILE. */
-export const SALES_PRODUCTION_PROFILES: readonly ProductionProfile[] = Object.freeze([
-  SALES_PRODUCTION_PROFILE,
-  SALES_PRODUCTION_PROFILE_V2_CANDIDATE,
-  SALES_PRODUCTION_PROFILE_V3,
-  SALES_PRODUCTION_PROFILE_V4,
-  SALES_PRODUCTION_PROFILE_V5,
-  SALES_PRODUCTION_PROFILE_V6,
-  SALES_PRODUCTION_PROFILE_V7,
-  SALES_PRODUCTION_PROFILE_V8,
-]);
-
-/** The Sales production profile declared by `label` (`sales-production@1..8`), or null. */
-export function salesProductionProfile(label: string): ProductionProfile | null {
-  return SALES_PRODUCTION_PROFILES.find((profile) => profileLabel(profile) === label) ?? null;
-}
-
-/**
- * The Sales definition version each production profile runs. Production
- * pins it: a conversation task is created for exactly this version, so
- * registering a newer definition never switches an existing profile (the
- * registry otherwise resolves the latest). Kept outside the profile objects
- * so the deployed fingerprints are unchanged.
- */
-export const SALES_PRODUCTION_AGENT_VERSIONS: Readonly<Record<string, SalesAgentDefinitionVersion>> = Object.freeze({
-  'sales-production@1': 3,
-  'sales-production@2': 3,
-  'sales-production@3': 4,
-  'sales-production@4': 4,
-  'sales-production@5': 5,
-  'sales-production@6': 6,
-  'sales-production@7': 7,
-  'sales-production@8': 8,
-});
-
-export function salesProductionAgentVersion(profile: ProductionProfile): SalesAgentDefinitionVersion {
-  const version = SALES_PRODUCTION_AGENT_VERSIONS[profileLabel(profile)];
-  if (version === undefined) throw new Error(`no Sales definition version is pinned for ${profileLabel(profile)}`);
-  return version;
-}
+// The selectable profile registry (v1–v9) and the pinned definition versions live in profile-v9.ts (R4-J5).

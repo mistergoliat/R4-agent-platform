@@ -183,6 +183,8 @@ describe('package boundaries', () => {
       'agents/sales/package.json',
       // R4-J4-R4: definition v8 names customer.get_purchase_history.
       'agents/sales/sales.v8.agent.json',
+      // R4-J5: definition v9 = v8 plus the shipping promotion guidance (same capability rules).
+      'agents/sales/sales.v9.agent.json',
       'agents/sales/src/capabilities/customer-profile-outputs.ts',
       'agents/sales/src/capabilities/customer-synthetic.ts',
       'agents/sales/src/capabilities/customer-v2.ts',
