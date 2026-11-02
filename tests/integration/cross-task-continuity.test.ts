@@ -20,12 +20,12 @@ afterEach(async () => {
   bed = null;
 });
 
-const start = (options: { catalog?: boolean } = {}) =>
-  (bed = LiveOpsTestbed.start({
+const start = async (options: { catalog?: boolean } = {}) =>
+  (bed = await LiveOpsTestbed.start({
     allowlist: [CUSTOMER, OTHER],
     autonomy: true,
     ...(options.catalog ? { env: { R4_PROD_POLICY_PROFILE: 'sales-production@2' }, catalog: Object.assign(new FixtureCatalog(), { bindingKind: 'real' }) } : {}),
-  }).then((b) => (bed = b)));
+  }));
 
 /** The customer closes ("Ok, gracias") and the agent completes the task (the guard asks once, the agent confirms). */
 async function closeTask(b: LiveOpsTestbed, from: string, id: string): Promise<void> {

@@ -49,7 +49,7 @@ const PRIOR_DELIVERY: Readonly<Record<string, string>> = {
 
 const PRIOR_ABOUT =
   'Earlier conversation with this same contact, from previous tasks that have ended (the conversation turns marked earlierTask). ' +
-  'It is what was said then, not current fact: availability, amounts, terms, approvals and verifications stated then may have changed or expired, ' +
+  'It is what was said then, not current fact: availability, amounts, terms, approvals and checks stated then may have changed or expired, ' +
   'and nothing from those tasks is evidence for this one. Read again with your capabilities whatever you need to rely on. ' +
   'Do not repeat what the contact already received unless asked.';
 
