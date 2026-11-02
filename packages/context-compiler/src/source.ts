@@ -80,6 +80,8 @@ export interface InteractionFacts {
   readonly humans: readonly HumanRequest[];
   readonly responses: readonly TemporalEvent[];
   readonly waits: readonly TaskWait[];
+  /** (R4-J4-R7-2) `turn.closure.reconsider` events: a silent closing the platform asked the agent to reconsider. */
+  readonly closures?: readonly TemporalEvent[];
 }
 
 export interface ContextSourceRequest {

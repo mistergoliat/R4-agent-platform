@@ -1,0 +1,2 @@
+R7-EVIDENCE A-W1 {"statusAfterInput":"requires_approval","executeCalls":1,"decisions":[["require_approval","risk_class_requires_approval"],["allow","human_approved"]],"receipts":["succeeded"],"firstModelCallObservations":["rejected","succeeded"],"firstModelCallSawChange":true}
+R7-EVIDENCE A-W2 {"statusAfterInput":null,"executeCalls":1,"decisions":[["require_approval","risk_class_requires_approval"],["allow","human_approved"]],"receipts":["succeeded"],"firstModelCallObservations":["rejected","succeeded"],"firstModelCallSawChange":true}

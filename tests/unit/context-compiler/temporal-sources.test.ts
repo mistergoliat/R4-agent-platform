@@ -92,6 +92,22 @@ describe('interaction projection (platform.interaction)', () => {
     expect(result.compiled.sections.episodicMemory.map((i) => i.content)).toEqual([expect.objectContaining({ event: 'goal.change.rejected', code: 'goal_not_active' })]);
   });
 
+  it('(R4-J4-R7-2) shows a reconsideration as an observed episode naming the input; a refused wait lends no reason to the real wait', async () => {
+    const inputId = newId();
+    const reconsider: TemporalEvent = {
+      eventId: newId(), taskId: TASK.taskId, entityId: inputId, type: 'turn.closure.reconsider', occurredAt: at(MINUTE), correlationId: 'c', actorRef: 'temporal-runtime', responseKey: null,
+      data: { decision: 'wait', code: 'turn_reply_pending', stepId: newId(), memoryItemId: 'memory:m-1', receivedAt: at(0) },
+    };
+    const refused = step(EARLIER_RUN, 1, { type: 'wait', condition: { kind: 'WAIT_FOR_INPUT' }, reason: 'refused reason' }, at(MINUTE), 'refused', { code: 'turn_reply_pending', message: 'not applied' });
+    const accepted = step(EARLIER_RUN, 2, { type: 'wait', condition: { kind: 'WAIT_FOR_INPUT' }, reason: 'nothing to add' }, at(2 * MINUTE - 1));
+    const facts: InteractionFacts = { steps: [accepted, refused], humans: [], responses: [], waits: [wait(EARLIER_RUN, at(2 * MINUTE), at(3 * MINUTE))], closures: [reconsider] };
+    const result = compiled(await compiler().compile(withFacts(request(), { interactions: facts })));
+    const item = result.compiled.sections.episodicMemory.find((i) => i.itemId === `turn_closure:${reconsider.eventId}`);
+    expect(item).toMatchObject({ authority: 'OBSERVED', content: { event: 'turn.closure.reconsider', inputId, memoryItemId: 'memory:m-1', code: 'turn_reply_pending', decision: 'wait' } });
+    expect((item!.content as { text: string }).text).toContain('memory:m-1');
+    expect(result.compiled.sections.episodicMemory.find((i) => i.itemId.startsWith('wait:'))?.content).toMatchObject({ statedReason: 'nothing to add' });
+  });
+
   it('is deterministic: the same records yield the same items and fingerprint', async () => {
     const facts = conversationFacts(3);
     const a = compiled(await compiler().compile(withFacts(request(), { interactions: facts })));

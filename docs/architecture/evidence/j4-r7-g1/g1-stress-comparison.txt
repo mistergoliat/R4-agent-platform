@@ -1,0 +1,152 @@
+# G1-D stress: the 3 files that flaked in R7-1's parallel runs (sales-deterministic-offer-canary, production-control, worker-kernel),
+# 3 rounds alternating R7-1 665b50c and baseline d0bb7a7, with 8 busy-loop node processes saturating the 8 cores (1 h cap).
+# Round 2 of the baseline overlapped an unrelated Checkout regression run by the owner (extra load): reported, not compared.
+# Round 3 started after the busy loops' 1 h cap expired (17:50): an unloaded control.
+r71-1       Tests  20 failed | 35 passed (55)
+base-1       Tests  19 failed | 36 passed (55)
+r71-2       Tests  14 failed | 41 passed (55)
+base-2       Tests  38 failed | 17 passed (55)
+r71-3       Tests  55 passed (55)
+base-3       Tests  55 passed (55)
+DONE
+
+## r71-1
+      Tests  20 failed | 35 passed (55)
+   Duration  845.95s (transform 41.82s, setup 0ms, import 62.35s, tests 1884.64s, environment 1ms)
+ FAIL  |integration| tests/integration/production-control.test.ts > D-5 autonomy off / on > fails closed when production cannot be positively established (nothing is read or mutated)
+ FAIL  |integration| tests/integration/production-control.test.ts > D-5 autonomy off / on > refuses a database whose schema is not current (the Sales schema is pending) and a database it cannot reach
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds list > lists only open platform holds caused by disabled autonomy
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds release > a stale pending agent response is never sent after release: stale-response protection stays authoritative
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds release > an unknown delivery is preserved: releasing the hold never retries it blindly
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds release > is refused while autonomy is still disabled; allowed once enabled; the task becomes claimable and nothing runs in the CLI
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds release > new inputs while held stay durable; after on + explicit release the next run compiles a fresh context with all of them
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds release > refuses a consultation, another platform cause, a hold a human accepted, and unknown or malformed tasks
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds release > serializes an administrative release, a new inbound, an outbound claim and a worker claim on the Task row
+ FAIL  |integration| tests/integration/production-control.test.ts > tasks cancel (retire one task so rollout is re-evaluated on the next inbound) > refuses outside a positively established production deployment and on a database it cannot trust (the task stays held)
+ FAIL  |integration| tests/integration/production-control.test.ts > tasks cancel (retire one task so rollout is re-evaluated on the next inbound) > the incident: a conversation bound before the rollout change is retired, and the next inbound opens a NEW autonomous binding and task
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 in the isolated canary: the customer confirms the exact offer Sales wrote > a model that writes its own summary is refused (offer_not_presented); after the exact offer, the confirmation issues once
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 in the isolated canary: the customer confirms the exact offer Sales wrote > the delivered offer IS the Sales rendering; "Sí, emítela." → quote.create@5 allow/autonomous → one quote; the evidence hash equals the delivered text
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 kill switch: what happens to the issuance, lifecycle end to end > engaged mid-run before the issuance decides: refused before any decision (failed/autonomy_disabled), nothing authorized; the reply is held and delivered on release
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 kill switch: what happens to the issuance, lifecycle end to end > held longer than the run budget: on release the SAME key issues once, but the resumed run ends budget_exhausted before replying — R4-J4-R7-1: the task goes to a human and the platform tells the customer once
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 kill switch: what happens to the issuance, lifecycle end to end > held on its key while engaged (no receipt, no reply, not resumed when the retry falls due); released, the platform reconciles (not applied) and replays the SAME key once; the reply carries the quote
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 kill switch: what happens to the issuance, lifecycle end to end > held, and the customer writes while engaged: the task is handed to humans, the run ends, and the reconciliation — a read, while still engaged — settles the command as not applied; it is never sent
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 quote owner failures after the authorization (GAP-16), lifecycle end to end > the owner commits but its answer is lost: unknown, reconciled by the SAME key, and settled as the quote it already issued — one POST, one quote
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 quote owner failures after the authorization (GAP-16), lifecycle end to end > the owner stays unavailable through every in-run reconciliation: never failed, never a new key — the command is left needing reconciliation and nothing is claimed to the customer
+ FAIL  |integration| tests/integration/worker-kernel.test.ts > heartbeat > detects a lost lease through the heartbeat and aborts the in-flight model call
+-- error classes
+     17 Error: Test timed out in Nms.
+      2 Error: Connection terminated unexpectedly
+      1 Error: condition not met within Nms
+      1 AssertionError: expected { key: null, executions: [], …(5) } to match object { executions: [ 'executing' ], …(5) }
+      1 AssertionError: expected { key: null, executions: [], …(5) } to match object { executions: [ 'executing' ], …(1) }
+
+## base-1
+      Tests  19 failed | 36 passed (55)
+   Duration  850.64s (transform 42.99s, setup 0ms, import 63.39s, tests 1869.05s, environment 1ms)
+ FAIL  |integration| tests/integration/production-control.test.ts > D-5 autonomy off / on > refuses a database whose schema is not current (the Sales schema is pending) and a database it cannot reach
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds list > lists only open platform holds caused by disabled autonomy
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds release > a stale pending agent response is never sent after release: stale-response protection stays authoritative
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds release > an unknown delivery is preserved: releasing the hold never retries it blindly
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds release > new inputs while held stay durable; after on + explicit release the next run compiles a fresh context with all of them
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds release > refuses a consultation, another platform cause, a hold a human accepted, and unknown or malformed tasks
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds release > retrying the same release returns an intelligible refusal and changes nothing
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds release > serializes an administrative release, a new inbound, an outbound claim and a worker claim on the Task row
+ FAIL  |integration| tests/integration/production-control.test.ts > tasks cancel (retire one task so rollout is re-evaluated on the next inbound) > refuses outside a positively established production deployment and on a database it cannot trust (the task stays held)
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 in the isolated canary: the customer confirms the exact offer Sales wrote > a model that writes its own summary is refused (offer_not_presented); after the exact offer, the confirmation issues once
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 in the isolated canary: the customer confirms the exact offer Sales wrote > the delivered offer IS the Sales rendering; "Sí, emítela." → quote.create@5 allow/autonomous → one quote; the evidence hash equals the delivered text
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 kill switch: what happens to the issuance, lifecycle end to end > engaged mid-run before the issuance decides: refused before any decision (failed/autonomy_disabled), nothing authorized; the reply is held and delivered on release
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 kill switch: what happens to the issuance, lifecycle end to end > held longer than the run budget: on release the SAME key issues once, but the resumed run ends budget_exhausted before replying — the customer must be told by an operator
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 kill switch: what happens to the issuance, lifecycle end to end > held on its key while engaged (no receipt, no reply, not resumed when the retry falls due); released, the platform reconciles (not applied) and replays the SAME key once; the reply carries the quote
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 kill switch: what happens to the issuance, lifecycle end to end > held, and the customer writes while engaged: the task is handed to humans, the run ends, and the reconciliation — a read, while still engaged — settles the command as not applied; it is never sent
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 quote owner failures after the authorization (GAP-16), lifecycle end to end > the owner commits but its answer is lost: unknown, reconciled by the SAME key, and settled as the quote it already issued — one POST, one quote
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 quote owner failures after the authorization (GAP-16), lifecycle end to end > the owner is unavailable at the send: held on its key (not failed); after the owner not-found window the reconciliation establishes "not applied" and the SAME key replays once
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 quote owner failures after the authorization (GAP-16), lifecycle end to end > the owner stays unavailable through every in-run reconciliation: never failed, never a new key — the command is left needing reconciliation and nothing is claimed to the customer
+ FAIL  |integration| tests/integration/worker-kernel.test.ts > cancellation during a model call > is detected by the heartbeat as task_not_runnable (not a lost lease) and the lease is released
+-- error classes
+     15 Error: Test timed out in Nms.
+      1 Error: ENOENT: no such file or directory, open 'C:\Users\dell\AppData\Local\Temp\r4-deterministic-offer-canary-SKojxl\sa
+      1 Error: Connection terminated unexpectedly
+      1 AssertionError: expected { kind: 'interrupted', …(1) } to deeply equal { kind: 'interrupted', …(1) }
+      1 AssertionError: expected { key: null, executions: [], …(5) } to match object { executions: [ 'executing' ], …(5) }
+      1 AssertionError: expected 1 to be +0 // Object.is equality
+
+## r71-2
+      Tests  14 failed | 41 passed (55)
+   Duration  708.09s (transform 31.45s, setup 0ms, import 49.04s, tests 1421.37s, environment 1ms)
+ FAIL  |integration| tests/integration/production-control.test.ts > D-5 autonomy off / on > refuses a database whose schema is not current (the Sales schema is pending) and a database it cannot reach
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds list > lists only open platform holds caused by disabled autonomy
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds release > a stale pending agent response is never sent after release: stale-response protection stays authoritative
+ FAIL  |integration| tests/integration/production-control.test.ts > tasks cancel (retire one task so rollout is re-evaluated on the next inbound) > refuses outside a positively established production deployment and on a database it cannot trust (the task stays held)
+ FAIL  |integration| tests/integration/production-control.test.ts > tasks cancel (retire one task so rollout is re-evaluated on the next inbound) > the incident: a conversation bound before the rollout change is retired, and the next inbound opens a NEW autonomous binding and task
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 in the isolated canary: the customer confirms the exact offer Sales wrote > a model that writes its own summary is refused (offer_not_presented); after the exact offer, the confirmation issues once
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 in the isolated canary: the customer confirms the exact offer Sales wrote > the delivered offer IS the Sales rendering; "Sí, emítela." → quote.create@5 allow/autonomous → one quote; the evidence hash equals the delivered text
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 kill switch: what happens to the issuance, lifecycle end to end > engaged mid-run before the issuance decides: refused before any decision (failed/autonomy_disabled), nothing authorized; the reply is held and delivered on release
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 kill switch: what happens to the issuance, lifecycle end to end > held longer than the run budget: on release the SAME key issues once, but the resumed run ends budget_exhausted before replying — R4-J4-R7-1: the task goes to a human and the platform tells the customer once
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 kill switch: what happens to the issuance, lifecycle end to end > held on its key while engaged (no receipt, no reply, not resumed when the retry falls due); released, the platform reconciles (not applied) and replays the SAME key once; the reply carries the quote
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 kill switch: what happens to the issuance, lifecycle end to end > held, and the customer writes while engaged: the task is handed to humans, the run ends, and the reconciliation — a read, while still engaged — settles the command as not applied; it is never sent
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 quote owner failures after the authorization (GAP-16), lifecycle end to end > the owner commits but its answer is lost: unknown, reconciled by the SAME key, and settled as the quote it already issued — one POST, one quote
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 quote owner failures after the authorization (GAP-16), lifecycle end to end > the owner is unavailable at the send: held on its key (not failed); after the owner not-found window the reconciliation establishes "not applied" and the SAME key replays once
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 quote owner failures after the authorization (GAP-16), lifecycle end to end > the owner stays unavailable through every in-run reconciliation: never failed, never a new key — the command is left needing reconciliation and nothing is claimed to the customer
+-- error classes
+     11 Error: Test timed out in Nms.
+      2 AssertionError: expected { key: null, executions: [], …(5) } to match object { executions: [ 'executing' ], …(5) }
+      1 Error: Connection terminated unexpectedly
+      1 AssertionError: expected { key: null, executions: [], …(5) } to match object { executions: [ 'executing' ], …(1) }
+
+## base-2
+      Tests  38 failed | 17 passed (55)
+   Duration  1227.70s (transform 40.33s, setup 0ms, import 60.21s, tests 2625.74s, environment 1ms)
+ FAIL  |integration| tests/integration/production-control.test.ts > D-5 autonomy off / on > changing autonomy never releases a held task and never touches channel, rollout or delivery state
+ FAIL  |integration| tests/integration/production-control.test.ts > D-5 autonomy off / on > fails closed when production cannot be positively established (nothing is read or mutated)
+ FAIL  |integration| tests/integration/production-control.test.ts > D-5 autonomy off / on > off persists the disabled state with its reason and an audited control event attributed to production control
+ FAIL  |integration| tests/integration/production-control.test.ts > D-5 autonomy off / on > on persists the enabled state with its reason and an audited control event
+ FAIL  |integration| tests/integration/production-control.test.ts > D-5 autonomy off / on > refuses a database whose schema is not current (the Sales schema is pending) and a database it cannot reach
+ FAIL  |integration| tests/integration/production-control.test.ts > D-5 autonomy off / on > refuses a mutation without a meaningful reason (no default is invented) and changes nothing
+ FAIL  |integration| tests/integration/production-control.test.ts > D-5 autonomy off / on > rejects unknown, bulk or wildcard commands
+ FAIL  |integration| tests/integration/production-control.test.ts > D-5 autonomy off / on > repeating a change follows the control primitive: the state is unchanged, the repeated intent is audited
+ FAIL  |integration| tests/integration/production-control.test.ts > D-5 autonomy status > is read-only and exposes no database URL, token or secret
+ FAIL  |integration| tests/integration/production-control.test.ts > D-5 autonomy status > needs no channel or model credentials: only the production declaration and the database
+ FAIL  |integration| tests/integration/production-control.test.ts > D-5 autonomy status > reads the authoritative durable state (migration default, then a change by another process)
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds list > an unrelated blocked task (operator takeover) does not appear
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds list > lists only open platform holds caused by disabled autonomy
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds release > MUST NOT release an agent-requested human handoff: refused, the HumanRequest stays open, the task stays human-waiting
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds release > a stale pending agent response is never sent after release: stale-response protection stays authoritative
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds release > an unknown delivery is preserved: releasing the hold never retries it blindly
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds release > is refused while autonomy is still disabled; allowed once enabled; the task becomes claimable and nothing runs in the CLI
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds release > kill-switch state, the hold and the release are durable across independent processes (no in-memory state)
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds release > new inputs while held stay durable; after on + explicit release the next run compiles a fresh context with all of them
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds release > refuses a consultation, another platform cause, a hold a human accepted, and unknown or malformed tasks
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds release > retrying the same release returns an intelligible refusal and changes nothing
+ FAIL  |integration| tests/integration/production-control.test.ts > D-6 holds release > serializes an administrative release, a new inbound, an outbound claim and a worker claim on the Task row
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 in the isolated canary: the customer confirms the exact offer Sales wrote > a model that writes its own summary is refused (offer_not_presented); after the exact offer, the confirmation issues once
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 in the isolated canary: the customer confirms the exact offer Sales wrote > the delivered offer IS the Sales rendering; "Sí, emítela." → quote.create@5 allow/autonomous → one quote; the evidence hash equals the delivered text
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 kill switch: what happens to the issuance, lifecycle end to end > engaged mid-run before the issuance decides: refused before any decision (failed/autonomy_disabled), nothing authorized; the reply is held and delivered on release
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 kill switch: what happens to the issuance, lifecycle end to end > held longer than the run budget: on release the SAME key issues once, but the resumed run ends budget_exhausted before replying — the customer must be told by an operator
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 kill switch: what happens to the issuance, lifecycle end to end > held on its key while engaged (no receipt, no reply, not resumed when the retry falls due); released, the platform reconciles (not applied) and replays the SAME key once; the reply carries the quote
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 kill switch: what happens to the issuance, lifecycle end to end > held, and the customer writes while engaged: the task is handed to humans, the run ends, and the reconciliation — a read, while still engaged — settles the command as not applied; it is never sent
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 quote owner failures after the authorization (GAP-16), lifecycle end to end > the owner commits but its answer is lost: unknown, reconciled by the SAME key, and settled as the quote it already issued — one POST, one quote
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 quote owner failures after the authorization (GAP-16), lifecycle end to end > the owner is unavailable at the send: held on its key (not failed); after the owner not-found window the reconciliation establishes "not applied" and the SAME key replays once
+ FAIL  |integration| tests/integration/sales-deterministic-offer-canary.test.ts > sales-production@7 quote owner failures after the authorization (GAP-16), lifecycle end to end > the owner stays unavailable through every in-run reconciliation: never failed, never a new key — the command is left needing reconciliation and nothing is claimed to the customer
+ FAIL  |integration| tests/integration/worker-kernel.test.ts > budgets > stops a model that READs forever, deterministically
+ FAIL  |integration| tests/integration/worker-kernel.test.ts > classified failures > capability error → failed observation fed back as evidence
+ FAIL  |integration| tests/integration/worker-kernel.test.ts > classified failures > complete citing evidence the task never observed → invalid_decision
+ FAIL  |integration| tests/integration/worker-kernel.test.ts > classified failures > invalid arguments → rejected observation fed back; the agent can recover
+ FAIL  |integration| tests/integration/worker-kernel.test.ts > classified failures > provider error → model_failure (model class)
+ FAIL  |integration| tests/integration/worker-kernel.test.ts > classified failures > unknown capability → invalid_decision, nothing executed
+ FAIL  |integration| tests/integration/worker-kernel.test.ts > classified failures > write-class capability → rejected (capability_not_permitted); its handler never runs
+-- error classes
+     27 Error: Test timed out in Nms.
+      5 Error: Connection terminated unexpectedly
+      5 Error: Connection terminated due to connection timeout
+      3 Error: Hook timed out in Nms.
+      1 Error: Called end on pool more than once
+
+## r71-3
+      Tests  55 passed (55)
+   Duration  289.51s (transform 12.52s, setup 0ms, import 28.54s, tests 703.23s, environment 1ms)
+-- error classes
+
+## base-3
+      Tests  55 passed (55)
+   Duration  227.60s (transform 10.35s, setup 0ms, import 25.38s, tests 467.86s, environment 1ms)
+-- error classes

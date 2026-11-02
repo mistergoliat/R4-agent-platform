@@ -111,4 +111,14 @@ describe('kernel: propose_action goes only through the session (platform)', () =
     ]);
     expect(withBudget.session.actions).toEqual([]);
   });
+
+  it('(R4-J4-R7-1, KC-0) writes disappear from the context once the remaining write budget is zero, not only when the limit is', async () => {
+    const { provider, session } = await run(sequence([propose(WRITE_THING.capabilityId, {}), read(READ_FACT.capabilityId, {}), completeFromObservations()]), { policy: { maxWriteActions: 1 } });
+    const offered = (i: number) => contextOf(provider.requests[i]!).capabilities.map((c) => c.capabilityId);
+    expect(offered(0)).toEqual([READ_FACT.capabilityId, WRITE_THING.capabilityId]);
+    // After the one allowed write, the model is offered READs only (the limit is still 1).
+    expect(session.actions).toHaveLength(1);
+    expect(offered(1)).toEqual([READ_FACT.capabilityId]);
+    expect(offered(2)).toEqual([READ_FACT.capabilityId]);
+  });
 });

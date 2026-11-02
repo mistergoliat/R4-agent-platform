@@ -34,6 +34,8 @@ export interface GatewayBindings {
   readonly taskFactory: ConversationTaskFactory;
   /** R4-I.1 (ADR-040): the single inbound inspector, by composition. Absent: exactly R4-I, refused while a protection window is open. */
   readonly inspection?: GatewayInspectionFactory;
+  /** ADR-041: the agent pack's fallback notice for a run-failure handoff (absent: none is sent). */
+  readonly runFailureFallback?: { readonly text: string };
 }
 
 export interface GatewayOverrides {
@@ -109,7 +111,10 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
     const inspection = bindings.inspection ? await bindings.inspection({ pool, store, temporal, gatewayId: config.gatewayId, log }) : null;
     if (!inspection) await assertNoOpenProtection(pool);
     const controls = new AutonomyControls({ store, logger });
-    const delivery = new OutboundDeliveryRuntime({ store, adapters: bindings.outbound, config: production, owner: config.gatewayId, logger });
+    const delivery = new OutboundDeliveryRuntime({
+      store, adapters: bindings.outbound, config: production, owner: config.gatewayId, logger,
+      ...(bindings.runFailureFallback ? { runFailureFallback: bindings.runFailureFallback } : {}),
+    });
     const ingress = new ChannelIngress({
       store, tasks, temporal, controls, adapters: bindings.inbound, delivery, config: production, secrets: bindings.production.secrets, profile, taskFactory: bindings.taskFactory, ids, logger,
       ...(inspection ? { inspector: inspection.inspector } : {}),

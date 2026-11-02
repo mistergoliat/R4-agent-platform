@@ -18,6 +18,46 @@ export interface InteractionRecords {
   /** Human decisions (events with `responseKey`), carrying the human's explicit text. */
   readonly responses: readonly TemporalEvent[];
   readonly waits: readonly TaskWait[];
+  /** (R4-J4-R7-2) `turn.closure.reconsider` events: the platform asked the agent to reconsider a silent closing. */
+  readonly closures: readonly TemporalEvent[];
+}
+
+/** (R4-J4-R7-2) A conversational input (`actor_kind = 'user'`), as the turn guard names it. */
+export interface ConversationInputRef {
+  readonly inputId: string;
+  readonly memoryEntryId: string;
+  readonly receivedAt: string;
+}
+
+/**
+ * (R4-J4-R7-2) The conversational obligation of a task against the context
+ * snapshot `H` of a closing decision (R4_J4_R7_DESIGN §2). Structure only:
+ * what the inputs mean is the model's, never derived here.
+ */
+export interface TurnObligation {
+  /** The oldest conversational input `H` never evaluated (UNSEEN). Same `seen` rule as `hasUnseenInput`. */
+  readonly unseen: ConversationInputRef | null;
+  /**
+   * (G2) The oldest input whose content the model did not receive, though evaluated: raw in no snapshot a decision
+   * came from, or `L` uncovered and not raw in `H`. Snapshots record what they exclude too, and a compacted item
+   * reaches the model only as an excerpt nothing verifies as sufficient: evaluated wakes a task, only delivered can
+   * authorize a closing.
+   */
+  readonly undelivered: ConversationInputRef | null;
+  /** The latest conversational input: the frontier `L`. */
+  readonly frontier: ConversationInputRef | null;
+  /** (G2) Every input neither a reply included nor a closing named, oldest first: what a silent closing would leave. */
+  readonly pending: readonly ConversationInputRef[];
+  /**
+   * `L` is covered: a recorded `respond` whose snapshot included `L` and whose
+   * outbound was not discarded, or a ratified closing (`turn.closed_without_reply`) of `L`.
+   */
+  readonly covered: boolean;
+  /** The latest `turn.closure.reconsider` of `L`; `shown` = its episode was INCLUDED in `H`. */
+  readonly reconsider: { readonly eventId: string; readonly stepId: string | null; readonly shown: boolean } | null;
+  /** Audit metadata only, never a decision input: a recorded `respond` exists; conversational inputs no reply saw. */
+  readonly hadPriorReply: boolean;
+  readonly trailingCount: number;
 }
 
 /**
@@ -61,8 +101,13 @@ export interface TemporalPersistence {
 
   input(taskId: string, sourceRef: string, externalKey: string): Promise<{ inputId: string; requestHash: string } | null>;
   insertInput(input: { inputId: string; taskId: string; sourceRef: string; externalKey: string; requestHash: string; memoryEntryId: string; actorKind: string; actorRef: string; receivedAt: string; correlationId: string }): Promise<void>;
-  /** Whether the task has an input whose memory entry the given snapshot never evaluated. */
+  /**
+   * Whether the task has an input whose memory entry the given snapshot never evaluated. It decides waking, where
+   * evaluated is the right question: a wake for an excluded input would recompile, exclude it and wake again.
+   */
   hasUnseenInput(taskId: string, snapshotId: string | null): Promise<boolean>;
+  /** (R4-J4-R7-2) The task's conversational obligation against the snapshot of a closing decision. */
+  turnObligation(taskId: string, snapshotId: string | null): Promise<TurnObligation>;
 
   terminalIntent(taskId: string): Promise<TerminalIntent | null>;
   /** Executions of the task (or of all tasks) whose outcome is not established. */

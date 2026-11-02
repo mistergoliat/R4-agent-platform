@@ -59,7 +59,10 @@ describe('goal continuity across a durable wait', () => {
     await platform.temporal.submitInput(taskId, input('in-1'), PARTICIPANT, 'input-1');
 
     const seen: ModelRequest[] = [];
-    const second = await worker({ script: sequence([(r) => (seen.push(r), complete('continued'))]) });
+    // R4-J4-R7-2 (Turn Completion Guard): completing without replying to the participant's input is deferred once for
+    // reconsideration; the scripted model ratifies it with a second complete, in a new run.
+    const second = await worker({ script: sequence([(r) => (seen.push(r), complete('continued')), complete('continued')]) });
+    await second.platform.worker.runOnce();
     await second.platform.worker.runOnce();
     const request = seen[0]!;
     const goals = items(request, 'goals').map((i) => i.content as Record<string, unknown>);
@@ -78,7 +81,8 @@ describe('goal continuity across a durable wait', () => {
     expect(items(request, 'episodicMemory').map((i) => i.content)).toContainEqual(expect.objectContaining({ event: 'task.wait', kind: 'WAIT_FOR_INPUT', resolution: 'input', statedReason: expect.stringMatching(/^Platform: the reply was sent/) }));
 
     const done = await platform.tasks.getTask(taskId);
-    expect(done.runs).toHaveLength(2);
+    const guards = await platform.pool.query<{ guard: unknown }>("select termination_details->'turnGuard' as guard from agent_runs where task_id = $1 order by sequence", [taskId]);
+    expect(guards.rows.map((r) => r.guard)).toEqual([null, expect.objectContaining({ outcome: 'deferred', code: 'turn_reply_pending' }), null]);
     expect(done.task.status).toBe('completed');
     expect(await events(taskId, 'task.woken')).toHaveLength(1);
   });
@@ -179,6 +183,7 @@ describe('inbound input', () => {
           return waitInput();
         },
         (r) => (seen.push(r), complete('saw it')),
+        complete('saw it'), // R4-J4-R7-2: the ratification of a completion without a reply
       ]),
     });
     await w.platform.worker.runOnce();
@@ -186,6 +191,7 @@ describe('inbound input', () => {
     // The stale wait was satisfied at once by the unseen input: the task is runnable, not stranded.
     expect((await platform.tasks.getTask(taskId)).task.status).toBe('running');
     expect(await waitRows(platform.pool, taskId)).toEqual([{ kind: 'WAIT_FOR_INPUT', status: 'completed', resolution: 'input' }]);
+    await w.platform.worker.runOnce();
     await w.platform.worker.runOnce();
     expect(text(seen[0]!, 'conversation')).toContain('Arrived mid-decision');
     expect((await platform.tasks.getTask(taskId)).task.status).toBe('completed');
@@ -213,7 +219,7 @@ describe('WAIT_UNTIL', () => {
   it('is interruptible: input before the timer wakes the task now, and the timer can never wake it again', async () => {
     const taskId = await createActionTask(platform);
     const tomorrow = new Date(Date.now() + 86_400_000).toISOString();
-    const w = await worker({ script: sequence([waitUntil(tomorrow), complete('answered early'), waitInput()]) });
+    const w = await worker({ script: sequence([waitUntil(tomorrow), complete('answered early'), complete('answered early'), waitInput()]) });
     await w.platform.worker.runOnce();
     await platform.temporal.submitInput(taskId, input('early', 'Replying today'), PARTICIPANT, 'early');
     expect((await platform.tasks.getTask(taskId)).task.status).toBe('running');
@@ -221,6 +227,7 @@ describe('WAIT_UNTIL', () => {
     const schedules = (await platform.temporal.inspect(taskId)).schedules;
     expect(schedules.map((s) => [s.kind, s.status])).toEqual([['wake', 'cancelled']]);
     await w.platform.worker.runOnce();
+    await w.platform.worker.runOnce(); // R4-J4-R7-2: the deferred completion is ratified in a new run
     await setTemporalOffset(platform.pool, 2 * 86_400_000);
     expect(await drain(testScheduler(platform.pool).scheduler)).toBe(0);
     expect(await events(taskId, 'task.woken')).toHaveLength(1);

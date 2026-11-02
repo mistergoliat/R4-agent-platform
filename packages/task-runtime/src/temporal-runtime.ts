@@ -25,6 +25,7 @@ import {
   type ManageGoalDecision,
   type Principal,
   type ReconciliationPolicy,
+  type RunStep,
   type RunTermination,
   type Schedule,
   type ScheduleToken,
@@ -35,12 +36,21 @@ import {
   type WaitResolution,
 } from '@r4/contracts';
 import { emitTelemetry, type StructuredLogger, type TelemetryEventName } from '@r4/observability';
-import { lockOwnedExecution, workerPrincipal, type ExecutionRuntime, type RecordStepCommand, type RunFailureHandoff, type RunFailureHandoffCause } from './execution-runtime.js';
+import {
+  lockOwnedExecution,
+  workerPrincipal,
+  type ExecutionRuntime,
+  type RecordStepCommand,
+  type RunFailureHandoff,
+  type RunFailureHandoffCause,
+  type TurnCompletionGuard,
+  type TurnCompletionVerdict,
+} from './execution-runtime.js';
 import { isTerminalTaskStatus } from './lifecycle.js';
 import { finishRunWithin, parseOrThrow, transitionTaskWithin, updateTaskOrThrow, type PendingEvent } from './mutations.js';
 import type { ExecutionStore, ExecutionUnitOfWork } from './ports.js';
 import type { CreateTaskCommand, TaskRuntime } from './task-runtime.js';
-import type { TemporalPersistence } from './temporal-ports.js';
+import type { ConversationInputRef, TemporalPersistence, TurnObligation } from './temporal-ports.js';
 
 export function temporalOf(uow: ExecutionUnitOfWork): TemporalPersistence {
   if (!uow.temporal) throw new PlatformError('internal', 'temporal_unavailable', 'temporal persistence is required');
@@ -58,6 +68,33 @@ export interface TemporalRuntimeOptions {
    * attempts, backoff and deadline are explicit operator configuration.
    */
   reconciliationPolicy?: ReconciliationPolicy;
+  /**
+   * (R4-J4-R7-2) Turn Completion Guard mode. `enforce` (default): a silent
+   * closing (`complete`, an agent `wait`) facing a pending conversational
+   * input is deferred or refused for reconsideration. `observe`: the outcome
+   * it would have had is only recorded (`turn.closure.would_*`); behaviour is
+   * that of R7-1. It is the first canary gate and the rollback.
+   */
+  turnGuard?: TurnGuardMode;
+}
+
+export const TURN_GUARD_MODES = ['enforce', 'observe'] as const;
+export type TurnGuardMode = (typeof TURN_GUARD_MODES)[number];
+
+/** (R4-J4-R7-2) The structural verdict on a silent closing (the model interprets the inputs; this checks durable facts). */
+type ClosureVerdict =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'unseen'; readonly input: ConversationInputRef }
+  | { readonly kind: 'undelivered'; readonly input: ConversationInputRef }
+  | { readonly kind: 'reconsider'; readonly input: ConversationInputRef; readonly obligation: TurnObligation }
+  | { readonly kind: 'ratified'; readonly input: ConversationInputRef; readonly obligation: TurnObligation; readonly reconsider: NonNullable<TurnObligation['reconsider']> };
+
+const TURN_REPLY_PENDING = { code: 'turn_reply_pending', message: 'not applied: the latest conversational input has no reply; reconsider it' } as const;
+const TURN_CLOSURE_UNDELIVERED = 'turn_closure_undelivered';
+
+/** (G2) No run can fix what the compiler keeps leaving out: a platform fault, so R7-1 hands the task to a person with the notice. */
+function closureUndelivered(input: ConversationInputRef): PlatformError {
+  return new PlatformError('conflict', TURN_CLOSURE_UNDELIVERED, `a closing needs what the model did not receive: input ${input.inputId} or its reconsideration was left out of the context`);
 }
 
 export type TemporalDecisionOutcome = { kind: 'continued' } | { kind: 'suspended'; termination: RunTermination };
@@ -159,12 +196,17 @@ function parsePlatformHold(hold: PlatformHold): PlatformHold {
  * operations require a TrustedHumanContext produced by an authentication
  * adapter — never by a model, never from a request body.
  */
-export class TemporalRuntime implements RunFailureHandoff {
+export class TemporalRuntime implements RunFailureHandoff, TurnCompletionGuard {
   readonly #options: TemporalRuntimeOptions;
 
   constructor(options: TemporalRuntimeOptions) {
     if (options.reconciliationPolicy) parseOrThrow(reconciliationPolicySchema, options.reconciliationPolicy);
+    if (options.turnGuard !== undefined && !TURN_GUARD_MODES.includes(options.turnGuard)) {
+      throw new PlatformError('validation', 'invalid_turn_guard', `turnGuard must be one of ${TURN_GUARD_MODES.join(', ')}`);
+    }
     this.#options = options;
+    // R4-J4-R7-2: the Turn Completion Guard of `complete` runs in the transaction that ends the run.
+    options.execution.attachTurnCompletionGuard(this);
     // ADR-028: human ownership is this runtime's; the execution runtime hands failed-run tasks over through it.
     options.execution.attachRunFailureHandoff(this);
   }
@@ -253,7 +295,29 @@ export class TemporalRuntime implements RunFailureHandoff {
         return { kind: 'continued' };
       }
 
-      await this.#options.execution.appendStepWithin(uow, owned, token, command, now, events);
+      // R4-J4-R7-1: a value the model chose that the platform cannot use (a past expiry, an unknown reference) is
+      // refused and shown back, like a goal rejection — never a terminal internal failure.
+      const rejection = decision.type === 'wait' ? null : await this.#humanRequestRejection(uow, owned.task, decision, now);
+      if (rejection) {
+        await this.#options.execution.appendStepWithin(uow, owned, token, { ...command, outcome: 'refused', error: rejection }, now, events);
+        await this.event(uow, owned.task, owned.run.runId, 'temporal.decision.rejected', now, events, { decisionType: decision.type, code: rejection.code });
+        return { kind: 'continued' };
+      }
+
+      // R4-J4-R7-2 (Turn Completion Guard): an agent WAIT_FOR_INPUT that leaves the latest conversational input without
+      // a reply is refused once for reconsideration; repeated with the episode in context, it is ratified and recorded.
+      // WAIT_UNTIL is not a closing: its timer is a verifiable resumption and the input stays pending for the next one.
+      // (G2) The platform wait that closes a turn answers only for what its response never received.
+      const closing = decision.type === 'wait' && decision.condition.kind === 'WAIT_FOR_INPUT';
+      const closure = closing ? await this.#waitClosure(uow, owned.task, command.inputHorizonSnapshotId !== undefined ? command.inputHorizonSnapshotId : (command.contextSnapshotId ?? null), command.origin === 'platform', now, events) : null;
+      if (closure?.kind === 'reconsider') {
+        const refused = await this.#options.execution.appendStepWithin(uow, owned, token, { ...command, outcome: 'refused', error: TURN_REPLY_PENDING }, now, events);
+        await this.#reconsider(uow, owned.task, 'wait', closure, refused.stepId, now, events);
+        return { kind: 'continued' };
+      }
+
+      const recorded = await this.#options.execution.appendStepWithin(uow, owned, token, command, now, events);
+      if (closure?.kind === 'ratified') await this.#closedWithoutReply(uow, owned.task, 'wait', closure, recorded.stepId, now, events);
       let referenceId: string | null = null;
       let kind: TaskWait['kind'];
       let dueAt: string | null = null;
@@ -261,11 +325,6 @@ export class TemporalRuntime implements RunFailureHandoff {
         kind = decision.condition.kind;
         dueAt = decision.condition.kind === 'WAIT_UNTIL' ? decision.condition.until : null;
       } else {
-        const known = new Set((await uow.listObservations(owned.task.taskId)).map((o) => o.observationId));
-        if (decision.contextRefs.some((id) => !known.has(id))) throw new PlatformError('validation', 'unknown_evidence', 'human context references must be observations of this task');
-        if (decision.type === 'request_consultation' && decision.expiresAt && Date.parse(decision.expiresAt) <= Date.parse(now)) {
-          throw new PlatformError('validation', 'expiry_in_past', 'consultation expiry must be in the future');
-        }
         referenceId = this.#options.ids.next();
         const base = { requestId: referenceId, taskId: owned.task.taskId, runId: owned.run.runId, status: 'requested' as const, humanRef: null, createdAt: now, updatedAt: now, correlationId: owned.task.correlationId };
         const request: HumanRequest =
@@ -292,6 +351,101 @@ export class TemporalRuntime implements RunFailureHandoff {
         if (woken.status === 'running') await this.cancelSchedulesWithin(uow, woken, now, events, wait.waitId);
       }
       return { kind: 'suspended', termination: run.termination! };
+    });
+  }
+
+  /** (R4-J4-R7-1) Model-supplied values of a consultation or handoff request the platform refuses, recoverably. */
+  async #humanRequestRejection(uow: ExecutionUnitOfWork, task: AgentTask, decision: Exclude<TemporalDecision, ManageGoalDecision | { type: 'wait' }>, now: string): Promise<{ code: 'unknown_evidence' | 'expiry_in_past'; message: string } | null> {
+    const known = new Set((await uow.listObservations(task.taskId)).map((o) => o.observationId));
+    if (decision.contextRefs.some((id) => !known.has(id))) return { code: 'unknown_evidence', message: 'human context references must be observations of this task' };
+    if (decision.type === 'request_consultation' && decision.expiresAt && Date.parse(decision.expiresAt) <= Date.parse(now)) {
+      return { code: 'expiry_in_past', message: 'consultation expiry must be in the future' };
+    }
+    return null;
+  }
+
+  // -------------------------------------------------------------------------
+  // Turn Completion Guard (R4-J4-R7-2; R4_J4_R7_DESIGN §4)
+  // -------------------------------------------------------------------------
+
+  /**
+   * `complete`, inside the transaction that ends the run (task row locked,
+   * step appended). P-2/P-3: an open human request, an uncertain effect or a
+   * terminal intent refuse it (`turn_closure_blocked`, a platform fault the
+   * kernel records; R7-1 hands the task over). P-1: an input the deciding
+   * call never evaluated defers it; one the model did not receive, or a
+   * reconsideration left out of its context, refuses it the same way (G2). The
+   * frontier without a reply defers it for reconsideration; the same frontier
+   * closed again with the episode in context is a ratification by the same
+   * model, never a verification.
+   */
+  async completionWithin(uow: ExecutionUnitOfWork, task: AgentTask, step: RunStep, events: PendingEvent[]): Promise<TurnCompletionVerdict> {
+    const p = temporalOf(uow);
+    const now = await p.now();
+    const blocked =
+      // A running task waits for no consultation: one still open was superseded by a takeover or a hold (G2).
+      (await p.listHumans(task.taskId)).some((h) => h.kind !== 'consultation' && (h.status === 'requested' || h.status === 'active')) ||
+      (await uow.countUncertainActionExecutions(task.taskId)) > 0 ||
+      (await p.terminalIntent(task.taskId)) !== null;
+    const verdict = await this.#closureVerdict(p, task.taskId, step.contextSnapshotId);
+    if (this.#options.turnGuard === 'observe') {
+      const code = blocked ? 'turn_closure_blocked' : verdict.kind === 'unseen' ? 'turn_input_unseen' : verdict.kind === 'undelivered' ? TURN_CLOSURE_UNDELIVERED : verdict.kind === 'reconsider' ? TURN_REPLY_PENDING.code : null;
+      if (code) await this.event(uow, task, verdict.kind === 'none' ? task.taskId : verdict.input.inputId, 'turn.closure.would_defer', now, events, { decision: 'complete', code, stepId: step.stepId });
+      return { kind: 'complete' };
+    }
+    if (blocked) throw new PlatformError('conflict', 'turn_closure_blocked', 'a task with an open human request, an uncertain effect or a terminal intent cannot complete');
+    switch (verdict.kind) {
+      case 'none':
+        return { kind: 'complete' };
+      case 'unseen':
+        return { kind: 'deferred', code: 'turn_input_unseen', inputId: verdict.input.inputId };
+      case 'undelivered':
+        throw closureUndelivered(verdict.input);
+      case 'reconsider':
+        await this.#reconsider(uow, task, 'complete', verdict, step.stepId, now, events);
+        return { kind: 'deferred', code: TURN_REPLY_PENDING.code, inputId: verdict.input.inputId };
+      case 'ratified':
+        await this.#closedWithoutReply(uow, task, 'complete', verdict, step.stepId, now, events);
+        return { kind: 'complete' };
+    }
+  }
+
+  /** A `wait` for input. UNSEEN is left to the existing horizon wake (F3); `observe` only records. */
+  async #waitClosure(uow: ExecutionUnitOfWork, task: AgentTask, horizon: string | null, platform: boolean, now: string, events: PendingEvent[]): Promise<ClosureVerdict | null> {
+    const verdict = await this.#closureVerdict(temporalOf(uow), task.taskId, horizon);
+    if (verdict.kind === 'none' || verdict.kind === 'unseen' || (platform && verdict.kind !== 'undelivered')) return null;
+    if (this.#options.turnGuard === 'observe') {
+      const code = verdict.kind === 'undelivered' ? TURN_CLOSURE_UNDELIVERED : verdict.kind === 'reconsider' ? TURN_REPLY_PENDING.code : null;
+      if (code) await this.event(uow, task, verdict.input.inputId, 'turn.closure.would_refuse', now, events, { decision: 'wait', code });
+      return null;
+    }
+    if (verdict.kind === 'undelivered') throw closureUndelivered(verdict.input);
+    return verdict;
+  }
+
+  async #closureVerdict(p: TemporalPersistence, taskId: string, horizon: string | null): Promise<ClosureVerdict> {
+    const o = await p.turnObligation(taskId, horizon);
+    if (o.unseen) return { kind: 'unseen', input: o.unseen };
+    if (o.undelivered) return { kind: 'undelivered', input: o.undelivered };
+    if (o.frontier === null || o.covered) return { kind: 'none' };
+    if (o.reconsider === null) return { kind: 'reconsider', input: o.frontier, obligation: o };
+    // Informed: the reconsideration of THIS frontier was in the deciding call's context. A newer input is a new frontier.
+    if (o.reconsider.shown) return { kind: 'ratified', input: o.frontier, obligation: o, reconsider: o.reconsider };
+    // One reconsideration per frontier, and the compiler left this one out: asking again would ask the same call again.
+    return { kind: 'undelivered', input: o.frontier };
+  }
+
+  async #reconsider(uow: ExecutionUnitOfWork, task: AgentTask, decision: 'complete' | 'wait', verdict: Extract<ClosureVerdict, { kind: 'reconsider' }>, stepId: string, now: string, events: PendingEvent[]): Promise<void> {
+    const { input, obligation } = verdict;
+    await this.event(uow, task, input.inputId, 'turn.closure.reconsider', now, events, { decision, code: TURN_REPLY_PENDING.code, stepId, memoryItemId: `memory:${input.memoryEntryId}`, receivedAt: input.receivedAt, pendingItemIds: obligation.pending.map((i) => `memory:${i.memoryEntryId}`) });
+  }
+
+  /** INV-S4: covers this frontier and what it left unanswered (`inputIds`), nothing later; `basis` says what it is — the same model's ratification. */
+  async #closedWithoutReply(uow: ExecutionUnitOfWork, task: AgentTask, decision: 'complete' | 'wait', verdict: Extract<ClosureVerdict, { kind: 'ratified' }>, stepId: string, now: string, events: PendingEvent[]): Promise<void> {
+    const { input, obligation, reconsider } = verdict;
+    await this.event(uow, task, input.inputId, 'turn.closed_without_reply', now, events, {
+      basis: 'model_ratification', decision, stepIds: [reconsider.stepId, stepId], reconsiderEventId: reconsider.eventId, inputIds: obligation.pending.map((i) => i.inputId),
+      hadPriorReply: obligation.hadPriorReply, trailingCount: obligation.trailingCount, policy: 'closure.v1',
     });
   }
 
@@ -844,7 +998,9 @@ export class TemporalRuntime implements RunFailureHandoff {
 
   /**
    * (ADR-028) The human fallback of a run failure: recovery was exhausted,
-   * or the model failure is not retryable. The task is not terminated: it
+   * the model failure is not retryable or (R4-J4-R7-1) the platform cannot
+   * continue (budget, capability, internal, abandoned run, filtered output:
+   * a contingency). The task is not terminated: it
    * becomes `blocked` on a platform-initiated handoff — visible in
    * `attention()` — with a WAIT_FOR_HUMAN, exactly like a handoff the agent
    * asked for. An operator accepts and releases it (autonomy resumes: the
@@ -856,9 +1012,11 @@ export class TemporalRuntime implements RunFailureHandoff {
     const p = temporalOf(uow);
     const now = await p.now();
     const summary =
-      cause.consecutiveFailures === null
-        ? `Run ${run.sequence} failed (${cause.terminationReason}: ${cause.code}); the failure is not retryable, so no automatic run was started. An operator must decide how the task continues.`
-        : `Run ${run.sequence} failed (${cause.terminationReason}: ${cause.code}); ${cause.consecutiveFailures} consecutive recoverable run failure(s) exhausted automatic recovery. An operator must decide how the task continues.`;
+      cause.consecutiveFailures !== null
+        ? `Run ${run.sequence} failed (${cause.terminationReason}: ${cause.code}); ${cause.consecutiveFailures} consecutive recoverable run failure(s) exhausted automatic recovery. An operator must decide how the task continues.`
+        : cause.terminationReason === 'model_failure'
+          ? `Run ${run.sequence} failed (${cause.terminationReason}: ${cause.code}); the failure is not retryable, so no automatic run was started. An operator must decide how the task continues.`
+          : `Run ${run.sequence} ended (${cause.terminationReason}: ${cause.code}); the platform cannot continue the task autonomously (contingency ${cause.reason}), so no automatic run was started. An operator must decide how the task continues.`;
     const request = parseOrThrow(humanRequestSchema, {
       requestId: this.#options.ids.next(), taskId: task.taskId, runId: run.runId, kind: 'handoff', status: 'requested', humanRef: null,
       createdAt: now, updatedAt: now, expiresAt: null, correlationId: task.correlationId,

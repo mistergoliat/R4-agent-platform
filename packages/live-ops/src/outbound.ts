@@ -11,7 +11,16 @@ export interface OutboundDeliveryOptions {
   /** Dispatcher identity (lease owner). */
   readonly owner: string;
   readonly logger: StructuredLogger;
+  /**
+   * (ADR-041) The agent pack's fallback notice for a platform handoff after a
+   * run failure. Absent: such a handoff sends nothing (the contact waits for
+   * a human in silence).
+   */
+  readonly runFailureFallback?: { readonly text: string };
 }
+
+/** Bounds the pack's fallback text: one short, plain message. */
+const MAX_FALLBACK_CHARS = 1000;
 
 export type DispatchCycle =
   | { readonly kind: 'idle' }
@@ -34,8 +43,9 @@ const TERMINAL_EVENT: Partial<Record<OutboundRecord['status'], 'outbound.accepte
  * accepted response into exactly one durable OutboundMessage (identity =
  * the step) and owns its whole lifecycle:
  *
- *   materialize  one outbound per accepted `respond` of a bound task
- *   dispatch     claim (lease + fencing generation, SKIP LOCKED) with the
+ *   materialize  one outbound per accepted `respond` of a bound task, and
+ *                (ADR-041) one platform fallback per run-failure handoff
+ *   dispatch    claim (lease + fencing generation, SKIP LOCKED) with the
  *                delivery gate evaluated in the claim transaction →
  *                one provider submission → fenced outcome record
  *   sweep        a dispatch whose lease expired (the process died during the
@@ -54,6 +64,10 @@ export class OutboundDeliveryRuntime {
   readonly #adapters: ReadonlyMap<string, OutboundChannelAdapter>;
 
   constructor(options: OutboundDeliveryOptions) {
+    const fallback = options.runFailureFallback?.text;
+    if (fallback !== undefined && (fallback.trim().length === 0 || fallback.length > MAX_FALLBACK_CHARS)) {
+      throw new Error(`runFailureFallback.text must be 1..${MAX_FALLBACK_CHARS} characters`);
+    }
     this.#o = options;
     this.#adapters = new Map(options.adapters.map((a) => [a.channel, a]));
   }
@@ -64,6 +78,8 @@ export class OutboundDeliveryRuntime {
 
   async materialize(limit = 50): Promise<OutboundRecord[]> {
     const created = await this.#o.store.materializeResponses({ limit });
+    const fallback = this.#o.runFailureFallback;
+    if (fallback) created.push(...(await this.#o.store.materializeRunFailureFallbacks({ text: fallback.text, limit })));
     for (const o of created) {
       emitTelemetry(this.#o.logger, 'outbound.created', { outboundId: o.outboundId, taskId: o.taskId, runId: o.runId, responseStepId: o.responseStepId, channel: o.channel, origin: o.origin, status: o.status, correlationId: o.correlationId });
       if (o.status === 'cancelled') emitTelemetry(this.#o.logger, 'outbound.cancelled', { outboundId: o.outboundId, taskId: o.taskId, reason: o.cancelReason, duplicateOf: o.duplicateOf });

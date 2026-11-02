@@ -1,0 +1,281 @@
+import { afterEach, describe, expect, it } from 'vitest';
+import { LiveOpsTestbed, invalid, say, waitInput } from '../support/live-ops.js';
+
+/**
+ * R4-J4-R7 audit probes (read-only audit, NOT part of the suite): each case
+ * reproduces one silent-ending path of main d0bb7a7 end to end over the real
+ * production composition (webhook → binding → task → Sales production worker
+ * with a scripted model → delivery owner → fake WhatsApp). Assertions state
+ * the CURRENT behavior: a passing probe means the path is reproduced.
+ */
+
+const CUSTOMER = '56933334444';
+const complete = (summary = 'conversation ended') => ({ type: 'structured' as const, data: { type: 'complete', result: { summary, evidence: [] } } });
+const consult = (expiresAt?: string) => ({ type: 'structured' as const, data: { type: 'request_consultation', question: '¿Cuál es la política de devoluciones?', contextRefs: [], ...(expiresAt ? { expiresAt } : {}) } });
+const handoff = () => ({ type: 'structured' as const, data: { type: 'request_handoff', summary: 'El cliente pide hablar con una persona.', contextRefs: [] } });
+const focusUnknownGoal = () => ({ type: 'structured' as const, data: { type: 'manage_goal', change: { operation: 'focus', goalId: '00000000-0000-4000-8000-000000000000' } } });
+
+let bed: LiveOpsTestbed | null = null;
+afterEach(async () => {
+  await bed?.close();
+  bed = null;
+});
+
+async function start(env: Record<string, string> = {}): Promise<LiveOpsTestbed> {
+  bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER], autonomy: true, env });
+  return bed;
+}
+
+async function facts(taskId: string) {
+  const b = bed!;
+  const [task] = await b.rows<{ status: string; status_reason: string | null }>('select status, status_reason from agent_tasks where task_id = $1', [taskId]);
+  const runs = await b.rows<{ sequence: number; status: string; termination_reason: string | null; termination_code: string | null; termination_details: unknown }>(
+    'select sequence, status, termination_reason, termination_code, termination_details from agent_runs where task_id = $1 order by sequence', [taskId]);
+  const outbound = await b.rows<{ origin: string; status: string; cancel_reason: string | null }>('select origin, status, cancel_reason from outbound_messages where task_id = $1 order by created_at', [taskId]);
+  const humans = await b.rows<{ kind: string; status: string; reason: string | null; expires_at: string | null }>(
+    "select kind, status, payload->>'reason' as reason, expires_at from human_requests where task_id = $1 order by created_at", [taskId]);
+  const waits = await b.rows<{ kind: string; status: string }>('select kind, status from task_waits where task_id = $1 order by created_at', [taskId]);
+  const schedules = await b.rows<{ kind: string; status: string }>('select kind, status from schedules where task_id = $1', [taskId]);
+  const inputs = (await b.rows<{ n: string }>('select count(*) as n from task_inputs where task_id = $1', [taskId]))[0]!.n;
+  return { task, runs, outbound, humans, waits, schedules, inputs: Number(inputs) };
+}
+
+const inbound = (providerEventId: string) =>
+  bed!.rows<{ status: string; task_id: string | null; disposition: string | null }>('select status, task_id, disposition from inbound_events where provider_event_id = $1', [providerEventId]);
+const bindings = () => bed!.rows<{ status: string; task_id: string | null; closed_reason: string | null }>('select status, task_id, closed_reason from channel_conversation_bindings order by created_at');
+const evidence = (probe: string, data: unknown) => console.log(`R7-EVIDENCE ${probe} ${JSON.stringify(data)}`);
+
+describe('R4-J4-R7 audit probes on main d0bb7a7 (current behavior)', () => {
+  it('P01 (B1) complete without a reply to an explicit question: task completed, 0 outbound; next message opens a context-less task', async () => {
+    const b = await start();
+    await b.customer(CUSTOMER, 'wamid.p01a', '¿Tienen racks de 2 metros de alto?');
+    const first = await b.taskOf(CUSTOMER);
+    b.next(complete());
+    await b.runAgent();
+    await b.deliver();
+    const f1 = await facts(first);
+    expect(f1.task!.status).toBe('completed');
+    expect(f1.outbound).toHaveLength(0);
+
+    await b.customer(CUSTOMER, 'wamid.p01b', '¿Hola? ¿Me respondieron?');
+    const second = await b.taskOf(CUSTOMER);
+    expect(second).not.toBe(first);
+    const memory = await b.rows<{ text: string }>("select content->>'text' as text from memory_entries where task_id = $1 and memory_type = 'CONVERSATIONAL'", [second]);
+    expect(memory.map((m) => m.text)).toEqual(['¿Hola? ¿Me respondieron?']);
+    const parent = await b.rows<{ parent_task_id: string | null }>('select parent_task_id from agent_tasks where task_id = $1', [second]);
+    expect(parent[0]!.parent_task_id).toBeNull();
+    evidence('P01', { first: f1, bindings: await bindings(), secondTaskMemory: memory.length, secondParent: parent[0]!.parent_task_id });
+  });
+
+  it('P02 (B9) input arriving during the model call that decides complete is orphaned on the completed task', async () => {
+    const b = await start();
+    await b.customer(CUSTOMER, 'wamid.p02a', 'Hola, busco un rack');
+    const task = await b.taskOf(CUSTOMER);
+    b.next(async () => {
+      await b.customer(CUSTOMER, 'wamid.p02b', '¿Y hacen envíos a Temuco?');
+      return complete();
+    });
+    await b.runAgent();
+    await b.deliver();
+    const f = await facts(task);
+    const late = await inbound('wamid.p02b');
+    expect(f.task!.status).toBe('completed');
+    expect(f.inputs).toBe(2);
+    expect(late[0]).toMatchObject({ status: 'ingested', task_id: task });
+    expect(f.outbound).toHaveLength(0);
+    expect(await b.runAgent()).toEqual([]);
+    expect((await bindings()).filter((x) => x.status === 'open')).toHaveLength(1);
+    evidence('P02', { facts: f, lateInbound: late[0], tasks: (await b.rows('select count(*)::int as n from agent_tasks'))[0] });
+  });
+
+  it('P03 (B5) a per-run budget exhausted inside one turn fails the task: no reply, no handoff; next message is a new task', async () => {
+    const b = await start();
+    await b.customer(CUSTOMER, 'wamid.p03a', 'Busco un rack que aguante 300 kg');
+    const first = await b.taskOf(CUSTOMER);
+    // sales-production@1 registers no READ capability: a refused (recoverable) goal change also spends one model call per iteration.
+    b.next(...Array.from({ length: 20 }, () => focusUnknownGoal()));
+    await b.runAgent();
+    await b.deliver();
+    const f = await facts(first);
+    const steps = await b.rows<{ n: number; decision_type: string | null; outcome: string; error_code: string | null }>(
+      'select count(*)::int as n, decision_type, outcome, error_code from agent_run_steps where task_id = $1 group by 2, 3, 4', [first]);
+    console.log('R7-DEBUG P03', JSON.stringify({ task: f.task, runs: f.runs, humans: f.humans, steps }));
+    expect(f.task!.status).toBe('failed');
+    expect(f.runs.at(-1)!.termination_reason).toBe('budget_exhausted');
+    expect(f.humans).toHaveLength(0);
+    expect(f.outbound).toHaveLength(0);
+    await b.customer(CUSTOMER, 'wamid.p03b', '¿Sigues ahí?');
+    expect(await b.taskOf(CUSTOMER)).not.toBe(first);
+    evidence('P03', { facts: { ...f, runs: f.runs.map(({ termination_details: _d, ...r }) => r) }, bindings: await bindings() });
+  });
+
+  it('P04 (B7) two invalid outputs: ADR-028 exhausted → blocked + platform handoff, 0 outbound; follow-up input not answered', async () => {
+    const b = await start();
+    await b.customer(CUSTOMER, 'wamid.p04a', '¿Hay stock disponible?');
+    const task = await b.taskOf(CUSTOMER);
+    b.next(invalid(), invalid());
+    await b.runAgent();
+    await b.deliver();
+    const f = await facts(task);
+    expect(f.task).toMatchObject({ status: 'blocked', status_reason: 'run_failure_recovery_exhausted' });
+    expect(f.humans).toEqual([expect.objectContaining({ kind: 'handoff', status: 'requested', reason: 'run_failure_recovery_exhausted' })]);
+    expect(f.outbound).toHaveLength(0);
+    await b.customer(CUSTOMER, 'wamid.p04b', '¿Hola?');
+    expect(await b.runAgent()).toEqual([]);
+    await b.deliver();
+    expect((await facts(task)).outbound).toHaveLength(0);
+    evidence('P04', { facts: { ...f, runs: f.runs.map(({ termination_details, ...r }) => ({ ...r, recovery: (termination_details as { runFailureRecovery?: unknown } | null)?.runFailureRecovery ?? null })) }, followUp: (await inbound('wamid.p04b'))[0] });
+  });
+
+  it('P05 (B3) agent WAIT_FOR_INPUT without a reply to an explicit question: both sides wait, 0 outbound', async () => {
+    const b = await start();
+    await b.customer(CUSTOMER, 'wamid.p05a', '¿Cuánto cuesta el envío a Concepción?');
+    const task = await b.taskOf(CUSTOMER);
+    b.next(waitInput());
+    await b.runAgent();
+    await b.deliver();
+    const f = await facts(task);
+    expect(f.task!.status).toBe('waiting');
+    expect(f.waits).toEqual([{ kind: 'WAIT_FOR_INPUT', status: 'waiting' }]);
+    expect(f.outbound).toHaveLength(0);
+    expect(await b.runAgent()).toEqual([]);
+    evidence('P05', f);
+  });
+
+  it('P06 (R6-3) consultation without expiresAt: no expiry schedule; customer follow-ups do not wake the task, 0 outbound', async () => {
+    const b = await start();
+    await b.customer(CUSTOMER, 'wamid.p06a', '¿Puedo devolver un producto usado?');
+    const task = await b.taskOf(CUSTOMER);
+    b.next(consult());
+    await b.runAgent();
+    await b.customer(CUSTOMER, 'wamid.p06b', '¿Hola?');
+    await b.customer(CUSTOMER, 'wamid.p06c', '¿Me pueden responder?');
+    expect(await b.runAgent()).toEqual([]);
+    await b.deliver();
+    const f = await facts(task);
+    expect(f.task!.status).toBe('waiting');
+    expect(f.humans).toEqual([expect.objectContaining({ kind: 'consultation', status: 'requested', expires_at: null })]);
+    expect(f.schedules).toHaveLength(0);
+    expect(f.outbound).toHaveLength(0);
+    expect(f.inputs).toBe(3);
+    evidence('P06', { facts: f, followUp: (await inbound('wamid.p06c'))[0] });
+  });
+
+  it('P07 consultation with an expiresAt already past: a model-chosen value fails the task terminally (internal_failure)', async () => {
+    const b = await start();
+    await b.customer(CUSTOMER, 'wamid.p07a', '¿Tienen garantía extendida?');
+    const task = await b.taskOf(CUSTOMER);
+    b.next(consult('2020-01-01T00:00:00.000Z'));
+    await b.runAgent();
+    const f = await facts(task);
+    expect(f.task!.status).toBe('failed');
+    expect(f.runs.at(-1)).toMatchObject({ termination_reason: 'internal_failure', termination_code: 'internal_error' });
+    expect(f.humans).toHaveLength(0);
+    evidence('P07', { facts: { ...f, runs: f.runs.map(({ termination_details: _d, ...r }) => r) } });
+  });
+
+  it('P08 (B12) a reply cancelled at the delivery gate (expired) does not wake the task: it stays in WAIT_FOR_INPUT', async () => {
+    const b = await start({ R4_PROD_OUTBOUND_MAX_AGE_MS: '1000' });
+    await b.customer(CUSTOMER, 'wamid.p08a', 'Hola, ¿tienen mancuernas de 10 kg?');
+    const task = await b.taskOf(CUSTOMER);
+    b.next(say('Sí, tenemos mancuernas de 10 kg.'));
+    await b.runAgent();
+    await b.gateway.delivery.materialize();
+    await new Promise((r) => setTimeout(r, 1_200));
+    await b.deliver();
+    const f = await facts(task);
+    expect(f.outbound).toEqual([{ origin: 'agent', status: 'cancelled', cancel_reason: 'expired' }]);
+    expect(f.task!.status).toBe('waiting');
+    expect(f.waits.at(-1)).toEqual({ kind: 'WAIT_FOR_INPUT', status: 'waiting' });
+    expect(await b.runAgent()).toEqual([]);
+    evidence('P08', f);
+  });
+
+  it('P09 finish_reason=length is not recorded: a truncated output is an ordinary invalid_structured_output (ADR-028 recoverable)', async () => {
+    const b = await start();
+    await b.customer(CUSTOMER, 'wamid.p09a', 'Necesito una cotización');
+    const task = await b.taskOf(CUSTOMER);
+    b.next({ type: 'text', content: '{"type":"respond","content":"Claro, para cotizar nece', finishReason: 'length' }, say('Claro, ¿qué productos necesitas?'));
+    await b.runAgent();
+    const f = await facts(task);
+    const failed = f.runs[0]!;
+    expect(failed).toMatchObject({ status: 'failed', termination_reason: 'invalid_decision', termination_code: 'invalid_structured_output' });
+    expect(JSON.stringify(failed.termination_details)).not.toMatch(/finish|length/i);
+    const steps = await b.rows<{ outcome: string; error_code: string | null }>('select s.outcome, s.error_code from agent_run_steps s join agent_runs r on r.run_id = s.run_id where r.task_id = $1 and r.sequence = 1', [task]);
+    evidence('P09', { failedRun: failed, steps });
+  });
+
+  it('P11 (B2) legitimate social close after a delivered reply: completed silently; a later return loses the conversation', async () => {
+    const b = await start();
+    await b.customer(CUSTOMER, 'wamid.p11a', '¿Tienen bancos de pesas?');
+    const first = await b.taskOf(CUSTOMER);
+    b.next(say('Sí, tenemos bancos planos y regulables.'));
+    await b.runAgent();
+    await b.deliver();
+    await b.customer(CUSTOMER, 'wamid.p11b', 'Ok, gracias');
+    b.next(complete('customer closed the conversation'));
+    await b.runAgent();
+    await b.deliver();
+    const f = await facts(first);
+    expect(f.task!.status).toBe('completed');
+    expect(f.outbound).toEqual([{ origin: 'agent', status: 'accepted', cancel_reason: null }]);
+    await b.customer(CUSTOMER, 'wamid.p11c', 'Al final quiero el banco regulable que me dijiste');
+    const second = await b.taskOf(CUSTOMER);
+    expect(second).not.toBe(first);
+    const memory = await b.rows<{ n: number }>("select count(*)::int as n from memory_entries where task_id = $1 and memory_type = 'CONVERSATIONAL'", [second]);
+    expect(memory[0]!.n).toBe(1);
+    evidence('P11', { first: f, bindings: await bindings(), secondTaskConversationalEntries: memory[0]!.n });
+  });
+
+  it('P12 (control) input arriving during the model call that decides wait wakes the task at once (horizon rule works for wait)', async () => {
+    const b = await start();
+    await b.customer(CUSTOMER, 'wamid.p12a', 'Hola');
+    const task = await b.taskOf(CUSTOMER);
+    b.next(async () => {
+      await b.customer(CUSTOMER, 'wamid.p12b', '¿Tienen discos olímpicos?');
+      return waitInput();
+    }, say('Sí, tenemos discos olímpicos.'));
+    await b.runAgent();
+    await b.deliver();
+    const f = await facts(task);
+    expect(f.task!.status).toBe('waiting');
+    expect(f.runs.map((r) => r.status)).toEqual(['suspended', 'suspended']);
+    expect(f.outbound).toEqual([{ origin: 'agent', status: 'accepted', cancel_reason: null }]);
+    evidence('P12', f);
+  });
+
+  it('P13 (control) input arriving while a respond is drafted: draft cancelled superseded_by_newer_input, task woken, next run replies', async () => {
+    const b = await start();
+    await b.customer(CUSTOMER, 'wamid.p13a', 'Hola');
+    const task = await b.taskOf(CUSTOMER);
+    b.next(async () => {
+      await b.customer(CUSTOMER, 'wamid.p13b', 'Busco una barra olímpica');
+      return say('¡Hola! ¿En qué te ayudo?');
+    }, say('Tenemos barras olímpicas de 20 kg.'));
+    await b.runAgent();
+    await b.deliver();
+    const f = await facts(task);
+    expect(f.outbound).toEqual([
+      { origin: 'agent', status: 'cancelled', cancel_reason: 'superseded_by_newer_input' },
+      { origin: 'agent', status: 'accepted', cancel_reason: null },
+    ]);
+    evidence('P13', f);
+  });
+
+  it('P10 (B10) agent request_handoff: blocked, no message to the customer; follow-ups recorded as human_owned, never answered', async () => {
+    const b = await start();
+    await b.customer(CUSTOMER, 'wamid.p10a', 'Quiero hablar con una persona');
+    const task = await b.taskOf(CUSTOMER);
+    b.next(handoff());
+    await b.runAgent();
+    await b.customer(CUSTOMER, 'wamid.p10b', '¿Alguien?');
+    expect(await b.runAgent()).toEqual([]);
+    await b.deliver();
+    const f = await facts(task);
+    expect(f.task!.status).toBe('blocked');
+    expect(f.outbound).toHaveLength(0);
+    const follow = (await inbound('wamid.p10b'))[0]!;
+    expect(follow.disposition).toBe('human_owned');
+    evidence('P10', { facts: f, followUp: follow });
+  });
+});

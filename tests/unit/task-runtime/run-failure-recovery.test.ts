@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
   NON_RETRYABLE_MODEL_FAILURE,
+  RUN_ABANDONED,
+  RUN_BUDGET_EXHAUSTED,
+  RUN_CAPABILITY_FAILURE,
+  RUN_FAILURE_HANDOFF_REASONS,
   RUN_FAILURE_RECOVERY_EXHAUSTED,
+  RUN_INTERNAL_FAILURE,
+  RUN_OUTPUT_FILTERED,
   TERMINATION_REASONS,
   humanRequestSchema,
   runFailureDisposition,
+  runFailureHandoffReason,
   runFailureRecoveryOf,
   type TerminationReason,
 } from '@r4/contracts';
@@ -19,18 +26,40 @@ import { SalesFixture } from '@r4-sales/agent/evaluations';
 
 /** ADR-028 (GAP-H-001): the pieces of run-level recovery that need no database. */
 describe('runFailureDisposition (contracts)', () => {
-  it('recoverable: invalid_decision and retryable model_failure; human: non-retryable model_failure; terminal: everything else that fails', () => {
+  it('recoverable: invalid_decision and retryable model_failure; human: everything else that fails (R4-J4-R7-1: no failure is terminal)', () => {
     const of = (reason: TerminationReason, details: unknown = null) => runFailureDisposition({ reason, details });
     expect(of('invalid_decision')).toBe('recoverable');
+    // KC-2: the finish reason travels in the details; a truncated output is still recoverable, a filtered one is not.
+    expect(of('invalid_decision', { finishReason: 'length' })).toBe('recoverable');
+    expect(of('invalid_decision', { finishReason: 'stop' })).toBe('recoverable');
+    expect(of('invalid_decision', { finishReason: 'content_filter' })).toBe('human');
     expect(of('model_failure', { retryable: true, latencyMs: 10 })).toBe('recoverable');
     expect(of('model_failure', { retryable: false })).toBe('human');
     // Fail closed toward a human: a missing or non-boolean classification is not retryable.
     expect(of('model_failure')).toBe('human');
     expect(of('model_failure', { retryable: 'yes' })).toBe('human');
-    for (const reason of ['capability_failure', 'budget_exhausted', 'internal_failure', 'lease_lost'] as const) expect(of(reason)).toBe('terminal');
+    // ADR-028 amendment (R4-J4-R7-1): the platform contingencies hand the task to a human instead of failing it.
+    for (const reason of ['capability_failure', 'budget_exhausted', 'internal_failure', 'lease_lost'] as const) expect(of(reason)).toBe('human');
     // Not failures at all: completion, cancellation and every suspension.
     for (const reason of ['completed', 'cancelled', 'approval_required', 'write_outcome_uncertain', 'waiting', 'human_handoff'] as const) expect(of(reason)).toBeNull();
     expect(TERMINATION_REASONS).toHaveLength(12); // a new reason must be classified here on purpose
+  });
+
+  it('(R4-J4-R7-1) every directly handed-off failure has its own handoff reason, and every reason is announced (ADR-041)', () => {
+    expect(runFailureHandoffReason('model_failure')).toBe(NON_RETRYABLE_MODEL_FAILURE);
+    expect(runFailureHandoffReason('invalid_decision')).toBe(RUN_OUTPUT_FILTERED);
+    expect(runFailureHandoffReason('budget_exhausted')).toBe(RUN_BUDGET_EXHAUSTED);
+    expect(runFailureHandoffReason('capability_failure')).toBe(RUN_CAPABILITY_FAILURE);
+    expect(runFailureHandoffReason('internal_failure')).toBe(RUN_INTERNAL_FAILURE);
+    expect(runFailureHandoffReason('lease_lost')).toBe(RUN_ABANDONED);
+    expect([...RUN_FAILURE_HANDOFF_REASONS].sort()).toEqual([RUN_FAILURE_RECOVERY_EXHAUSTED, NON_RETRYABLE_MODEL_FAILURE, RUN_OUTPUT_FILTERED, RUN_BUDGET_EXHAUSTED, RUN_CAPABILITY_FAILURE, RUN_INTERNAL_FAILURE, RUN_ABANDONED].sort());
+    // Each one is a valid status reason and a valid platform handoff reason.
+    for (const reason of RUN_FAILURE_HANDOFF_REASONS) {
+      expect(humanRequestSchema.safeParse({
+        requestId: '00000000-0000-4000-8000-000000000001', taskId: '00000000-0000-4000-8000-000000000002', runId: null, kind: 'handoff', status: 'requested', humanRef: null,
+        createdAt: '2026-10-28T00:00:00.000Z', updatedAt: '2026-10-28T00:00:00.000Z', expiresAt: null, correlationId: 'c', payload: { summary: 's', contextRefs: [], initiatedBy: 'platform', reason },
+      }).success).toBe(true);
+    }
   });
 
   it('reads the recorded disposition from termination details, strictly', () => {

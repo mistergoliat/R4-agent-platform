@@ -1,0 +1,85 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { Platform } from '@r4/api';
+import type { ModelRequest } from '@r4/model-gateway';
+import { createMigratedTestDatabase, type TestDatabase } from '../support/database.js';
+import { actionCapabilities, createActionTask, ledgerOf, startActionPlatform, WRITES } from '../support/actions.js';
+import { startTestWorker, type TestWorker } from '../support/worker.js';
+import { complete, compiledOf, contextOf, propose, sequence } from '../support/decisions.js';
+import { HUMAN, PARTICIPANT, input } from '../support/temporal.js';
+import { ensureTestLedger, handlerCalls, SET_TEST_RECORD_ID, testRecord } from '../fixtures/capabilities/test-ledger.js';
+
+/**
+ * R4-J4-R7 G0 audit probes (NOT part of the suite): an approved action and a
+ * customer input that changes the request while the approval is pending (W1)
+ * or after the decision but before execution (W2). Assertions state the
+ * CURRENT behavior on d0bb7a7: the approved action executes, and it executes
+ * before the model is asked anything with the new input in context.
+ */
+
+let db: TestDatabase;
+let platform: Platform;
+const workers: TestWorker[] = [];
+beforeEach(async () => {
+  db = await createMigratedTestDatabase();
+  platform = await startActionPlatform(db.url);
+  await ensureTestLedger(platform.pool);
+});
+afterEach(async () => {
+  for (const w of workers.splice(0)) await w.platform.close();
+  await platform?.close();
+  await db?.drop();
+});
+async function worker(options: Omit<Parameters<typeof startTestWorker>[1], 'workerId'>): Promise<TestWorker> {
+  const w = await startTestWorker(db.url, { workerId: `r7-approval-${workers.length}`, ...options });
+  workers.push(w);
+  return w;
+}
+const evidence = (probe: string, data: unknown) => console.log(`R7-EVIDENCE ${probe} ${JSON.stringify(data)}`);
+const conversationTexts = (r: ModelRequest) => JSON.stringify(compiledOf(r).sections.conversation);
+
+async function run(window: 'W1' | 'W2') {
+  const calls = handlerCalls();
+  const capabilities = actionCapabilities(platform.pool, { riskClass: 'IRREVERSIBLE_WRITE', calls });
+  const taskId = await createActionTask(platform);
+  const first = await worker({ capabilities, policy: WRITES, script: sequence([propose(SET_TEST_RECORD_ID, { recordKey: 'order', value: '100kg' })]) });
+  await first.platform.worker.runOnce();
+  const request = (await platform.temporal.inspect(taskId)).humans[0]!;
+  expect(request).toMatchObject({ kind: 'approval', status: 'requested', expiresAt: null });
+
+  const change = input('change-1', 'Mejor que sean 120 kg');
+  if (window === 'W1') await platform.temporal.submitInput(taskId, change, PARTICIPANT, 'r7-probe');
+  const statusAfterInput = window === 'W1' ? (await platform.tasks.getTask(taskId)).task.status : null;
+  await platform.temporal.respondHuman(request.requestId, { responseKey: 'decision', outcome: 'approve', content: 'Approved.' }, HUMAN);
+  if (window === 'W2') await platform.temporal.submitInput(taskId, change, PARTICIPANT, 'r7-probe');
+
+  const seen: ModelRequest[] = [];
+  const next = await worker({ capabilities, policy: WRITES, script: sequence([(r) => (seen.push(r), complete('done', contextOf(r).observations.map((o) => o.observationId)))]) });
+  await next.platform.worker.runOnce();
+  const ledger = await ledgerOf(platform.pool, taskId);
+  return { calls, ledger, seen, record: await testRecord(platform.pool, 'order'), statusAfterInput };
+}
+
+describe('R4-J4-R7 G0 approval probes on main d0bb7a7 (current behavior)', () => {
+  for (const window of ['W1', 'W2'] as const) {
+    it(`${window}: a request change arriving ${window === 'W1' ? 'while the approval is pending' : 'after approval, before execution'} does not stop the approved action`, async () => {
+      const { calls, ledger, seen, record, statusAfterInput } = await run(window);
+      // The approved (old) action executed exactly once with its original arguments.
+      expect(calls.execute).toBe(1);
+      expect(record).toMatchObject({ writeCount: 1 });
+      expect(ledger.decisions.map((d) => [d.outcome, d.reasonCode])).toEqual([['require_approval', 'risk_class_requires_approval'], ['allow', 'human_approved']]);
+      // The model is asked only after the execution: its first request already carries the succeeded observation AND the change.
+      expect(seen).toHaveLength(1);
+      expect(contextOf(seen[0]!).observations.map((o) => o.outcome)).toEqual(['rejected', 'succeeded']);
+      expect(conversationTexts(seen[0]!)).toContain('Mejor que sean 120 kg');
+      if (window === 'W1') expect(statusAfterInput).toBe('requires_approval');
+      evidence(`A-${window}`, {
+        statusAfterInput,
+        executeCalls: calls.execute,
+        decisions: ledger.decisions.map((d) => [d.outcome, d.reasonCode]),
+        receipts: ledger.receipts.map((r) => r.status),
+        firstModelCallObservations: contextOf(seen[0]!).observations.map((o) => o.outcome),
+        firstModelCallSawChange: conversationTexts(seen[0]!).includes('Mejor que sean 120 kg'),
+      });
+    });
+  }
+});

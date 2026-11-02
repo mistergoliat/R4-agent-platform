@@ -1,13 +1,14 @@
 import {
   EMPTY_RUN_USAGE,
-  NON_RETRYABLE_MODEL_FAILURE,
   PlatformError,
+  RUN_ABANDONED,
   RUN_FAILURE_RECOVERY_EXHAUSTED,
   RUN_FAILURE_RECOVERY_KEY,
   actionProposalSchema,
   contextSnapshotSchema,
   memoryEntrySchema,
   runFailureDisposition,
+  runFailureHandoffReason,
   runFailureRecoveryOf,
   runStatusForTermination,
   runStepSchema,
@@ -71,9 +72,12 @@ export interface ExecutionRuntimeOptions {
 /** ADR-028 default: one recovery run after a recoverable run failure. */
 export const DEFAULT_MAX_RUN_FAILURE_RECOVERIES = 1;
 
+/** Terminations that ended the task (`failed`) before the R4-J4-R7-1 amendment of ADR-028. */
+const FORMERLY_TERMINAL: ReadonlySet<TerminationReason> = new Set(['budget_exhausted', 'capability_failure', 'internal_failure', 'lease_lost']);
+
 /** Why the platform hands a task to a human after a run failure (ADR-028). */
 export interface RunFailureHandoffCause {
-  /** Task status reason and handoff reason: RUN_FAILURE_RECOVERY_EXHAUSTED or NON_RETRYABLE_MODEL_FAILURE. */
+  /** Task status reason and handoff reason: one of RUN_FAILURE_HANDOFF_REASONS. */
   readonly reason: string;
   readonly terminationReason: TerminationReason;
   readonly code: string;
@@ -90,6 +94,21 @@ export interface RunFailureHandoffCause {
  */
 export interface RunFailureHandoff {
   handOffAfterRunFailureWithin(uow: ExecutionUnitOfWork, task: AgentTask, run: AgentRun, cause: RunFailureHandoffCause, events: PendingEvent[]): Promise<AgentTask>;
+}
+
+/** (R4-J4-R7-2) What the Turn Completion Guard establishes about a `complete`. */
+export type TurnCompletionVerdict =
+  | { readonly kind: 'complete' }
+  /** The run ends as decided, the task does not: still running, no active run, the next claim starts a new run. */
+  | { readonly kind: 'deferred'; readonly code: 'turn_input_unseen' | 'turn_reply_pending'; readonly inputId: string };
+
+/**
+ * (R4-J4-R7-2) The Turn Completion Guard of `complete`. The Temporal Runtime
+ * attaches itself on construction. Called inside the transaction that ends
+ * the run, with the task row locked and the `complete` step appended.
+ */
+export interface TurnCompletionGuard {
+  completionWithin(uow: ExecutionUnitOfWork, task: AgentTask, step: RunStep, events: PendingEvent[]): Promise<TurnCompletionVerdict>;
 }
 
 export interface ClaimCommand {
@@ -265,6 +284,7 @@ export class ExecutionRuntime {
   readonly #maxRunRecoveries: number;
   readonly #maxRunFailureRecoveries: number;
   #runFailureHandoff: RunFailureHandoff | null = null;
+  #turnGuard: TurnCompletionGuard | null = null;
 
   constructor(options: ExecutionRuntimeOptions) {
     if (!Number.isInteger(options.maxRunRecoveries) || options.maxRunRecoveries < 0) {
@@ -290,6 +310,11 @@ export class ExecutionRuntime {
    */
   attachRunFailureHandoff(handoff: RunFailureHandoff): void {
     this.#runFailureHandoff = handoff;
+  }
+
+  /** (R4-J4-R7-2) Wires the Turn Completion Guard (the Temporal Runtime, on construction). Without one, `complete` is unguarded. */
+  attachTurnCompletionGuard(guard: TurnCompletionGuard): void {
+    this.#turnGuard = guard;
   }
 
   /**
@@ -343,6 +368,9 @@ export class ExecutionRuntime {
       }
 
       if (active.recoveries >= this.#maxRunRecoveries) {
+        // R4-J4-R7-1 (ADR-028 amendment): an abandoned run hands its task to a human; without the human runtime, it fails as before.
+        const handoff = this.#runFailureHandoff;
+        const details: JsonObject = { recoveries: active.recoveries, maxRunRecoveries: this.#maxRunRecoveries, previousOwner };
         const run = await finishRunWithin(
           uow,
           active,
@@ -352,14 +380,19 @@ export class ExecutionRuntime {
               reason: 'lease_lost',
               code: 'max_run_recoveries_exceeded',
               message: `run lost its lease ${active.recoveries + 1} times; limit is ${this.#maxRunRecoveries} recoveries`,
-              details: { recoveries: active.recoveries, maxRunRecoveries: this.#maxRunRecoveries, previousOwner },
+              details: handoff ? withRunFailureRecovery(details, { outcome: 'handed_off', consecutiveFailures: null, maxRunFailureRecoveries: this.#maxRunFailureRecoveries }) : details,
             },
             correlationId: task.correlationId,
           },
           timestamp,
           events,
         );
-        task = await transitionTaskWithin(uow, this.#ids, task, 'failed', 'lease_lost', actor, task.correlationId, timestamp, events);
+        if (handoff) {
+          events.push(['task.run_failure.contingency', { ...base, runId: run.runId, terminationReason: 'lease_lost', code: 'max_run_recoveries_exceeded', handoffReason: RUN_ABANDONED }]);
+          task = await handoff.handOffAfterRunFailureWithin(uow, task, run, { reason: RUN_ABANDONED, terminationReason: 'lease_lost', code: 'max_run_recoveries_exceeded', consecutiveFailures: null, actor }, events);
+        } else {
+          task = await transitionTaskWithin(uow, this.#ids, task, 'failed', 'lease_lost', actor, task.correlationId, timestamp, events);
+        }
         await uow.releaseLease(lease);
         events.push(['run.abandoned', { ...base, runId: run.runId, recoveries: active.recoveries, terminationReason: 'lease_lost' }]);
         return { kind: 'abandoned', task, run, previousOwner };
@@ -596,6 +629,11 @@ export class ExecutionRuntime {
    * platform handoff), never failed. The disposition is stamped on the run's
    * termination (`details.runFailureRecovery`). Every other failure is
    * unchanged.
+   *
+   * (R4-J4-R7-2) A `complete` passes the Turn Completion Guard first. When it
+   * defers, the run still completes as decided but the task does not follow:
+   * it stays `running` with no active run (the same pattern), and the next
+   * run sees why (`details.turnGuard`, and the reconsideration episode).
    */
   async finishExecution(token: LeaseToken, command: FinishExecutionCommand): Promise<{ task: AgentTask; run: AgentRun }> {
     const events: PendingEvent[] = [];
@@ -606,15 +644,21 @@ export class ExecutionRuntime {
       const timestamp = this.#clock.now().toISOString();
       const result = command.result ?? null;
       let current = owned.run;
+      let finalStep: RunStep | null = null;
       if (command.finalStep) {
         if (command.finalStep.outcome === 'pending') {
           throw new PlatformError('validation', 'validation_failed', 'a pending READ cannot end a run');
         }
-        await this.appendStepWithin(uow, owned, token, command.finalStep, timestamp, events);
+        finalStep = await this.appendStepWithin(uow, owned, token, command.finalStep, timestamp, events);
         current = (await uow.findActiveRun(owned.task.taskId)) ?? current;
       }
+      const guarded = reason === 'completed' && finalStep?.decision?.type === 'complete' && this.#turnGuard ? await this.#turnGuard.completionWithin(uow, owned.task, finalStep, events) : null;
+      const deferred = guarded?.kind === 'deferred' ? guarded : null;
       const recovery = await this.#runFailureRecovery(uow, current, command.termination);
-      const termination: TerminationInput = recovery === null ? command.termination : { ...command.termination, details: withRunFailureRecovery(command.termination.details, recovery) };
+      const kept = command.termination.details;
+      const termination: TerminationInput = deferred
+        ? { ...command.termination, details: { ...(kept && typeof kept === 'object' && !Array.isArray(kept) ? kept : {}), turnGuard: { outcome: 'deferred', code: deferred.code, inputId: deferred.inputId } } }
+        : recovery === null ? command.termination : { ...command.termination, details: withRunFailureRecovery(command.termination.details, recovery) };
       const run = await finishRunWithin(
         uow,
         current,
@@ -631,7 +675,11 @@ export class ExecutionRuntime {
       const actor = workerPrincipal(token.owner);
       const base = { taskId: owned.task.taskId, runId: run.runId, agentId: owned.task.agentId, workerId: token.owner, terminationReason: reason, failureClass: run.termination?.failureClass ?? null, code: run.termination?.code ?? null };
       let task: AgentTask;
-      if (recovery?.outcome === 'continued') {
+      if (deferred) {
+        // R4-J4-R7-2: the completion is deferred; still running, no active run: the next claim starts a new run.
+        task = owned.task;
+        events.push(['turn.closure.deferred', { ...base, code: deferred.code, inputId: deferred.inputId }]);
+      } else if (recovery?.outcome === 'continued') {
         // Same durable task, still running, no active run: the next claim is the recovery.
         task = owned.task;
         events.push(['task.run_failure.recoverable', { ...base, attempt: recovery.consecutiveFailures, maxRunFailureRecoveries: recovery.maxRunFailureRecoveries }]);
@@ -640,9 +688,11 @@ export class ExecutionRuntime {
           throw new PlatformError('internal', 'run_failure_handoff_unavailable', 'a run failure that needs a human cannot be handed over without the temporal runtime');
         }
         const exhausted = recovery.outcome === 'exhausted';
-        events.push([exhausted ? 'task.run_failure.recovery_exhausted' : 'task.run_failure.non_retryable', { ...base, consecutiveFailures: recovery.consecutiveFailures, maxRunFailureRecoveries: recovery.maxRunFailureRecoveries }]);
+        const handoffReason = exhausted ? RUN_FAILURE_RECOVERY_EXHAUSTED : runFailureHandoffReason(reason);
+        const event = exhausted ? 'task.run_failure.recovery_exhausted' : reason === 'model_failure' ? 'task.run_failure.non_retryable' : 'task.run_failure.contingency';
+        events.push([event, { ...base, consecutiveFailures: recovery.consecutiveFailures, maxRunFailureRecoveries: recovery.maxRunFailureRecoveries, handoffReason }]);
         task = await this.#runFailureHandoff.handOffAfterRunFailureWithin(uow, owned.task, run, {
-          reason: exhausted ? RUN_FAILURE_RECOVERY_EXHAUSTED : NON_RETRYABLE_MODEL_FAILURE,
+          reason: handoffReason,
           terminationReason: reason,
           code: run.termination?.code ?? reason,
           consecutiveFailures: recovery.consecutiveFailures,
@@ -776,6 +826,9 @@ export class ExecutionRuntime {
   async #runFailureRecovery(uow: ExecutionUnitOfWork, run: AgentRun, termination: TerminationInput): Promise<RunFailureRecovery | null> {
     const disposition = runFailureDisposition({ reason: termination.reason, details: termination.details ?? null });
     const maxRunFailureRecoveries = this.#maxRunFailureRecoveries;
+    // R4-J4-R7-1: the failures that were terminal before the ADR-028 amendment stay terminal without a human runtime
+    // (a platform that cannot hand over must still be able to end the run, never loop on an unrecordable ending).
+    if (disposition === 'human' && !this.#runFailureHandoff && FORMERLY_TERMINAL.has(termination.reason)) return null;
     if (disposition === 'human') return { outcome: 'handed_off', consecutiveFailures: null, maxRunFailureRecoveries };
     if (disposition !== 'recoverable') return null;
     let consecutiveFailures = 1;

@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { workerIdSchema } from '@r4/contracts';
 import { assertExecutionPolicy, type ExecutionPolicy } from '@r4/agent-kernel';
-import { DEFAULT_MAX_RUN_FAILURE_RECOVERIES, assertBuildRef, assertLeaseTiming } from '@r4/task-runtime';
+import { DEFAULT_MAX_RUN_FAILURE_RECOVERIES, TURN_GUARD_MODES, assertBuildRef, assertLeaseTiming, type TurnGuardMode } from '@r4/task-runtime';
 import { contextCompilationPolicySchema, type ContextCompilationPolicyInput } from '@r4/context-compiler';
 
 const int = (min: number) => z.coerce.number().int().min(min);
@@ -30,6 +30,8 @@ const configSchema = z.object({
   R4_EXEC_MAX_RUN_FAILURE_RECOVERIES: int(0).default(DEFAULT_MAX_RUN_FAILURE_RECOVERIES),
   // R4-D: write actions per task. 0 = this worker performs no writes unless the operator opts in.
   R4_EXEC_MAX_WRITE_ACTIONS: int(0).default(0),
+  // R4-J4-R7-2 Turn Completion Guard: `observe` only records what it would do (first canary gate and rollback).
+  R4_TURN_GUARD: z.enum(TURN_GUARD_MODES).default('enforce'),
   // R4-C2 context compilation policy (operator configuration).
   // Budget (ADR-015): unbounded by default — no R4-imposed limit. `fixed` requires R4_CONTEXT_MAX_TOKENS.
   R4_CONTEXT_BUDGET_MODE: z.enum(['unbounded', 'fixed']).default('unbounded'),
@@ -52,6 +54,8 @@ export interface WorkerConfig {
   readonly maxRunRecoveries: number;
   /** ADR-028: recovery runs after consecutive recoverable run failures; defaults to DEFAULT_MAX_RUN_FAILURE_RECOVERIES. */
   readonly maxRunFailureRecoveries?: number;
+  /** R4-J4-R7-2: Turn Completion Guard mode; defaults to `enforce`. */
+  readonly turnGuard?: TurnGuardMode;
   readonly execution: ExecutionPolicy;
   /** R4-C2: how the Context Compiler selects and bounds each model input. */
   readonly context: ContextCompilationPolicyInput;
@@ -90,6 +94,7 @@ export function loadWorkerConfig(env: NodeJS.ProcessEnv): WorkerConfig {
     pollIntervalMs: c.R4_WORKER_POLL_MS,
     maxRunRecoveries: c.R4_EXEC_MAX_RUN_RECOVERIES,
     maxRunFailureRecoveries: c.R4_EXEC_MAX_RUN_FAILURE_RECOVERIES,
+    turnGuard: c.R4_TURN_GUARD,
     execution: {
       maxIterations: c.R4_EXEC_MAX_ITERATIONS,
       maxModelCalls: c.R4_EXEC_MAX_MODEL_CALLS,

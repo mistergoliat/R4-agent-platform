@@ -1,0 +1,5 @@
+ ✓ |integration| tests/integration/r4-j4-r7-approval-probes.test.ts > R4-J4-R7 G0 approval probes on main d0bb7a7 (current behavior) > W1: a request change arriving while the approval is pending does not stop the approved action 8236ms
+ ✓ |integration| tests/integration/r4-j4-r7-approval-probes.test.ts > R4-J4-R7 G0 approval probes on main d0bb7a7 (current behavior) > W2: a request change arriving after approval, before execution does not stop the approved action 5781ms
+      Tests  2 passed (2)
+   Start at  18:27:03
+   Duration  25.89s (transform 4.60s, setup 0ms, import 10.71s, tests 14.02s, environment 0ms)

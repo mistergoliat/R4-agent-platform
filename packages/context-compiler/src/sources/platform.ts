@@ -141,6 +141,8 @@ export const goalSource: ContextSource = new MappingSource(PLATFORM_SOURCE_IDS.g
  *     takeover/release note) — CONVERSATIONAL with human provenance, never truth
  *   - the waits between runs and how each ended, with the agent's stated reason
  *   - goal changes the platform refused, so the agent can recover
+ *   - (R4-J4-R7-2) a silent closing the platform asked the agent to
+ *     reconsider, naming the conversational input that has no reply
  *
  * Conversation turns compete for the conversation budget (and compaction)
  * like any other turn; episodes like any other episode. No transcript is
@@ -154,7 +156,8 @@ export const interactionSource: ContextSource = new MappingSource(PLATFORM_SOURC
   for (const step of interactions.steps) {
     const decision = step.decision;
     if (!decision) continue;
-    if (decision.type === 'wait' && decision.reason !== undefined) waitReason.set(step.runId, decision.reason);
+    // A refused wait (R4-J4-R7-2) did not happen: its reason is not the reason of the run's wait.
+    if (decision.type === 'wait' && decision.reason !== undefined && step.outcome === 'recorded') waitReason.set(step.runId, decision.reason);
     if (decision.type === 'respond' && step.runId !== run.runId && step.outcome === 'recorded') {
       items.push({
         itemId: `response:${step.stepId}`,
@@ -175,6 +178,20 @@ export const interactionSource: ContextSource = new MappingSource(PLATFORM_SOURC
         authority: 'OBSERVED',
         temporality: 'point_in_time',
         content: { event: 'goal.change.rejected', change: decision.change, code: step.error.code, text: step.error.message },
+        provenance: { recordType: 'agent_run_step', recordId: step.stepId },
+        createdAt: step.createdAt,
+        observedAt: step.createdAt,
+        taskId: task.taskId,
+      });
+    }
+    // (R4-J4-R7-1) A consultation or handoff request the platform refused (e.g. a past expiry), so the agent can recover.
+    if ((decision.type === 'request_consultation' || decision.type === 'request_handoff') && step.outcome === 'refused' && step.error) {
+      items.push({
+        itemId: `decision_rejection:${step.stepId}`,
+        kind: 'episode',
+        authority: 'OBSERVED',
+        temporality: 'point_in_time',
+        content: { event: 'temporal.decision.rejected', decisionType: decision.type, code: step.error.code, text: step.error.message },
         provenance: { recordType: 'agent_run_step', recordId: step.stepId },
         createdAt: step.createdAt,
         observedAt: step.createdAt,
@@ -229,6 +246,31 @@ export const interactionSource: ContextSource = new MappingSource(PLATFORM_SOURC
       provenance: { recordType: 'task_wait', recordId: w.waitId },
       createdAt: w.completedAt ?? w.createdAt,
       observedAt: w.completedAt ?? w.createdAt,
+      taskId: task.taskId,
+    });
+  }
+  // The item id is what the guard looks for (INCLUDED in the deciding call's snapshot) to accept a ratification.
+  for (const e of interactions.closures ?? []) {
+    const [memoryItemId, receivedAt, code, decision] = [e.data.memoryItemId, e.data.receivedAt, e.data.code, e.data.decision].map(String) as [string, string, string, string];
+    const pending = Array.isArray(e.data.pendingItemIds) ? e.data.pendingItemIds.map(String) : [memoryItemId];
+    items.push({
+      itemId: `turn_closure:${e.eventId}`,
+      kind: 'episode',
+      authority: 'OBSERVED',
+      temporality: 'point_in_time',
+      content: {
+        event: 'turn.closure.reconsider',
+        inputId: e.entityId,
+        memoryItemId,
+        pendingItemIds: pending,
+        receivedAt,
+        code,
+        decision,
+        text: `The platform did not apply your ${decision === 'complete' ? 'completion of the task' : 'wait without replying'}: the conversation messages without a reply are ${pending.join(', ')} (latest received ${receivedAt}). Reread them. If any asks for or changes anything, handle it and reply; if no reply is needed, repeat your decision.`,
+      },
+      provenance: { recordType: 'temporal_event', recordId: e.eventId },
+      createdAt: e.occurredAt,
+      observedAt: e.occurredAt,
       taskId: task.taskId,
     });
   }

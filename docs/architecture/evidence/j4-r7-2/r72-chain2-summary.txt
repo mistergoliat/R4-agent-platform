@@ -1,0 +1,11 @@
+# R4-J4-R7-2 re-run after the test-only fixes (mutation anchors/regex, temporal-process-crash)
+typecheck rc=0 21s
+lint rc=0 56s
+mut-turn-guard rc=0 443s
+mut-recovery rc=0 1087s
+RECOVERY_NEXT
+recovery rc=0 162s
+DONE
+== recovery
+ Test Files  11 passed (11)
+      Tests  18 passed (18)

@@ -5,6 +5,7 @@
 - **Baseline R4-H:** `80a17332fe77eedb1ef63889c4f991f1ace0a980`
 - **Autoridad superior:** Constitución §25; PRD §7, §27; ADR-006, 007, 008, 009, 012, 018, 021
 - **Relacionado:** ADR-008 (se mantiene intacto), ADR-027 (evidencia), Architecture Gap Review post-H
+- **Enmienda:** R4-J4-R7-1 (2026-10-28) — contingencia de runtime; ver la sección final «Enmienda R4-J4-R7-1»
 
 ## Contexto
 
@@ -248,3 +249,69 @@ contrato de handoff, configuración, métricas de G, directivas de shadow);
 worker real); `tests/recovery/run-failure-recovery-crash.test.ts` (SIGKILL real
 durante la run de recuperación); suite shadow (casos H08A–H08I);
 `npm run test:mutation:recovery` (14 mutaciones).
+
+## Enmienda R4-J4-R7-1 — contingencia de runtime (2026-10-28)
+
+- **Mandato:** «R4 — Implementation Mandate J4-R7-1: Runtime Contingency & Recovery» (owner, G0 aprobado).
+- **Diseño:** `docs/architecture/R4_J4_R7_DESIGN.md` §5.1–5.3. Evidencia previa: `R4_J4_R7_EXECUTION_AUDIT.md`
+  (sondas P03, P04, P07, P09) y el canary R6 (R6-2, R6-4).
+
+**Problema.** La tabla original dejaba `capability_failure`, `budget_exhausted`, `internal_failure` y `lease_lost`
+como `terminal`: la task terminaba `failed`, sin respuesta ni handoff, y el siguiente mensaje del contacto abría una
+task nueva sin contexto. Ninguna de estas fallas establece que el **trabajo** sea terminal; sólo establece que la
+plataforma no puede seguir **de forma autónoma** dentro de esa run. Es el mismo error que este ADR corrigió para
+`invalid_decision`, aplicado a las demás clases.
+
+**Decisión.** La regla de este ADR se extiende: ninguna terminación de run lleva su task a `failed`.
+
+| Terminación | Antes | Ahora | Razón del handoff (`statusReason`) |
+|---|---|---|---|
+| `invalid_decision` (`finishReason` stop / length / other) | recoverable | **sin cambio** | — (al agotarse: `run_failure_recovery_exhausted`) |
+| `invalid_decision` con `finishReason = content_filter` | recoverable | **human** | `run_output_filtered` |
+| `model_failure` reintentable / no reintentable | recoverable / human | sin cambio | — / `non_retryable_model_failure` |
+| `budget_exhausted` (todas las dimensiones) | terminal | **human** | `run_budget_exhausted` |
+| `capability_failure` | terminal | **human** | `run_capability_failure` |
+| `internal_failure` | terminal | **human** | `run_internal_failure` |
+| `lease_lost` (abandono en `claimNext` tras `maxRunRecoveries`) | task `failed` | **human**, en la misma transacción del claim | `run_abandoned` |
+
+"human" usa el mismo mecanismo que este ADR ya tenía para el fallback humano: `handOffAfterRunFailureWithin`. La
+task pasa a `blocked`, se crea un handoff `requested` con `initiatedBy: 'platform'` y un `WAIT_FOR_HUMAN`, y queda
+visible en `attention()`. La run sigue `failed` (o `abandoned`) con
+`termination.details.runFailureRecovery = { outcome: 'handed_off', consecutiveFailures: null, … }`: **se conserva la
+distinción entre una run fallida y una task bloqueada**. Las razones se definen en `@r4/contracts`
+(`RUN_FAILURE_HANDOFF_REASONS`, `runFailureHandoffReason`).
+
+**`finishReason` (KC-2).** El kernel registra el `finishReason` de la llamada que produjo una salida inválida en
+`termination.details.finishReason` (sólo metadata, nunca el texto). Esto permite distinguir `length` (truncada,
+estocástica: una recuperación) de `content_filter` (determinista con el mismo contexto: contingencia, sin reintentos
+automáticos). Sin cambio de protocolo ni de esquema.
+
+**Fallback sin runtime humano.** Una plataforma sin Temporal Runtime adjunto no puede registrar un handoff. Para las
+cuatro clases que antes eran terminales, conserva el comportamiento anterior (`failed`), para no dejar una run en
+bucle sobre una terminación imposible de registrar (`ExecutionRuntime`, `FORMERLY_TERMINAL`). Las clases originales de
+este ADR mantienen su comportamiento (`run_failure_handoff_unavailable`).
+
+**Aviso al contacto.** Cada razón de `RUN_FAILURE_HANDOFF_REASONS` recibe el aviso fijo del pack por el dueño de la
+entrega (ADR-041, generalizado por esta misma enmienda).
+
+**Invariantes añadidos:**
+- Ninguna terminación de run produce una task `failed` cuando existe el runtime humano.
+- Los presupuestos siguen siendo techos duros: la contingencia **no** reinicia ni amplía ningún presupuesto, y no hay
+  run automática después de ella.
+- Idempotencia intacta: la contingencia no re-ejecuta propuestas, no genera claves ni duplica receipts; un efecto
+  incierto sigue su reconciliación, y el handoff no la sustituye.
+- La transición es atómica (run, task, handoff, espera y lease en una transacción).
+
+**Consecuencias.**
+- Más handoffs de plataforma, todos visibles. Antes eran fallos silenciosos.
+- Clientes de la API verán `blocked` donde antes veían `failed`.
+- Un abandono con efecto incierto ya no deja una intención terminal `failed`: queda un handoff y la reconciliación
+  establece el efecto; el humano decide después.
+- La invariante shadow `shadow.non_retryable_handed_off` se acota a `model_failure`.
+
+**Verificación (enmienda).**
+- `tests/unit/task-runtime/run-failure-recovery.test.ts`: tabla y razones.
+- `tests/unit/agent-kernel/kernel.test.ts`: KC-2.
+- `tests/integration/runtime-contingency.test.ts`: S03, S04, S08, S11–S16, S50, S53, S57.
+- Pruebas actualizadas en `run-failure-recovery`, `worker-kernel`, `reconciliation` y `sales-deterministic-offer-canary`.
+- `npm run test:mutation:runtime-contingency`.

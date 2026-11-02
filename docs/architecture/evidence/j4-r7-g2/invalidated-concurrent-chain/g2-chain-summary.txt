@@ -1,0 +1,46 @@
+# G2 chain at b12b7d5 started 2026-10-30T12:02:54-03:00
+clean rc=0 3s
+mut-turn-guard rc=1 484s
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed | 33 skipped (35)
+build rc=0 42s
+typecheck rc=0 34s
+lint rc=0 70s
+unit rc=0 46s
+ Test Files  85 passed | 1 skipped (86)
+      Tests  1531 passed | 4 skipped (1535)
+contract rc=0 26s
+ Test Files  33 passed (33)
+      Tests  452 passed (452)
+mut-runtime-contingency rc=0 446s
+11/11 mutations detected; all sources restored
+mut-recovery rc=0 786s
+14/14 mutations detected; all sources restored
+recovery rc=0 169s
+ Test Files  11 passed (11)
+      Tests  18 passed (18)
+tree after chain: 0 changed source files
+DONE 2026-10-30T12:26:55-03:00
+integration rc=1 1310s
+ Test Files  2 failed | 47 passed | 1 skipped (50)
+      Tests  28 failed | 659 passed | 16 skipped (703)
+excluded-inputs-after-fix rc=0 38s
+ Test Files  1 passed (1)
+      Tests  14 passed (14)
+sales rc=0 62s
+ Test Files  4 passed (4)
+      Tests  29 passed (29)
+shadow rc=0 85s
+ Test Files  1 passed (1)
+      Tests  5 passed (5)
+mut-turn-guard rc=1 953s
+22/24 mutations detected; all sources restored
+mut-runtime-contingency rc=0 419s
+11/11 mutations detected; all sources restored
+mut-recovery rc=0 641s
+14/14 mutations detected; all sources restored
+recovery rc=0 123s
+ Test Files  11 passed (11)
+      Tests  18 passed (18)
+tree after chain: 0 changed source files
+DONE 2026-10-30T13:07:08-03:00
