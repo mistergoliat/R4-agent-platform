@@ -371,6 +371,8 @@ export interface ProductionStore {
   attempts(outboundId: string): Promise<DeliveryAttemptRecord[]>;
   deliveryEvents(outboundId: string): Promise<DeliveryEventRecord[]>;
   thread(taskId: string): Promise<ThreadEntry[]>;
+  /** (R4-J4-R7-4) The tasks of the earlier bindings of `taskId`'s channel conversation, newest first (at most `limit`). */
+  earlierConversationTasks(taskId: string, limit: number): Promise<string[]>;
   conversations(limit: number): Promise<ConversationSummary[]>;
   attention(): Promise<ProductionAttention>;
   metrics(): Promise<ProductionMetrics>;

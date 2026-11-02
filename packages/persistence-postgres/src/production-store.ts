@@ -660,6 +660,19 @@ export class PostgresProductionStore implements ProductionStore {
     return entries.sort((a, b) => (a.cursor < b.cursor ? -1 : a.cursor > b.cursor ? 1 : 0));
   }
 
+  async earlierConversationTasks(taskId: string, limit: number): Promise<string[]> {
+    // ponytail: closed bindings have no (channel, conversation_key) index, so this scans them; add one if the table grows large.
+    const r = await query<Row>(
+      this.#pool,
+      `select e.task_id from channel_conversation_bindings c
+         join channel_conversation_bindings e on e.channel = c.channel and e.conversation_key = c.conversation_key and e.created_at < c.created_at and e.task_id is not null
+        where c.task_id = $1
+        order by e.created_at desc, e.binding_id desc limit $2`,
+      [taskId, limit],
+    );
+    return r.rows.map((row) => row.task_id as string);
+  }
+
   async conversations(limit: number): Promise<ConversationSummary[]> {
     const r = await query<Row>(
       this.#pool,
