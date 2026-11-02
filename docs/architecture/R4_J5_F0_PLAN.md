@@ -204,7 +204,7 @@ R7-4 avanza independientemente de Quote, en su propia rama local (`feat/r4-r7-4-
 
 | Requisito del owner | Estado (2026-11-02) |
 |---|---|
-| Regresión pendiente (L2 completa: el cambio es transversal, son 19 suites de mutación) | **En curso** en el worktree de R7-4. Sin resultado registrado aún. Esta línea de trabajo no corrió una cadena paralela, porque comparten la base local y `test:recovery` corta conexiones |
+| Regresión pendiente (L2 completa: el cambio es transversal, son 19 suites de mutación) | **Incompleta.** L1 produjo una corrección (`beddf58`, sobre `32e8173`), pero sus resultados no están registrados. L2 no se ha ejecutado. Esta línea de trabajo no corrió una cadena paralela, porque comparten la base local y `test:recovery` corta conexiones |
 | Continuidad entre tasks | Cubierta por R74-1 y R74-2 (L1). Pendiente de la confirmación en L2 |
 | Recuperación tras reinicio | R74-5 compila el turno siguiente con **otro worker en el mismo proceso y la misma base**: no reinicia el proceso ni la base. `test:recovery` no tiene un caso propio de este cambio. **Brecha a cubrir o a registrar como `NOT_RUN`** antes de pedir la aceptación |
 | Contexto preservado dentro del presupuesto | R74-6 |
