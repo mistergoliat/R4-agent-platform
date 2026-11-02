@@ -1,7 +1,7 @@
 ---
 title: R4 — estrategia de pruebas 02, validación progresiva por riesgo
-status: R4_TEST_STRATEGY_02_READY_FOR_REVIEW
-mandate: «R4 — Risk-Based Development Validation» (owner)
+status: R4_TEST_STRATEGY_02_APPROVED_WITH_CHANGES. Cambios del owner incorporados (§15)
+mandate: «R4 — Risk-Based Development Validation» y «R4 — Test Strategy 02: Final Review» (owner)
 date: 2026-11-02
 ---
 
@@ -9,14 +9,19 @@ date: 2026-11-02
 
 ## 1. Conclusión
 
-Hoy cada cambio, por pequeño que sea, se valida con la cadena completa, que tarda entre 3,5 y 5 horas. Esta estrategia la divide en cuatro niveles. El desarrollo corre sólo lo que el cambio puede romper, mientras que el PR y el release conservan la cadena completa. Ninguna garantía crítica se valida con menos pruebas que hoy. Cuando un cambio toca una garantía protegida (§6), se corren todas sus pruebas y mutaciones desde L1, sin selección.
+Hoy cada cambio, por pequeño que sea, se valida con la cadena completa, que tarda entre 3,5 y 5 horas. Esta estrategia separa tres fases, **desarrollo, integración y despliegue**, en cuatro niveles. El desarrollo corre sólo lo que el cambio puede romper. La integración y el despliegue conservan la cadena completa cuando el alcance o el riesgo lo justifican. Ninguna garantía crítica se valida con menos pruebas que hoy. Cuando un cambio toca una garantía protegida (§6), se corren todas sus pruebas y mutaciones desde L1, sin selección. Toda prueba que la matriz pide y no se corre queda registrada como **`NOT_RUN`** (§8).
 
-| Nivel | Cuándo | Duración objetivo | Mutaciones |
-|---|---|---|---|
-| **L0** | Ciclo de edición | 1–5 min | Ninguna, o una puntual |
-| **L1** | Cierre de una funcionalidad | 10–40 min | Las suites cuyo código muta el diff |
-| **L2** | Integración y PR | ~1 h más las mutaciones seleccionadas | Las suites del diff y las de cada garantía tocada. Todas, si el cambio es transversal |
-| **L3** | Release y despliegue | Igual que hoy | Las 18 suites |
+| Fase | Nivel | Cuándo | Duración objetivo | Mutaciones |
+|---|---|---|---|---|
+| **Desarrollo** | **L0** | Ciclo de edición | 1–5 min | Ninguna, o una puntual |
+| **Desarrollo** | **L1** | Cierre de una funcionalidad | 10–40 min | Las suites cuyo código muta el diff |
+| **Integración** | **L2** | PR hacia `main` | ~1 h más las mutaciones seleccionadas | Las suites del diff y las de cada garantía tocada. Todas, si el cambio es transversal |
+| **Despliegue** | **L3** | Release, sobre el SHA que se despliega | Igual que hoy | Las 18 suites, más el gate financiero si corresponde (§6.1) |
+
+**Qué se exige en cada fase:**
+- **Desarrollo:** validación rápida y focalizada. Nunca exige L3, tampoco en Checkout ni en pagos.
+- **Integración:** es la puerta de `main`. La cadena completa corre si el cambio es transversal (§4).
+- **Despliegue:** es la puerta de producción. Ahí se aplica el gate financiero (§6.1) a todo cambio que afecte garantías financieras.
 
 **Qué no cambia:** los gates de producción, los resultados de G1 y G2, los scripts de mutación, el criterio de aceptación de una mutación (N/N detectadas), el protocolo v5 y el runtime. Este documento no modifica código.
 
@@ -50,9 +55,9 @@ Hay tres cadenas completas medidas, todas en Windows con Node 22 y Postgres loca
 
 ## 3. Niveles: matriz de pruebas
 
-**✓** = obligatorio. **S** = seleccionado según §5. **—** = no se corre.
+**✓** = obligatorio. **S** = seleccionado según §5. **—** = no se corre. Lo que la columna exige y no se corre se registra como `NOT_RUN` (§8).
 
-| Paso | L0 desarrollo | L1 cierre | L2 integración/PR | L3 release |
+| Paso | L0, desarrollo | L1, desarrollo (cierre) | L2, integración (PR) | L3, despliegue |
 |---|---|---|---|---|
 | Worktree limpio, `npm ci` | — | — | ✓ | ✓ |
 | build | S, incremental | ✓, incremental | ✓, desde cero | ✓, desde cero |
@@ -66,6 +71,7 @@ Hay tres cadenas completas medidas, todas en Windows con Node 22 y Postgres loca
 | recovery | — | S, aislado | ✓, aislado | ✓, aislado |
 | interop (CIA y CP) | — | — | S | S. Obligatorio si cambian CIA, CP o sus adaptadores |
 | Mutaciones | — o puntual (§7) | S, las suites del diff | S, las del diff y las de las garantías tocadas. ✓ todas si el cambio es transversal | ✓, las 18 |
+| Gate financiero (§6.1) | — | S: las pruebas de las garantías financieras tocadas | S: ídem, completas | ✓ si el cambio afecta garantías financieras |
 | Gates del mandato (G-sem, canary, verificaciones) | — | — | — | Según el mandato |
 | Registro de evidencia (§8) | No requerido | ✓ | ✓, en el PR | ✓, sobre el SHA que se despliega |
 
@@ -98,6 +104,7 @@ Un cambio se clasifica por la combinación de tres ejes. El nivel mínimo en el 
 | Tipo | Riesgo mínimo |
 |---|---|
 | Sólo `.md` | Bajo |
+| Sólo presentación | Bajo |
 | Sólo pruebas o fixtures | Medio: puede debilitar una garantía. Corre la suite tocada y las mutaciones que la usan |
 | Runtime | Según los ejes 1 y 2 |
 | Migración | **Alto, siempre** |
@@ -105,6 +112,8 @@ Un cambio se clasifica por la combinación de tres ejes. El nivel mínimo en el 
 | Dependencias (`package-lock.json`) o configuración de build, lint o test | **Alto: transversal** |
 
 **Transversal** significa riesgo alto en el eje 1, una migración o un cambio de dependencias o configuración. Un cambio transversal se valida con la cadena completa en L2, con todas las mutaciones.
+
+**Documentación y presentación.** Un cambio de este tipo no activa la regresión completa ni la financiera. Cuenta como presentación un cambio de formato, de comentarios o de texto que no cambia la salida compilada ni ningún texto que el runtime emite. Se valida con build, typecheck y lint, y con contract si toca un documento que alguna prueba lee. **No es presentación** un cambio en un texto que el runtime envía al cliente o al modelo: instrucciones, avisos fijos o plantillas. Eso es un cambio de definición o de runtime.
 
 ## 5. Reglas de selección
 
@@ -145,11 +154,54 @@ Cuando un cambio toca el código de una garantía, desde L1 se corren completos 
 | **Integridad de migraciones** | `*/migrations/*.sql` | `migrations`, `migration-upgrade`, `migration-upgrade-c2`; contract `frozen-migrations` | `binding-immutability`, `identity-verification-state`, `production` (mutan SQL) |
 | **Control de ejecución** | `live-ops` (kill switch, rollout, autonomía), `agents/sales/src/production/control.ts`, `worker/presence`, perfiles fijados | `production-control`, `worker-readiness`, `profile-pinned-claims`, `production-bootstrap`; recovery `production-control-process`, `worker-presence-process` | `production-control`, `production`, `worker-readiness`, `profile-v8` |
 | **Outbox** | `live-ops/src/outbound.ts`, `delivery.ts`, tablas `outbound_*` | `live-ops-reference`, `live-ops-hardening`, `run-failure-fallback`; unit `live-ops/delivery` | `production`, `run-failure-fallback` |
-| **Pagos** | Aún no existe en R4. Llegará con J5.5 Checkout & Payments (PRD §40 R4-L): capacidades de checkout y pago y sus adaptadores, fuera de Core | Las que entregue J5.5, con su contrato HTTP, idempotencia y conciliación | Las que entregue J5.5. Una capacidad de pago **no se acepta sin su suite de mutación** |
-
-**Pagos es más estricto que el resto.** Todo cambio que toque una capacidad, un adaptador o una política de pago se valida como L3 en cualquier nivel desde L1: cadena completa, todas las mutaciones e interop contra el servicio real o su doble contractual. **La selección de §5 nunca se aplica a pagos.** Su evidencia se invalida con cualquier cambio en el adaptador, en el servicio externo o en su contrato (§9.7).
+| **Garantías financieras** | Aún no existen en R4. Llegarán con J5.5 Checkout & Payments (PRD §40 R4-L): capacidades de checkout y pago, sus adaptadores y la creación de órdenes, fuera de Core | Las que entregue J5.5, una por cada garantía de §6.1 | Las que entregue J5.5. Una capacidad de pago **no se acepta sin su suite de mutación** |
 
 La tabla se mantiene junto con el código. Cuando un cambio agrega una garantía, o mueve su código, la tabla se actualiza en el mismo PR.
+
+### 6.1 Gate financiero
+
+**Cuándo un cambio afecta garantías financieras.** Cuando toca alguna de estas piezas:
+- capacidades, adaptadores o políticas de checkout o pago;
+- la generación o la vigencia del enlace de pago;
+- la recepción o la verificación de la notificación de pago;
+- el estado del pago;
+- la creación de la orden;
+- la conciliación;
+- las migraciones de esas tablas;
+- el contrato con el servicio de pago o de Checkout;
+- las pruebas o mutaciones de cualquiera de ellas.
+
+**No lo afecta** un cambio sólo de documentación o de presentación (§4).
+
+**Por fase:**
+
+| Fase | Qué se exige |
+|---|---|
+| **Desarrollo** (L0, L1) | Selección normal (§5), que siempre incluye las pruebas de las garantías financieras tocadas. **No se exige L3** en cada iteración de Checkout o pagos |
+| **Integración** (L2) | La selección de L2, con las pruebas y mutaciones de las garantías financieras tocadas completas. Si el cambio es transversal, la cadena completa |
+| **Despliegue** (L3) | **El gate financiero completo**, sobre el SHA que se despliega, con cada punto en `PASS`. Un `NOT_RUN` en un punto obligatorio bloquea el despliegue |
+
+**El gate financiero**, obligatorio antes de producción para todo cambio que afecte garantías financieras:
+
+| # | Garantía | Qué demuestra la evidencia |
+|---|---|---|
+| F-1 | **Contratos** | Las pruebas de contrato del servicio de pago y de Checkout pasan contra la versión que se despliega: esquemas, códigos de error y estados |
+| F-2 | **Integración de pagos** | El flujo completo corre contra el servicio real en su modo de prueba o contra su doble contractual: crear, pagar, notificar y confirmar |
+| F-3 | **Idempotencia** | Un reintento, una notificación duplicada o una carrera entre dos entregas no producen un segundo cobro, una segunda orden ni un segundo efecto |
+| F-4 | **Vigencia estricta del enlace** | Un enlace vencido, usado o reemplazado se rechaza, también en el límite exacto de su vigencia. El pago tardío sobre un enlace vencido no crea orden y queda para conciliación |
+| F-5 | **Conciliación** | Todo pago acreditado se corresponde con exactamente un estado final del lado de R4, y toda divergencia se detecta y se reporta. Incluye las caídas a mitad del proceso (recovery) |
+| F-6 | **Orden sólo tras pago acreditado** | Ninguna orden se crea con el pago pendiente, rechazado, revertido o no verificado. La acreditación se verifica con el proveedor y no por lo que diga el modelo ni el cliente |
+| F-7 | **Mutaciones** | Las suites de mutación de las garantías F-3 a F-6 que el cambio afecta, N/N detectadas |
+
+**L3 completo**, es decir la cadena completa con las 18 suites de mutación más el gate financiero, se exige además cuando el alcance o el riesgo lo justifican:
+- un cambio transversal (§4);
+- un proveedor nuevo o un cambio en su contrato;
+- un cambio en el camino que mueve dinero o crea órdenes;
+- el primer despliegue de J5.5.
+
+En los demás casos, el gate financiero se agrega a la selección de L2 sobre el SHA del despliegue.
+
+La evidencia financiera se invalida con cualquier cambio en el adaptador, en el servicio externo o en su contrato (§9.7). Cuando un cambio agrega una garantía, o mueve su código, la tabla se actualiza en el mismo PR.
 
 ## 7. Política de mutaciones
 
@@ -188,11 +240,18 @@ Cada validación de L1 o superior deja un registro con estos campos:
 | Nivel y clasificación | L1, L2 o L3; zona, garantías tocadas y tipo de cambio (§4) |
 | Diff | Archivos tocados |
 | Ejecutado | Cada suite, con el comando y su resultado (tests y mutaciones N/N) |
-| Omitido | Cada suite que la matriz pedía y no se corrió, con su motivo |
+| Omitido | Cada suite que la matriz pedía y no se corrió, marcada **`NOT_RUN`**, con su motivo |
 | Motivo de la selección | Qué regla de §5 incluyó cada suite seleccionada |
 | Repeticiones | Toda prueba fallida que se repitió: el error original (timeout o aserción), el árbol de la repetición y su resultado |
 | Entorno | SO, Node, imagen de Postgres y carga concurrente conocida |
 | Riesgos residuales | Lo que la selección no cubre |
+
+**Resultados posibles.** Cada suite y cada punto de un gate se registra con uno de tres valores:
+- **`PASS`**: se ejecutó y cumplió su criterio.
+- **`FAIL`**: se ejecutó y no lo cumplió.
+- **`NOT_RUN`**: no se ejecutó, con su motivo.
+
+Ninguna omisión es silenciosa. `NOT_RUN` nunca equivale a `PASS`. Un gate con un `NOT_RUN` en un punto obligatorio no está aprobado. Una omisión aceptada por el owner sigue registrándose como `NOT_RUN`, con la referencia a esa decisión.
 
 Los logs completos pueden contener rutas locales o datos operativos. Por eso se guardan fuera del repositorio público, y el informe cita su resumen.
 
@@ -252,7 +311,7 @@ El nivel definitivo se confirma con el diff real de cada entrega. Esta tabla ant
 | **R7-3** (TTL de esperas humanas, avisos, horizonte de aprobaciones) | Transversal: `task-runtime`, `persistence-postgres`, probablemente una migración. Recuperación, autorizaciones, outbox y control de ejecución | Pruebas completas de esas cuatro garantías, más recovery. Mutaciones `turn-guard`, `runtime-contingency`, `run-failure-recovery`, `run-failure-fallback`, `production-control` y las nuevas de R7-3 | **Cadena completa**, con todas las mutaciones |
 | **R7-4** (linaje, predecesor, v10) | Transversal, más definición y perfil (riesgo alto siempre). Persistencia, migraciones y control de ejecución | Contratos de perfil y versionado, `profile-pinned-claims`, migraciones. Mutaciones `profile-v8` o su sucesora, `production`, `binding-immutability` | **Cadena completa**. v10 requiere autorización aparte |
 | **J5 Sales Autonomy** | Pack Sales fuera de Core. Si toca `production/` o perfiles, sube a riesgo alto. Control de ejecución y autorizaciones | sales, shadow, contract completo. Mutaciones `profile-v8`, `shadow` y `production-control`, si cambia la política | Selección L2. **Completa** si toca Core, perfiles o la política de acciones |
-| **Integraciones comerciales** (Quote, Checkout, Shipping, CP) | `adapters/domains/*`, fuera de Core. Idempotencia y conciliación, si escriben | Contrato HTTP del adaptador, sus unit, escenarios sales, `reconciliation` y `governed-execution` si escriben | Selección L2, más interop si cambian CIA o CP. **L3 con el servicio real** antes de desplegar, coordinado con el otro repositorio. **Lo que toque pagos (Checkout) se valida siempre como L3** (§6) |
+| **Integraciones comerciales** (Quote, Checkout, Shipping, CP) | `adapters/domains/*`, fuera de Core. Idempotencia y conciliación, si escriben | Contrato HTTP del adaptador, sus unit, escenarios sales, `reconciliation` y `governed-execution` si escriben | Selección L2, más interop si cambian CIA o CP. **L3 con el servicio real** antes de desplegar, coordinado con el otro repositorio. Lo que toque Checkout o pagos se itera con la selección normal y **pasa el gate financiero (§6.1) antes de producción** |
 
 ## 12. Riesgos residuales
 
@@ -263,6 +322,7 @@ El nivel definitivo se confirma con el diff real de cada entrega. Esta tabla ant
 | RR-3 | Repetir pruebas inestables puede ocultar un defecto | §8: sólo se acepta un timeout repetido sobre el mismo árbol y registrado; nunca una aserción |
 | RR-4 | La tabla de §6 puede quedar desactualizada | Se actualiza en el mismo PR que mueve el código. L3 corre todo de todos modos |
 | RR-5 | Las estimaciones de §10 vienen de pocas corridas en una sola máquina | O-1 primero. Ninguna optimización se adopta sin una medición que la respalde |
+| RR-6 | El gate financiero (§6.1) define categorías, pero sus pruebas y mutaciones aún no existen | J5.5 las entrega con la implementación. Mientras falten, sus puntos quedan en `NOT_RUN` y bloquean el despliegue |
 
 ## 13. Decisiones para el owner
 
@@ -270,8 +330,21 @@ El nivel definitivo se confirma con el diff real de cada entrega. Esta tabla ant
 2. En L2, aprobar que las mutaciones se limiten a las del diff y a las de las garantías tocadas, con todas en los cambios transversales y todas en L3. Recomendado.
 3. Autorizar la implementación de O-1, O-7 y O-9. Después, O-2 y O-3, como un cambio de herramientas con su propia regresión y sin tocar el runtime.
 4. Decidir O-8.
-5. Aprobar el tratamiento de pagos (§6): validación de nivel L3 desde L1 y sin selección.
-
 ## 14. Estado
 
-`R4_TEST_STRATEGY_02_READY_FOR_REVIEW`
+`R4_TEST_STRATEGY_02_APPROVED_WITH_CHANGES`, con los cambios incorporados.
+
+## 15. Cambios de la revisión final del owner (2026-11-02)
+
+| # | Pedido | Dónde |
+|---|---|---|
+| 1 | Mantener L0 a L3 | §1, §3 |
+| 2 | Separar desarrollo, integración y despliegue | §1 (fases), §3 (columnas), §6.1 |
+| 3 | No exigir L3 en cada iteración de Checkout o pagos | §1, §6.1 (fase de desarrollo), §11 |
+| 4 | Gate financiero antes de producción: contratos, integración de pagos, idempotencia, vigencia del enlace, conciliación, orden sólo tras pago acreditado, mutaciones | §6.1, F-1 a F-7 |
+| 5 | L3 completo cuando el alcance o el riesgo lo justifican | §6.1, §4 (transversal) |
+| 6 | Documentación y presentación no activan la regresión financiera | §4, §6.1 |
+| 7 | `NOT_RUN` para toda prueba omitida | §1, §3, §8 |
+| 8 | Sin reducir umbrales ni eliminar suites | §7, sin cambios |
+
+La versión anterior exigía L3 desde L1 en todo cambio de pagos. La reemplaza §6.1.
