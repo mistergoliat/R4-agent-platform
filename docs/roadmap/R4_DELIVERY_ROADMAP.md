@@ -59,11 +59,15 @@ Ningún hito se inicia sin autorización explícita. Esta tabla no declara entre
 | J5 — Sales Autonomy | Comportamiento del agente con Customer: estrategia, personalización, objetivos, prompts | Integración, contratos y adaptadores (J4) |
 | J6 — Benchmark & Reviewer | Benchmark y evaluación comercial; revisión | Activación productiva |
 | J7 — Production Readiness | Activación productiva, datos y clientes reales, rollout de `@8` desde `@3` con rollback propio | — |
-| Checkout / R4-L | Desarrollo paralelo e independiente (cuenta, carrito, pago, orden) | No bloquea J4. No forma parte de los hitos R4-J |
+| Checkout / R4-L | Desarrollo paralelo e independiente: sesión de compra, enlace de pago, conciliación y orden. **El carrito técnico PrestaShop lo crea Quote V2** (C-2) | No bloquea J4. No forma parte de los hitos R4-J. Checkout no crea carritos ni recalcula cotizaciones |
 
-Pendiente del owner: la secuencia de J4.5 (Catalog) respecto de J5 y la revisión de la rama sin
-fusionar `docs/r4-j55-roadmap-registration` (`d8a6b94`), que usa J5.5 como identificador provisional
-de Checkout. Por decisión del owner, Checkout pertenece a R4-L.
+Pendiente del owner: la secuencia de J4.5 (Catalog) respecto de J5.
+
+Decisión del owner (2026-11-02, [registro R4-J5 F0](../architecture/R4_J5_F0_OWNER_DECISION_RECORD.md)):
+
+- J5 conserva Sales Autonomy y R4-L conserva Checkout y pagos (C-3).
+- El plan F0–F8 de la [preparación comercial](../architecture/R4_J5_COMMERCIAL_INTEGRATION_READINESS.md) es transversal y no reemplaza esta estructura.
+- La rama sin fusionar `docs/r4-j55-roadmap-registration` (`d8a6b94`) queda **superada** donde asigna el carrito a Checkout, y J5.5 no se usa como identificador.
 
 ### 1.2 J4 — Customer Profile: desglose (auditoría cruzada, 2026-10-22)
 
