@@ -62,6 +62,8 @@ export const productionConfigSchema = z.strictObject({
     pollIntervalMs: z.int().min(10),
     holdRecheckMs: z.int().min(10),
   }),
+  /** (R4-J4-R7-4) Earlier tasks' turns older than this many days never enter a new task's context automatically. */
+  priorConversationDays: z.int().min(1).max(365).default(30),
 });
 export type ProductionConfig = z.infer<typeof productionConfigSchema>;
 
@@ -112,6 +114,7 @@ export function loadProductionConfig(env: Readonly<Record<string, string | undef
       pollIntervalMs: int(env.R4_PROD_DISPATCH_POLL_MS, 'R4_PROD_DISPATCH_POLL_MS', 1000),
       holdRecheckMs: int(env.R4_PROD_HOLD_RECHECK_MS, 'R4_PROD_HOLD_RECHECK_MS', 15_000),
     },
+    priorConversationDays: int(env.R4_PROD_PRIOR_CONVERSATION_DAYS, 'R4_PROD_PRIOR_CONVERSATION_DAYS', 30),
   });
   if (!parsed.success) throw new ProductionConfigError('invalid_production_config', `refusing to compose production:\n${z.prettifyError(parsed.error)}`);
   if (parsed.data.outbound.leaseMs <= parsed.data.outbound.providerTimeoutMs) {

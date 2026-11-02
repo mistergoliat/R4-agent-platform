@@ -84,6 +84,12 @@ describe('explicit production mode (fail closed)', () => {
   it('refuses a dispatch lease that does not outlive the provider timeout', () => {
     expect(() => loadProductionConfig({ ...PRODUCTION_ENV, R4_PROD_OUTBOUND_LEASE_MS: '5000', R4_PROD_PROVIDER_TIMEOUT_MS: '10000' })).toThrow(/must exceed/);
   });
+
+  it('(R4-J4-R7-4) the earlier-conversation window is 30 days by default, configurable from 1 to 365', () => {
+    expect(loadProductionConfig(PRODUCTION_ENV).config.priorConversationDays).toBe(30);
+    expect(loadProductionConfig({ ...PRODUCTION_ENV, R4_PROD_PRIOR_CONVERSATION_DAYS: '7' }).config.priorConversationDays).toBe(7);
+    for (const bad of ['0', '366', '1.5', 'x']) expect(() => loadProductionConfig({ ...PRODUCTION_ENV, R4_PROD_PRIOR_CONVERSATION_DAYS: bad })).toThrow(ProductionConfigError);
+  });
 });
 
 describe('production profile', () => {

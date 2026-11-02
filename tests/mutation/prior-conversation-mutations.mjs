@@ -1,7 +1,7 @@
 // R4-J4-R7-4 mutation checks of cross-task continuity: each mutation removes one guarantee (only the SAME
-// conversation, only EARLIER tasks, conversation turns only, the newest turns kept, the delivery truth, the
-// source composed by Sales) and EVERY test listed for it must FAIL (each test is run alone, by name). Sources are
-// restored byte for byte. The tests use the local PostgreSQL.
+// conversation, only EARLIER tasks, the time window, the newest turns kept, the delivery truth, the source composed
+// by Sales, the framing episode) and EVERY test listed for it must FAIL (each test is run alone, by name). Sources
+// are restored byte for byte. The tests use the local PostgreSQL; R74-5b (recovery) needs `npm run build`.
 //
 //   npm run test:mutation:prior-conversation
 import { spawnSync } from 'node:child_process';
@@ -9,6 +9,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 const UNIT = { project: 'unit', file: 'tests/unit/live-ops/prior-conversation.test.ts' };
 const IT = { project: 'integration', file: 'tests/integration/cross-task-continuity.test.ts' };
+const REC = { project: 'recovery', file: 'tests/recovery/cross-task-continuity-process.test.ts' };
 const SOURCE = 'packages/live-ops/src/context-source.ts';
 const STORE = 'packages/persistence-postgres/src/production-store.ts';
 const SALES = 'agents/sales/src/production/composition.ts';
@@ -16,23 +17,38 @@ const SALES = 'agents/sales/src/production/composition.ts';
 const MUTATIONS = [
   {
     name: 'PC-M1 another conversation of the channel leaks into the context',
-    edits: [{ file: STORE, from: 'e.channel = c.channel and e.conversation_key = c.conversation_key and', to: 'e.channel = c.channel and' }],
-    tests: [[IT, 'R74-2']],
+    edits: [{ file: STORE, from: 'e.channel = cur.channel and e.conversation_key = cur.conversation_key and', to: 'e.channel = cur.channel and' }],
+    tests: [[IT, 'R74-2'], [IT, 'R74-8']],
   },
   {
     name: 'PC-M2 the current task counts as its own earlier task (its inputs are duplicated)',
-    edits: [{ file: STORE, from: 'and e.created_at < c.created_at and', to: 'and e.created_at <= c.created_at and' }],
+    edits: [{ file: STORE, from: 'and e.created_at < cur.created_at and', to: 'and e.created_at <= cur.created_at and' }],
     tests: [[IT, 'R74-1'], [IT, 'R74-7']],
   },
   {
-    name: 'PC-M3 platform events of the thread enter as conversation turns',
-    edits: [{ file: SOURCE, from: ".filter((e) => e.kind !== 'event' && e.text !== null)", to: '.filter((e) => e.kind !== null)' }],
-    tests: [[UNIT, 'projects what was said']],
+    name: 'PC-M3 a contact turn before the window still enters (R-2)',
+    edits: [{ file: STORE, from: ' and i.received_at >= $2', to: '' }],
+    tests: [[IT, 'R74-8']],
   },
   {
-    name: 'PC-M4 the oldest turns are kept instead of the newest',
-    edits: [{ file: SOURCE, from: 'const shown = said.slice(-this.#maxTurns);', to: 'const shown = said.slice(0, this.#maxTurns);' }],
+    name: 'PC-M4 the source keeps the oldest turns instead of the newest',
+    edits: [{ file: SOURCE, from: 'const shown = turns.slice(-this.#maxTurns);', to: 'const shown = turns.slice(0, this.#maxTurns);' }],
     tests: [[UNIT, 'keeps the newest maxTurns']],
+  },
+  {
+    name: 'PC-M8 the statement keeps the oldest turns instead of the newest (R-8)',
+    edits: [{ file: STORE, from: 'order by t.at desc, t.id desc limit $3', to: 'order by t.at asc, t.id asc limit $3' }],
+    tests: [[IT, 'R74-8']],
+  },
+  {
+    name: 'PC-M9 the window is ignored: everything since the epoch enters (R-2)',
+    edits: [{ file: SOURCE, from: 'const since = new Date(request.now.getTime() - this.#windowMs).toISOString();', to: 'const since = new Date(0).toISOString();' }],
+    tests: [[UNIT, 'the window is 30 days']],
+  },
+  {
+    name: 'PC-M10 the default window is not 30 days (R-2)',
+    edits: [{ file: SOURCE, from: 'this.#windowMs = (options.windowDays ?? 30) * 86_400_000;', to: 'this.#windowMs = (options.windowDays ?? 300) * 86_400_000;' }],
+    tests: [[UNIT, 'the window is 30 days']],
   },
   {
     name: 'PC-M5 an earlier reply is shown without its delivery truth',
@@ -41,8 +57,8 @@ const MUTATIONS = [
   },
   {
     name: 'PC-M6 Sales does not compose the source (no continuity in production)',
-    edits: [{ file: SALES, from: ', new PriorConversationContextSource(options.store)]', to: ']' }],
-    tests: [[IT, 'R74-1'], [IT, 'R74-5']],
+    edits: [{ file: SALES, from: ', new PriorConversationContextSource(options.store, { windowDays: config.priorConversationDays })]', to: ']' }],
+    tests: [[IT, 'R74-1'], [IT, 'R74-5:'], [REC, 'R74-5b']],
   },
   {
     name: 'PC-M7 the framing episode is droppable',

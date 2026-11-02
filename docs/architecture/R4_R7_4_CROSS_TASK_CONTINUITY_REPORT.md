@@ -1,7 +1,7 @@
 ---
 title: R4-J4-R7-4 — continuidad conversacional entre tasks
-status: R4_R7_4_READY_FOR_REVIEW
-mandate: «R4 — R7-4 Cross-Task Continuity» (owner), base main@52a58f4
+status: R4_R7_4_HARDENING_COMPLETE_L2_PENDING
+mandate: «R4 — R7-4 Cross-Task Continuity», «R7-4 Final Hardening and L2» (etapa de endurecimiento) y la corrección de R74-5 (owner); base main@52a58f4
 date: 2026-11-02
 ---
 
@@ -13,11 +13,14 @@ date: 2026-11-02
 
 **Con este cambio**, la task nueva recibe lo que se dijo en las tasks anteriores de la **misma** conversación. Ese texto entra como conversación y nunca como evidencia, con su estado de entrega real, dentro del presupuesto de contexto y sin re-ejecutar nada.
 
-- **Infraestructura.** No se crea memoria paralela: se reutilizan los bindings de canal y el hilo del operador (`ProductionStore.thread`).
+- **Infraestructura.** No se crea memoria paralela: se usan los bindings de canal y los mismos registros que el hilo del operador (entradas, respuestas con su entrega y mensajes del operador).
 - **Cambios evitados.** No cambian los contratos de Core, el kernel, el compilador de contexto, las migraciones ni las definiciones o perfiles de Sales.
-- **Implementación.** Commits `32e8173` y `beddf58`, con un método de puerto aditivo, una fuente de contexto en live-ops y su registro en la composición productiva de Sales.
+- **Implementación.** Commits `32e8173` y `beddf58`, más el endurecimiento de §10:
+  - R-8: una sola sentencia acotada en lugar de una consulta por cada task anterior;
+  - R-2: ventana configurable de 30 días;
+  - una prueba real de reinicio de proceso, R74-5b.
 
-**Pruebas:** unit 6/6, integración 7/7 (un escenario por criterio de aceptación) y una suite de mutación nueva con 7/7 detectadas. L1 sobre `beddf58` queda en verde, con los timeouts bajo carga repetidos y registrados (§6). **Pendiente**, como `NOT_RUN`: seis suites de mutación existentes, la cadena L2 y la validación con modelo real. **R7-4 no queda aprobado con L1**: el PR debe pasar su gate L2.
+**Pruebas:** unit 7/7, integración 8/8, reinicio de proceso R74-5b PASS, configuración PASS. La regresión L1 sobre `beddf58` sigue en §6. El endurecimiento se validó con pruebas focalizadas (§10). **Pendiente**, como `NOT_RUN`: la suite de mutación `prior-conversation` (actualizada, sin ejecutar), las suites existentes según su matriz, la cadena L2 y la campaña semántica. **R7-4 no está aprobado**: el PR debe pasar su gate L2.
 
 ## 2. Fase A: brechas reales
 
@@ -50,17 +53,17 @@ Sonda sobre el testbed productivo (gateway, worker y Postgres reales, modelo gui
 
 ## 3. Fase B: diseño
 
-**Linaje sin estructura nueva.** Las tasks anteriores de una conversación son las de los bindings anteriores con el mismo `(channel, conversation_key)`. La consulta es `ProductionStore.earlierConversationTasks(taskId, limit)`.
+**Linaje sin estructura nueva.** Las tasks anteriores de una conversación son las de los bindings anteriores con el mismo `(channel, conversation_key)`. La consulta es `ProductionStore.earlierConversationTurns(taskId, { since, limit, maxTasks })` (§10; en `beddf58` era `earlierConversationTasks`).
 - Es determinista: un binding cerrado es inmutable y `created_at` ordena los bindings.
 - No requiere tocar `ingress`, el factory, la creación de tasks ni `parentTaskId`.
 
-**Transcript sin memoria paralela.** Para cada task anterior se usa `thread(taskId)`, la vista del hilo que ya usan el operador y Quote. Incluye las entradas del cliente, las respuestas del agente con su estado de entrega y los mensajes del operador.
+**Transcript sin memoria paralela.** Se usan los mismos registros que `thread(taskId)`, la vista del hilo que ya usan el operador y Quote: las entradas del cliente, las respuestas del agente con su estado de entrega y los mensajes del operador. Desde §10, se leen con una sola sentencia para todas las tasks anteriores. `thread()` no se modificó.
 
 **`PriorConversationContextSource`** (live-ops, registrada vía `WorkerBindings.contextSources`) emite:
 - **turnos `prior_turn:<id>`**: `conversation_turn` de autoridad `CONVERSATIONAL`, con el `taskId` de la task actual (el alcance) y la procedencia del registro original. Llevan `earlierTask: true` y, en las salidas, la verdad de entrega: «received», «sent», «NOT sent», «not sent»;
 - **un episodio `prior_conversation:<task>`**: `OBSERVED`, `required`. Dice que es conversación anterior, que nada de eso es evidencia actual, que se debe releer con capacidades lo que importe y que no se repita lo ya recibido.
 
-Límites: como máximo 20 turnos de como máximo 10 tasks, conservando los más recientes, y deja de leer tasks una vez que tiene suficientes. Si faltan turnos, el episodio lo indica.
+Límites: como máximo 20 turnos, de como máximo 10 tasks y de los últimos 30 días (§10), conservando los más recientes. Si faltan turnos, el episodio lo indica.
 
 | Requisito del mandato | Cómo se cumple |
 |---|---|
@@ -82,7 +85,8 @@ Límites: como máximo 20 turnos de como máximo 10 tasks, conservando los más 
 
 | Contrato | Cambio | Compatibilidad |
 |---|---|---|
-| `ProductionStore` (`@r4/live-ops`) | `+earlierConversationTasks(taskId, limit)` | Aditivo. Única implementación: `PostgresProductionStore` |
+| `ProductionStore` (`@r4/live-ops`) | `+earlierConversationTurns(taskId, { since, limit, maxTasks })` | Aditivo. Única implementación: `PostgresProductionStore` |
+| `ProductionConfig` (`@r4/live-ops`) | `+priorConversationDays` (`R4_PROD_PRIOR_CONVERSATION_DAYS`, de 1 a 365, por defecto 30) | Aditivo, con valor por defecto. Cambia la huella de la configuración |
 | `@r4/live-ops` (exportaciones) | `+PriorConversationContextSource`, `+PRIOR_CONVERSATION_SOURCE_ID` | Aditivo |
 | Composición productiva de Sales | Registra la fuente | **Cambia lo que ve el modelo en producción** al desplegar (§7) |
 | `@r4/contracts`, kernel, compilador, Task Runtime | Ninguno | — |
@@ -94,7 +98,9 @@ Límites: como máximo 20 turnos de como máximo 10 tasks, conservando los más 
 | Archivo | Cambio |
 |---|---|
 | `packages/live-ops/src/ports.ts` | Método de puerto |
-| `packages/persistence-postgres/src/production-store.ts` | Consulta de las tasks de bindings anteriores. Recorre los bindings, porque no hay índice por `(channel, conversation_key)` para los cerrados (§8, R-4) |
+| `packages/persistence-postgres/src/production-store.ts` | Una sentencia acotada con los turnos de las tasks anteriores. Recorre los bindings, porque no hay índice por `(channel, conversation_key)` para los cerrados (§8, R-9) |
+| `packages/live-ops/src/mode.ts` | `priorConversationDays` |
+| `tests/recovery/cross-task-continuity-process.test.ts` y `fixtures/continuity-production-worker.mjs` | R74-5b: reinicio real de proceso |
 | `packages/live-ops/src/context-source.ts` | `PriorConversationContextSource` |
 | `agents/sales/src/production/composition.ts` | Registro de la fuente |
 | `tests/unit/live-ops/prior-conversation.test.ts` | 6 pruebas de la proyección |
@@ -111,7 +117,8 @@ Límites: como máximo 20 turnos de como máximo 10 tasks, conservando los más 
 | Referencia a un producto mencionado antes | R74-1, R74-2 (varias tasks; otra conversación no entra) | PASS |
 | Sin reutilizar autorizaciones vencidas | R74-3: la observación anterior no está en el contexto; citarla da `invalid` / `unknown_evidence`; ninguna acción | PASS |
 | Sin duplicar respuestas ni herramientas | R74-1 (una sola entrada nueva), R74-4 (conteos de la task anterior intactos; 1 salida nueva) | PASS |
-| Un reinicio no destruye la continuidad | R74-5: otro worker compila los mismos turnos | PASS |
+| Un reinicio no destruye la continuidad | **R74-5** (corregido): dentro de un mismo proceso, se cierra un worker y otra instancia compila los mismos turnos. Demuestra que la continuidad no depende del estado de una instancia de worker. **No es un reinicio de proceso** | PASS (continuidad entre workers) |
+| | **R74-5b** (nuevo, `tests/recovery`): dos procesos hijos reales del worker productivo. El proceso A sirve el primer turno de la task nueva y recibe SIGKILL. El proceso B, distinto y sin memoria compartida, recupera desde PostgreSQL los mismos turnos, en orden causal, una vez cada uno, con el estado de entrega «the contact received it». No hay reenvío ni re-ejecución en la task anterior | PASS (reinicio de proceso) |
 | Dentro del presupuesto | R74-6: con un tope de 2 turnos, los demás quedan excluidos por `policy`; el episodio, incluido | PASS |
 | No se inventa información | R74-7: sin tasks anteriores no hay ítems; una respuesta nunca enviada figura como «not sent» | PASS |
 
@@ -169,13 +176,14 @@ La prueba acumula varias tasks del mismo cliente, y la fuente nueva cuesta 1 + 5
 | # | Riesgo | Tratamiento |
 |---|---|---|
 | R-1 | **Comportamiento real del modelo no medido.** Podría tomar un precio o una disponibilidad antiguos como vigentes | El episodio lo prohíbe expresamente y el contenido no tiene autoridad de evidencia. Hace falta la validación con modelo real (§7.3) |
-| R-2 | **Sin límite de antigüedad.** Una conversación de hace meses entra igual (hasta 20 turnos) | Decisión del owner: ¿agregar una edad máxima? |
+| R-2 | ~~Sin límite de antigüedad~~ | **Resuelto** (§10): ventana de 30 días configurable (`R4_PROD_PRIOR_CONVERSATION_DAYS`, de 1 a 365) |
 | R-3 | Las instrucciones de Sales no mencionan la conversación anterior. El encuadre está sólo en el episodio | Sin definición nueva (v10 requiere autorización). Revisarlo junto con R-1 |
 | R-4 | La consulta recorre los bindings cerrados, porque no hay índice por conversación | Aceptable con el volumen actual (`ponytail:` en el código). Si crece, un índice requiere una migración |
 | R-5 | La continuidad depende de `conversation_key`, que es un hash con la clave de identidad. Rotar esa clave corta la continuidad | Documentado. No se rota hoy |
 | R-6 | Las entradas anteriores usan la hora de recepción del servidor y las actuales la hora del proveedor. Con desfase de reloj, el orden relativo puede variar algunos segundos | Es la misma mezcla que ya existe dentro de una task |
 | R-7 | Fuera de alcance: `disposition` veraz (C-5) y la revisión de `maxWriteActions` (D-7) | Registradas para R7-3 o R7-4b |
-| R-8 | **El costo crece con el historial.** La fuente llama a `thread()` por cada task anterior, con 5 consultas cada vez: hasta 51 consultas por llamada al modelo con 10 tasks (unos 80 ms con 7, medido bajo carga). Es pequeño frente a la latencia del modelo, pero se paga en cada iteración | Propuesta: una sola consulta que devuelva los turnos de las tasks anteriores, con costo constante. Requiere repetir L1 focalizado. Decisión del owner antes de L2 |
+| R-8 | ~~El costo crece con el historial (N+1)~~ | **Resuelto en sus ida y vuelta** (§10): siempre 1 sentencia. Lo que sigue creciendo es el trabajo examinado (ver R-9) |
+| R-9 | **La búsqueda de bindings anteriores recorre la tabla entera.** No hay índice por `(channel, conversation_key)` para los bindings cerrados, así que el trabajo crece con el total de bindings, no con la conversación. El resto del plan usa índices existentes | Aceptable con el volumen actual. Un índice requiere una migración: queda para decisión del owner, fuera de este alcance |
 
 ## 9. Propuesta para `R4_TEST_STRATEGY_02`: mutaciones por invariante
 
@@ -197,3 +205,97 @@ Si ninguna se cumple, la suite queda `NOT_RUN` en L1, con la salida de la compro
 **Herramienta.** La comprobación usada aquí (anclas de cada suite: conteo en la base y en el HEAD, y solapamiento con las líneas del diff en el mismo archivo) puede pasar a ser un script del repositorio, por ejemplo `scripts/mutation-impact.mjs`. Daría M-1 a M-3 de forma automática; M-4 sigue siendo juicio humano.
 
 **Límite.** Las anclas son texto. M-1 a M-3 no ven una interacción semántica lejana, y por eso M-4 y la integración completa siguen siendo obligatorias cuando el cambio es transversal.
+
+## 10. Endurecimiento: R-8, R-2 y corrección de R74-5
+
+Mandatos del owner del 2026-11-02: «R7-4 Final Hardening and L2», con su plan de ejecución modificado (sólo R-8 y R-2, pruebas focalizadas, sin mutaciones ni L2), y la corrección de R74-5. Todo se hizo en secuencia, en el mismo worktree, sin ejecuciones concurrentes sobre el árbol.
+
+### 10.1 R-8: una sola sentencia acotada
+
+`ProductionStore.earlierConversationTurns(taskId, { since, limit, maxTasks })` reemplaza a `earlierConversationTasks` más un `thread()` por cada task anterior. Funciona así:
+- **Aislamiento.** Se queda sólo con los bindings anteriores de la misma conversación, es decir con el mismo `(channel, conversation_key)` y `created_at` menor que el del binding actual.
+- **Recorte.** Descarta los bindings cerrados antes de la ventana, que no pueden contener un turno dentro de ella. Luego toma las `maxTasks` tasks más recientes.
+- **Contenido.** Lee sus turnos de una sola vez: las entradas del cliente, las respuestas `respond` registradas con su entrega y los mensajes del operador.
+- **Selección.** Devuelve los `limit` más recientes en orden ascendente.
+
+`thread()` no se tocó.
+
+Garantías conservadas, cada una con su prueba:
+
+| Garantía | Prueba |
+|---|---|
+| Aislamiento por conversación | R74-2, R74-8 |
+| Orden causal | R74-8 (cursores ordenados), R74-5b |
+| Estado de entrega | R74-8 (`delivered` y `null`), R74-5b |
+| Sin duplicados | R74-8, R74-5b, R74-1 |
+| Sólo tasks anteriores | R74-1, R74-7 |
+| Presupuesto | R74-6 |
+
+**Medición antes y después.** Misma sonda (temporal, no versionada) y mismo escenario: N tasks anteriores de 3 turnos cada una. Por cada N hay 20 cargas de la fuente, con las consultas contadas en el pool. Después, cada sentencia de una carga se reejecuta con `EXPLAIN (ANALYZE, BUFFERS)`. «Antes» es `0202440`, «después» el árbol de este commit, medidos uno tras otro en la misma máquina, compartida con otra sesión.
+
+| N | Consultas | p50 | p90 | Filas examinadas | Filas devueltas | Bloques | Ítems / bytes en contexto |
+|---|---|---|---|---|---|---|---|
+| 0 | 1 → 1 | 17,5 → 14,3 ms | 36 → 24 ms | 2 → 3 | 0 → 0 | 3 → 8 | 0 / 2 → igual |
+| 1 | 6 → **1** | 56,6 → 13,7 ms | 131 → 22 ms | 22 → 13 | 4 → 3 | 19 → 16 | 4 / 2.395 → igual |
+| 2 | 11 → **1** | 113 → 13,6 ms | 181 → 22 ms | 42 → 25 | 8 → 6 | 35 → 24 | 7 / 3.774 → igual |
+| 4 | 21 → **1** | 184 → 14,7 ms | 260 → 44 ms | 82 → 50 | 16 → 12 | 68 → 40 | 13 / 6.533 → igual |
+| 6 | 31 → **1** | 139 → 19,6 ms | 313 → 29 ms | 122 → 79 | 24 → 18 | 102 → 56 | 19 / 9.291 → igual |
+| 8 | 36 → **1** | 261 → 10,7 ms | 435 → 16 ms | 143 → 112 | 29 → 21 | 120 → 73 | 21 / 10.219 → igual |
+
+Lectura honesta de la tabla:
+- Las **idas y vueltas** pasan a ser siempre 1.
+- **No es costo constante**: las filas examinadas y los bloques siguen creciendo con N, con tope en 10 tasks y en la ventana.
+- **El contexto incorporado es idéntico** antes y después.
+- Plan con N=8: todos los accesos usan índices existentes (`one_per_task`, `task_inputs`, `memory_entries_pkey`, `agent_run_steps_respond`, `outbound_messages_response_step_id_key`, `outbound_messages_operator_key`) **salvo un `Seq Scan` sobre `channel_conversation_bindings`**, que crece con el total de bindings (R-9).
+- Las latencias absolutas son ruidosas por la carga de la máquina. La comparación vale por el orden de magnitud.
+
+**Escenarios de integración relevantes**, alternando antes y después, 5 corridas de cada uno, con la máquina muy cargada:
+
+| Escenario | Antes | Después |
+|---|---|---|
+| `turn-completion-guard` › G2 A1 (varias tasks por cliente) | 2 timeouts en 5 (30,7 y 30,2 s); las que pasan, 24,9–28,8 s | 5/5 pasan, 16,9–29,1 s, promedio 25,7 s |
+| `cross-task-continuity.test.ts` | 7 pruebas | 8 pruebas |
+
+El archivo de continuidad no es comparable: el «después» tiene una prueba más (R74-8), y la carga creció durante la serie.
+
+### 10.2 R-2: ventana de 30 días
+
+- **Configuración.** `R4_PROD_PRIOR_CONVERSATION_DAYS`, de 1 a 365, por defecto 30, en `ProductionConfig.priorConversationDays`. Sales la pasa a la fuente. La fuente calcula `since` con el reloj de la compilación (`request.now`).
+- **Alcance.** Sólo limita la incorporación automática de turnos anteriores. No borra nada, y la task activa (entradas, memoria, respuestas) no se filtra. El presupuesto de contexto sigue aplicándose.
+- **Sin agregados.** Ni búsqueda semántica ni resúmenes.
+
+| Verificación | Prueba | Resultado |
+|---|---|---|
+| Valor por defecto, configurable y rechazo de valores inválidos (0, 366, 1.5, x) | unit `mode-profile-rollout` | PASS |
+| `since` = ahora − 30 días; un día deja fuera lo anterior | unit `prior-conversation` (R-2) | PASS |
+| Borde inclusivo; 1 ms después queda fuera | R74-8 | PASS |
+| La referencia fuera de la ventana («discos») no aparece | R74-8 | PASS |
+| Conversación sin historial reciente: nada | R74-8 y unit | PASS |
+
+### 10.3 R74-5 y R74-5b
+
+R74-5 se mantiene con su alcance real: continuidad entre instancias de worker **dentro de un proceso**. R74-5b, en `tests/recovery`, agrega el reinicio real de proceso (§6). Ese criterio de aceptación queda **cubierto**.
+
+### 10.4 Evidencia de esta etapa
+
+Árbol del commit de endurecimiento. Windows, Node 22, Postgres local.
+
+| Paso | Resultado |
+|---|---|
+| build, typecheck, lint | PASS |
+| unit (completo) | PASS: 1539, 4 omitidas |
+| contract (completo) | PASS: 462/462 |
+| integración `cross-task-continuity` | PASS: 8/8 |
+| recovery `cross-task-continuity-process` (R74-5b) | PASS. Repetida tras corregir lint en la propia prueba |
+
+**`NOT_RUN` en esta etapa**, por decisión del owner, para el gate siguiente:
+
+| Pendiente | Motivo | Gate |
+|---|---|---|
+| Suite `prior-conversation` | Actualizada a 10 mutaciones: anclas reapuntadas a la sentencia nueva, más ventana (PC-M3, PC-M9, PC-M10) y orden SQL (PC-M8). Se verificó que cada ancla aparece una vez. Sin ejecutar | L2 |
+| Suites de mutación existentes | Requieren la matriz suite → invariante → impacto del diff final antes de decidir cuáles corren | L2 |
+| Integration, sales, shadow y recovery completos | Fuera del alcance de esta etapa | L2 |
+| Campaña semántica DeepSeek (≤ 60 llamadas, ≤ US$2) | Autorizada para después de L2 | Posterior a L2 |
+| Paso de `config.priorConversationDays` desde la composición | No lo detecta ninguna prueba: no se puede envejecer datos por días en el testbed. Lo cubren el tipo y la prueba de configuración | Riesgo registrado |
+
+**Estado:** `R4_R7_4_HARDENING_COMPLETE_L2_PENDING`. R7-4 no está aprobado. El gate siguiente es L2.

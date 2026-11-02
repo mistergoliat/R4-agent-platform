@@ -150,7 +150,9 @@ describe('cross-task continuity (R4-J4-R7-4)', () => {
     expect(b.provider.sends.length).toBe(2);
   });
 
-  it('R74-5: a restart does not lose the continuity: another worker compiles the same earlier conversation', async () => {
+  // Same process: the first worker is closed and a second worker instance is created over the same database. This
+  // proves no worker-instance state carries the continuity; a real process restart is R74-5b (tests/recovery).
+  it('R74-5: across worker instances in one process, a second worker compiles the same earlier conversation', async () => {
     const b = await start();
     await b.customer(CUSTOMER, 'wamid.r74-5a', 'Busco un banco regulable');
     b.next(say('Tenemos el banco Atlas.'));
@@ -210,5 +212,50 @@ describe('cross-task continuity (R4-J4-R7-4)', () => {
     const reply = priorTurns(shown.seen()).find((t) => (t.content as { text: string }).text === 'Tenemos el banco Atlas.')!;
     expect(reply.content).toMatchObject({ actor: { role: 'agent' }, earlierTask: true, delivery: 'not sent' });
     expect(keyOf(CUSTOMER)).not.toBe(keyOf(OTHER));
+  });
+
+  it('R74-8: one bounded statement — the window (inclusive edge), task and turn limits, causal order, isolation and delivery state', async () => {
+    const b = await start();
+    await b.customer(CUSTOMER, 'wamid.r74-8a', 'Busco discos de 20 kg');
+    b.next(say('Tenemos discos de 20 kg.'));
+    await b.runAgent();
+    await b.deliver();
+    await b.status([{ id: b.provider.sends[0]!.providerMessageId!, status: 'delivered', recipientId: CUSTOMER }]);
+    await closeTask(b, CUSTOMER, 'wamid.r74-8b');
+    await b.customer(OTHER, 'wamid.r74-8x', 'Conversación de otro contacto');
+    b.next(say('Anotado.'));
+    await b.runAgent();
+    await closeTask(b, OTHER, 'wamid.r74-8y');
+    await b.customer(CUSTOMER, 'wamid.r74-8c', '¿Y barras olímpicas?');
+    b.next(say('También tenemos barras.'));
+    await b.runAgent();
+    await closeTask(b, CUSTOMER, 'wamid.r74-8d');
+    await b.customer(CUSTOMER, 'wamid.r74-8e', 'Mensaje de la task actual');
+    b.next(say('Hola.'));
+    await b.runAgent();
+    const current = await b.taskOf(CUSTOMER);
+    const turns = (since: string, limit = 100, maxTasks = 10) => b.store.earlierConversationTurns(current, { since, limit, maxTasks });
+
+    const all = await turns('1970-01-01T00:00:00.000Z');
+    expect(all.earlierTasks).toBe(2);
+    expect(all.turns.map((t) => t.text)).toEqual(['Busco discos de 20 kg', 'Tenemos discos de 20 kg.', 'Ok, gracias', '¿Y barras olímpicas?', 'También tenemos barras.', 'Ok, gracias']);
+    expect(all.turns.map((t) => t.kind)).toEqual(['contact', 'agent', 'contact', 'contact', 'agent', 'contact']);
+    expect(all.turns.map((t) => t.cursor)).toEqual([...all.turns.map((t) => t.cursor)].sort());
+    expect(new Set(all.turns.map((t) => t.cursor)).size).toBe(6);
+    expect(all.turns[1]!.delivery?.status).toBe('delivered');
+    expect(all.turns[4]!.delivery).toBeNull();
+
+    // The window edge is inclusive; a turn before it — the product named in the first task — is left out.
+    const edge = all.turns[3]!.at;
+    expect((await turns(edge)).turns.map((t) => t.text)).toEqual(['¿Y barras olímpicas?', 'También tenemos barras.', 'Ok, gracias']);
+    expect((await turns(new Date(Date.parse(edge) + 1).toISOString())).turns.map((t) => t.text)).toEqual(['También tenemos barras.', 'Ok, gracias']);
+    expect(JSON.stringify(await turns(edge))).not.toContain('discos');
+    // No recent history: nothing, and the source contributes nothing.
+    expect(await turns(new Date().toISOString())).toEqual({ turns: [], earlierTasks: 0 });
+    // Limits: the newest turns, oldest first; only the most recent tasks.
+    expect((await turns('1970-01-01T00:00:00.000Z', 2)).turns.map((t) => t.text)).toEqual(['También tenemos barras.', 'Ok, gracias']);
+    const one = await turns('1970-01-01T00:00:00.000Z', 100, 1);
+    expect(one.earlierTasks).toBe(1);
+    expect(one.turns.map((t) => t.text)).toEqual(['¿Y barras olímpicas?', 'También tenemos barras.', 'Ok, gracias']);
   });
 });

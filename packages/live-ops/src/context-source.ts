@@ -57,40 +57,40 @@ const PRIOR_ABOUT =
  * (R4-J4-R7-4) Continuity across the tasks of one channel conversation. A
  * terminal task is never revived: the next contact message opens a new task
  * (ingress). This source projects what was said in the earlier tasks of the
- * same conversation — the operator thread of each (`ProductionStore.thread`),
- * at most `maxTurns`, newest kept — as CONVERSATIONAL turns of the current
- * task, plus one required OBSERVED episode saying where they come from.
+ * same conversation — the turns of their operator thread (contact, agent with
+ * its delivery, operator), from at most `maxTasks` tasks and the last
+ * `windowDays`, at most `maxTurns`, newest kept, in one store round trip — as
+ * CONVERSATIONAL turns of the current task, plus one required OBSERVED
+ * episode saying where they come from. The window bounds only this automatic
+ * incorporation: nothing is deleted, and the current task is not filtered.
  *
  * What was said, never evidence: no observation, receipt, approval, goal or
  * workspace state of an earlier task enters, so none of it can be cited or
  * reused. The turns compete for the conversation budget like any other turn.
- * Deterministic in the durable records (earlier tasks are terminal);
+ * Deterministic in the durable records and the compilation's clock;
  * registered outside Core through `WorkerBindings.contextSources`.
  */
 export class PriorConversationContextSource implements ContextSource {
   readonly id = PRIOR_CONVERSATION_SOURCE_ID;
-  readonly #reader: Pick<ProductionStore, 'earlierConversationTasks' | 'thread'>;
+  readonly #reader: Pick<ProductionStore, 'earlierConversationTurns'>;
   readonly #maxTurns: number;
   readonly #maxTasks: number;
+  readonly #windowMs: number;
 
-  constructor(reader: Pick<ProductionStore, 'earlierConversationTasks' | 'thread'>, options: { readonly maxTurns?: number; readonly maxTasks?: number } = {}) {
+  constructor(reader: Pick<ProductionStore, 'earlierConversationTurns'>, options: { readonly maxTurns?: number; readonly maxTasks?: number; readonly windowDays?: number } = {}) {
     this.#reader = reader;
     this.#maxTurns = options.maxTurns ?? 20;
     this.#maxTasks = options.maxTasks ?? 10;
+    this.#windowMs = (options.windowDays ?? 30) * 86_400_000;
   }
 
   async load(request: ContextSourceRequest): Promise<readonly ContextContributionInput[]> {
     const { taskId } = request.execution.task;
-    const earlier = await this.#reader.earlierConversationTasks(taskId, this.#maxTasks);
-    let said: ThreadEntry[] = [];
-    let read = 0;
-    for (const earlierTaskId of earlier) {
-      said = [...(await this.#reader.thread(earlierTaskId)).filter((e) => e.kind !== 'event' && e.text !== null), ...said];
-      read += 1;
-      if (said.length >= this.#maxTurns) break;
-    }
-    if (said.length === 0) return [];
-    const shown = said.slice(-this.#maxTurns);
+    const since = new Date(request.now.getTime() - this.#windowMs).toISOString();
+    // One more than shown: whether older turns were left out.
+    const { turns, earlierTasks } = await this.#reader.earlierConversationTurns(taskId, { since, limit: this.#maxTurns + 1, maxTasks: this.#maxTasks });
+    if (turns.length === 0) return [];
+    const shown = turns.slice(-this.#maxTurns);
     const last = shown.at(-1)!;
     return [
       {
@@ -98,8 +98,8 @@ export class PriorConversationContextSource implements ContextSource {
         kind: 'episode',
         authority: 'OBSERVED',
         temporality: 'point_in_time',
-        content: { event: 'conversation.earlier_tasks', about: PRIOR_ABOUT, earlierTasks: read, turnsShown: shown.length, earlierTurnsOmitted: shown.length < said.length || read < earlier.length || earlier.length === this.#maxTasks },
-        provenance: { recordType: 'agent_task', recordId: earlier[0]!, recordVersion: last.cursor },
+        content: { event: 'conversation.earlier_tasks', about: PRIOR_ABOUT, earlierTasks, turnsShown: shown.length, earlierTurnsOmitted: turns.length > shown.length || earlierTasks === this.#maxTasks },
+        provenance: { recordType: 'agent_task', recordId: taskId, recordVersion: last.cursor },
         createdAt: last.at,
         observedAt: last.at,
         taskId,

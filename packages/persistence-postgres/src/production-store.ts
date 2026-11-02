@@ -660,17 +660,37 @@ export class PostgresProductionStore implements ProductionStore {
     return entries.sort((a, b) => (a.cursor < b.cursor ? -1 : a.cursor > b.cursor ? 1 : 0));
   }
 
-  async earlierConversationTasks(taskId: string, limit: number): Promise<string[]> {
-    // ponytail: closed bindings have no (channel, conversation_key) index, so this scans them; add one if the table grows large.
+  async earlierConversationTurns(taskId: string, options: { readonly since: string; readonly limit: number; readonly maxTasks: number }): Promise<{ readonly turns: ThreadEntry[]; readonly earlierTasks: number }> {
+    // The same turns as `thread`, for several tasks in one statement. A binding closes when the next message arrives
+    // after its task ended, so a binding closed before `since` cannot hold a turn at or after it.
+    // ponytail: closed bindings have no (channel, conversation_key) index, so `earlier` scans them; add one if the table grows large.
     const r = await query<Row>(
       this.#pool,
-      `select e.task_id from channel_conversation_bindings c
-         join channel_conversation_bindings e on e.channel = c.channel and e.conversation_key = c.conversation_key and e.created_at < c.created_at and e.task_id is not null
-        where c.task_id = $1
-        order by e.created_at desc, e.binding_id desc limit $2`,
-      [taskId, limit],
+      `with cur as (select channel, conversation_key, created_at from channel_conversation_bindings where task_id = $1),
+       earlier as (
+         select e.task_id from cur join channel_conversation_bindings e
+             on e.channel = cur.channel and e.conversation_key = cur.conversation_key and e.created_at < cur.created_at and e.task_id is not null
+          where coalesce(e.closed_at, 'infinity') >= $2
+          order by e.created_at desc, e.binding_id desc limit $4),
+       turns as (
+         select 'contact' as kind, i.input_id::text as id, i.received_at as at, m.content->>'text' as text,
+                null::uuid as outbound_id, null::text as status, null::text as hold_reason, null::text as cancel_reason, null::text as provider_message_id
+           from task_inputs i join memory_entries m on m.entry_id = i.memory_entry_id
+          where i.task_id in (select task_id from earlier) and i.received_at >= $2
+         union all
+         select 'agent', s.step_id::text, s.created_at, s.decision->>'content', o.outbound_id, o.status, o.hold_reason, o.cancel_reason, o.provider_message_id
+           from agent_run_steps s left join outbound_messages o on o.response_step_id = s.step_id
+          where s.task_id in (select task_id from earlier) and s.decision_type = 'respond' and s.outcome = 'recorded' and s.created_at >= $2
+         union all
+         select 'operator', o.outbound_id::text, o.created_at, o.body, o.outbound_id, o.status, o.hold_reason, o.cancel_reason, o.provider_message_id
+           from outbound_messages o
+          where o.task_id in (select task_id from earlier) and o.origin = 'operator' and o.created_at >= $2)
+       select t.*, (select count(*) from earlier)::int as earlier_tasks from turns t where t.text is not null
+        order by t.at desc, t.id desc limit $3`,
+      [taskId, options.since, options.limit, options.maxTasks],
     );
-    return r.rows.map((row) => row.task_id as string);
+    const turns = r.rows.map((row) => entry(iso(row.at), row.id as string, row.kind as ThreadEntry['kind'], row.text as string, {}, row.outbound_id ? delivery(row) : null)).reverse();
+    return { turns, earlierTasks: (r.rows[0]?.earlier_tasks as number | undefined) ?? 0 };
   }
 
   async conversations(limit: number): Promise<ConversationSummary[]> {

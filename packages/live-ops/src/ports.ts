@@ -371,8 +371,12 @@ export interface ProductionStore {
   attempts(outboundId: string): Promise<DeliveryAttemptRecord[]>;
   deliveryEvents(outboundId: string): Promise<DeliveryEventRecord[]>;
   thread(taskId: string): Promise<ThreadEntry[]>;
-  /** (R4-J4-R7-4) The tasks of the earlier bindings of `taskId`'s channel conversation, newest first (at most `limit`). */
-  earlierConversationTasks(taskId: string, limit: number): Promise<string[]>;
+  /**
+   * (R4-J4-R7-4) What was said in the earlier tasks of `taskId`'s channel conversation (the `thread` turns:
+   * contact, agent with its delivery, operator), at or after `since`, from at most `maxTasks` tasks: the newest
+   * `limit` turns, oldest first, in one round trip. `earlierTasks` counts the tasks considered.
+   */
+  earlierConversationTurns(taskId: string, options: { readonly since: string; readonly limit: number; readonly maxTasks: number }): Promise<{ readonly turns: ThreadEntry[]; readonly earlierTasks: number }>;
   conversations(limit: number): Promise<ConversationSummary[]>;
   attention(): Promise<ProductionAttention>;
   metrics(): Promise<ProductionMetrics>;
