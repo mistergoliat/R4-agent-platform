@@ -145,6 +145,9 @@ Cuando un cambio toca el código de una garantía, desde L1 se corren completos 
 | **Integridad de migraciones** | `*/migrations/*.sql` | `migrations`, `migration-upgrade`, `migration-upgrade-c2`; contract `frozen-migrations` | `binding-immutability`, `identity-verification-state`, `production` (mutan SQL) |
 | **Control de ejecución** | `live-ops` (kill switch, rollout, autonomía), `agents/sales/src/production/control.ts`, `worker/presence`, perfiles fijados | `production-control`, `worker-readiness`, `profile-pinned-claims`, `production-bootstrap`; recovery `production-control-process`, `worker-presence-process` | `production-control`, `production`, `worker-readiness`, `profile-v8` |
 | **Outbox** | `live-ops/src/outbound.ts`, `delivery.ts`, tablas `outbound_*` | `live-ops-reference`, `live-ops-hardening`, `run-failure-fallback`; unit `live-ops/delivery` | `production`, `run-failure-fallback` |
+| **Pagos** | Aún no existe en R4. Llegará con J5.5 Checkout & Payments (PRD §40 R4-L): capacidades de checkout y pago y sus adaptadores, fuera de Core | Las que entregue J5.5, con su contrato HTTP, idempotencia y conciliación | Las que entregue J5.5. Una capacidad de pago **no se acepta sin su suite de mutación** |
+
+**Pagos es más estricto que el resto.** Todo cambio que toque una capacidad, un adaptador o una política de pago se valida como L3 en cualquier nivel desde L1: cadena completa, todas las mutaciones e interop contra el servicio real o su doble contractual. **La selección de §5 nunca se aplica a pagos.** Su evidencia se invalida con cualquier cambio en el adaptador, en el servicio externo o en su contrato (§9.7).
 
 La tabla se mantiene junto con el código. Cuando un cambio agrega una garantía, o mueve su código, la tabla se actualiza en el mismo PR.
 
@@ -173,7 +176,7 @@ Reglas que no cambian:
 - **No se eliminan scripts ni mutaciones.** Una mutación obsoleta sólo se retira con decisión registrada del owner.
 - **No se editan fuentes mientras corre una cadena**, porque los scripts restauran lo que leyeron al empezar. Para detener una cadena hay que matar también el shell padre.
 
-**Ejemplo de esta semana.** En el PR de R7, las suites del diff son 10: `runtime-contingency`, `run-failure-recovery`, `run-failure-fallback`, `turn-guard`, `production`, `production-control`, `worker-readiness`, `profile-v8`, `canary-j4` e `identity-verification-ingress`. La cadena corrió `binding-immutability` y `shadow` en lugar de las dos últimas. Bajo esta regla, las dos que faltan se corren antes de pedir el merge.
+**Ejemplo de esta semana.** En el PR de R7, las suites del diff son 10: `runtime-contingency`, `run-failure-recovery`, `run-failure-fallback`, `turn-guard`, `production`, `production-control`, `worker-readiness`, `profile-v8`, `canary-j4` e `identity-verification-ingress`. La primera cadena corrió `binding-immutability` y `shadow` en lugar de las dos últimas. Aplicando la regla, las dos faltantes se corrieron antes del merge y detectaron 13/13 cada una. Las 12 suites sumaron 161/161, y el informe de integración registra las 6 que no se corrieron.
 
 ## 8. Evidencia
 
@@ -249,7 +252,7 @@ El nivel definitivo se confirma con el diff real de cada entrega. Esta tabla ant
 | **R7-3** (TTL de esperas humanas, avisos, horizonte de aprobaciones) | Transversal: `task-runtime`, `persistence-postgres`, probablemente una migración. Recuperación, autorizaciones, outbox y control de ejecución | Pruebas completas de esas cuatro garantías, más recovery. Mutaciones `turn-guard`, `runtime-contingency`, `run-failure-recovery`, `run-failure-fallback`, `production-control` y las nuevas de R7-3 | **Cadena completa**, con todas las mutaciones |
 | **R7-4** (linaje, predecesor, v10) | Transversal, más definición y perfil (riesgo alto siempre). Persistencia, migraciones y control de ejecución | Contratos de perfil y versionado, `profile-pinned-claims`, migraciones. Mutaciones `profile-v8` o su sucesora, `production`, `binding-immutability` | **Cadena completa**. v10 requiere autorización aparte |
 | **J5 Sales Autonomy** | Pack Sales fuera de Core. Si toca `production/` o perfiles, sube a riesgo alto. Control de ejecución y autorizaciones | sales, shadow, contract completo. Mutaciones `profile-v8`, `shadow` y `production-control`, si cambia la política | Selección L2. **Completa** si toca Core, perfiles o la política de acciones |
-| **Integraciones comerciales** (Quote, Checkout, Shipping, CP) | `adapters/domains/*`, fuera de Core. Idempotencia y conciliación, si escriben | Contrato HTTP del adaptador, sus unit, escenarios sales, `reconciliation` y `governed-execution` si escriben | Selección L2, más interop si cambian CIA o CP. **L3 con el servicio real** antes de desplegar, coordinado con el otro repositorio |
+| **Integraciones comerciales** (Quote, Checkout, Shipping, CP) | `adapters/domains/*`, fuera de Core. Idempotencia y conciliación, si escriben | Contrato HTTP del adaptador, sus unit, escenarios sales, `reconciliation` y `governed-execution` si escriben | Selección L2, más interop si cambian CIA o CP. **L3 con el servicio real** antes de desplegar, coordinado con el otro repositorio. **Lo que toque pagos (Checkout) se valida siempre como L3** (§6) |
 
 ## 12. Riesgos residuales
 
@@ -267,7 +270,7 @@ El nivel definitivo se confirma con el diff real de cada entrega. Esta tabla ant
 2. En L2, aprobar que las mutaciones se limiten a las del diff y a las de las garantías tocadas, con todas en los cambios transversales y todas en L3. Recomendado.
 3. Autorizar la implementación de O-1, O-7 y O-9. Después, O-2 y O-3, como un cambio de herramientas con su propia regresión y sin tocar el runtime.
 4. Decidir O-8.
-5. Para el PR de R7 en curso: correr `canary-j4` e `identity-verification-ingress` antes de pedir el merge (§7).
+5. Aprobar el tratamiento de pagos (§6): validación de nivel L3 desde L1 y sin selección.
 
 ## 14. Estado
 
