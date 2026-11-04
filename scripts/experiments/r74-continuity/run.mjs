@@ -3,7 +3,8 @@
 // EARLIER tasks of a conversation (PriorConversationContextSource). The real canary runtime of sales-production@8 on a
 // throwaway LOCAL database, fixture Catalog, Shipping and Quote V2, in-process CIA and Customer Profile stubs, fake
 // WhatsApp. Earlier tasks are scripted and closed; the message under test opens a NEW task and the real model decides.
-// No real commercial operation is possible: every owner is a fixture or a stub, and nothing leaves this machine except
+// No commercial write can execute: the worker runs with maxWriteActions 0 (as production does), so write capabilities
+// are not offered and any write proposal is refused; every owner is a fixture or a stub, and nothing leaves this machine except
 // the model calls.
 //
 //   npm run build
@@ -295,7 +296,7 @@ async function run() {
   // One runtime per task: every new task is served by a NEW worker instance, as after a restart (R74-5b covers a real process).
   const runtimeFor = (label) => startCanaryRuntime(canary, {
     modelProvider: hybrid, catalog: http(new FixtureCatalog()), shipping: http(new FixtureShipping()), quotes: http(new FixtureQuoteV2Service()),
-    worker: { turnGuard: 'enforce', databaseUrl: dbUrl, logLevel: 'silent', dbPoolMax: 3, workerId: `r74:${label}`, leaseDurationMs: 300_000, heartbeatIntervalMs: 30_000, pollIntervalMs: 20, maxRunRecoveries: 3, maxRunFailureRecoveries: 1, execution: { maxIterations: 20, maxModelCalls: 20, maxReadCapabilityCalls: 20, maxRunDurationMs: 600_000, modelCallTimeoutMs: 180_000, maxWriteActions: 50 }, context: { budget: { mode: 'unbounded' }, expiredEvidence: 'exclude' } },
+    worker: { turnGuard: 'enforce', databaseUrl: dbUrl, logLevel: 'silent', dbPoolMax: 3, workerId: `r74:${label}`, leaseDurationMs: 300_000, heartbeatIntervalMs: 30_000, pollIntervalMs: 20, maxRunRecoveries: 3, maxRunFailureRecoveries: 1, execution: { maxIterations: 20, maxModelCalls: 20, maxReadCapabilityCalls: 20, maxRunDurationMs: 600_000, modelCallTimeoutMs: 180_000, maxWriteActions: 0 }, context: { budget: { mode: 'unbounded' }, expiredEvidence: 'exclude' } },
     scheduler: null, captureFile: join(tmpdir(), `r4-r74-${dbName}-${label}.jsonl`), logger, isolationCheckMs: 50,
     customer: { env: CUSTOMER_ENV, fetch: identityStub },
   });
@@ -418,11 +419,13 @@ function summary() {
     }
     const v = verdict(s);
     lines.push(`| ${s.caseId}#${s.replica} | ${s.topic} | ${v.context ? 'PASS' : 'FAIL'} (prior=${s.context.priorTurnsIncluded}, foreign=${s.context.foreignTextSeen.length}) | ${v.semantic ? 'PASS' : 'FAIL'} | ${s.realCalls.length}${s.capReached ? ' (cap)' : ''} | ${s.realCalls.map((c) => c.capabilityId ?? c.decisionType).join(' → ')} |`);
-    detail.push(`## ${s.caseId}#${s.replica} — ${s.topic}`, '', `- Mensaje: «${s.message}»`, `- Esperado: ${s.expect}`, `- Task: ${s.task?.status}`, '- Respuesta enviada:', '', '```text', v.body || '(ninguna)', '```', '');
+    const writes = s.steps.filter((t) => t.decisionType === 'propose_action').map((t) => `${t.capabilityId}:${t.outcome}`);
+    detail.push(`## ${s.caseId}#${s.replica} — ${s.topic}`, '', `- Mensaje: «${s.message}»`, `- Esperado: ${s.expect}`, `- Task: ${s.task?.status}${s.task?.reason ? ` (${s.task.reason})` : ''}`, `- Escrituras propuestas (no ofrecidas; maxWriteActions 0): ${writes.join(', ') || 'ninguna'}`, '- Respuesta enviada:', '', '```text', v.body || '(ninguna)', '```', '');
   }
   const ctx = valid.filter((s) => verdict(s).context).length;
   const sem = valid.filter((s) => verdict(s).semantic).length;
-  lines.push('', `Context: ${ctx}/${valid.length} PASS. Semantic: ${sem}/${valid.length} PASS.`, '', ...detail);
+  const proposedWrite = valid.filter((s) => s.steps.some((t) => t.decisionType === 'propose_action')).length;
+  lines.push('', `Context: ${ctx}/${valid.length} PASS. Semantic: ${sem}/${valid.length} PASS. Samples that proposed a write anyway: ${proposedWrite}/${valid.length}.`, '', ...detail);
   writeFileSync(join(args.root, 'summary.md'), `${lines.join('\n')}\n`);
   say(lines.slice(0, 6 + all.length + 3).join('\n'));
 }
