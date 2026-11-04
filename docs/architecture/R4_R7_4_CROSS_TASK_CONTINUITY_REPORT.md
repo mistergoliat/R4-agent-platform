@@ -1,8 +1,8 @@
 ---
 title: R4-J4-R7-4 — continuidad conversacional entre tasks
-status: R4_R7_4_HARDENING_COMPLETE_L2_PENDING
-mandate: «R4 — R7-4 Cross-Task Continuity», «R7-4 Final Hardening and L2» (etapa de endurecimiento) y la corrección de R74-5 (owner); base main@52a58f4
-date: 2026-11-02
+status: R4_R7_4_L2_BLOCKED_MUTATION_TOOLING
+mandate: «R4 — R7-4 Cross-Task Continuity», «R7-4 Final Hardening and L2» (etapa de endurecimiento), la corrección de R74-5 y «R4 — R7-4 L2 Validation» (owner); base main@52a58f4
+date: 2026-11-04
 ---
 
 # R4-J4-R7-4: continuidad conversacional entre tasks
@@ -21,6 +21,13 @@ date: 2026-11-02
   - una prueba real de reinicio de proceso, R74-5b.
 
 **Pruebas:** unit 7/7, integración 8/8, reinicio de proceso R74-5b PASS, configuración PASS. La regresión L1 sobre `beddf58` sigue en §6. El endurecimiento se validó con pruebas focalizadas (§10). **Pendiente**, como `NOT_RUN`: la suite de mutación `prior-conversation` (actualizada, sin ejecutar), las suites existentes según su matriz, la cadena L2 y la campaña semántica. **R7-4 no está aprobado**: el PR debe pasar su gate L2.
+
+**L2 (2026-11-04, §11):**
+- La regresión completa pasa en `75d25d0`.
+- 15 suites de mutación existentes dan 210/210.
+- `prior-conversation` da 9/10. PC-M6 sobrevive porque la suite no recompila antes de R74-5b, que corre sobre `dist`. La prueba sí detecta la regresión al recompilar (§11.4).
+- **L2 no aprobado** hasta la decisión del owner sobre el script.
+- La campaña DeepSeek no corrió.
 
 ## 2. Fase A: brechas reales
 
@@ -183,7 +190,8 @@ La prueba acumula varias tasks del mismo cliente, y la fuente nueva cuesta 1 + 5
 | R-6 | Las entradas anteriores usan la hora de recepción del servidor y las actuales la hora del proveedor. Con desfase de reloj, el orden relativo puede variar algunos segundos | Es la misma mezcla que ya existe dentro de una task |
 | R-7 | Fuera de alcance: `disposition` veraz (C-5) y la revisión de `maxWriteActions` (D-7) | Registradas para R7-3 o R7-4b |
 | R-8 | ~~El costo crece con el historial (N+1)~~ | **Resuelto en sus ida y vuelta** (§10): siempre 1 sentencia. Lo que sigue creciendo es el trabajo examinado (ver R-9) |
-| R-9 | **La búsqueda de bindings anteriores recorre la tabla entera.** No hay índice por `(channel, conversation_key)` para los bindings cerrados, así que el trabajo crece con el total de bindings, no con la conversación. El resto del plan usa índices existentes | Aceptable con el volumen actual. Un índice requiere una migración: queda para decisión del owner, fuera de este alcance |
+| R-9 | **La búsqueda de bindings anteriores recorre la tabla entera.** No hay índice por `(channel, conversation_key)` para los bindings cerrados, así que el trabajo crece con el total de bindings, no con la conversación. El resto del plan usa índices existentes | Aceptable con el volumen actual. Un índice requiere una migración: queda para decisión del owner, fuera de este alcance. **Medido en L2** (§11.5): ~60 ms con 200.000 bindings; con el índice candidato, ~1 ms |
+| R-10 | **La suite `prior-conversation` no recompila antes de R74-5b**, que corre sobre `dist`: PC-M6 sobrevive (§11.4) | Bloquea L2. La opción A (recompilar en las mutaciones con prueba de proceso) requiere autorización del owner |
 
 ## 9. Propuesta para `R4_TEST_STRATEGY_02`: mutaciones por invariante
 
@@ -299,3 +307,187 @@ R74-5 se mantiene con su alcance real: continuidad entre instancias de worker **
 | Paso de `config.priorConversationDays` desde la composición | No lo detecta ninguna prueba: no se puede envejecer datos por días en el testbed. Lo cubren el tipo y la prueba de configuración | Riesgo registrado |
 
 **Estado:** `R4_R7_4_HARDENING_COMPLETE_L2_PENDING`. R7-4 no está aprobado. El gate siguiente es L2.
+
+## 11. Gate L2
+
+Mandato del owner del 2026-11-04: «R4 — R7-4 L2 Validation» (`R4_R7_4_L2_AUTHORIZED`). Se acepta el endurecimiento y se autoriza L2 antes del PR. Merge y despliegue no están autorizados.
+
+**Resultado: L2 no aprobado.** La regresión completa pasa y 15 de las 16 suites de mutación detectan N/N. La suite nueva `prior-conversation` detecta **9/10**: sobrevive PC-M6 por un defecto de cableado de la propia suite, no del runtime (§11.4). Por la regla de §7 de la estrategia, una mutación que sobrevive es un fallo, y corregir el script requiere autorización, porque el mandato prohíbe modificar los mutadores. La campaña DeepSeek, autorizada «una vez aprobado L2», **no se ejecutó**.
+
+Todo corrió en el worktree de R7-4, en secuencia: regresión, después mutaciones, después el diagnóstico. No hubo otros procesos sobre las mismas fuentes ni sobre la base de pruebas de R4. Una sesión ajena corría pruebas de otro repositorio contra otro Postgres (puerto 5432). Árbol evaluado: commit `75d25d0`, tree `0e64042`.
+
+### 11.1 Verificaciones previas
+
+| # | Verificación | Resultado |
+|---|---|---|
+| 1 | Prueba focalizada: la composición de Sales transmite `R4_PROD_PRIOR_CONVERSATION_DAYS` a la fuente | Nueva en contract `live-ops-boundaries`: compone el worker de producción con un store falso y comprueba la ventana que pide la fuente compuesta, 7 días desde la variable y 30 por defecto. PASS. Con la composición sin `windowDays` falla (`2026-10-05` en lugar de `2026-10-28`): comprobado a mano, sin tocar la suite de mutación. Commit `75d25d0`. Cierra el riesgo «paso de `config.priorConversationDays`» de §10.4 |
+| 2 | Verificaciones afectadas | contract `live-ops-boundaries` 19/19. Además, la cadena completa (§11.2) |
+| 3 | `EXPLAIN` de la consulta de historial | §11.5 |
+| 4 | R-9 registrado sin migración | §8 y §11.5 |
+
+### 11.2 Regresión L2
+
+Sobre `75d25d0`, sin cambios sin commitear, en secuencia y con recovery al final.
+
+| Paso | Resultado | Duración |
+|---|---|---|
+| build | PASS | 2 s |
+| typecheck | PASS | 52 s |
+| lint | PASS | 106 s |
+| unit | PASS: 1539, 4 omitidas (86 archivos, 1 omitido) | 43 s |
+| contract | PASS: 463/463 (34 archivos) | 25 s |
+| integration completa | PASS: 699, 12 omitidas (50 archivos, 1 omitido) | 563 s |
+| sales | PASS: 29/29 | 107 s |
+| shadow | PASS: 5/5 | 133 s |
+| recovery | PASS: 19/19 (12 archivos, incluido R74-5b) | 193 s |
+
+**Omitidas, todas preexistentes:**
+- Las 12 de integración son `catalog-http-real.test.ts`, que necesita el servicio de catálogo real. Quedan **`NOT_RUN`**: no dependen de este diff.
+- Las 4 de unit son las omisiones habituales de main.
+
+Ninguna evidencia anterior se reutilizó: el árbol cambió con la prueba nueva.
+
+### 11.3 Matriz de mutaciones
+
+**Regla aplicada.** Por §4 de la estrategia, el diff es transversal, porque toca `persistence-postgres` y `live-ops`, y pediría las 19 suites. El mandato de L2 ordena otra cosa: construir la matriz, correr las suites de las garantías afectadas directa o indirectamente, incluir toda suite cuya independencia no pueda demostrarse y registrar las exclusiones como `NOT_RUN`. Se aplicó el mandato.
+
+**Criterio de independencia.** Ninguna prueba que la suite usa para detectar sus mutaciones ejecuta en runtime un módulo cambiado. Los imports de sólo tipo no cuentan. Los archivos cambiados son `composition.ts`, `context-source.ts`, `mode.ts`, `ports.ts` y `production-store.ts`.
+
+| Suite | Invariante | Dependencia con el diff | Impacto | Decisión | Resultado |
+|---|---|---|---|---|---|
+| `prior-conversation` | Continuidad entre tasks: misma conversación, sólo tasks anteriores, ventana, los turnos más recientes, entrega, composición, episodio | Es la suite del cambio | Directo | Obligatoria | **9/10, PC-M6 sobrevive** |
+| `production` | Idempotencia, serialización, outbox, control de ejecución | Muta `production-store.ts`; usa `live-ops-boundaries`, cambiado | Directo | Diff | 23/23 |
+| `production-control` | Autorizaciones y control de ejecución | Muta `production-store.ts`; usa `live-ops-boundaries` | Directo | Diff | 13/13 |
+| `run-failure-fallback` | Idempotencia y outbox (aviso de falla) | Muta `production-store.ts` y `composition.ts` | Directo | Diff | 6/6 |
+| `runtime-contingency` | Recuperación y conciliación | Muta `production-store.ts` | Directo | Diff | 11/11 |
+| `identity-verification-ingress` | Ingreso de códigos (inspección) | Muta `production-store.ts` | Directo | Diff | 13/13 |
+| `profile-v8` | Control de ejecución (perfil @8) | Muta `composition.ts` | Directo | Diff | 8/8 |
+| `run-failure-recovery` | Recuperación | Muta `persistence-postgres` (`execution-store.ts`) | Garantía «Persistencia» tocada | Garantía | 14/14 |
+| `turn-guard` | Idempotencia y cierre de turno | Muta `persistence-postgres` (`temporal-store.ts`). Sus pruebas componen el worker | Garantías «Persistencia» e «Idempotencia» tocadas | Garantía | 24/24 |
+| `worker-readiness` | Control de ejecución | Muta `persistence-postgres`; `mode.ts` es configuración de producción | Garantías «Persistencia» y «Control» tocadas | Garantía | 15/15 |
+| `binding-immutability` | Serialización e integridad de migraciones | Muta SQL de `persistence-postgres`. La consulta nueva lee los bindings que protege | Garantías «Serialización» y «Persistencia» tocadas | Garantía | 12/12 |
+| `canary-j4` | Canary @8 | Su integración arranca el runtime del canary, que llama `composeSalesProductionWorker` y así ejecuta la fuente nueva | Indirecto | Sin independencia demostrable | 13/13 |
+| `identity-verification-commercial` | Verificación y comercio | Su integración usa `support/live-ops`, que compone el worker de producción | Indirecto | Sin independencia demostrable | 9/9 |
+| `identity-verification-dispatch` | Envío del código | Su integración usa `PostgresProductionStore` y `support/live-ops` | Indirecto | Sin independencia demostrable | 11/11 |
+| `identity-verification` | Clasificador de códigos | Corre completo el contract `identity-verification-boundaries`, que ejecuta `composeSalesProductionWorker` | Indirecto | Sin independencia demostrable | 23/23 |
+| `identity-verification-state` | Estado cifrado de la verificación | Mismo archivo contract | Indirecto | Sin independencia demostrable | 16/16 |
+| `evaluation` | Evaluación posterior | `@r4/evaluation` sólo depende de `contracts`. Sus pruebas no importan nada cambiado | Ninguno | **`NOT_RUN`**, independiente | — |
+| `shadow` | Frontera shadow | `@r4/shadow` depende de `contracts`, `evaluation` y `model-gateway`. Compone `composeShadowSalesDomains`, no la composición de producción. Sus pruebas no importan nada cambiado | Ninguno | **`NOT_RUN`**, independiente. La regresión `shadow` corrió (§11.2) | — |
+| `rr1-revalidation` | Revalidación RR-1 de Customer v3 | `customer-v3.ts` y su prueba importan de `@r4/live-ops` sólo tipos (`ProductionStore`, `ConversationBindingRecord`, `TaskStateFacts`), que se borran en runtime | Ninguno | **`NOT_RUN`**, independiente | — |
+
+**Totales:** 16 suites, 219/220 mutaciones detectadas. Las 15 suites existentes suman 210/210. Duración: 7.624 s, unas 2 h 7 min.
+
+**Aislamiento.** Cada suite corrió sola. Antes de cada una se exigió un árbol limpio y ningún proceso `*mutations.mjs` vivo; al final, `dirty=[]` y `alive=0`. Los scripts usan `spawnSync`, así que cada proceso hijo termina antes de que la suite siga.
+
+### 11.4 PC-M6: diagnóstico
+
+**Qué pasó.** PC-M6 quita la fuente de la composición de Sales. R74-1 y R74-5 lo detectan, pero R74-5b pasa.
+
+**Causa.** El proceso hijo de R74-5b (`tests/recovery/fixtures/continuity-production-worker.mjs`) carga `dist`, y la suite muta `src` sin recompilar. El hijo nunca ejecuta el código mutado, así que R74-5b no puede fallar por PC-M6. La cabecera del script ya dice que R74-5b necesita `npm run build`, pero no recompila entre mutaciones.
+
+**Diagnóstico.** Se hizo después de la cadena, sin tocar el script:
+1. Se aplicó PC-M6 y se corrió `npm run build`. R74-5b **falla**: `expected [] to deeply equal [ …(3) ]`.
+2. Se restauró la fuente, se recompiló y R74-5b pasa.
+3. El árbol quedó limpio.
+
+**Conclusión.** La prueba detecta la regresión; la suite no la ejercita. Es un defecto de herramienta, y el runtime no tiene una brecha.
+
+**Opciones para el owner.** Ambas cambian el script de mutación y requieren autorización.
+
+| Opción | Cambio | Efecto | Costo |
+|---|---|---|---|
+| **A (recomendada)** | En `prior-conversation-mutations.mjs`: si una mutación lista una prueba de `recovery`, ejecutar `npm run build` después de aplicarla y después de restaurar | PC-M6 vuelve a exigir R74-5b, sin bajar el criterio N/N | Unos 2 builds por mutación con REC (sólo PC-M6). Se re-ejecuta la suite completa (~10–15 min) |
+| B | Quitar R74-5b de la lista de PC-M6 | PC-M6 queda cubierto por R74-1 y R74-5 | Pierde la exigencia del reinicio de proceso dentro de la suite. Equivale a reducir lo que se exige |
+
+Con A y la suite en 10/10, L2 queda completo: la regresión y las otras 15 suites siguen valiendo, porque el cambio toca sólo `tests/mutation`. Recién entonces corresponde la campaña.
+
+### 11.5 R-9: informe de ejecución SQL
+
+**Montaje.** Base temporal `r4_r9_explain` con todas las migraciones, borrada al terminar. Datos sintéticos:
+- 50.000 conversaciones × 4 tasks: 200.000 bindings, con la última task de cada conversación abierta;
+- 200.000 entradas, pasos `respond` y mensajes salientes;
+- todo repartido en 180 días.
+
+Se ejecutó la sentencia exacta de `earlierConversationTurns`, extraída del código fuente y parametrizada como en producción (`limit` 21, `maxTasks` 10, ventana de 30 días), con `EXPLAIN (ANALYZE, BUFFERS)`.
+
+| Caso | Plan de `earlier` | Bloques | Ejecución |
+|---|---|---|---|
+| Conversación con 3 tasks anteriores dentro de la ventana (6 turnos) | `Parallel Seq Scan` sobre `channel_conversation_bindings` con 2 workers: ~68.000 filas leídas, 44.032 descartadas por el filtro de ventana. Hash join con el binding actual (`one_per_task`) | 5.708 (5.531 leídos de disco) | 25 ms en frío; 57–74 ms en caliente, 3 corridas |
+| Conversación con tasks anteriores fuera de la ventana (0 turnos) | El mismo recorrido completo: la ventana no lo evita | 5.651 | 33 ms en frío |
+
+**Resto del plan.** Usa índices existentes y es proporcional a la conversación: `task_inputs` (unique por task), `memory_entries_pkey`, `agent_run_steps_respond`, `outbound_messages_response_step_id_key` y `outbound_messages_operator_key`.
+
+**Candidato, sólo como medición.** Se creó en la base temporal y se borró, sin migración:
+
+```sql
+create index ... on channel_conversation_bindings (channel, conversation_key, created_at desc) where task_id is not null;
+```
+
+Con él, el plan pasa a `Index Scan` (7 bloques) y la ejecución baja a 0,4–2,1 ms en 6 corridas.
+
+**Lectura.**
+- El costo actual crece linealmente con el total de bindings, no con la conversación: unos 60 ms por compilación con 200.000 bindings.
+- El volumen productivo de hoy (rollout 0 %) está órdenes de magnitud por debajo.
+- R-9 sigue abierto como decisión del owner: una migración con ese índice, cuando el volumen lo justifique. No se implementó.
+
+### 11.6 Continuidad entre procesos
+
+| Evidencia | Qué prueba | Resultado |
+|---|---|---|
+| recovery R74-5b en la cadena L2 | Un proceso nuevo, con la composición de producción compilada, recupera desde PostgreSQL la conversación anterior: los mismos turnos, en orden causal, sin duplicados y con su estado de entrega | PASS |
+| Diagnóstico de PC-M6 (§11.4) | R74-5b falla si la composición no incluye la fuente: la prueba no es vacía | PASS (falla bajo la mutación y pasa tras restaurar) |
+| integración R74-5 | Continuidad entre instancias de worker dentro de un proceso | PASS en la cadena; detecta PC-M6 |
+
+### 11.7 Campaña semántica
+
+**`NOT_RUN`.** El mandato la condiciona a que L2 esté aprobado. No se hizo ninguna llamada al modelo y no hubo gasto.
+
+**Preparación.** Hay un arnés listo y commiteado, que no hace llamadas reales sin `--env-file`:
+- runtime real del canary @8 sobre una base local descartable;
+- dueños fixture o stub, WhatsApp falso;
+- libro de presupuesto durable, que reserva antes de cada llamada, con tope de 60 llamadas o US$2;
+- un máximo de 4 llamadas por muestra.
+
+Casos, con 2 réplicas cada uno:
+
+| Caso | Tema |
+|---|---|
+| K1 | Referencias entre tareas |
+| K2 | Ambigüedad |
+| K3 | Estado de entrega (respuesta anterior no recibida) |
+| K4 | Aislamiento de conversaciones (otro contacto del canal) |
+| K5 | Información comercial desactualizada (precio anterior falso) |
+| K6 | Contexto fuera de la ventana (tasks envejecidas 40 días) |
+
+Cada muestra registra un criterio determinista sobre el contexto compilado (turnos anteriores incluidos y texto ajeno ausente) y una regla observable sobre la respuesta.
+
+**Arnés y dry run.** El arnés es `scripts/experiments/r74-continuity/run.mjs`. Se validó con un dry run, con modelo falso, sin red y sin gasto real, 1 réplica:
+- **Contexto:** 6/6 PASS. K1–K5 reciben 3 turnos anteriores; K6 recibe 0 tras envejecer las tasks 40 días; K4 no contiene texto de la otra conversación.
+- **Reglas semánticas:** no aplican en el dry run, porque la respuesta fija es «¿Me das más detalle?».
+- **Costo estimado:** con unos 39.000 tokens de entrada por llamada, 60 llamadas costarían unos US$0,70 a precio de lista sin caché.
+- **Limpieza:** la base descartable se borró.
+
+### 11.8 Riesgos (estado actualizado)
+
+| # | Estado |
+|---|---|
+| R-1 | Abierto. Lo mide la campaña, que todavía no corrió |
+| R-2 | Resuelto. El paso desde la composición tiene ahora prueba propia (§11.1) |
+| R-3 | Abierto, sin cambios |
+| R-4 | Absorbido por R-9 (es el mismo recorrido) |
+| R-5, R-6, R-7 | Sin cambios |
+| R-8 | Resuelto en idas y vueltas |
+| R-9 | Abierto y medido (§11.5): lineal en el total de bindings, unos 60 ms con 200.000. El índice candidato lo lleva a ~1 ms. Requiere una migración y es decisión del owner |
+| R-10 | **Nuevo.** La suite `prior-conversation` no recompila antes de la prueba de proceso (R74-5b), así que PC-M6 sobrevive. Bloquea L2 hasta la decisión del owner (§11.4) |
+
+### 11.9 Recomendación sobre el PR
+
+**No abrir todavía el PR.** El estado es `R4_R7_4_L2_BLOCKED_MUTATION_TOOLING` y el esperado, `R4_R7_4_L2_COMPLETE_READY_FOR_PR_REVIEW`, no se alcanzó.
+
+Pasos recomendados:
+1. El owner autoriza la opción A de §11.4.
+2. Se re-ejecuta sólo `prior-conversation` y debe dar 10/10.
+3. Se declara L2 completo y se corre la campaña dentro de su presupuesto.
+4. Se abre el PR desde `main` actualizado, con revisión independiente.
+
+Sin merge ni despliegue.
