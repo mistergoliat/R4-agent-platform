@@ -663,7 +663,7 @@ export class PostgresProductionStore implements ProductionStore {
   async earlierConversationTurns(taskId: string, options: { readonly since: string; readonly limit: number; readonly maxTasks: number }): Promise<{ readonly turns: ThreadEntry[]; readonly earlierTasks: number }> {
     // The same turns as `thread`, for several tasks in one statement. A binding closes when the next message arrives
     // after its task ended, so a binding closed before `since` cannot hold a turn at or after it.
-    // ponytail: closed bindings have no (channel, conversation_key) index, so `earlier` scans them; add one if the table grows large.
+    // `earlier` is an index range scan over the one conversation (migration 0013_conversation_binding_history, R-9).
     const r = await query<Row>(
       this.#pool,
       `with cur as (select channel, conversation_key, created_at from channel_conversation_bindings where task_id = $1),
