@@ -1,15 +1,23 @@
 // R4-J4-R7-4 mutation checks of cross-task continuity: each mutation removes one guarantee (only the SAME
 // conversation, only EARLIER tasks, the time window, the newest turns kept, the delivery truth, the source composed
 // by Sales, the framing episode) and EVERY test listed for it must FAIL (each test is run alone, by name). Sources
-// are restored byte for byte. The tests use the local PostgreSQL; R74-5b (recovery) needs `npm run build`.
+// are restored byte for byte. The tests use the local PostgreSQL.
+//
+// R74-5b (recovery) runs its workers in child processes that load `dist`, not `src`. So a mutation listing a test that
+// consumes `dist` is compiled (`npm run build`) before its tests run, and after the sources are restored it is compiled
+// again. The suite then checks that the `dist` of the mutated packages is byte-identical to the one built from the
+// unmutated tree at the start. A failed build is never counted as a detection. Sources (and `dist`) are also restored
+// on SIGINT/SIGTERM.
 //
 //   npm run test:mutation:prior-conversation
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const UNIT = { project: 'unit', file: 'tests/unit/live-ops/prior-conversation.test.ts' };
 const IT = { project: 'integration', file: 'tests/integration/cross-task-continuity.test.ts' };
-const REC = { project: 'recovery', file: 'tests/recovery/cross-task-continuity-process.test.ts' };
+const REC = { project: 'recovery', file: 'tests/recovery/cross-task-continuity-process.test.ts', dist: true };
 const SOURCE = 'packages/live-ops/src/context-source.ts';
 const STORE = 'packages/persistence-postgres/src/production-store.ts';
 const SALES = 'agents/sales/src/production/composition.ts';
@@ -74,6 +82,54 @@ function vitest({ project, file }, pattern) {
   return { status: r.status, passed: count('passed'), failed: count('failed'), out };
 }
 
+// The compiled output of every package a mutation edits (tsbuildinfo excluded: it is build bookkeeping, not code).
+const DIST_DIRS = ['packages/live-ops/dist', 'packages/persistence-postgres/dist', 'agents/sales/dist'];
+function files(dir) {
+  return readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name);
+    return statSync(path).isDirectory() ? files(path) : name.endsWith('.tsbuildinfo') ? [] : [path];
+  });
+}
+function distHash() {
+  const h = createHash('sha256');
+  for (const f of DIST_DIRS.flatMap(files).sort()) h.update(f.replace(/\\/g, '/')).update('\0').update(readFileSync(f)).update('\0');
+  return h.digest('hex');
+}
+function build() {
+  const r = spawnSync('npm', ['run', 'build'], { shell: true, encoding: 'utf8' });
+  return { ok: r.status === 0, out: `${r.stdout ?? ''}${r.stderr ?? ''}` };
+}
+const consumesDist = (m) => m.tests.some(([target]) => target.dist);
+
+// What must be put back if the run is interrupted: original sources, and whether `dist` must be rebuilt.
+const pending = { originals: null, rebuild: false };
+function restorePending() {
+  if (pending.originals) for (const [file, content] of pending.originals) writeFileSync(file, content);
+  if (pending.rebuild) build();
+  pending.originals = null;
+  pending.rebuild = false;
+}
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.on(signal, () => {
+    restorePending();
+    process.stdout.write(`\ninterrupted (${signal}): sources restored${MUTATIONS.some(consumesDist) ? ' and dist rebuilt' : ''}\n`);
+    process.exit(130);
+  });
+}
+
+// `dist` must match the unmutated tree before the first run, or a dist-consuming baseline would test stale code.
+let cleanDist = null;
+if (MUTATIONS.some(consumesDist)) {
+  const b = build();
+  if (!b.ok) {
+    process.stdout.write(`${b.out}\nbaseline build FAILED: no mutation can be evaluated\n`);
+    process.exitCode = 1;
+    process.exit();
+  }
+  cleanDist = distHash();
+  process.stdout.write(`baseline build ok; dist ${cleanDist.slice(0, 12)}\n`);
+}
+
 const key = ([target, pattern]) => `${target.file} :: ${pattern}`;
 const unique = [...new Map(MUTATIONS.flatMap((m) => m.tests).map((t) => [key(t), t])).values()];
 let baseline = true;
@@ -100,6 +156,8 @@ for (const m of MUTATIONS) {
     continue;
   }
   const results = [];
+  const dist = consumesDist(m);
+  let rebuilt = null;
   try {
     const mutated = new Map(originals);
     for (const e of m.edits) {
@@ -107,18 +165,36 @@ for (const m of MUTATIONS) {
       const eol = text.includes('\r\n') ? '\r\n' : '\n';
       mutated.set(e.file, text.replace(/\r\n/g, '\n').replace(e.from, e.to).replace(/\n/g, eol));
     }
+    pending.originals = originals;
     for (const [file, content] of mutated) writeFileSync(file, content);
-    for (const t of m.tests) {
-      const r = vitest(...t);
-      results.push(`${t[1]}: ${r.status !== 0 && r.failed > 0 ? `failed (${r.failed})` : 'PASSED'}`);
+    let built = true;
+    if (dist) {
+      pending.rebuild = true;
+      const b = build();
+      built = b.ok;
+      // A mutation that does not compile proves nothing about the tests: it is a failure of the suite, not a detection.
+      if (!built) results.push(`build: FAILED (not a detection)\n${b.out}`);
+    }
+    if (built) {
+      for (const t of m.tests) {
+        const r = vitest(...t);
+        results.push(`${t[1]}: ${r.status !== 0 && r.failed > 0 ? `failed (${r.failed})` : 'PASSED'}`);
+      }
     }
   } finally {
     for (const [file, content] of originals) writeFileSync(file, content);
+    pending.originals = null;
+    if (dist) {
+      rebuilt = build();
+      pending.rebuild = false;
+    }
   }
+  if (rebuilt && !rebuilt.ok) throw new Error(`rebuilding the restored sources failed after "${m.name}":\n${rebuilt.out}`);
   for (const [file, content] of originals) if (readFileSync(file, 'utf8') !== content) throw new Error(`${file} was not restored`);
-  const detected = results.every((r) => !r.endsWith('PASSED'));
+  if (dist && distHash() !== cleanDist) throw new Error(`dist does not match the unmutated tree after "${m.name}"`);
+  const detected = results.length > 0 && results.every((r) => !r.endsWith('PASSED') && !r.startsWith('build: FAILED'));
   if (!detected) failures += 1;
   process.stdout.write(`${detected ? 'DETECTED' : 'SURVIVED'}: ${m.name} [${results.join('; ')}]\n`);
 }
-process.stdout.write(`\n${MUTATIONS.length - failures}/${MUTATIONS.length} mutations detected; all sources restored\n`);
+process.stdout.write(`\n${MUTATIONS.length - failures}/${MUTATIONS.length} mutations detected; all sources restored${cleanDist ? `; dist identical to the unmutated build (${cleanDist.slice(0, 12)})` : ''}\n`);
 if (failures > 0) process.exitCode = 1;
