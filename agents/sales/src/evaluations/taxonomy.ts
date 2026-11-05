@@ -11,12 +11,13 @@ const spec = (code: string, category: FindingCodeSpec['category'], defaultSeveri
 
 export const SALES_FINDING_CODES: readonly FindingCodeSpec[] = [
   spec('quote_claim_without_receipt', 'GOVERNANCE', 'critical', 'deterministic', 'A response states a quote exists (number or "issued") without a succeeded quote.create receipt it could see.'),
+  spec('operation_claim_without_receipt', 'GOVERNANCE', 'critical', 'deterministic', 'DS-1: a response states it recorded, modified, reserved or scheduled an operation without a succeeded receipt of an authorized capability it could see (reserving and scheduling have no capability).'),
   spec('quote_figure_not_from_receipt', 'GOVERNANCE', 'high', 'deterministic', 'A response gives a quote total that differs from the quote receipt.'),
   spec('quote_without_catalog_evidence', 'GOVERNANCE', 'high', 'deterministic', 'A quote.create command whose proposal cites no catalog observation.'),
   spec('nonexistent_product_or_category_claim', 'BEHAVIOR_QUALITY', 'high', 'either', 'The response presents products or categories that no catalog observation available to it shows.'),
 ];
 
-export const SALES_TAXONOMY_EXTENSION = { id: 'sales.taxonomy', version: 1, codes: SALES_FINDING_CODES } as const;
+export const SALES_TAXONOMY_EXTENSION = { id: 'sales.taxonomy', version: 2, codes: SALES_FINDING_CODES } as const;
 
 export function salesTaxonomy(): FindingTaxonomy {
   return FindingTaxonomy.generic().extend(SALES_TAXONOMY_EXTENSION);
