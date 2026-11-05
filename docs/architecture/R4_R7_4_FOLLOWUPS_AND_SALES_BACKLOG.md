@@ -1,8 +1,8 @@
 ---
 title: R4-J4-R7-4 — seguimientos de continuidad y hallazgos para el backlog de Sales/J5
-status: backlog — NOT AUTHORIZED
-mandate: «R4 — R7-4 Final PR Review» (owner, 2026-11-04), §2 y §3
-date: 2026-11-04
+status: backlog — NOT AUTHORIZED; DS-1 y D-7 decididos por el owner (§C)
+mandate: «R4 — R7-4 Final PR Review» (owner, 2026-11-04), §2 y §3; «R4 — R7-4 Closure and J5 Transition» (owner, 2026-11-05), §2 y §3
+date: 2026-11-04 (actualizado 2026-11-05)
 ---
 
 # R7-4: seguimientos y backlog Sales/J5
@@ -25,8 +25,33 @@ Ninguno se modifica dentro de R7-4.
 
 | ID | Hallazgo | Evidencia | Relación | Opciones (decisión del owner) |
 |---|---|---|---|---|
-| **DS-1** | El modelo **ofrece** «dejar anotada» la selección o «agregarla» aunque la escritura no está disponible (`maxWriteActions` 0: `workspace.update` no se le ofrece). Si el cliente acepta, el modelo intenta una escritura no ofrecida, el presupuesto se agota (`run_budget_exhausted`) y la conversación pasa a una persona | Campaña R7-4: 4 de 12 respuestas (K1#1, K1#2, K3#1, K3#2). Producción, 2026-11-04: primer `run_budget_exhausted` real, con handoff abierto y el cliente sin respuesta | D-7 (revisión de `maxWriteActions`), registrado en R7. **Afecta a producción hoy** | (a) Dar a `R4_EXEC_MAX_WRITE_ACTIONS` un valor bajo mayor que 0 en producción, para que `workspace.update` registre la selección; requiere su propio mandato y validación. (b) Quitar de las instrucciones del perfil la oferta de anotar mientras no haya presupuesto. (c) Que la plataforma trate una propuesta de escritura no ofrecida como rechazo devuelto al modelo, no como contingencia; es un cambio de runtime con su ADR |
+| **DS-1** (decidido, §C) | El modelo **ofrece** «dejar anotada» la selección o «agregarla» aunque la escritura no está disponible (`maxWriteActions` 0: `workspace.update` no se le ofrece). Si el cliente acepta, el modelo intenta una escritura no ofrecida, el presupuesto se agota (`run_budget_exhausted`) y la conversación pasa a una persona | Campaña R7-4: 4 de 12 respuestas (K1#1, K1#2, K3#1, K3#2). Producción, 2026-11-04: primer `run_budget_exhausted` real, con handoff abierto y el cliente sin respuesta | D-7 (revisión de `maxWriteActions`), registrado en R7. **Afecta a producción hoy** | (a) Dar a `R4_EXEC_MAX_WRITE_ACTIONS` un valor bajo mayor que 0 en producción, para que `workspace.update` registre la selección; requiere su propio mandato y validación. (b) Quitar de las instrucciones del perfil la oferta de anotar mientras no haya presupuesto. (c) Que la plataforma trate una propuesta de escritura no ofrecida como rechazo devuelto al modelo, no como contingencia; es un cambio de runtime con su ADR |
 | **DS-2** | El modelo ofrece «retirar en tienda» sin haberlo verificado con ninguna capacidad | Campaña R7-4: K5#1 | R-3 (las instrucciones de Sales no hablan de la conversación anterior); hallazgo «más compacto» de la validación R7 en EC2 | Revisar las instrucciones de Sales: no ofrecer modalidades de entrega que ninguna capacidad confirme |
+
+## C. Decisiones del owner al cierre de R7-4 (2026-11-05)
+
+R7-4 queda cerrado para el alcance aprobado y sólo se modifica por defectos materiales. IR-2 e IR-3 siguen
+registrados y NOT AUTHORIZED. Para abrirlos, el owner tiene que calificarlos como defecto material o dar un mandato
+nuevo.
+
+**DS-1: requisito de Sales.**
+
+> El agente no puede afirmar que registró, reservó, modificó o programó una operación sin confirmación de una
+> capacidad que realmente haya ejecutado esa acción.
+
+- **Dónde vive:** en la aplicación Sales, por ejemplo en las instrucciones de una versión nueva del perfil o en su
+  evaluación. **No se implementa en el kernel.** La opción (c) de §B, que es un cambio de runtime, queda fuera de esta
+  decisión.
+- **Cuándo se implementa:** con mandato propio y bajo los criterios comunes. Registrar el requisito no autoriza
+  implementarlo.
+
+**D-7: se mantiene la política de escritura productiva.**
+
+- `maxWriteActions` sigue en 0 en producción y no se aumenta automáticamente. La opción (a) de §B no se aplica.
+- Pendiente: una decisión separada sobre la autonomía de las operaciones comerciales. Debe definir qué escrituras
+  puede hacer el agente, con qué presupuesto y con qué aprobación.
+
+**DS-2** sigue abierto. El owner no lo decidió en este mandato.
 
 ## Criterios comunes
 
