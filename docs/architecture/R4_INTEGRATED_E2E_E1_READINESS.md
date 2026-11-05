@@ -38,7 +38,7 @@ Fuente: auditoría de solo lectura de cada repositorio (2026-11-05) y los inform
 
 | Servicio | SHA candidato | Desplegado (según informes) | Contrato vigente | E1 | E2 | E3 |
 |---|---|---|---|---|---|---|
-| **R4** | rama `feat/r4-integrated-e2e` sobre `main` `c9a87ac` | **Verificado:** gateway, worker y scheduler en `9078584`; registro `sales@1–4`; un binding abierto, en `@3` | — | Listo tras revisión, merge y despliegue (§4) | Bloqueado (§6) | Bloqueado (§6) |
+| **R4** | rama `feat/r4-integrated-e2e` sobre `main` `c9a87ac` | **Verificado:** gateway, worker y scheduler en `9078584`; registro sin v13 ni `@13` | — | Listo tras revisión, merge y despliegue (§4) | Bloqueado (§6) | Bloqueado (§6) |
 | **Catalog V2** (lectura) | `main` `5f2c086` | Paquete de `8a72c38`, mismo código que `5f2c086`; generación `sha256:af9e3f63…` | `/v2/catalog` schemaVersion 1. Lectura real R4→V2 **14/14** | Listo | Paridad P-1 pendiente (Catalog #54) | — |
 | **Catalog Discover** | `main` `5f2c086` | **Verificado:** `/health/discover` `READY`, generación `sha256:af9e3f63…`; calidad `NOT_ACCEPTED` (#55); revisión de dominio PENDING → `DEGRADED` | `catalog-discover-v1b1` **DRAFT_NOT_PUBLISHED** (#56; PR #46 desactualizado) | Listo: el owner aceptó el borrador fijado (D-1) | — | — |
 | **Shipping** (pc-carrier) | sin repositorio (API del owner) | REAL en `@3` | PC Carrier API 1.2.0 (ADR-032) | Listo; hallazgo abierto (§1.3) | Sin mapeo a transportistas de PrestaShop (H1) | Sólo retiro a costo 0 en alcance; transportista sin designar (O-10) |
@@ -53,9 +53,8 @@ Fuente: auditoría de solo lectura de cada repositorio (2026-11-05) y los inform
 Ejecutada el 2026-11-05 con autorización del owner. Fue de solo lectura: procesos PM2, SHA de cada proceso, contenedores, salud
 de Discover y consultas a la base con `default_transaction_read_only`. No se cambió nada.
 
-- **Procesos R4:** `r4-channel-gateway`, `r4-sales-worker` y `r4-scheduler` corren `9078584`, con 0 reinicios.
-- **Registro:** `sales@1` a `sales@4`, de modo que `v13` y `@13` están libres (gate G-D). Ninguna tarea tiene versión ≥ 13.
-- **Bindings:** sólo perfiles `@1` a `@3`, con un único binding abierto, en `@3`.
+- **Procesos R4:** `r4-channel-gateway`, `r4-sales-worker` y `r4-scheduler` corren `9078584`.
+- **Registro:** `v13` y `@13` están libres (gate G-D).
 - **Discover:** `READY`, en la generación que declara el handoff.
 
 ### 1.3 Hallazgo que E1 hereda
