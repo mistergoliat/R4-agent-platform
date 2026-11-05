@@ -161,7 +161,8 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
   }
   // (ADR-045) The lane profile reads Catalog V2 Discover; it never composes without it.
   if (isSalesLaneProfile(profile)) {
-    if (!catalogReal || !options.catalogDiscover) throw new Error(`refusing production composition: ${profileLabel(profile)} requires Catalog V2 Discover (R4_CATALOG_V2_* and R4_CATALOG_V2_DISCOVER_API_KEY)`);
+    // A port whose Discover key (or V2 source) is missing would compose and then fail every call: refuse at start.
+    if (!catalogReal || !options.catalogDiscover?.discoverConfigured) throw new Error(`refusing production composition: ${profileLabel(profile)} requires Catalog V2 Discover (R4_CATALOG_V2_* and R4_CATALOG_V2_DISCOVER_API_KEY)`);
     capabilities.register(catalogDiscoverCapability(options.catalogDiscover));
   }
   // Shipping is bound only when the profile makes it REAL (v3): the pc-carrier HTTP adapter, never a fixture.
@@ -352,7 +353,7 @@ export function salesGatewayLane(env: Readonly<Record<string, string | undefined
   if (label === '' || raw === '') throw new Error(`refusing the gateway lane: ${SALES_LANE_ENV.join(' and ')} are set together or not at all`);
   const profile = SALES_LANE_PROFILES.find((p) => profileLabel(p) === label);
   if (!profile) throw new Error(`refusing the gateway lane: R4_PROD_LANE_PROFILE=${label} is not a Sales lane profile (${SALES_LANE_PROFILES.map(profileLabel).join(', ')})`);
-  const keys = [...new Set(raw.split(/[s,]+/).map((k) => k.trim().toLowerCase()).filter(Boolean))];
+  const keys = [...new Set(raw.split(/[\s,]+/).map((k) => k.trim().toLowerCase()).filter(Boolean))];
   if (keys.some((k) => !/^[0-9a-f]{64}$/.test(k))) throw new Error('refusing the gateway lane: R4_PROD_LANE_ALLOWLIST must list 64-hex conversation keys (--identity-key)');
   return { conversationKeys: keys, profile, taskFactory: salesConversationTaskFactory(pool, salesProductionAgentVersion(profile)) };
 }

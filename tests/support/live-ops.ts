@@ -129,6 +129,8 @@ export class LiveOpsTestbed {
     const production = loadProductionConfig(env);
     const logger = createSilentLogger();
     const api = await createPlatform({ databaseUrl: db.url, host: '127.0.0.1', port: 0, logLevel: 'silent', agentDefinitionsDir: options.agentDefinitionsDir ?? SALES_AGENT_DIR, dbPoolMax: 4 }, { logger, humanContext: () => OPERATOR });
+    // (ADR-045) As a deployment: the lane definition is registered before a gateway with a lane starts.
+    if (options.lane) await registerLaneDefinition({ ...env, R4_DATABASE_URL: db.url });
     const gateway = await startGateway(db.url, pool, production, env, options.identityVerification, options.gatewayLogger);
     const queue: QueuedStep[] = [];
     const model = new FakeModelProvider((request, index) => {
@@ -152,7 +154,8 @@ export class LiveOpsTestbed {
     const { R4_PROD_LANE_PROFILE: _p, R4_PROD_LANE_ALLOWLIST: _a, ...rest } = this.env;
     const env = { ...rest, R4_PROD_ROLLOUT_ALLOWLIST: rollout.allowlist.map(keyOf).join(','), ...laneEnv(rollout.lane) };
     const production = loadProductionConfig(env);
-    await this.gateway.close();
+    // A gateway that refused to start left the previous (closed) one in place.
+    await this.gateway.close().catch(() => undefined);
     this.gateway = await startGateway(this.db.url, this.pool, production, env, this.#identityVerification, this.#gatewayLogger);
     this.production = production;
     this.env = env;
@@ -214,9 +217,7 @@ export class LiveOpsTestbed {
    */
   async laneWorker(owners: { readonly catalog: CatalogPort & { readonly bindingKind: string }; readonly discover: CatalogDiscoverPort; readonly shipping: ShippingService & { readonly bindingKind: string } }, workerId = 'lane-worker-1'): Promise<WorkerPlatform> {
     const env = { ...this.env, R4_PROD_POLICY_PROFILE: 'sales-production@13' };
-    const lines: string[] = [];
-    const code = await runProductionBootstrap(env, { out: (l) => lines.push(l), err: (l) => lines.push(l) }, { lane: true });
-    if (code !== 0) throw new Error(`lane bootstrap failed: ${lines.join(' | ')}`);
+    await registerLaneDefinition(env);
     const production = loadProductionConfig(env);
     const composition = composeSalesProductionWorker({ pool: this.pool, store: this.store, production, modelProvider: this.model, logger: createSilentLogger(), catalog: owners.catalog, catalogDiscover: owners.discover, shipping: owners.shipping });
     const worker = await createWorkerPlatform(
@@ -323,3 +324,11 @@ export const waitInput = () => ({ type: 'structured' as const, data: { type: 'wa
 export const complete = (summary = 'conversation ended') => ({ type: 'structured' as const, data: { type: 'complete', result: { summary, evidence: [] } } });
 /** An invalid decision (schema violation): ADR-008 invalid step, ADR-028 recoverable run failure. */
 export const invalid = () => ({ type: 'structured' as const, data: { type: 'respond' } });
+
+/** (ADR-045) `production:sales:bootstrap --lane`, as a deployment runs it before the lane is configured: registers v13 only. */
+export async function registerLaneDefinition(env: Readonly<Record<string, string | undefined>>): Promise<string[]> {
+  const lines: string[] = [];
+  const code = await runProductionBootstrap({ ...env, R4_PROD_POLICY_PROFILE: 'sales-production@13' }, { out: (l) => lines.push(l), err: (l) => lines.push(l) }, { lane: true });
+  if (code !== 0) throw new Error(`lane bootstrap failed: ${lines.join(' | ')}`);
+  return lines;
+}

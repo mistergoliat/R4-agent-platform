@@ -144,5 +144,7 @@ export type CatalogDiscoverAnswer = z.infer<typeof catalogDiscoverResponseSchema
 
 /** What reads Discover (only the Catalog V2 HTTP adapter implements it; Catalog V1 has no Discover). */
 export interface CatalogDiscoverPort {
+  /** True only when calls can succeed locally: Catalog V2 with its Discover key. Compositions refuse a port that says false. */
+  readonly discoverConfigured: boolean;
   discover(request: CatalogDiscoverRequest, options?: { readonly signal?: AbortSignal; readonly correlationId?: string }): Promise<CatalogDiscoverAnswer>;
 }

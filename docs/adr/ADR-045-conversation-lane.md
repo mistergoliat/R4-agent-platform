@@ -30,20 +30,38 @@ nada para las demás.
    fuera de la denylist. Si no, el gateway se niega a arrancar (`conversation_lane_refused`). El kill switch se
    aplica igual que siempre.
 4. **Restos de una caída.** Puede quedar un binding abierto sin tarea (caída entre `openBinding` y `attachTask`)
-   cuyo perfil ya no compone el gateway. En ese caso se cierra (`profile_not_served`) y se reabre con la asignación
-   actual, en lugar de crear sobre él una tarea de otro perfil.
+   cuyo perfil ya no compone el gateway:
+   - si la tarea ya se había creado (su clave de creación es `conversation-<bindingId>`), el binding la adopta, y no
+     se crea una segunda tarea ni se ejecuta dos veces la misma entrada;
+   - si no, se cierra (`profile_not_served`) y se reabre con la asignación actual.
+
+   Esto también aplica sin carril. Antes, ese resto terminaba en `idempotency_key_reused` y el mensaje quedaba
+   descartado como fallido.
 5. **Separación de ejecución.** El perfil del carril corre una versión de definición propia, v13, y su propio worker
    (`servedAgents` = v13). Así ningún worker ejecuta tareas del otro. Por la FK `agent_tasks → agent_definitions`, v13
-   debe estar registrada antes de activar el carril.
+   debe estar registrada antes de activar el carril: un gateway con carril **se niega a arrancar** si no lo está
+   (`lane_definition_not_registered`).
 6. **Sales.**
    - `sales-production@13` es `@3` más Catalog V2, exigido por el perfil (`salesCatalogSourceOf`) y nunca por una
      variable, más `catalog.discover`.
    - No es seleccionable como perfil principal de un gateway, sólo por un worker y como carril.
    - El gateway lee `R4_PROD_LANE_PROFILE` y `R4_PROD_LANE_ALLOWLIST`: las dos o ninguna.
    - v13 es un archivo candidato. Sólo `production:sales:bootstrap --lane` la registra, y no registra ninguna otra.
-7. **Rollback.** Se quita el carril del entorno del gateway y se lo reinicia. Luego se cancela, con el comando de
-   control existente (`tasks cancel`), la tarea abierta del carril, porque su binding la sigue hasta que termina.
-   Por último se detiene el worker del carril. El siguiente mensaje abre un binding con el perfil principal.
+7. **Rollback**, en este orden:
+   1. Quitar el carril del entorno del gateway y reiniciarlo. Un binding abierto del carril sigue llevando sus mensajes
+      a su tarea.
+   2. **Mantener el worker del carril en marcha** hasta que esa tarea no tenga entradas sin procesar. Si se detiene
+      antes, esos mensajes no se responden; si se cancela antes, se pierden.
+   3. Cancelar la tarea del carril con el comando de control existente (`tasks cancel`).
+   4. Detener el worker del carril.
+
+   El siguiente mensaje abre un binding con el perfil principal.
+8. **Límites conocidos:**
+   - `/ready/r4` cuenta sólo los workers del perfil principal. El worker del carril se verifica por su log
+     `service.composed` y por su presencia en `worker_presence`.
+   - Registrar v13 la convierte en la última versión de Sales del registro. Una tarea Sales **sin versión fijada**
+     resolvería v13, pero ningún proceso productivo crea tareas sin fijar (el gateway siempre fija, y la API no corre
+     en producción).
 
 ## Consecuencias
 
@@ -61,14 +79,20 @@ nada para las demás.
 |---|---|
 | L1 | Asignación determinista y exclusiva |
 | L2 | Cada worker ejecuta sólo lo suyo; Discover se invoca de verdad |
-| L3 | Una ejecución y una respuesta, también con entregas duplicadas |
+| L3, L3b | Una ejecución y una respuesta, también con entregas duplicadas y con primeros mensajes concurrentes distintos |
 | L4 | Historia |
-| L5, L5b | Reinicio y restos de caída |
-| L6 | Rollback |
+| L5 | El binding sigue a su tarea aunque se quite el carril |
+| L5b | Resto sin tarea → reapertura |
+| L5c | Resto con tarea ya creada → adopción, sin segunda tarea |
+| L6 | Rollback según el runbook, sin mensajes perdidos |
 | L7 | Rechazos de configuración |
-| L8 | Sin Discover no hay worker |
+| L7b | Definición no registrada → el gateway no arranca; separadores de claves |
+| L8 | Sin Discover configurado (puerto o clave) no hay worker |
+| L9 | Con `@3` como perfil principal, su huella y su v4 intactas |
 
 Mutaciones manuales:
 
-- «el carril nunca asigna»: 6 de 9 pruebas fallan;
-- «la fábrica sigue a la configuración»: falla L5.
+- «el carril nunca asigna»: fallan 6 de 9;
+- «la fábrica sigue a la configuración»: falla L5;
+- «sin adopción de la tarea huérfana»: falla L5c;
+- «sin chequeo de la definición al arrancar»: falla L7b.

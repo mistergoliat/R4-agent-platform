@@ -51,5 +51,6 @@ export const SALES_PRODUCTION_PROFILE_V13_GATE = Object.freeze([
   { id: 'registry-free', blocking: true, requirement: 'identifiers v13 and @13 verified free in the production registry, then registered with production:sales:bootstrap --lane' },
   { id: 'catalog-v2-env', blocking: true, requirement: 'lane worker env: R4_CATALOG_V2_* and R4_CATALOG_V2_DISCOVER_API_KEY; production worker env unchanged' },
   { id: 'rollback-rehearsed', blocking: true, requirement: 'activation and rollback rehearsed on a disposable database with the deploy SHA' },
+  { id: 'owner-binding', blocking: true, requirement: 'the owner conversation has no open @3 task at activation (cancel it with tasks cancel): an open binding keeps its task, so the lane applies only from the next binding' },
   { id: 'explicit-authorization', blocking: true, requirement: 'explicit owner authorization to activate the lane for the owner conversation' },
 ] as const);

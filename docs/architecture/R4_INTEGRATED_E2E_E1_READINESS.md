@@ -120,14 +120,16 @@ opcional en `ChannelIngress`. No es un sistema de routing nuevo. El detalle est�
 | Una ejecución por mensaje | Deduplicación existente por evento; v13 tiene su propio worker y ninguno toma tareas del otro | L2, L3 |
 | Historia | `PriorConversationContextSource` (R7-4) también en `@13` | L4 |
 | Sin respuestas duplicadas | Un outbound por respuesta, también con 5 entregas del mismo evento y los dos workers activos | L3 |
-| Recuperación tras reinicio | Asignación desde el binding persistido; restos sin tarea de un perfil no servido → `profile_not_served` | L5, L5b |
-| Rollback | Quitar el carril, cancelar la tarea del carril y volver al perfil principal | L6 |
-| `@3` intacto | Sin carril, el gateway es R4-I; `SALES_PRODUCTION_PROFILES` y las huellas no cambian; V2 sólo por `salesCatalogSourceOf(@13)` | Contrato `sales-profile-v13`, `catalog-v2-isolation` y suite completa |
+| Recuperación tras reinicio | Asignación desde el binding persistido. Un resto sin tarea de un perfil no servido adopta la tarea ya creada (L5c) o se reabre (`profile_not_served`, L5b). Un gateway con carril no arranca sin v13 registrada | L5, L5b, L5c, L7b |
+| Rollback | Runbook §4.1: quitar el carril, dejar que el worker del carril vacíe su tarea, cancelarla, detener el worker; sin mensajes perdidos | L6 |
+| `@3` intacto | Probado con `@3` como perfil principal (L9: su huella y v4). Sin carril, el gateway es R4-I; `SALES_PRODUCTION_PROFILES` y las huellas no cambian; V2 sólo por `salesCatalogSourceOf(@13)` | Contrato `sales-profile-v13`, `catalog-v2-isolation` y suite completa |
 
 **Mutaciones manuales:**
 
 - «el carril nunca asigna»: fallan 6 de 9;
-- «la fábrica sigue a la configuración»: falla L5.
+- «la fábrica sigue a la configuración»: falla L5;
+- «sin adopción de la tarea huérfana»: falla L5c;
+- «sin chequeo de la definición al arrancar»: falla L7b.
 
 ## 4. Plan de despliegue coordinado
 
@@ -153,16 +155,17 @@ opcional en `ChannelIngress`. No es un sistema de routing nuevo. El detalle est�
 | 3 | Gateway, worker principal y scheduler al SHA nuevo, **sin** variables de carril | `/ready`; `production:sales:plan` muestra `lane: none` y la huella de `@3` sin cambios | volver al release anterior |
 | 4 | `production:sales:bootstrap --lane` con `R4_PROD_POLICY_PROFILE=sales-production@13` | registra **sólo** `sales@13` | v13 registrada es inerte sin carril ni worker |
 | 5 | Nuevo proceso PM2 del worker del carril. Su entorno: el de producción, con `R4_PROD_POLICY_PROFILE=sales-production@13`, `R4_CATALOG_V2_*`, la clave Discover, otro `R4_WORKER_ID` y el límite de escrituras de D-2 | log `service.composed` con `sales-production@13` y sin errores | detener y borrar el proceso |
-| 6 | **Activación** (autorización específica): cancelar la tarea abierta del owner en `@3` (`tasks cancel`); agregar `R4_PROD_LANE_PROFILE` y `R4_PROD_LANE_ALLOWLIST=<clave del owner>` al gateway; reiniciarlo | `/ready` muestra `lane: { profile: sales-production@13, conversations: 1 }` | §4.1 |
+| 6 | **Activación** (autorización específica): cancelar la tarea abierta del owner en `@3` (`tasks cancel`; gate `owner-binding`: un binding abierto sigue a su tarea); agregar `R4_PROD_LANE_PROFILE` y `R4_PROD_LANE_ALLOWLIST=<clave del owner>` al gateway; reiniciarlo | `/ready` muestra `lane: { profile: sales-production@13, conversations: 1 }` | §4.1 |
 | 7 | E1 (§5) | evidencia privada | §4.1 |
 
 ### 4.1 Rollback de la activación
 
-Probado en L6.
+Probado en L6. El orden importa: el binding abierto del carril sigue a su tarea.
 
 1. Quitar las dos variables del carril del gateway y reiniciarlo.
-2. Cancelar la tarea abierta del carril (`tasks cancel`). Hasta entonces el binding la sigue.
-3. Detener el worker del carril.
+2. **Mantener el worker del carril en marcha** hasta que su tarea no tenga entradas sin procesar. Si se detiene antes, esos mensajes no se responden; si se cancela antes, se pierden.
+3. Cancelar la tarea del carril (`tasks cancel`).
+4. Detener el worker del carril.
 
 El siguiente mensaje del owner abre un binding con `@3`. La definición v13 queda registrada e inerte.
 
@@ -245,7 +248,7 @@ Requiere todo lo de E2, más:
 
 | Nivel | Resultado |
 |---|---|
-| L1 | unit 1641 ✓, contract 492 ✓, carril 9/9 ✓, typecheck 0, lint 0 |
+| L1 | unit 1642 ✓, contract 492 ✓, carril 13/13 ✓, typecheck 0, lint 0 |
 | L2 | §7.1 |
 | L3 | NOT_RUN: se hace en el despliegue, sobre el SHA exacto |
 
@@ -266,7 +269,29 @@ Se completa al terminar la cadena.
 
 ### 7.2 Revisión focalizada
 
-Se completa al terminar la revisión.
+La hizo un revisor independiente sobre `384288f`, sin ejecutar pruebas. **Sin bloqueos.** Hubo siete puntos a
+corregir, todos resueltos en la rama:
+
+| # | Hallazgo | Corrección |
+|---|---|---|
+| 1 | El regex de la allowlist del carril perdió la barra (`[s,]`): una lista separada por espacios o saltos de línea impediría arrancar al gateway | Corregido; L7b lo prueba con espacios, saltos de línea y comas |
+| 2 | El worker del carril se componía sin la clave Discover y fallaba en cada llamada | `discoverConfigured` en el puerto; la composición lo exige (L8 y unit) |
+| 3 | Rollback: cancelar antes de vaciar la tarea pierde mensajes | Runbook reordenado (§4.1, ADR-045 §7); L6 verifica que el mensaje intermedio se responde |
+| 4 | Caída entre crear la tarea y adjuntarla, más la quita del carril: segunda tarea y doble respuesta | El binding adopta la tarea por su clave de creación (L5c) |
+| 5 | Gateway con carril sin v13 registrada: 500 en cada mensaje | El gateway no arranca (`lane_definition_not_registered`, L7b) |
+| 6 | Ninguna prueba usaba `@3` como perfil principal | L9 |
+| 7 | L5 no cambiaba la configuración; faltaban primeros mensajes concurrentes distintos | L5 quita el carril; L3b |
+
+**Nits:**
+
+- **Aceptados y documentados:**
+  - el cambio en el camino sin carril (ADR-045 §4);
+  - v13 como la última versión del registro, y `/ready/r4` sin contar el worker del carril (ADR-045 §8);
+  - el gate de activación `owner-binding`.
+- **Corregido:** un `FAILED` con HTTP 200 es una violación de contrato.
+- **Sin cambios:**
+  - los 503 no reintentables de Discover se clasifican como `temporarily_unavailable`, igual que el resto del adaptador;
+  - `contractVersion` se acepta tolerante, como en el consumidor de referencia del owner.
 
 ## 8. Decisiones del owner
 

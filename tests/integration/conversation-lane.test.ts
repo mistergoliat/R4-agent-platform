@@ -4,9 +4,9 @@ import { catalogDiscoverResponseSchema, type CatalogDiscoverAnswer, type Catalog
 import { DomainError, FixtureCatalog, type ShippingService } from '@r4-adapters/domains';
 import type { ModelRequest } from '@r4/model-gateway';
 import { createSilentLogger } from '@r4/observability';
-import { loadProductionConfig } from '@r4/live-ops';
-import { composeSalesProductionWorker } from '@r4-sales/agent/production';
-import { LiveOpsTestbed, OPERATOR, keyOf, say, type QueuedStep } from '../support/live-ops.js';
+import { loadProductionConfig, profileFingerprint } from '@r4/live-ops';
+import { SALES_CHANNEL_INGRESS, SALES_PRODUCTION_PROFILE_V3, composeSalesProductionWorker, salesConversationTaskFactory, salesGatewayLane } from '@r4-sales/agent/production';
+import { CANARY_PHONE_ID, LiveOpsTestbed, OPERATOR, keyOf, registerLaneDefinition, say, type QueuedStep } from '../support/live-ops.js';
 
 /**
  * ADR-045 — the E1 lane on the existing gateway and number: the owner's allowlisted conversation is served by the lane
@@ -25,7 +25,7 @@ const ANSWER: CatalogDiscoverAnswer = catalogDiscoverResponseSchema.parse(fixtur
 
 function owners() {
   const calls: CatalogDiscoverRequest[] = [];
-  const discover: CatalogDiscoverPort = { discover: (request) => (calls.push(request), Promise.resolve(ANSWER)) };
+  const discover: CatalogDiscoverPort = { discoverConfigured: true, discover: (request) => (calls.push(request), Promise.resolve(ANSWER)) };
   const shipping: ShippingService & { bindingKind: string } = { bindingKind: 'http', quote: () => Promise.reject(new DomainError('temporarily_unavailable', 'not_in_test', 'not used')) };
   return { catalog: Object.assign(new FixtureCatalog(), { bindingKind: 'real' }), discover, shipping, calls };
 }
@@ -104,6 +104,14 @@ describe('ADR-045 conversation lane', () => {
     expect(b.provider.sends.length).toBe(1);
   });
 
+  it('L3b: concurrent DISTINCT first messages of the lane conversation open one binding and one v13 task', async () => {
+    const b = (bed = await LiveOpsTestbed.start({ allowlist: [OWNER], lane: [OWNER], autonomy: true }));
+    await Promise.all([b.customer(OWNER, 'wamid.l3b1', 'Hola'), b.customer(OWNER, 'wamid.l3b2', 'Busco una barra'), b.customer(OWNER, 'wamid.l3b3', 'Para sentadilla')]);
+    expect(await bindings(b)).toHaveLength(1);
+    expect(await b.rows('select agent_version, count(*)::int as n from agent_tasks group by 1')).toEqual([{ agent_version: 13, n: 1 }]);
+    expect(await b.rows('select count(*)::int as n from task_inputs')).toEqual([{ n: 3 }]);
+  });
+
   it('L4: history is preserved — the first lane task sees the earlier @1 conversation of the same contact', async () => {
     const b = (bed = await LiveOpsTestbed.start({ allowlist: [OWNER], autonomy: true }));
     await b.customer(OWNER, 'wamid.l4a', 'Busco un banco regulable');
@@ -112,8 +120,8 @@ describe('ADR-045 conversation lane', () => {
     await b.deliver();
     await b.api.temporal.cancelTask(await b.taskOf(OWNER), OPERATOR);
 
-    await b.redeployGateway({ allowlist: [OWNER], lane: [OWNER] });
     const lane = await b.laneWorker(owners());
+    await b.redeployGateway({ allowlist: [OWNER], lane: [OWNER] });
     const seen = recording(say('Sigamos con el banco.'));
     await b.customer(OWNER, 'wamid.l4b', '¿Y el banco que me dijiste?');
     b.next(seen.step);
@@ -124,27 +132,25 @@ describe('ADR-045 conversation lane', () => {
     expect(context).toContain('Tenemos el banco Atlas.');
   });
 
-  it('L5: after a restart the assignment follows the persisted binding, never the new configuration', async () => {
+  it('L5: an existing lane binding follows its task even after the lane is removed (assignment never re-read from configuration)', async () => {
     const b = (bed = await LiveOpsTestbed.start({ allowlist: [OWNER, OTHER], lane: [OWNER], autonomy: true }));
-    await b.laneWorker(owners());
     await b.customer(OWNER, 'wamid.l5a', 'Hola');
     const laneTask = await b.taskOf(OWNER);
-    await b.redeployGateway({ allowlist: [OWNER, OTHER], lane: [OWNER] });
+    await b.redeployGateway({ allowlist: [OWNER, OTHER] });
     await b.customer(OWNER, 'wamid.l5b', 'Sigo aquí');
     expect(await b.taskOf(OWNER)).toBe(laneTask);
-
-    // A crash between opening a binding and its task: the leftover keeps its profile when the gateway still serves it…
+    expect(await versionOf(b, OWNER)).toBe(13);
+    // …and a taskless leftover (crash between opening and creating) keeps its lane profile while the gateway serves it.
+    await b.redeployGateway({ allowlist: [OWNER, OTHER], lane: [OWNER] });
     await b.pool.query(`insert into channel_conversation_bindings (binding_id, channel, conversation_key, account_ref, recipient_ref, status, autonomy, eligibility_reason, rollout_fingerprint, profile, profile_fingerprint)
       select gen_random_uuid(), channel, $1, account_ref, $2, 'open', 'autonomous', 'allowlisted', rollout_fingerprint, profile, profile_fingerprint from channel_conversation_bindings where conversation_key = $3`, [keyOf(OTHER), OTHER, keyOf(OWNER)]);
     await b.customer(OTHER, 'wamid.l5c', 'Hola');
     expect(await versionOf(b, OTHER)).toBe(13);
   });
 
-  it('L5b: a taskless leftover of a profile the gateway no longer serves is reopened under the current assignment', async () => {
+  it('L5b: a taskless leftover of a profile the gateway no longer serves, with no task created, is reopened under the current assignment', async () => {
     const b = (bed = await LiveOpsTestbed.start({ allowlist: [OWNER, OTHER], lane: [OWNER], autonomy: true }));
-    await b.laneWorker(owners());
     await b.customer(OWNER, 'wamid.l5d', 'Hola');
-    // The leftover of a crash between opening OTHER's binding on the lane and attaching its task.
     await b.pool.query(`insert into channel_conversation_bindings (binding_id, channel, conversation_key, account_ref, recipient_ref, status, autonomy, eligibility_reason, rollout_fingerprint, profile, profile_fingerprint)
       select gen_random_uuid(), channel, $1, account_ref, $2, 'open', 'autonomous', 'allowlisted', rollout_fingerprint, profile, profile_fingerprint from channel_conversation_bindings where conversation_key = $3`, [keyOf(OTHER), OTHER, keyOf(OWNER)]);
     await b.redeployGateway({ allowlist: [OWNER, OTHER] });
@@ -153,7 +159,23 @@ describe('ADR-045 conversation lane', () => {
     expect((await bindings(b)).filter((r) => r.conversation_key === keyOf(OTHER)).map((r) => [r.profile, r.status, r.closed_reason])).toEqual([[LANE, 'closed', 'profile_not_served'], ['sales-production@1', 'open', null]]);
   });
 
-  it('L6: rollback — without the lane, an open lane task keeps its conversation until an operator cancels it; then @1 serves it again', async () => {
+  it('L5c: a crash after the lane task was created but before it was attached, then the lane removed: the binding adopts that task (no second task, no second execution)', async () => {
+    const b = (bed = await LiveOpsTestbed.start({ allowlist: [OWNER], lane: [OWNER], autonomy: true }));
+    const inserted = await b.pool.query<{ binding_id: string }>(`insert into channel_conversation_bindings (binding_id, channel, conversation_key, account_ref, recipient_ref, status, autonomy, eligibility_reason, rollout_fingerprint, profile, profile_fingerprint)
+      values (gen_random_uuid(), 'whatsapp', $1, $2, $3, 'open', 'autonomous', 'allowlisted', 'leftover', $4, 'leftover') returning binding_id`, [keyOf(OWNER), CANARY_PHONE_ID, OWNER, LANE]);
+    const bindingId = inserted.rows[0]!.binding_id;
+    // What the crashed gateway had done: the v13 task created with this binding's creation key, with the first input.
+    const created = await b.api.temporal.createTaskWithInput(b.api.tasks, {
+      request: salesConversationTaskFactory(b.pool, 13).request({ bindingId, channel: 'whatsapp' }), requestedBy: SALES_CHANNEL_INGRESS, correlationId: `conversation-${bindingId}`, idempotencyKey: `conversation-${bindingId}`,
+    }, { externalKey: 'wamid.l5f', content: 'Hola', sourceRef: 'channel:whatsapp', occurredAt: new Date().toISOString() }, { kind: 'user', ref: 'whatsapp:test' });
+    await b.redeployGateway({ allowlist: [OWNER] });
+    await b.customer(OWNER, 'wamid.l5g', '¿Hola?');
+    expect(await b.taskOf(OWNER)).toBe(created.taskId);
+    expect(await b.rows('select agent_version, count(*)::int as n from agent_tasks group by 1')).toEqual([{ agent_version: 13, n: 1 }]);
+    expect(await b.rows('select count(*)::int as n from task_inputs where task_id = $1', [created.taskId])).toEqual([{ n: 2 }]);
+  });
+
+  it('L6: rollback by the runbook: lane removed, the lane worker keeps answering its open task (no message lost), then the task is cancelled and @1 serves the conversation again', async () => {
     const b = (bed = await LiveOpsTestbed.start({ allowlist: [OWNER, OTHER], lane: [OWNER], autonomy: true }));
     const lane = await b.laneWorker(owners());
     await b.customer(OWNER, 'wamid.l6a', 'Hola');
@@ -161,9 +183,15 @@ describe('ADR-045 conversation lane', () => {
     await b.runWorker(lane);
     const laneTask = await b.taskOf(OWNER);
 
+    // 1. Lane removed from the gateway; 2. the lane worker still runs and answers what reaches its open task.
     await b.redeployGateway({ allowlist: [OWNER, OTHER] });
     await b.customer(OWNER, 'wamid.l6b', 'Sigo');
     expect(await b.taskOf(OWNER)).toBe(laneTask);
+    b.next(say('Te sigo.'));
+    await b.runWorker(lane);
+    await b.deliver();
+    expect((await b.store.outboundForTask(laneTask)).length).toBe(2);
+    // 3. Cancel the drained lane task; 4. the next message opens @1, and the lane worker has nothing left.
     await b.api.temporal.cancelTask(laneTask, OPERATOR);
     await b.customer(OWNER, 'wamid.l6c', 'Hola de nuevo');
     expect(await versionOf(b, OWNER)).toBe(3);
@@ -181,10 +209,35 @@ describe('ADR-045 conversation lane', () => {
     await expect(LiveOpsTestbed.start({ allowlist: [OWNER], env: { R4_PROD_POLICY_PROFILE: LANE } })).rejects.toThrow(/not a Sales production profile/);
   });
 
+  it('L7b: a gateway with a lane refuses to start while the lane definition is not registered; keys may be separated like the rollout allowlist', async () => {
+    const b = (bed = await LiveOpsTestbed.start({ allowlist: [OWNER] }));
+    await expect(b.redeployGateway({ allowlist: [OWNER], lane: [OWNER] })).rejects.toThrow(/lane definition sales@13 is not registered/);
+    const env = { ...b.env, R4_PROD_LANE_PROFILE: LANE, R4_PROD_LANE_ALLOWLIST: `\n ${keyOf(OWNER)} \n ${keyOf(OTHER)},${keyOf(OWNER)}` };
+    expect(salesGatewayLane(env, b.pool)?.conversationKeys).toEqual([keyOf(OWNER), keyOf(OTHER)]);
+    await registerLaneDefinition(b.env);
+    await b.redeployGateway({ allowlist: [OWNER], lane: [OWNER] });
+    await b.customer(OWNER, 'wamid.l7b', 'Hola');
+    expect(await versionOf(b, OWNER)).toBe(13);
+  });
+
   it('L8: the lane worker never composes without Catalog V2 Discover', async () => {
     const b = (bed = await LiveOpsTestbed.start({ allowlist: [OWNER], lane: [OWNER] }));
     const { catalog, shipping } = owners();
     const production = loadProductionConfig({ ...b.env, R4_PROD_POLICY_PROFILE: LANE });
     expect(() => composeSalesProductionWorker({ pool: b.pool, store: b.store, production, modelProvider: b.model, logger: createSilentLogger(), catalog, shipping })).toThrow(/requires Catalog V2 Discover/);
+    // A Discover port without its key (or not on V2) is refused too, instead of failing every call later.
+    const unconfigured: CatalogDiscoverPort = { discoverConfigured: false, discover: () => Promise.reject(new Error('never called')) };
+    expect(() => composeSalesProductionWorker({ pool: b.pool, store: b.store, production, modelProvider: b.model, logger: createSilentLogger(), catalog, catalogDiscover: unconfigured, shipping })).toThrow(/requires Catalog V2 Discover/);
+  });
+
+  it('L9: with sales-production@3 as the gateway profile (production), only the lane conversation leaves it; @3 bindings keep the @3 fingerprint', async () => {
+    const b = (bed = await LiveOpsTestbed.start({ allowlist: [OWNER, OTHER], lane: [OWNER], autonomy: true, env: { R4_PROD_POLICY_PROFILE: 'sales-production@3' } }));
+    await b.customer(OWNER, 'wamid.l9a', 'Hola');
+    await b.customer(OTHER, 'wamid.l9b', 'Hola');
+    const rows = await b.rows<{ profile: string; profile_fingerprint: string }>('select profile, profile_fingerprint from channel_conversation_bindings order by created_at');
+    expect(rows.map((r) => r.profile)).toEqual([LANE, 'sales-production@3']);
+    expect(rows[1]!.profile_fingerprint).toBe(profileFingerprint(SALES_PRODUCTION_PROFILE_V3));
+    expect(await versionOf(b, OWNER)).toBe(13);
+    expect(await versionOf(b, OTHER)).toBe(4);
   });
 });

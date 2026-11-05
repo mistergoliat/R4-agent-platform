@@ -78,6 +78,11 @@ export class HttpCatalogAdapter implements CatalogPort, CatalogDiscoverPort {
     this.#onCall = options.onCall;
   }
 
+  /** (ADR-045) Catalog V2 with its own Discover key; anything else refuses discover() locally. */
+  get discoverConfigured(): boolean {
+    return this.#config.source === 'v2' && Boolean(this.#config.discoverApiKey);
+  }
+
   async search(request: CatalogSearchRequest, options?: CallOptions): Promise<CatalogSearchAnswer> {
     const body = JSON.stringify({ query: request.query, ...(request.filters ? { filters: request.filters } : {}), ...(request.limit !== undefined ? { limit: request.limit } : {}) });
     const parsed = await this.#call('search', 'POST', '/v2/catalog/search', body, catalogSearchResponseSchema, options);
@@ -116,7 +121,10 @@ export class HttpCatalogAdapter implements CatalogPort, CatalogDiscoverPort {
     if (!parsed.success) throw new DomainError('validation', 'invalid_request', `the discover request violates the contract at ${parsed.error.issues[0]?.path.join('.') || '(root)'}`);
     const correlationId = options?.correlationId;
     const body = { ...parsed.data, ...(correlationId && /^[A-Za-z0-9._:-]{1,64}$/u.test(correlationId) ? { context: { correlationId } } : {}) };
-    return this.#call('discover', 'POST', '/v2/catalog/discover', JSON.stringify(body), catalogDiscoverResponseSchema, options, this.#config.discoverApiKey, CATALOG_V2_DISCOVER_KEY_ENV);
+    const answer = await this.#call('discover', 'POST', '/v2/catalog/discover', JSON.stringify(body), catalogDiscoverResponseSchema, options, this.#config.discoverApiKey, CATALOG_V2_DISCOVER_KEY_ENV);
+    // The owner never sends FAILED with HTTP 200; if it does, it is not a successful read for the model.
+    if (answer.status === 'FAILED') throw this.#violation('discover', 'failed_answer_as_success', 'the catalog sent a FAILED discover answer with HTTP 200', options);
+    return answer;
   }
 
   async #call<S extends z.ZodType>(operation: CatalogOperation, method: 'GET' | 'POST', path: string, body: string | undefined, schema: S, options: CallOptions | undefined, apiKey = this.#config.apiKey, keyVar = catalogEnvOf(this.#config.source ?? 'v1')[1]): Promise<z.output<S>> {

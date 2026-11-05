@@ -100,6 +100,15 @@ describe('adapter.discover', () => {
     expect(e503).toMatchObject({ category: 'temporarily_unavailable', code: 'capability_saturated' });
     const bad = await adapter(env, () => json(200, { ...answer.response, verified: 'nope' })).catalog.discover({ schemaVersion: 1, need: 'kettlebell' }).catch((e: unknown) => e);
     expect(bad).toMatchObject({ category: 'contract_violation' });
+    const failed = await adapter(env, () => json(200, { ...answer.response, status: 'FAILED' })).catalog.discover({ schemaVersion: 1, need: 'kettlebell' }).catch((e: unknown) => e);
+    expect(failed).toMatchObject({ category: 'contract_violation', code: 'failed_answer_as_success' });
+  });
+
+  it('discoverConfigured is true only for V2 with the Discover key (what the lane composition requires)', () => {
+    const answer200 = () => json(200, answer.response);
+    expect(adapter({ ...V2_ENV, [CATALOG_V2_DISCOVER_KEY_ENV]: DISCOVER }, answer200).catalog.discoverConfigured).toBe(true);
+    expect(adapter(V2_ENV, answer200).catalog.discoverConfigured).toBe(false);
+    expect(adapter(V1_ENV, answer200, 'v1').catalog.discoverConfigured).toBe(false);
   });
 });
 

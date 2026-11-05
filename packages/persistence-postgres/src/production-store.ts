@@ -263,6 +263,11 @@ export class PostgresProductionStore implements ProductionStore {
     return taskStateOf(this.#pool, taskId);
   }
 
+  async taskByCreationKey(idempotencyKey: string): Promise<string | null> {
+    const r = await query<Row>(this.#pool, 'select task_id from agent_tasks where idempotency_key = $1', [idempotencyKey]);
+    return r.rows.length === 1 ? (r.rows[0]!.task_id as string) : null;
+  }
+
   // ---------------------------------------------------------------------------
   // Outbound — creation
   // ---------------------------------------------------------------------------

@@ -246,12 +246,20 @@ export class ChannelIngress {
             binding = null;
           }
         }
-        // A binding opened for a profile this gateway no longer composes, whose task never opened (a crash between
-        // the two): reopen it under the current assignment instead of creating a task of another profile on it.
+        // A taskless binding opened for a profile this gateway no longer composes (a crash between opening and attaching).
+        // If its task was already created, the binding follows that task (never a second task for the same input; a
+        // terminal one is handled by the submission's terminal race below). Otherwise reopen under the current assignment.
         if (binding && !binding.taskId && !this.#servedBy(binding)) {
-          await store.closeBinding(binding.bindingId, 'profile_not_served');
-          emitTelemetry(logger, 'conversation.binding.closed', { channel: record.channel, bindingId: binding.bindingId, taskId: null, reason: 'profile_not_served' });
-          binding = null;
+          const created = await store.taskByCreationKey(`conversation-${binding.bindingId}`);
+          if (created) {
+            binding = await store.attachTask(binding.bindingId, created);
+            // The crash came before the open hook ran; hooks are idempotent (the pack's hook, not the profile's).
+            await this.#main.taskFactory.afterOpen?.(created, binding);
+          } else {
+            await store.closeBinding(binding.bindingId, 'profile_not_served');
+            emitTelemetry(logger, 'conversation.binding.closed', { channel: record.channel, bindingId: binding.bindingId, taskId: null, reason: 'profile_not_served' });
+            binding = null;
+          }
         }
         if (!binding) {
           const eligibility = rolloutEligibility(config.rollout, record.conversationKey);

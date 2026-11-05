@@ -112,6 +112,13 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
     // Kill switch state must be known before anything is accepted.
     await store.readControls();
     const agents = new AgentRegistry({ store: new PostgresAgentDefinitionStore(pool), clock, logger });
+    // ADR-045: a lane whose pinned definition is not registered would fail every one of its messages (FK): refuse to start.
+    if (bindings.lane) {
+      const probe = bindings.lane.taskFactory.request({ bindingId: 'lane-startup-probe', channel: profile.channel.id });
+      if (!(await agents.resolve(probe.agentId, probe.agentVersion))) {
+        throw new PlatformError('precondition', 'lane_definition_not_registered', `refusing to start the channel gateway: the lane definition ${probe.agentId}@${probe.agentVersion ?? 'latest'} is not registered (run the lane bootstrap first)`);
+      }
+    }
     const tasks = new TaskRuntime({ store: new PostgresTaskRuntimeStore(pool), agents, ids, clock, logger });
     const executionStore = new PostgresExecutionStore(pool);
     const execution = new ExecutionRuntime({ store: executionStore, ids, clock, logger, maxRunRecoveries: 0 });

@@ -154,7 +154,7 @@ function composition() {
   return composeSalesProductionWorker({ pool: { query: () => Promise.reject(new Error('plan only')) } as never, store: noStore, production, modelProvider: { providerId: 'plan', invoke: () => Promise.reject(new Error('plan only')) }, logger: createLogger({ service: 'plan', level: 'silent' }), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production) });
 }
 
-/** (ADR-045) The lane profile's Discover binding: the same Catalog V2 adapter (its Discover key is checked when composed). */
+/** (ADR-045) The lane profile's Discover binding: the same Catalog V2 adapter (the composition refuses it without the Discover key). */
 function discoverOf(production: ReturnType<typeof loadProductionConfig>, catalog: HttpCatalogAdapter | undefined) {
   return catalog && isSalesLaneProfile(workerProfile(production)) ? { catalogDiscover: catalog } : {};
 }
@@ -234,7 +234,7 @@ async function plan(production: ReturnType<typeof loadProductionConfig>): Promis
     quote,
     recipient: recipientKey ? { conversationKey: `${recipientKey.slice(0, 12)}…`, eligibility: rolloutEligibility(production.config.rollout, recipientKey) } : 'R4_PROD_SMOKE_RECIPIENT not set',
     // (ADR-045) What a gateway with this environment serves as its lane (keys counted, never echoed).
-    lane: process.env.R4_PROD_LANE_PROFILE ? { profile: process.env.R4_PROD_LANE_PROFILE, conversations: (process.env.R4_PROD_LANE_ALLOWLIST ?? '').split(/[s,]+/).filter(Boolean).length } : 'none',
+    lane: process.env.R4_PROD_LANE_PROFILE ? { profile: process.env.R4_PROD_LANE_PROFILE, conversations: (process.env.R4_PROD_LANE_ALLOWLIST ?? '').split(/[\s,]+/).filter(Boolean).length } : 'none',
     rollout: { percent: production.config.rollout.percent, allowlisted: production.config.rollout.allowlist.length, denylisted: production.config.rollout.denylist.length, fingerprint: rolloutFingerprint(production.config.rollout) },
     killSwitch,
     processes: SALES_PRODUCTION_PROCESSES.map((p) => ({ name: p.name, command: `npm run ${p.script}`, owns: p.owns })),
