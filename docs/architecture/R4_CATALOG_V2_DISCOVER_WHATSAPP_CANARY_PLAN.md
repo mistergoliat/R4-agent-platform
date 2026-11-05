@@ -95,6 +95,8 @@ Se leyó el código de Catalog en `5f2c086` (el desplegado), en sólo lectura.
 4. **Las credenciales son por número:** `R4_WHATSAPP_PHONE_NUMBER_ID`, el token de acceso, el secreto de la app y el
    token de verificación pertenecen al número productivo.
 
+> **Ninguna de estas topologías está autorizada para despliegue.** Las opciones se conservan para la decisión del owner; elegir una no autoriza su despliegue, que requiere un mandato propio.
+
 **Consecuencia:** para que mensajes reales de la allowlist lleguen a Catalog V2 + Discover hay que hacer una de dos
 cosas:
 
