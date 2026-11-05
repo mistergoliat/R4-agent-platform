@@ -1,7 +1,7 @@
 ---
 title: R4-J4-R7-4 — continuidad conversacional entre tasks
-status: R4_R7_4_READY_FOR_PR_REVIEW
-mandate: «R4 — R7-4 Cross-Task Continuity», «R7-4 Final Hardening and L2» (etapa de endurecimiento), la corrección de R74-5, «R4 — R7-4 L2 Validation» y «R4 — R7-4 L2 Unblock and Final Validation» (owner); base main@52a58f4
+status: R4_R7_4_MAINLINE_MERGED_DEPLOYMENT_PENDING
+mandate: «R4 — R7-4 Cross-Task Continuity», «R7-4 Final Hardening and L2» (etapa de endurecimiento), la corrección de R74-5, «R4 — R7-4 L2 Validation», «R4 — R7-4 L2 Unblock and Final Validation» y «R4 — R7-4 Final PR Review» (owner); base main@52a58f4
 date: 2026-11-04
 ---
 
@@ -688,7 +688,7 @@ R-1, el comportamiento real del modelo con turnos anteriores, queda **medido** e
 
 | # | Hallazgo | Severidad | Disposición |
 |---|---|---|---|
-| IR-1 | El prefiltro `coalesce(e.closed_at, 'infinity') >= since` (`production-store.ts`) puede descartar un binding que todavía tiene un turno dentro de la ventana. Ver el escenario debajo de la tabla | Menor | **Abierto, decisión del owner.** La corrección es quitar el prefiltro, que `0013` ya vuelve innecesario para el costo. Cambia la sentencia validada: integración, las 6 suites que mutan `production-store.ts` y la equivalencia de R-9. Se propone como seguimiento con su validación focalizada |
+| IR-1 | El prefiltro `coalesce(e.closed_at, 'infinity') >= since` (`production-store.ts`) puede descartar un binding que todavía tiene un turno dentro de la ventana. Ver el escenario debajo de la tabla | Menor | **Resuelto en §13** («R7-4 Final PR Review»): se quitó el prefiltro, con prueba R74-9 y mutación PC-M11 |
 | IR-2 | Los avisos de plataforma (`origin = 'platform'`, ADR-041) de una task anterior no aparecen como turnos anteriores, aunque el contacto los haya recibido | Menor | Abierto. Seguimiento: agregar la rama `platform` con su entrega |
 | IR-3 | `earlierTurnsOmitted` es verdadero cuando hay exactamente `maxTasks` tasks anteriores, aunque no se haya omitido nada | Detalle | Abierto. Se corrige pidiendo `maxTasks + 1` |
 | IR-4 | `0013` no usa `if not exists`: un índice homónimo creado a mano la haría fallar | Detalle | Consistente con las demás migraciones. Queda como nota de despliegue: no crear el índice a mano |
@@ -710,3 +710,77 @@ Con desfase entre el reloj de la aplicación y el de la base de datos, también 
 **Preparación:** rama actualizada desde `main` (sin cambios: `main` = `52a58f4`), sin conflictos, historial auditado y revisión independiente de los invariantes críticos (§12.6).
 
 **Restricciones:** sin merge y sin cambios en producción. El despliegue requiere una decisión aparte y `db:migrate`.
+
+## 13. Revisión final del PR: IR-1
+
+**Mandato.** «R4 — R7-4 Final PR Review» (owner, 2026-11-04), con estado inicial `R4_R7_4_PR36_CONDITIONAL_MERGE_APPROVAL`.
+- Se acepta la implementación principal y su evidencia L2.
+- El merge queda condicionado a resolver IR-1.
+- IR-2, IR-3, DS-1 y DS-2 se registran fuera del PR.
+- El despliegue sólo se planifica.
+
+### 13.1 Corrección (`e846e72`)
+
+**El problema.** La ventana se aplicaba dos veces:
+- a cada turno, por su propia hora (correcto);
+- a cada binding anterior, por su hora de cierre (`coalesce(e.closed_at, 'infinity') >= since`).
+
+El segundo filtro suponía que un binding cerrado antes de la ventana no tiene turnos dentro de ella. No es cierto en dos casos:
+- una task anterior puede recibir un turno después de que su binding cerró (escenario IR-1, §12.6);
+- `closed_at` viene del reloj de la base, mientras que `received_at` y el `created_at` de los pasos vienen del reloj de la aplicación.
+
+**Cambio mínimo.**
+- **Prefiltro eliminado.** Cada rama sigue filtrando sus turnos por su propia hora, y `0013` acota la búsqueda a la conversación.
+- **`earlierTasks` redefinido.** Ahora cuenta las tasks anteriores con al menos un turno dentro de la ventana, no los bindings que la ventana no descartó. Sin ese ajuste, quitar el prefiltro habría hecho más frecuente el falso positivo de `earlierTurnsOmitted` (IR-3).
+- **Contrato** (`ports.ts`) actualizado.
+- **Sin cambios** en la fuente de contexto, la composición ni el esquema.
+
+### 13.2 Validación focalizada
+
+**Pruebas que ejecutan la sentencia:** las que componen el worker de producción de Sales o llaman al método, seleccionadas con `grep` sobre `support/live-ops`, `composeSalesProductionWorker`, el runtime del canary y `earlierConversationTurns`. Árbol `e846e72` (tree `c8268f9`), con la máquina libre.
+
+| Paso | Resultado |
+|---|---|
+| build | PASS |
+| unit `prior-conversation` y `mode-profile-rollout` | 24/24 |
+| contract (completo) | 463/463 |
+| integration: los 23 archivos afectados de 51 | **324/324**, incluida R74-9 |
+| recovery: los 6 archivos afectados de 12 | 9/9, incluida R74-5b |
+| Mutación `prior-conversation`, con la nueva PC-M11 | **11/11**. `dist` idéntico tras restaurar (`8d3e30e0ae6d`) |
+
+**R74-9** (integración) reproduce IR-1 sobre el store real:
+- El cliente cierra su primera task y su siguiente mensaje cierra el binding.
+- Un operador responde después en esa task anterior.
+- Otro contacto del canal hace lo mismo en su propia conversación.
+
+Verifica que:
+- con una ventana que empieza 1 ms después del cierre, el turno tardío del operador está dentro y es el único;
+- el borde es inclusivo en la hora del turno, y 1 ms después queda fuera con `earlierTasks` en 0;
+- la conversación completa sale en orden causal, sin duplicados y sin nada del otro contacto.
+
+**PC-M11** reintroduce el prefiltro y R74-9 lo detecta.
+
+**Las otras 5 suites que mutan `production-store.ts`** (`production`, `production-control`, `run-failure-fallback`, `runtime-contingency`, `identity-verification-ingress`): 19 anclas comprobadas, con la misma cantidad de apariciones antes y después y sin solapamiento con las líneas cambiadas (criterios M-1 y M-2 de §9). Sus pruebas detectoras están entre las 324 de integración y las 463 de contrato, y pasan. Sus resultados (§12.3) siguen vigentes.
+
+**Plan y equivalencia en volumen representativo.** Base temporal, borrada al terminar, con todas las migraciones y los mismos datos sintéticos de §12.2 (539.972 bindings). Se compararon la sentencia anterior (`e846e72^`) y la nueva, mismo reloj, sobre 1.500 tasks y los 3 juegos de parámetros:
+
+| Verificación | Resultado |
+|---|---|
+| Turnos devueltos | **4.500/4.500 idénticos** (27.613 turnos) |
+| Duplicados, turnos de otra conversación, turnos sin dueño | 0, 0, 0 |
+| `earlierTasks` | Distinto en 7 de 4.500, **siempre menor** con la sentencia nueva: la anterior contaba tasks cuyo binding seguía abierto al inicio de la ventana pero sin turnos dentro de ella. Ningún caso aumenta |
+| Plan | `Index Scan using channel_conversation_bindings_conversation_history` en los 3 casos representativos; ejecución en el servidor 0,8–1,2 ms |
+| Latencia en cliente p50 / p90 | 5,2 / 8,0 ms (anterior) y 6,1 / 8,6 ms (nueva) |
+
+La regresión completa no se repitió: el cambio es local a una sentencia, y todas las pruebas que la ejecutan corrieron.
+
+### 13.3 Registros fuera del PR
+
+- [`R4_R7_4_FOLLOWUPS_AND_SALES_BACKLOG.md`](R4_R7_4_FOLLOWUPS_AND_SALES_BACKLOG.md), sin autorizar:
+  - seguimientos de plataforma: IR-2 (qué avisos de plataforma deben verse) e IR-3 (falso positivo de omisión);
+  - backlog de Sales/J5: DS-1, ligado a D-7 y al handoff de producción del 2026-11-04, y DS-2.
+- [`R4_R7_4_DEPLOYMENT_PLAN.md`](R4_R7_4_DEPLOYMENT_PLAN.md), sin autorizar. Cubre la migración `0013` y su lock, respaldos, coordinación de procesos, SHA explícito, rollback, `observe`, rollout 0 % y la allowlist sin cambios.
+
+### 13.4 Estado
+
+`R4_R7_4_MAINLINE_MERGED_DEPLOYMENT_PENDING`, una vez fusionado el PR #36 con un merge commit. **Sin despliegue.**
