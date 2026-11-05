@@ -71,7 +71,7 @@ owner comercial e infraestructura.
 |---|---|---|---|---|---|---|
 | F1-1 | Fusionar R4 #32 (A10), sin desplegar | PR | Owner R4 | Aprobación de fusión | Las de §1 | **Listo para fusionar** |
 | F1-2 | **Gate P-1 en Sales:** la cotización autónoma sólo procede para SKUs de una lista de paridad verificada, con su fecha de verificación y el precio verificado (§5.2). Bloqueadores nuevos: `item_not_parity_verified` y `item_parity_changed` (el precio que responde Catalog difiere del verificado). Se implementa como guarda de composición sobre el puerto de Catalog que usa el snapshot comercial, como el kill switch sobre Quote. Así no cambia ninguna versión de capacidad publicada | Código Sales | Owner R4 | Formato de la lista (owner Catalog) | Unit del guard; integración `sales-autonomous-quote` con SKU elegible, no elegible y con precio cambiado; mutación de la guarda | Por implementar |
-| F1-3 | **DS-1, evaluación offline:** detector de afirmaciones de operaciones (§6) | Código Sales | Owner R4 | — | 25 casos; 3 mutaciones detectadas | **Implementado, PR abierto** |
+| F1-3 | **DS-1, evaluación offline:** detector de afirmaciones de operaciones (§6) | Código Sales | Owner R4 | — | 25 casos; 3 mutaciones detectadas | **Implementado, PR #41** |
 | F1-4 | **DS-1, prevención:** texto de instrucciones en la definición que lleve F1 (§4.2) | Definición | Owner R4 | Q-7 / D-10; verificaciones D5 de numeración | Contrato de la definición; campaña semántica (§6.3) | Texto propuesto (§6.2) |
 | F1-5 | **GAP-13:** exigir en código el gate del perfil de cotización autónoma, hoy sólo declarativo (`profile-v7.ts`) | Código Sales | Owner R4 | — | Unit de composición: el perfil no arranca sin cada condición | Por implementar |
 | F1-6 | **GAP-11 y D7-8:** contar y alertar ejecuciones `unknown` y `needs_reconciliation`, handoffs y, en particular, handoffs `run_budget_exhausted` | Código / operación | Owner R4 + infraestructura | — | Unit de la consulta; prueba de integración del conteo | Por diseñar |
@@ -261,7 +261,7 @@ avanzar F1 sin esperar el cutover completo.
 
 ## 6. DS-1: pruebas y requisitos
 
-### 6.1 Evaluación offline (implementada; PR aparte)
+### 6.1 Evaluación offline (implementada; PR #41)
 
 - Detector de Sales con cuatro clases de afirmación: registrar, modificar, reservar y programar.
 - Lo evalúa el `ReceiptBackedClaimEvaluator` genérico, con el código `operation_claim_without_receipt`
