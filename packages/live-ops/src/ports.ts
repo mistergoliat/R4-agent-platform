@@ -374,7 +374,8 @@ export interface ProductionStore {
   /**
    * (R4-J4-R7-4) What was said in the earlier tasks of `taskId`'s channel conversation (the `thread` turns:
    * contact, agent with its delivery, operator), at or after `since`, from at most `maxTasks` tasks: the newest
-   * `limit` turns, oldest first, in one round trip. `earlierTasks` counts the tasks considered.
+   * `limit` turns, oldest first, in one round trip. `earlierTasks` counts those tasks with at least one turn at or
+   * after `since`. The window applies to each turn's own time, never to when a task or binding ended.
    */
   earlierConversationTurns(taskId: string, options: { readonly since: string; readonly limit: number; readonly maxTasks: number }): Promise<{ readonly turns: ThreadEntry[]; readonly earlierTasks: number }>;
   conversations(limit: number): Promise<ConversationSummary[]>;

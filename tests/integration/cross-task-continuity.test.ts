@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ModelRequest } from '@r4/model-gateway';
 import { FixtureCatalog } from '@r4-adapters/domains';
@@ -257,5 +258,58 @@ describe('cross-task continuity (R4-J4-R7-4)', () => {
     const one = await turns('1970-01-01T00:00:00.000Z', 100, 1);
     expect(one.earlierTasks).toBe(1);
     expect(one.turns.map((t) => t.text)).toEqual(['¿Y barras olímpicas?', 'También tenemos barras.', 'Ok, gracias']);
+  });
+
+  it('R74-9 (IR-1): a turn of an earlier task made AFTER its binding closed is kept when inside the window — never another conversation\'s, never twice', async () => {
+    const b = await start();
+    const operatorReply = (taskId: string, text: string) =>
+      b.store.createOperatorOutbound({ outboundId: randomUUID(), taskId, text, humanRef: 'operator-1', responseKey: randomUUID(), correlationId: 'r74-9' });
+    const closedAt = async (taskId: string) => (await b.rows<{ closed_at: Date | null }>('select closed_at from channel_conversation_bindings where task_id = $1', [taskId]))[0]!.closed_at;
+
+    // The customer's first task ends; their next message opens the current task and closes the first binding.
+    await b.customer(CUSTOMER, 'wamid.r74-9a', 'Busco un rack');
+    b.next(say('Tenemos el rack PR-200.'));
+    await b.runAgent();
+    await closeTask(b, CUSTOMER, 'wamid.r74-9b');
+    const first = await b.taskOf(CUSTOMER);
+    // Another contact of the channel, the same shape.
+    await b.customer(OTHER, 'wamid.r74-9x', 'Busco mancuernas');
+    b.next(say('Tenemos mancuernas.'));
+    await b.runAgent();
+    await closeTask(b, OTHER, 'wamid.r74-9y');
+    const otherFirst = await b.taskOf(OTHER);
+    await b.customer(CUSTOMER, 'wamid.r74-9c', 'Hola de nuevo');
+    b.next(say('Hola.'));
+    await b.runAgent();
+    await b.customer(OTHER, 'wamid.r74-9z', 'Hola de nuevo');
+    b.next(say('Hola.'));
+    await b.runAgent();
+    const current = await b.taskOf(CUSTOMER);
+    expect(current).not.toBe(first);
+    const closed = (await closedAt(first))!;
+    expect(closed).not.toBeNull();
+    expect(await closedAt(otherFirst)).not.toBeNull();
+
+    // After the bindings closed, an operator writes on each earlier task (a closing that was still pending).
+    const late = (await operatorReply(first, 'Te escribe Ana: el rack llega el lunes.')).record;
+    await operatorReply(otherFirst, 'Te escribe Ana: tus mancuernas llegan el martes.');
+    const lateAt = late.createdAt;
+    expect(Date.parse(lateAt)).toBeGreaterThan(closed.getTime());
+
+    const turns = (since: string) => b.store.earlierConversationTurns(current, { since, limit: 100, maxTasks: 10 });
+    // A window that starts after the first binding closed: its late operator turn is inside it, everything else is not.
+    const after = await turns(new Date(closed.getTime() + 1).toISOString());
+    expect(after.turns.map((t) => [t.kind, t.text])).toEqual([['operator', 'Te escribe Ana: el rack llega el lunes.']]);
+    expect(after.earlierTasks).toBe(1);
+    // The edge is inclusive on the turn's own time; 1 ms later it is out, and then nothing counts as an earlier task.
+    expect((await turns(lateAt)).turns.map((t) => t.text)).toEqual(['Te escribe Ana: el rack llega el lunes.']);
+    expect(await turns(new Date(Date.parse(lateAt) + 1).toISOString())).toEqual({ turns: [], earlierTasks: 0 });
+    // The whole conversation: causal order, each turn once, the other contact never.
+    const all = await turns('1970-01-01T00:00:00.000Z');
+    expect(all.turns.map((t) => t.text)).toEqual(['Busco un rack', 'Tenemos el rack PR-200.', 'Ok, gracias', 'Te escribe Ana: el rack llega el lunes.']);
+    expect(all.turns.map((t) => t.cursor)).toEqual([...all.turns.map((t) => t.cursor)].sort());
+    expect(new Set(all.turns.map((t) => t.cursor)).size).toBe(all.turns.length);
+    expect(JSON.stringify(all)).not.toContain('mancuernas');
+    expect(all.earlierTasks).toBe(1);
   });
 });

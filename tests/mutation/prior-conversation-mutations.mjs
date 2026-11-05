@@ -39,6 +39,11 @@ const MUTATIONS = [
     tests: [[IT, 'R74-8']],
   },
   {
+    name: 'PC-M11 the window filters bindings by closing time: a late turn of an earlier task is lost (IR-1)',
+    edits: [{ file: STORE, from: 'and e.task_id is not null\n          order by e.created_at desc', to: "and e.task_id is not null\n          where coalesce(e.closed_at, 'infinity') >= $2\n          order by e.created_at desc" }],
+    tests: [[IT, 'R74-9']],
+  },
+  {
     name: 'PC-M4 the source keeps the oldest turns instead of the newest',
     edits: [{ file: SOURCE, from: 'const shown = turns.slice(-this.#maxTurns);', to: 'const shown = turns.slice(0, this.#maxTurns);' }],
     tests: [[UNIT, 'keeps the newest maxTurns']],
