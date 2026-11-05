@@ -13,8 +13,8 @@ import { catalogFixture, catalogFixtureFiles, catalogFixtureManifest, fakeCatalo
  * run the owner's fixtures through the adapter configured for the V2 source: what R4 keeps, what it drops (pinned),
  * and the commercial semantics a quote depends on. Real-HTTP against V2 is NOT_RUN (EC2 loopback only, not authorized).
  */
-const V2_ENV = { R4_CATALOG_V2_BASE_URL: 'http://127.0.0.1:4011', R4_CATALOG_V2_API_KEY: 'v2-key-0123456789abcdef', R4_CATALOG_V2_TIMEOUT_MS: '5000' };
-const V1_ENV = { R4_CATALOG_BASE_URL: 'http://127.0.0.1:4010', R4_CATALOG_API_KEY: 'v1-key-0123456789abcdef', R4_CATALOG_TIMEOUT_MS: '2500' };
+const V2_ENV = { R4_CATALOG_V2_BASE_URL: 'http://127.0.0.1:4011', R4_CATALOG_V2_API_KEY: 'k'.repeat(24), R4_CATALOG_V2_TIMEOUT_MS: '5000' };
+const V1_ENV = { R4_CATALOG_BASE_URL: 'http://127.0.0.1:4010', R4_CATALOG_API_KEY: 'j'.repeat(24), R4_CATALOG_TIMEOUT_MS: '2500' };
 const V2: CatalogHttpConfig = loadCatalogHttpConfig(V2_ENV, { allowNetwork: false, source: 'v2' });
 
 const serving = (status: number, body: unknown) => {

@@ -10,8 +10,8 @@ import { canaryCatalogConfig, canaryCatalogSource } from '../../../agents/sales/
  * binds V2 only; the production composition (sales-production@3 and every production profile) keeps reading
  * R4_CATALOG_* (V1) and cannot be switched to V2 by configuration.
  */
-const V1_ENV = { R4_CATALOG_BASE_URL: 'http://127.0.0.1:4010', R4_CATALOG_API_KEY: 'v1-key-0123456789abcdef', R4_CATALOG_TIMEOUT_MS: '2500' };
-const V2_ENV = { R4_CATALOG_V2_BASE_URL: 'http://127.0.0.1:4011', R4_CATALOG_V2_API_KEY: 'v2-key-0123456789abcdef', R4_CATALOG_V2_TIMEOUT_MS: '5000' };
+const V1_ENV = { R4_CATALOG_BASE_URL: 'http://127.0.0.1:4010', R4_CATALOG_API_KEY: 'j'.repeat(24), R4_CATALOG_TIMEOUT_MS: '2500' };
+const V2_ENV = { R4_CATALOG_V2_BASE_URL: 'http://127.0.0.1:4011', R4_CATALOG_V2_API_KEY: 'k'.repeat(24), R4_CATALOG_V2_TIMEOUT_MS: '5000' };
 const canaryOf = (profile: typeof SALES_PRODUCTION_PROFILE_V7) => ({ profile, production: { config: { allowNetwork: false } } }) as never;
 
 describe('the canary chooses its Catalog explicitly (R4_CANARY_CATALOG_SOURCE)', () => {
