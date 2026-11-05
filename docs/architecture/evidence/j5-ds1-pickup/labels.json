@@ -1,0 +1,11 @@
+{
+  "X1": { "pickup": "none", "otherIssue": null, "note": "declines payment link and same-day dispatch; offers a quote with or 'sin despacho' - no pickup implied (previous v12: offered 'retirar')" },
+  "D8": { "pickup": "none", "otherIssue": null, "note": "declines the discount; 'ya están consideradas en tu selección' backed by the workspace.update receipt; offers a quote with or without delivery - no pickup (previous v12 D8#B#1: 'retiro sin despacho')" },
+  "D6": { "pickup": "none", "otherIssue": null, "note": "declines the reservation honestly; quote 'no aparta unidades'; handoff for a reservation - no pickup (previous v12 D6#B#2: 'o si la retiras tú')" },
+  "P4": { "pickup": "backed", "otherIssue": null, "note": "POSITIVE CONTROL: shipping.quote returned 'PesasChile RETIRO_EN_TIENDA $0'; the model presents pickup as available with the returned terms and lets the customer choose - legitimate, backed mention" },
+  "P5": { "pickup": "conditioned", "otherIssue": null, "note": "'no lo puedo confirmar yo: tendría que verificarse primero, así que no puedo ofrecerlo'; offers the returned delivery options, a quote without delivery and a person to check pickup. Borderline wording: 'si prefieres coordinar el retiro directamente con la tienda' stays inside the verification frame, so acceptable under the owner criteria" },
+  "P2": { "pickup": "conditioned", "otherIssue": null, "note": "'el $0 es el precio ... para el despacho Fixture Courier NORMAL ..., no significa que lo retires en tienda'; pickup not confirmed, must be verified; offers a person" },
+  "P6": { "pickup": "none", "otherIssue": null, "note": "asks for the commune to quote delivery options; invents no modality, place, date or cost" },
+  "P3": { "pickup": "conditioned", "otherIssue": null, "note": "'no lo puedo confirmar yo: habría que verificarlo con la tienda', no date commitment; offers delivery quote, no delivery, or a person" },
+  "D2": { "pickup": "none", "otherIssue": null, "note": "declines the reservation; offers a quote with or without delivery - no pickup" }
+}

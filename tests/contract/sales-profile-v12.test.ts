@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -134,7 +135,7 @@ describe('C. definition v12 (decision B: derived from v7; explicit exception to 
     const added = v12.instructions.split('\n').filter((l) => !v7.instructions.split('\n').includes(l));
     const removed = v7.instructions.split('\n').filter((l) => !v12.instructions.split('\n').includes(l));
     expect(removed.map((l) => l.slice(0, 40))).toEqual(['- A proposal is not an effect. Say somet', '- customer.get_context: when knowing the']);
-    expect(added.map((l) => l.slice(0, 40))).toEqual(['- A proposal is not an effect. Never say', '- Do not offer to record, write down, re', '- Despacho Directo promotion: PesasChile']);
+    expect(added.map((l) => l.slice(0, 40))).toEqual(['- A proposal is not an effect. Never say', '- Do not offer to record, write down, re', '- Delivery modality: no delivery ("sin d', '- Despacho Directo promotion: PesasChile']);
   });
 
   it('the extended DS-1 covers explicit claims, implicit confirmations, unavailable operations and unverified commercial conditions', () => {
@@ -142,5 +143,50 @@ describe('C. definition v12 (decision B: derived from v7; explicit exception to 
     expect(v12.instructions).toMatch(/never confirm a requested change \("done", "listo", "ok, two units"\)/);
     expect(v12.instructions).toMatch(/Do not offer to record, write down, reserve or schedule anything/);
     expect(v12.instructions).toMatch(/store pickup, discounts, payment terms or any other commercial condition/);
+  });
+});
+
+/**
+ * «R4 — J5 F1 DS-1 Pickup Correction» (owner, 2026-11-05): rounds 2–3 showed v12 offering store pickup with no
+ * evidence, always next to «sin despacho». The rule is evidence-conditioned, not a word ban: pickup may be offered when
+ * a capability confirms it. These pin what the text distinguishes; the model's behaviour is measured by the campaign
+ * (scripts/experiments/j5-ds1-claims/pickup.mjs).
+ */
+describe('D. delivery modality: no delivery, free delivery and store pickup are distinct', () => {
+  const v12 = loadSalesAgentDefinition(12).instructions;
+  const rule = v12.split('\n').find((l) => l.startsWith('- Delivery modality:'))!;
+
+  it('is one rule, in the Truth and evidence block, right after the DS-1 offer rule', () => {
+    const lines = v12.split('\n');
+    expect(lines.filter((l) => l.startsWith('- Delivery modality:'))).toHaveLength(1);
+    expect(lines[lines.indexOf(rule) - 1]).toMatch(/^- Do not offer to record, write down, reserve or schedule anything/);
+    expect(lines.indexOf(rule)).toBeLessThan(lines.indexOf('Sales workspace'));
+  });
+
+  it('1. no delivery is not pickup', () => {
+    expect(rule).toMatch(/no delivery \("sin despacho", exclude_shipping\) only means the quote carries no shipping; it does not mean store pickup/);
+  });
+
+  it('2. a delivery offer priced at $0 is not pickup', () => {
+    expect(rule).toMatch(/neither does a delivery offer priced at \$0/);
+  });
+
+  it('3 and 5. requested or unconfirmed pickup: say it has to be verified, offer what can be done', () => {
+    expect(rule).toMatch(/If the customer asks for pickup and no observation confirms it, say it has to be verified first and offer what you can do instead/);
+  });
+
+  it('4. confirmed pickup may be offered: the rule is conditioned on evidence, not a word ban', () => {
+    expect(rule).toMatch(/Present store pickup as available only when an observation of a capability available to you confirms it/);
+    expect(rule).toMatch(/then offer it like any other returned option/);
+    expect(v12).not.toMatch(/never (say|mention|use|write)[^.]*\b(pickup|retiro|retirar)\b/i);
+  });
+
+  it('6. unknown modality: no delivery condition is invented', () => {
+    expect(rule).toMatch(/Never invent delivery conditions: modality, place, date or cost\./);
+  });
+
+  it('keeps every other commercial and DS-1 rule: without this line, v12 is byte for byte the pre-correction text (main 34f4230)', () => {
+    const without = v12.split('\n').filter((l) => l !== rule).join('\n');
+    expect(createHash('sha256').update(without).digest('hex')).toBe('70aac1b2de0fb7cb8c34956470de95f4eb0203d5123b8377ef0a6f8d9b55cd48');
   });
 });
