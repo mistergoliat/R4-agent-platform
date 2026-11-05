@@ -44,7 +44,7 @@ automáticamente.
 | J4 — Customer Profile | **IN PROGRESS** (**P0**). R1–R4 y SEC-OTP integrados en sintético; J4-R5 ejecutado el 2026-10-26 (integración en verde, confiabilidad conversacional en FAIL). **J4-R6: `J4_R6_BLOCKED`** (2026-10-27; [decisión](../acceptance/R4_J4_R6_FINAL_DECISION_RECORD.md)) | Integración y acceso a Customer Profile vía CIA. Desglose en §1.2 |
 | J4.5 — Catalog | **PLANNED** | Optimización e integración de Catalog; después se reevalúa la eficiencia del agente (aceptación J3 §17) |
 | J4-R7 — Confiabilidad conversacional | R7-1, R7-2 y R7-4 en `main` (PR #33 y #36). **R7-4 — Continuidad entre tasks: CLOSED** (owner, 2026-11-05): se acepta la validación productiva y la funcionalidad queda cerrada para el alcance aprobado. Sólo se modifica por defectos materiales. R7-3 no iniciado | [Diseño](../architecture/R4_J4_R7_DESIGN.md); [informe R7-4](../architecture/R4_R7_4_CROSS_TASK_CONTINUITY_REPORT.md); [seguimientos y backlog Sales/J5](../architecture/R4_R7_4_FOLLOWUPS_AND_SALES_BACKLOG.md) |
-| J5 — Sales Autonomy | **ACTIVE** (owner, 2026-11-05). Prioridad: cerrar J5-F0 (PR #35; G0 no aprobado) y preparar F1 (Quote V2) y F2 (Catalog con fuente comercial vigente). No hay despliegues comerciales sin autorización específica | Comportamiento del modelo con Customer: cuándo verificar, uso del historial, personalización, estrategia comercial. Parte de `sales-production@8` (J4-R4) |
+| J5 — Sales Autonomy | **ACTIVE** (owner, 2026-11-05). Prioridad: cerrar J5-F0 ([plan F0](../architecture/R4_J5_F0_PLAN.md); G0 `NOT_APPROVED`) y preparar F1 (Quote V2) y F2 (Catalog con fuente comercial vigente). Integrar el plan no autoriza F1, F2 ni despliegues comerciales | Comportamiento del modelo con Customer: cuándo verificar, uso del historial, personalización, estrategia comercial. Parte de `sales-production@8` (J4-R4) |
 | J5-A — Interactive Steering | **PLANNED** (owner, DESIGN-02, 2026-10-28; no iniciado) | Steering de nivel 2: incorporar mensajes durante un turno activo y seguir ejecutando; posible evolución versionada de `KernelSession` y del protocolo (bloqueo v5: `respond` termina el turno). Compatibilidad en [R4_J4_R7_DESIGN §3.6](../architecture/R4_J4_R7_DESIGN.md) |
 | J5-B — Owner Collaboration | **PLANNED** (owner, mandato J4-R7-1, 2026-10-28; no iniciado) | Consulta directa del agente al responsable comercial por un canal privado (inicialmente WhatsApp). [ADR-042 / R4-OWNER-COLLABORATION-01](../adr/ADR-042-owner-collaboration.md). Depende de HumanRuntime, Approval Horizon Hold (R7-3, BLK-AP1), steering durable (R7-2) y Outbox |
 | J6 — Benchmark & Reviewer | **PLANNED** (confirmado por el owner, 2026-10-22; no iniciado) | Benchmark y evaluación comercial; revisión de calidad |
@@ -71,11 +71,15 @@ Ningún hito se inicia sin autorización explícita. Esta tabla no declara entre
 | J5 — Sales Autonomy | Comportamiento del agente con Customer: estrategia, personalización, objetivos, prompts | Integración, contratos y adaptadores (J4) |
 | J6 — Benchmark & Reviewer | Benchmark y evaluación comercial; revisión | Activación productiva |
 | J7 — Production Readiness | Activación productiva, datos y clientes reales, rollout de `@8` desde `@3` con rollback propio | — |
-| Checkout / R4-L | Desarrollo paralelo e independiente (cuenta, carrito, pago, orden) | No bloquea J4. No forma parte de los hitos R4-J |
+| Checkout / R4-L | Desarrollo paralelo e independiente: sesión de compra, enlace de pago, conciliación y orden. **El carrito técnico PrestaShop lo crea Quote V2** (C-2) | No bloquea J4. No forma parte de los hitos R4-J. Checkout no crea carritos ni recalcula cotizaciones |
 
-Pendiente del owner: la secuencia de J4.5 (Catalog) respecto de J5 y la revisión de la rama sin
-fusionar `docs/r4-j55-roadmap-registration` (`d8a6b94`), que usa J5.5 como identificador provisional
-de Checkout. Por decisión del owner, Checkout pertenece a R4-L.
+Pendiente del owner: la secuencia de J4.5 (Catalog) respecto de J5.
+
+Decisión del owner (2026-11-02, [registro R4-J5 F0](../architecture/R4_J5_F0_OWNER_DECISION_RECORD.md)):
+
+- J5 conserva Sales Autonomy y R4-L conserva Checkout y pagos (C-3).
+- El plan F0–F8 de la [preparación comercial](../architecture/R4_J5_COMMERCIAL_INTEGRATION_READINESS.md) es transversal y no reemplaza esta estructura.
+- La rama sin fusionar `docs/r4-j55-roadmap-registration` (`d8a6b94`) queda **superada** donde asigna el carrito a Checkout, y J5.5 no se usa como identificador.
 
 ### 1.2 J4 — Customer Profile: desglose (auditoría cruzada, 2026-10-22)
 
