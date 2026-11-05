@@ -5,11 +5,24 @@
  *   R4_CATALOG_API_KEY     the API key dedicated to R4 (never printed)
  *   R4_CATALOG_TIMEOUT_MS  per-call deadline, 100–10000 ms (≤ the capability timeout)
  *
+ * (R4-CATALOG-V2) Two sources of the SAME read contract (/v2/catalog/search, products/{k}/context,
+ * items/{k}/context; schemaVersion 1), each with its own variables so both can coexist in one environment:
+ *
+ *   v1  R4_CATALOG_*     the service the production profiles bind today (the default: nothing changes)
+ *   v2  R4_CATALOG_V2_*  Catalog V2 (CAT_V2_R4_J45_HANDOFF §2: its own base URL and R4 key)
+ *
+ * The caller chooses the source explicitly. Only that source's variables are read: a missing V2 variable is a
+ * refusal, never a fallback to V1.
+ *
  * A non-loopback URL requires network to be explicitly allowed and https.
  * Loading a configuration proves only that it is well-formed: it says
  * nothing about connectivity or whether the key is accepted.
  */
+export type CatalogSource = 'v1' | 'v2';
+
 export interface CatalogHttpConfig {
+  /** Which Catalog the configuration points at; absent means v1 (hand-built and historical configurations). */
+  readonly source?: CatalogSource;
   readonly baseUrl: string;
   readonly apiKey: string;
   readonly timeoutMs: number;
@@ -26,26 +39,38 @@ export class CatalogConfigError extends Error {
 }
 
 export const CATALOG_ENV = ['R4_CATALOG_BASE_URL', 'R4_CATALOG_API_KEY', 'R4_CATALOG_TIMEOUT_MS'] as const;
+/** (R4-CATALOG-V2) Catalog V2's variables (handoff §2). The Discover key is not read: R4 does not call Discover. */
+export const CATALOG_V2_ENV = ['R4_CATALOG_V2_BASE_URL', 'R4_CATALOG_V2_API_KEY', 'R4_CATALOG_V2_TIMEOUT_MS'] as const;
 
-export function loadCatalogHttpConfig(env: Readonly<Record<string, string | undefined>>, options: { readonly allowNetwork: boolean }): CatalogHttpConfig {
-  const missing = CATALOG_ENV.filter((name) => !env[name]?.trim());
-  if (missing.length > 0) throw new CatalogConfigError('catalog_config_incomplete', `refusing to compose the Catalog adapter: missing ${missing.join(', ')}`);
+/** The variable names of a source: base URL, API key, timeout. */
+export function catalogEnvOf(source: CatalogSource): readonly [string, string, string] {
+  return source === 'v2' ? CATALOG_V2_ENV : CATALOG_ENV;
+}
+
+export function loadCatalogHttpConfig(env: Readonly<Record<string, string | undefined>>, options: { readonly allowNetwork: boolean; readonly source?: CatalogSource }): CatalogHttpConfig {
+  const source = options.source ?? 'v1';
+  const names = catalogEnvOf(source);
+  const [urlVar, keyVar, timeoutVar] = names;
+  const missing = names.filter((name) => !env[name]?.trim());
+  if (missing.length > 0) throw new CatalogConfigError('catalog_config_incomplete', `refusing to compose the Catalog adapter (${source}): missing ${missing.join(', ')}`);
   let base: URL;
   try {
-    base = new URL(env.R4_CATALOG_BASE_URL!.trim());
+    base = new URL(env[urlVar]!.trim());
   } catch {
-    throw new CatalogConfigError('invalid_catalog_config', 'R4_CATALOG_BASE_URL is not a URL');
+    throw new CatalogConfigError('invalid_catalog_config', `${urlVar} is not a URL`);
   }
-  if (base.search || base.hash || base.username || base.password) throw new CatalogConfigError('invalid_catalog_config', 'R4_CATALOG_BASE_URL must not carry credentials, a query or a fragment');
+  if (base.search || base.hash || base.username || base.password) throw new CatalogConfigError('invalid_catalog_config', `${urlVar} must not carry credentials, a query or a fragment`);
   if (!isLoopback(base) && !options.allowNetwork) throw new CatalogConfigError('network_not_allowed', 'refusing a non-local catalog URL without R4_PROD_ALLOW_NETWORK=true');
   if (!isLoopback(base) && base.protocol !== 'https:') throw new CatalogConfigError('invalid_catalog_config', 'a non-local catalog URL must use https');
-  if (base.protocol !== 'https:' && base.protocol !== 'http:') throw new CatalogConfigError('invalid_catalog_config', 'R4_CATALOG_BASE_URL must be http(s)');
-  const apiKey = env.R4_CATALOG_API_KEY!.trim();
-  if (apiKey.length < 16) throw new CatalogConfigError('invalid_catalog_config', 'R4_CATALOG_API_KEY is too short to be a real key');
-  const raw = env.R4_CATALOG_TIMEOUT_MS!.trim();
+  if (base.protocol !== 'https:' && base.protocol !== 'http:') throw new CatalogConfigError('invalid_catalog_config', `${urlVar} must be http(s)`);
+  const apiKey = env[keyVar]!.trim();
+  if (apiKey.length < 16) throw new CatalogConfigError('invalid_catalog_config', `${keyVar} is too short to be a real key`);
+  const raw = env[timeoutVar]!.trim();
   const timeoutMs = /^\d{1,6}$/.test(raw) ? Number(raw) : Number.NaN;
-  if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 10_000) throw new CatalogConfigError('invalid_catalog_config', 'R4_CATALOG_TIMEOUT_MS must be an integer between 100 and 10000');
-  return { baseUrl: base.toString().replace(/\/+$/, ''), apiKey, timeoutMs };
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 10_000) throw new CatalogConfigError('invalid_catalog_config', `${timeoutVar} must be an integer between 100 and 10000`);
+  const config = { baseUrl: base.toString().replace(/\/+$/, ''), apiKey, timeoutMs };
+  // v1 keeps its exact historical shape; v2 says what it is.
+  return source === 'v2' ? { source, ...config } : config;
 }
 
 /**
@@ -54,6 +79,8 @@ export function loadCatalogHttpConfig(env: Readonly<Record<string, string | unde
  */
 export function describeCatalogHttpConfig(config: CatalogHttpConfig): Record<string, string | number | boolean> {
   return {
+    // v1 descriptions stay exactly as they were (the production plan output does not change).
+    ...(config.source === 'v2' ? { source: 'v2' } : {}),
     baseHost: new URL(config.baseUrl).host,
     timeoutMs: config.timeoutMs,
     apiKeyConfigured: config.apiKey.length > 0,

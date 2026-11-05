@@ -1,16 +1,17 @@
 import { hostname } from 'node:os';
 import { join, resolve } from 'node:path';
 import { PlatformError } from '@r4/contracts';
-import { ProductionConfigError } from '@r4/live-ops';
+import { ProductionConfigError, profileLabel, type ProductionProfile } from '@r4/live-ops';
 import { createLogger } from '@r4/observability';
 import { loadSchedulerConfig } from '@r4/scheduler';
 import { loadWorkerConfig } from '@r4/worker';
-import { HttpCatalogAdapter, loadCatalogHttpConfig } from '@r4-adapters/catalog-http';
+import { HttpCatalogAdapter, describeCatalogHttpConfig, loadCatalogHttpConfig, type CatalogHttpConfig, type CatalogSource } from '@r4-adapters/catalog-http';
 import { ProductionShippingAdapter, loadShippingHttpConfig } from '@r4-adapters/shipping-http';
 import { QuoteV2HttpClient, loadQuoteHttpConfig, quoteModeOf } from '@r4-adapters/quote-http';
 import { createPool } from '@r4/persistence-postgres';
 import { assertCanaryReady, canaryRollbackStatus, canaryStatus, initCanary, loadCanaryEnvironment, openCanaryApprovals, purgeCanary, sendSynthetic, startCanaryGateway, startCanaryRuntime, syntheticConversationKey, type CanaryEnvironment } from './index.js';
 import { isCustomerIdentityProfile } from '../../production/profile-v8.js';
+import { isF1CanaryProfile } from '../../production/profile-v12.js';
 import { configuredModelProvider } from '../../model.js';
 import { loadOperatorAuthConfig } from '../../operator-auth/index.js';
 import { decideApproval } from '../operator-approval.js';
@@ -121,11 +122,29 @@ const fetchText = async (url: string, init: Parameters<typeof fetch>[1]) => {
   return { status: response.status, text: () => response.text() };
 };
 
+/**
+ * (R4-CATALOG-V2) The Catalog the canary binds: R4_CANARY_CATALOG_SOURCE = v1 | v2 (unset: v1, as before). The F1
+ * canary (@12) binds Catalog V2 only, and says so explicitly. The production composition never reads this variable.
+ */
+export function canaryCatalogSource(env: Readonly<Record<string, string | undefined>>, profile: ProductionProfile): CatalogSource {
+  const raw = env.R4_CANARY_CATALOG_SOURCE?.trim() || undefined;
+  if (raw !== undefined && raw !== 'v1' && raw !== 'v2') throw new ProductionConfigError('invalid_production_config', 'R4_CANARY_CATALOG_SOURCE must be "v1" or "v2"');
+  if (isF1CanaryProfile(profile) && raw !== 'v2') throw new ProductionConfigError('invalid_production_config', `${profileLabel(profile)} binds Catalog V2 only: set R4_CANARY_CATALOG_SOURCE=v2 and R4_CATALOG_V2_*`);
+  return raw ?? 'v1';
+}
+
+/** The canary's Catalog configuration, from the chosen source's variables only (no fallback between sources). */
+export function canaryCatalogConfig(env: Readonly<Record<string, string | undefined>>, canary: Pick<CanaryEnvironment, 'profile' | 'production'>): CatalogHttpConfig {
+  return loadCatalogHttpConfig(env, { allowNetwork: canary.production.config.allowNetwork, source: canaryCatalogSource(env, canary.profile) });
+}
+
 /** The real owner bindings of the canary profile, sales-production@4 or @5 (fail closed on incomplete configuration). Nothing is called here. */
 function realBindings(env: NodeJS.ProcessEnv, canary: CanaryEnvironment, logger: ReturnType<typeof createLogger>) {
   const allowNetwork = canary.production.config.allowNetwork;
   if (quoteModeOf(env) !== 'real') throw new ProductionConfigError('production_config_incomplete', `R4_QUOTE_MODE must be "real" for ${canary.production.config.policyProfile}`);
-  const catalog = new HttpCatalogAdapter({ config: loadCatalogHttpConfig(env, { allowNetwork }), fetch: fetchText, onCall: (event) => logger.info({ event: 'catalog.call', ...event }, 'catalog call') });
+  const catalogConfig = canaryCatalogConfig(env, canary);
+  logger.info({ catalog: describeCatalogHttpConfig(catalogConfig) }, 'canary catalog binding');
+  const catalog = new HttpCatalogAdapter({ config: catalogConfig, fetch: fetchText, onCall: (event) => logger.info({ event: 'catalog.call', ...event }, 'catalog call') });
   const shipping = new ProductionShippingAdapter({ config: loadShippingHttpConfig(env, { allowNetwork }), fetch: fetchText, onEvent: (event) => logger.info({ event: `shipping.${event.kind}`, ...event }, 'shipping call') });
   const quotes = new QuoteV2HttpClient({ config: loadQuoteHttpConfig(env, { allowNetwork }), fetch: (url, init) => fetch(url, init), onCall: (event) => logger.info({ event: 'quote.call', ...event }, 'quote call') });
   return { catalog, shipping, quotes };
