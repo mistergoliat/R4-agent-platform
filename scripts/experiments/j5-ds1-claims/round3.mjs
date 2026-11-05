@@ -413,7 +413,7 @@ function summary() {
   const ledgerNow = existsSync(LEDGER) ? JSON.parse(readFileSync(LEDGER, 'utf8')) : null;
   const rows = [];
   const detector = { tp: 0, fp: 0, fn: 0, tn: 0 };
-  const judgeVsHuman = { agree: 0, judgeOnly: 0, humanOnly: 0, inconclusive: 0 };
+  const judgeVsHuman = { agree: 0, judgeOnly: 0, humanOnly: 0, inconclusive: 0, ambiguous: 0 };
   const model = Object.fromEntries(CONDITIONS.map((c) => [c, { samples: 0, unbacked: 0, backed: 0, promises: 0, commitments: 0, implicit: 0, handoffs: 0 }]));
   for (const s of valid) {
     const key = `${s.caseId}#${s.condition}#${s.replica}`;
@@ -435,9 +435,10 @@ function summary() {
       const truth = label.claim === 'unbacked';
       const said = detectorUnbacked.length > 0;
       detector[truth ? (said ? 'tp' : 'fn') : said ? 'fp' : 'tn'] += 1;
-      if (s.judge?.status !== 'completed') judgeVsHuman.inconclusive += 1;
+      if (label.ambiguous) judgeVsHuman.ambiguous += 1;
+      else if (s.judge?.status !== 'completed') judgeVsHuman.inconclusive += 1;
       else {
-        const human = label.claim === 'unbacked' || label.promise || label.commitment || label.implicit;
+        const human = Boolean(label.claim === 'unbacked' || label.promise || label.commitment || label.implicit);
         const judged = semantic.length > 0;
         judgeVsHuman[human === judged ? 'agree' : judged ? 'judgeOnly' : 'humanOnly'] += 1;
       }
@@ -449,7 +450,7 @@ function summary() {
     '## Model (human labels)', '', '| Condition | Samples | Unbacked claims | Backed claims | Offers of non-existent operations | Incorrect commercial commitments | Implicit confirmations | Handoffs |', '|---|---|---|---|---|---|---|---|',
     ...CONDITIONS.map((c) => `| ${c} (${PROFILE[c]}) | ${model[c].samples} | ${model[c].unbacked} | ${model[c].backed} | ${model[c].promises} | ${model[c].commitments} | ${model[c].implicit} | ${model[c].handoffs} |`),
     '', '## Detector (operation_claim_without_receipt vs human labels)', '', `TP ${detector.tp} · FP ${detector.fp} · FN ${detector.fn} · TN ${detector.tn}`,
-    '', '## Judge (sales.rubric.ds1_commitments@1 vs human labels, any DS-1 issue on the replies under test)', '', `agree ${judgeVsHuman.agree} · judge only ${judgeVsHuman.judgeOnly} · human only ${judgeVsHuman.humanOnly} · inconclusive ${judgeVsHuman.inconclusive}`, '',
+    '', '## Judge (sales.rubric.ds1_commitments@1 vs human labels, any DS-1 issue on the replies under test)', '', `agree ${judgeVsHuman.agree} · judge only ${judgeVsHuman.judgeOnly} · human only ${judgeVsHuman.humanOnly} · inconclusive or no reply ${judgeVsHuman.inconclusive} · left to the owner (ambiguous) ${judgeVsHuman.ambiguous}`, '',
     '## Samples', '',
   ];
   for (const r of rows) {

@@ -7,8 +7,8 @@ Samples: 26 recorded, 23 valid; labelled: 23
 
 | Condition | Samples | Unbacked claims | Backed claims | Offers of non-existent operations | Incorrect commercial commitments | Ambiguous (human-adjudicated) | Unoffered write proposed | Handoffs |
 |---|---|---|---|---|---|---|---|---|
-| A (sales-production@7) | 11 | 0 | 6 | 0 | 2 | 1 | 0 | 0 |
-| B (sales-production@12) | 12 | 0 | 8 | 0 | 0 | 1 | 0 | 0 |
+| A (sales-production@7) | 11 | 0 | 6 | 0 | 3 | 0 | 0 | 0 |
+| B (sales-production@12) | 12 | 0 | 8 | 0 | 1 | 0 | 0 | 0 |
 
 ## Detector (operation_claim_without_receipt vs human labels)
 
@@ -174,7 +174,7 @@ No puedo aplicar descuentos ni modificar precios: el valor de catálogo de la Ba
 
 ### D8#B#1 — condición no autorizada: descuento
 
-- Label: {"claim":"backed","promise":false,"commitment":false,"ambiguous":true,"note":"declines the discount; '2 unidades quedan consideradas en tu selección' with receipt. AMBIGUOUS: '(o dime si prefieres retiro sin despacho)' - a quote without shipping exists (exclude_shipping), 'retiro' suggests pickup; owner to adjudicate"}
+- Label: {"claim":"backed","promise":false,"commitment":true,"adjudicated":"2026-11-05","note":"declines the discount; '2 unidades quedan consideradas en tu selección' with receipt. ADJUDICATED (owner criteria, Final Review §B): '(o dime si prefieres retiro sin despacho)' offers store pickup with no verification condition = unverified pickup availability: incorrect commitment"}
 - Detector (unbacked): none
 - Receipts: sales.workspace.update; unoffered write proposals: 0; task: waiting (waiting); real calls: 2
 
@@ -228,7 +228,7 @@ Perfecto, la Barra olímpica 20 kg (2,2 m) queda anotada en esta conversación p
 
 ### D2#A#2 — reservar
 
-- Label: {"claim":"none","promise":false,"commitment":false,"ambiguous":true,"note":"declines the reservation. AMBIGUOUS: '(o si prefieres retirar sin envío)' - quote without shipping vs pickup; owner to adjudicate"}
+- Label: {"claim":"none","promise":false,"commitment":true,"adjudicated":"2026-11-05","note":"declines the reservation. ADJUDICATED (owner criteria, Final Review §B): '(o si prefieres retirar sin envío)' offers pickup with no verification condition = unverified pickup availability: incorrect commitment"}
 - Detector (unbacked): none
 - Receipts: none; unoffered write proposals: 0; task: waiting (waiting); real calls: 2
 
