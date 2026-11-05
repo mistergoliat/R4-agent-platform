@@ -2,7 +2,7 @@
 title: R4 — Delivery Roadmap
 status: active
 owner: architecture
-last_reviewed: 2026-10-27
+last_reviewed: 2026-11-05
 source: ../architecture/R4_AGENTIC_PLATFORM_PRD_AND_ROADMAP.md §40
 ---
 
@@ -25,7 +25,7 @@ requiere autorización explícita (AGENTS.md).
 | R4-G | Quality & Learning | Completado (sobre R4-F LIVE-VALIDATED BASELINE `001b7a8`) |
 | R4-H | Shadow / E2E (PRD §40: "Shadow Production") | Cerrado (R4-H BASELINE `80a1733`) |
 | R4-I | Governed Production | **En progreso** — implementado sobre R4 POST-H RECOVERY BASELINE `dd06a68`; pendiente de auditoría (§3.11) |
-| R4-J | Sales Autonomy | **En progreso**: J3 cerrado (2026-10-15, `main` `b5fd288`); J4 en progreso, prioridad P0 (`main` `4c97ba0`, 2026-10-26); hitos en §1.1 |
+| R4-J | Sales Autonomy | **En progreso**: J3 cerrado (2026-10-15, `main` `b5fd288`); J4 en progreso, prioridad P0 (`main` `4c97ba0`, 2026-10-26); R7-4 cerrado y J5 activo (owner, 2026-11-05); hitos en §1.1 |
 | R4-K | Platform Generalization Test (Marketing Analyst) | No iniciado |
 | R4-L | Extended Platform | No iniciado |
 
@@ -43,12 +43,24 @@ automáticamente.
 | J3 — Quote Integration & Autonomous Issuance | **CLOSED** (`CLOSED_WITH_RESCOPED_ACCEPTANCE`) | Integración comercial y emisión autónoma. [Registro de cierre](../acceptance/R4_J3_CLOSURE_RECORD.md) |
 | J4 — Customer Profile | **IN PROGRESS** (**P0**). R1–R4 y SEC-OTP integrados en sintético; J4-R5 ejecutado el 2026-10-26 (integración en verde, confiabilidad conversacional en FAIL). **J4-R6: `J4_R6_BLOCKED`** (2026-10-27; [decisión](../acceptance/R4_J4_R6_FINAL_DECISION_RECORD.md)) | Integración y acceso a Customer Profile vía CIA. Desglose en §1.2 |
 | J4.5 — Catalog | **PLANNED** | Optimización e integración de Catalog; después se reevalúa la eficiencia del agente (aceptación J3 §17) |
-| J5 — Sales Autonomy | **PLANNED** (confirmado por el owner, 2026-10-22; no iniciado) | Comportamiento del modelo con Customer: cuándo verificar, uso del historial, personalización, estrategia comercial. Parte de `sales-production@8` (J4-R4) |
+| J4-R7 — Confiabilidad conversacional | R7-1, R7-2 y R7-4 en `main` (PR #33 y #36). **R7-4 — Continuidad entre tasks: CLOSED** (owner, 2026-11-05): se acepta la validación productiva y la funcionalidad queda cerrada para el alcance aprobado. Sólo se modifica por defectos materiales. R7-3 no iniciado | [Diseño](../architecture/R4_J4_R7_DESIGN.md); [informe R7-4](../architecture/R4_R7_4_CROSS_TASK_CONTINUITY_REPORT.md); [seguimientos y backlog Sales/J5](../architecture/R4_R7_4_FOLLOWUPS_AND_SALES_BACKLOG.md) |
+| J5 — Sales Autonomy | **ACTIVE** (owner, 2026-11-05). Prioridad: cerrar J5-F0 (PR #35; G0 no aprobado) y preparar F1 (Quote V2) y F2 (Catalog con fuente comercial vigente). No hay despliegues comerciales sin autorización específica | Comportamiento del modelo con Customer: cuándo verificar, uso del historial, personalización, estrategia comercial. Parte de `sales-production@8` (J4-R4) |
 | J5-A — Interactive Steering | **PLANNED** (owner, DESIGN-02, 2026-10-28; no iniciado) | Steering de nivel 2: incorporar mensajes durante un turno activo y seguir ejecutando; posible evolución versionada de `KernelSession` y del protocolo (bloqueo v5: `respond` termina el turno). Compatibilidad en [R4_J4_R7_DESIGN §3.6](../architecture/R4_J4_R7_DESIGN.md) |
 | J5-B — Owner Collaboration | **PLANNED** (owner, mandato J4-R7-1, 2026-10-28; no iniciado) | Consulta directa del agente al responsable comercial por un canal privado (inicialmente WhatsApp). [ADR-042 / R4-OWNER-COLLABORATION-01](../adr/ADR-042-owner-collaboration.md). Depende de HumanRuntime, Approval Horizon Hold (R7-3, BLK-AP1), steering durable (R7-2) y Outbox |
 | J6 — Benchmark & Reviewer | **PLANNED** (confirmado por el owner, 2026-10-22; no iniciado) | Benchmark y evaluación comercial; revisión de calidad |
 | R4 Media & Communications | **DEFERRED** | Capacidades multimedia y entrega de documentos (J3F, §4.2) |
 | J7 — Production Readiness | **NOT PRODUCTION READY** | Gobernanza operacional y habilitación de clientes reales (gates del registro de brechas J3). Hereda los gates de datos reales de J4 (§1.2), el paquete [J7-CP](../architecture/R4_J7_CUSTOMER_PROFILE_PRODUCTION_DATA_BACKLOG.md) (Customer Profile con datos reales, no autorizado) y el rollout de `@8` desde el perfil productivo vigente |
+
+**Cierre de R7-4 y transición a J5** (owner, 2026-11-05, «R4 — R7-4 Closure and J5 Transition»):
+
+- **Observación:** producción no se modifica. Se mantienen `sales-production@3`, `R4_TURN_GUARD=observe`, rollout 0 %,
+  la allowlist actual, `maxWriteActions=0` y la ventana de 30 días para el contexto de tasks anteriores. Durante la
+  ventana se revisan errores, reinicios, duplicaciones, outbox, latencia, continuidad entre tasks y handoffs inesperados.
+- **DS-1:** pasa a ser un requisito de Sales y no se implementa en el kernel
+  ([backlog §C](../architecture/R4_R7_4_FOLLOWUPS_AND_SALES_BACKLOG.md)).
+- **D-7:** se mantiene la política de escritura productiva actual. `maxWriteActions` no se aumenta automáticamente.
+  La autonomía de las operaciones comerciales se resolverá en una decisión separada.
+- **Evidencia:** los informes productivos y la evidencia del EC2 se guardan fuera de este repositorio.
 
 **Separación normativa** (owner, 2026-10-22, mandato `R4-J4-R4-COMPOSITION-AND-PROFILE-09`).
 Ningún hito se inicia sin autorización explícita. Esta tabla no declara entregables implementados.
@@ -127,9 +139,9 @@ identidades sintéticas.
 **Condiciones de `J4_RELEASE_CANDIDATE_ACCEPTED`:** informe §9. No habilita datos reales ni producción.
 
 **Restricciones productivas vigentes.**
-- Producción sigue en `ef5a354`. El perfil documentado era `sales-production@3`, pero el host corre
-  **`sales-production@2`** (`R4_PROD_POLICY_PROFILE`, verificado en solo lectura el 2026-10-27; F-5). Un rollout J7
-  de `@8` parte de `@2`.
+- Producción corre `main` `9078584` (R7-4) con `sales-production@3`, `R4_TURN_GUARD=observe`, rollout 0 % y
+  `maxWriteActions=0` (owner, 2026-11-05). Un rollout J7 de `@8` parte de `@3`. La lectura del 2026-10-27 (F-5,
+  `@2`) quedó superada.
 - `PRODUCTION_ROLLOUT=NOT_AUTHORIZED`.
 - `R4_CUSTOMER_MODE=real` está rechazado por los adaptadores.
 - No hay datos reales, despliegue, cuentas PrestaShop ni envíos de correo u OTP reales sin autorización J7.
