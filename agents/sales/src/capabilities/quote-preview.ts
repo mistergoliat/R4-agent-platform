@@ -8,6 +8,7 @@ import { snapshotLimitBreaches, type AutonomousQuoteLimits, type AutonomousQuote
 import { OFFER_MESSAGE_MAX_CHARS, OFFER_TEMPLATE_VERSION, formatClp, offerReference, renderOfferMessage } from './offer-presentation.js';
 import { buildCommercialSnapshot } from './commercial-snapshot.js';
 import { domainRead, readDefinition } from './common.js';
+import type { QuoteParityGuard } from './parity-guard.js';
 
 export const quotePreviewInput = z.strictObject({});
 export type QuotePreviewInput = z.infer<typeof quotePreviewInput>;
@@ -226,7 +227,7 @@ export type QuotePreviewV3Output = z.infer<typeof quotePreviewV3Output>;
  * message, and issues only if the message the customer answered is
  * byte-identical to it.
  */
-export function quotePreviewV3Capability(deps: { readonly store: Pick<PostgresSalesStore, 'workspace' | 'commercialVersion'>; readonly catalog: CatalogPort; readonly shipping: ShippingService; readonly limits: AutonomousQuoteLimitsV6; readonly now?: () => Date }): CapabilityRegistration<QuotePreviewInput, QuotePreviewV3Output> {
+export function quotePreviewV3Capability(deps: { readonly store: Pick<PostgresSalesStore, 'workspace' | 'commercialVersion'>; readonly catalog: CatalogPort; readonly shipping: ShippingService; readonly limits: AutonomousQuoteLimitsV6; readonly now?: () => Date; readonly parity?: QuoteParityGuard | null }): CapabilityRegistration<QuotePreviewInput, QuotePreviewV3Output> {
   const v2 = quotePreviewV2Capability(deps);
   return {
     definition: {

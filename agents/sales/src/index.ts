@@ -16,6 +16,7 @@ export * from './capabilities/workspace.js';
 export * from './capabilities/workspace-v2.js';
 export * from './capabilities/commercial-snapshot.js';
 export * from './capabilities/autonomy-limits.js';
+export * from './capabilities/parity-guard.js';
 export * from './capabilities/quote-preview.js';
 export * from './capabilities/quote-v3.js';
 export * from './capabilities/quote-v4.js';

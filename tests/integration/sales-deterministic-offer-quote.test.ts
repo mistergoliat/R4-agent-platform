@@ -11,6 +11,7 @@ import {
   quoteCreateV3Input,
   quoteCreateV4Capability,
   quoteCreateV5Capability,
+  createQuoteParityGuard,
   quotePreviewV3Capability,
   renderOfferMessage,
   resolveOrderBasis,
@@ -18,6 +19,7 @@ import {
   workspaceUpdateV2InputSchema,
   type AutonomousQuoteLimitsV6,
   type ConversationThreadEntry,
+  type QuoteParityGuard,
   type QuotePreviewV3Output,
 } from '@r4-sales/agent';
 import { killSwitchGuardedQuotes } from '@r4-sales/agent/production';
@@ -98,14 +100,16 @@ function tampering(owner: FixtureQuoteV2Service, tamper: (quote: QuoteV2Quote) =
   };
 }
 
-function world(options: { limits?: Partial<AutonomousQuoteLimitsV6>; owner?: FixtureQuoteV2Service; tamper?: (quote: QuoteV2Quote) => QuoteV2Quote; controls?: AutonomyControls } = {}) {
+function world(options: { limits?: Partial<AutonomousQuoteLimitsV6>; owner?: FixtureQuoteV2Service; tamper?: (quote: QuoteV2Quote) => QuoteV2Quote; controls?: AutonomyControls; parity?: QuoteParityGuard } = {}) {
   const store = new PostgresSalesStore(pool);
   const baseCatalog = new FixtureCatalog({ now: () => NOW });
   const baseShipping = new FixtureShipping({ now: () => NOW });
   const owner = options.owner ?? new FixtureQuoteV2Service({ now: () => NOW });
   const gate = options.controls ?? controls;
   const limits = { ...LIMITS, ...options.limits };
-  const state = { catalogPatch: null as null | ((item: CatalogItemContext) => CatalogItemContext | Promise<CatalogItemContext>) };
+  const state = { catalogPatch: null as null | ((item: CatalogItemContext) => CatalogItemContext | Promise<CatalogItemContext>), parity: options.parity ?? null };
+  // (R4-J5 F1, P-1) Swappable, so a case can change the verified set between the preview and the issuance.
+  const parity: QuoteParityGuard | null = options.parity ? { ...options.parity, check: (line, now) => state.parity?.check(line, now) ?? null } : null;
   const catalog: CatalogPort = {
     search: (...a) => baseCatalog.search(...a),
     getProductContext: (...a) => baseCatalog.getProductContext(...a),
@@ -120,8 +124,8 @@ function world(options: { limits?: Partial<AutonomousQuoteLimitsV6>; owner?: Fix
   // The @7 composition's Quote port: createAndIssue behind the durable kill switch.
   const quotes = killSwitchGuardedQuotes(options.tamper ? tampering(owner, options.tamper) : owner, gate, logger);
   const workspaceV2 = workspaceCapabilityV2({ store, catalog, shipping, clock });
-  const preview = quotePreviewV3Capability({ store, catalog, shipping, limits, now: () => NOW });
-  const create = () => quoteCreateV5Capability({ store, quotes, catalog, shipping, limits, conversation: thread.reader, admission: gate, now: () => NOW });
+  const preview = quotePreviewV3Capability({ store, catalog, shipping, limits, now: () => NOW, parity });
+  const create = () => quoteCreateV5Capability({ store, quotes, catalog, shipping, limits, conversation: thread.reader, admission: gate, now: () => NOW, parity });
   let capability = create();
   const taskId = randomUUID();
   const trusted = { taskId, runId: randomUUID(), agentId: 'sales', agentVersion: 7, correlationId: 'it-quote-v5', grantedScopes: ['quote.create', 'catalog.read', 'shipping.read', 'sales.workspace.write'] };
@@ -533,5 +537,79 @@ describe('F. the kill switch over Quote V2 writes (durable controls, read at the
     expect(await w.issue(p.previewId!)).toMatchObject({ status: 'failed', code: 'autonomy_disabled', details: { reason: 'autonomy_controls_unavailable' } });
     await expect(w.quotes.createAndIssue({} as never, newKey())).rejects.toMatchObject({ code: 'autonomy_disabled' });
     expect(w.owner.createCalls).toBe(0);
+  });
+});
+
+/** What the Catalog owner's parity check would have verified for these items, at `verifiedAt` (from the fixture owner itself). */
+async function verifiedSet(items: readonly { productId: string; quantity: number }[], verifiedAt: string, patch: (e: Record<string, unknown>) => Record<string, unknown> = (e) => e) {
+  const fixture = new FixtureCatalog({ now: () => NOW });
+  const evidence = [];
+  for (const i of items) {
+    const item = await fixture.getItemContext({ itemKey: i.productId, quantity: i.quantity });
+    if (item.status !== 'found' || item.pricing.status !== 'available') throw new Error(`fixture ${i.productId} is not quotable`);
+    evidence.push(patch({ itemKey: i.productId, productRef: item.ref.productId, variantRef: item.ref.variantId, sku: item.variant.sku ?? item.parentProduct.sku ?? null, finalGross: item.pricing.finalGross.amount, availableQuantity: item.availability.availableQuantity ?? 99, verifiedAt, source: 'it-parity' }));
+  }
+  return { schemaVersion: 1, items: evidence };
+}
+const guard = async (evidence: Promise<unknown>, maxAgeSeconds = 3600) => createQuoteParityGuard({ evidence: await evidence, maxAgeSeconds });
+const FRESH = new Date(NOW.getTime() - 10 * 60_000).toISOString();
+const blockerCodes = (p: unknown) => (p as { blockers: { code: string }[] }).blockers.map((b) => b.code);
+
+describe('P. (R4-J5 F1, P-1) only parity-verified SKUs are quoted; the check repeats at issuance', () => {
+  it('P1 every line verified, current and as verified: preview ready and the confirmed offer issues', async () => {
+    const w = world({ parity: await guard(verifiedSet(ITEMS, FRESH)) });
+    const p = await offered(w);
+    w.thread.customer('Sí, emítela.');
+    expect(await w.issue(p.previewId!)).toMatchObject({ status: 'applied' });
+    expect(w.owner.quotes).toHaveLength(1);
+  });
+
+  it('P2 a line outside the verified set blocks the preview; every line of the operation is checked', async () => {
+    const one = world({ parity: await guard(verifiedSet([ITEMS[0]!], FRESH)) });
+    await one.update([...ITEMS.map((i) => ({ op: 'add_item', ...i })), { op: 'exclude_shipping' }]);
+    expect(await one.preview()).toMatchObject({ status: 'blocked', issuable: false, presentation: null, blockers: [{ code: 'item_not_parity_verified', details: { line: 2, itemKey: 'BAR-EZ' } }] });
+    const none = world({ parity: await guard(verifiedSet([{ productId: 'KB-COMP-12', quantity: 1 }], FRESH)) });
+    await none.update([...ITEMS.map((i) => ({ op: 'add_item', ...i })), { op: 'exclude_shipping' }]);
+    expect(blockerCodes(await none.preview())).toEqual(['item_not_parity_verified', 'item_not_parity_verified']);
+  });
+
+  it('P3 expired or future-dated verification is not current', async () => {
+    for (const verifiedAt of [new Date(NOW.getTime() - 3601_000).toISOString(), new Date(NOW.getTime() + 60_000).toISOString()]) {
+      const w = world({ parity: await guard(verifiedSet(ITEMS, verifiedAt)) });
+      await w.update([...ITEMS.map((i) => ({ op: 'add_item', ...i })), { op: 'exclude_shipping' }]);
+      expect(blockerCodes(await w.preview()), verifiedAt).toEqual(['item_parity_stale', 'item_parity_stale']);
+    }
+  });
+
+  it('P4 a commercial discrepancy (price, identity, stock) blocks: the catalog answer must be what was verified', async () => {
+    const cases: [string, (e: Record<string, unknown>) => Record<string, unknown>][] = [
+      ['price', (e) => (e.itemKey === 'BAR-EZ' ? { ...e, finalGross: (e.finalGross as number) - 1 } : e)],
+      ['sku', (e) => (e.itemKey === 'BAR-EZ' ? { ...e, sku: 'OTHER-SKU' } : e)],
+      ['productRef', (e) => (e.itemKey === 'BAR-EZ' ? { ...e, productRef: 'P-OTHER' } : e)],
+      ['stock', (e) => (e.itemKey === 'BAR-EZ' ? { ...e, availableQuantity: 1 } : e)],
+    ];
+    for (const [field, patch] of cases) {
+      const w = world({ parity: await guard(verifiedSet(ITEMS, FRESH, patch)) });
+      await w.update([...ITEMS.map((i) => ({ op: 'add_item', ...i })), { op: 'exclude_shipping' }]);
+      expect(await w.preview(), field).toMatchObject({ status: 'blocked', blockers: [{ code: 'item_parity_mismatch', details: { line: 2, itemKey: 'BAR-EZ', field } }] });
+    }
+  });
+
+  it('P5 the verification is re-checked at issuance: a set no longer as verified stops the confirmed offer before the Quote owner', async () => {
+    const w = world({ parity: await guard(verifiedSet(ITEMS, FRESH)) });
+    const p = await offered(w);
+    w.thread.customer('Sí, emítela.');
+    w.state.parity = await guard(verifiedSet(ITEMS, FRESH, (e) => (e.itemKey === 'BAR-OLY20' ? { ...e, finalGross: (e.finalGross as number) + 1 } : e)));
+    const result = await w.issue(p.previewId!);
+    expect(result.status).not.toBe('applied');
+    expect(JSON.stringify(result)).toContain('item_parity_mismatch');
+    expect(w.owner.createCalls).toBe(0);
+  });
+
+  it('P6 without a configured guard nothing changes (no profile requires it yet)', async () => {
+    const w = world();
+    const p = await offered(w);
+    w.thread.customer('Sí, emítela.');
+    expect(await w.issue(p.previewId!)).toMatchObject({ status: 'applied' });
   });
 });

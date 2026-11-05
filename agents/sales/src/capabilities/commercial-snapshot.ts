@@ -17,6 +17,7 @@ import {
 } from '@r4-adapters/domains';
 import type { Workspace } from '../workspace/model.js';
 import { CATALOG_SOURCE_SYSTEM, SHIPPING_SOURCE_SYSTEM } from './quote-v2.js';
+import type { QuoteParityGuard } from './parity-guard.js';
 import { resolveOrderBasis } from './shipping-basis.js';
 import { SHIPPING_FRESHNESS_TTL_MS } from './shipping.js';
 
@@ -111,7 +112,7 @@ export function previewIdOf(snapshot: CommercialSnapshot): string {
  * commercial reason: those are blockers. Throws `DomainError` only when an
  * owner could not answer (outage, timeout): nothing can be concluded then.
  */
-export async function buildCommercialSnapshot(deps: { readonly catalog: CatalogPort; readonly shipping: ShippingService }, workspace: Workspace, options: CallOptions, now: Date): Promise<CommercialSnapshotResult> {
+export async function buildCommercialSnapshot(deps: { readonly catalog: CatalogPort; readonly shipping: ShippingService; readonly parity?: QuoteParityGuard | null }, workspace: Workspace, options: CallOptions, now: Date): Promise<CommercialSnapshotResult> {
   const blockers: CommercialBlocker[] = [];
   const block = (code: string, message: string, details: Record<string, string | number | boolean | null> = {}) => blockers.push({ code, message, details });
   const state = workspace.state;
@@ -165,6 +166,12 @@ export async function buildCommercialSnapshot(deps: { readonly catalog: CatalogP
     }
     const rawSku = item.variant.sku ?? item.parentProduct.sku;
     const unitPrice = { amount: item.pricing.finalGross.amount, taxBasis: 'included' as const, taxRate };
+    // (R4-J5 F1, P-1) Every line must be in the parity-verified set, current, and as verified; checked at preview and again at issuance.
+    const parity = deps.parity?.check({ itemKey: selected.productId, productRef: item.ref.productId, variantRef: item.ref.variantId, sku: rawSku ?? null, unitGross: unitPrice.amount, quantity: selected.quantity }, now);
+    if (parity) {
+      blockers.push({ ...parity, details: { line: index + 1, ...parity.details } });
+      continue;
+    }
     lines.push({
       position: lines.length + 1,
       itemKey: selected.productId,
