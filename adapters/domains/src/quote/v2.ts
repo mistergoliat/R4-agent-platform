@@ -191,29 +191,43 @@ function halfUp(n: bigint, d: bigint): bigint {
   return (2n * n + d) / (2n * d);
 }
 
-/** The owner's amounts of one charge (a line, or shipping with quantity "1"). */
-export function quoteV2ChargeAmounts(charge: QuoteV2Charge, quantity: string): QuoteV2Amounts {
+/** A charge's 6-decimal unit net and unit gross (× 10⁶) and its unrounded amounts (× 10¹²), Quote Domain §6.3 (A10). */
+function exactCharge(charge: QuoteV2Charge, quantity: string): { readonly net: bigint; readonly gross: bigint } {
   if (!QUOTE_V2_QUANTITY_PATTERN.test(quantity)) throw new RangeError(`not a canonical quantity: ${quantity}`);
   if (!Number.isSafeInteger(charge.amount) || charge.amount < 0) throw new RangeError('a charge amount is a whole, non-negative CLP integer');
-  const extension = halfUp(BigInt(charge.amount) * micros(quantity), MICRO);
+  let rate = 0n;
   if (charge.taxBasis === 'exempt') {
     if (charge.taxRate !== undefined) throw new RangeError('an exempt charge carries no tax rate');
-    return amounts(extension, 0n);
+  } else {
+    if (charge.taxRate === undefined || !QUOTE_V2_TAX_RATE_PATTERN.test(charge.taxRate)) throw new RangeError(`not a canonical tax rate: ${String(charge.taxRate)}`);
+    rate = micros(charge.taxRate);
   }
-  if (charge.taxRate === undefined || !QUOTE_V2_TAX_RATE_PATTERN.test(charge.taxRate)) throw new RangeError(`not a canonical tax rate: ${String(charge.taxRate)}`);
-  const rate = micros(charge.taxRate);
-  if (charge.taxBasis === 'included') {
-    const net = halfUp(extension * MICRO, MICRO + rate);
-    return amounts(net, extension - net);
-  }
-  return amounts(extension, halfUp(extension * rate, MICRO));
+  const unit = BigInt(charge.amount) * MICRO;
+  const unitNet = charge.taxBasis === 'included' ? halfUp(unit * MICRO, MICRO + rate) : unit;
+  const unitGross = halfUp(unitNet * (MICRO + rate), MICRO);
+  const q = micros(quantity);
+  return { net: unitNet * q, gross: unitGross * q };
 }
 
-/** Totals = sums of the rounded charge amounts over every line and shipping. */
+const EXACT = MICRO * MICRO;
+
+/** The owner's amounts of one charge (a line, or shipping with quantity "1"), Quote amendment A10. */
+export function quoteV2ChargeAmounts(charge: QuoteV2Charge, quantity: string): QuoteV2Amounts {
+  const exact = exactCharge(charge, quantity);
+  const net = halfUp(exact.net, EXACT);
+  return amounts(net, halfUp(exact.gross, EXACT) - net);
+}
+
+/** Totals round the SUM of the unrounded charge amounts (Quote amendment A10), as PrestaShop does under PS_ROUND_TYPE = 2. */
 export function quoteV2Totals(request: Pick<QuoteV2CreateRequest, 'lines' | 'shipping'>): QuoteV2Amounts & { readonly exemptNet: number } {
-  const charges = [...request.lines.map((l) => ({ charge: l.unitPrice, amounts: quoteV2ChargeAmounts(l.unitPrice, l.quantity.value) })), ...(request.shipping ? [{ charge: request.shipping.amount, amounts: quoteV2ChargeAmounts(request.shipping.amount, '1') }] : [])];
-  const sum = (pick: (a: QuoteV2Amounts) => number, only?: QuoteV2TaxBasis) => charges.filter((c) => !only || c.charge.taxBasis === only).reduce((total, c) => total + pick(c.amounts), 0);
-  return { net: sum((a) => a.net), tax: sum((a) => a.tax), gross: sum((a) => a.gross), exemptNet: sum((a) => a.net, 'exempt') };
+  const charges = [
+    ...request.lines.map((l) => ({ basis: l.unitPrice.taxBasis, exact: exactCharge(l.unitPrice, l.quantity.value) })),
+    ...(request.shipping ? [{ basis: request.shipping.amount.taxBasis, exact: exactCharge(request.shipping.amount, '1') }] : []),
+  ];
+  const sum = (pick: (e: { net: bigint; gross: bigint }) => bigint, only?: QuoteV2TaxBasis) => charges.filter((c) => !only || c.basis === only).reduce((total, c) => total + pick(c.exact), 0n);
+  const net = halfUp(sum((e) => e.net), EXACT);
+  const totals = amounts(net, halfUp(sum((e) => e.gross), EXACT) - net);
+  return { ...totals, exemptNet: Number(halfUp(sum((e) => e.net, 'exempt'), EXACT)) };
 }
 
 /** A tax rate the Catalog states as a number (e.g. 0.19) as the owner's canonical decimal string, or null when it is not representable. */

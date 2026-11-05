@@ -147,7 +147,7 @@ describe('S01–S07 commercial snapshot → issued quote', () => {
     const w = world();
     await w.workspace([{ op: 'add_item', productId: 'KB-COMP-12', quantity: 2 }, { op: 'add_item', productId: 'BAR-OLY20', quantity: 1 }]);
     const key = newKey();
-    const outcome = await w.execute({ ...SHIPPED, customer: { kind: 'guest' }, lines: [{ itemKey: 'KB-COMP-12', quantity: 2, unitPrice: { amount: 44_990, taxBasis: 'included', taxRate: '0.19' } }, SHIPPED.lines[0]], shipping: null, expectedTotals: { net: 184_848, tax: 35_122, gross: 219_970 } }, key);
+    const outcome = await w.execute({ ...SHIPPED, customer: { kind: 'guest' }, lines: [{ itemKey: 'KB-COMP-12', quantity: 2, unitPrice: { amount: 44_990, taxBasis: 'included', taxRate: '0.19' } }, SHIPPED.lines[0]], shipping: null, expectedTotals: { net: 184_849, tax: 35_121, gross: 219_970 } }, key);
     expect(outcome).toMatchObject({ status: 'applied', result: { shipping: null, totals: { gross: 219_970 } } });
     const frozen = (await w.store.quoteV2Request(key))!.request;
     expect(frozen.lines[0]!.item).toEqual({ sourceSystem: 'catalog-service', productRef: '114', variantRef: '1141', sku: 'FL-KBC-12', description: 'Kettlebell de competición', attributes: [{ name: 'Peso', value: '12 kg' }] });
