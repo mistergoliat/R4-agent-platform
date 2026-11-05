@@ -24,14 +24,25 @@ export const SALES_MIGRATIONS_DIR = fileURLToPath(new URL('../migrations', impor
  * - 8: v7 plus the rules of the Customer reads and the identity verification
  *      (scope identity.verify) — run only by sales-production@8 (R4-J4-R4).
  */
-export const SALES_AGENT_DEFINITION_FILES = Object.freeze({ 3: 'sales.agent.json', 4: 'sales.v4.agent.json', 5: 'sales.v5.agent.json', 6: 'sales.v6.agent.json', 7: 'sales.v7.agent.json', 8: 'sales.v8.agent.json', 12: 'sales.v12.agent.json' } as const);
-export type SalesAgentDefinitionVersion = keyof typeof SALES_AGENT_DEFINITION_FILES;
+export const SALES_AGENT_DEFINITION_FILES = Object.freeze({ 3: 'sales.agent.json', 4: 'sales.v4.agent.json', 5: 'sales.v5.agent.json', 6: 'sales.v6.agent.json', 7: 'sales.v7.agent.json', 8: 'sales.v8.agent.json' } as const);
+/**
+ * (R4-J5 F1) Candidate definitions: NOT `*.agent.json`, so no bootstrap, platform or harness registers them (they
+ * would also become the registry's "latest"). Only the isolated canary registers one, in its own database, for the
+ * profile pinned to it (sales-production@12 → v12). Owner decision B: not registered in production.
+ */
+export const SALES_CANDIDATE_DEFINITION_FILES = Object.freeze({ 12: 'candidates/sales.v12.candidate.json' } as const);
+export type SalesAgentDefinitionVersion = keyof typeof SALES_AGENT_DEFINITION_FILES | keyof typeof SALES_CANDIDATE_DEFINITION_FILES;
 /** The pack's current definition (what non-production compositions, which register every capability, run). */
 export const SALES_AGENT_LATEST_VERSION: SalesAgentDefinitionVersion = 4;
 
+export function isSalesCandidateDefinition(version: SalesAgentDefinitionVersion): version is keyof typeof SALES_CANDIDATE_DEFINITION_FILES {
+  return Object.hasOwn(SALES_CANDIDATE_DEFINITION_FILES, version);
+}
+
 /** One of the pack's AgentDefinitions (default: the latest), validated with the platform's own schema. It carries no provider, model or secret. */
 export function loadSalesAgentDefinition(version: SalesAgentDefinitionVersion = SALES_AGENT_LATEST_VERSION): AgentDefinition {
-  const definition = agentDefinitionSchema.parse(JSON.parse(readFileSync(fileURLToPath(new URL(`../${SALES_AGENT_DEFINITION_FILES[version]}`, import.meta.url)), 'utf8')));
-  if (definition.version !== version) throw new Error(`${SALES_AGENT_DEFINITION_FILES[version]} declares version ${definition.version}, expected ${version}`);
+  const file = isSalesCandidateDefinition(version) ? SALES_CANDIDATE_DEFINITION_FILES[version] : SALES_AGENT_DEFINITION_FILES[version];
+  const definition = agentDefinitionSchema.parse(JSON.parse(readFileSync(fileURLToPath(new URL(`../${file}`, import.meta.url)), 'utf8')));
+  if (definition.version !== version) throw new Error(`${file} declares version ${definition.version}, expected ${version}`);
   return definition;
 }

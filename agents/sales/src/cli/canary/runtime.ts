@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { hostname } from 'node:os';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { hostname, tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Logger } from 'pino';
 import { createPlatform, registerAgentDefinitions } from '@r4/api';
 import { PlatformError, systemClock, uuidV7Generator, type Clock } from '@r4/contracts';
@@ -24,7 +26,7 @@ import type { ModelProvider } from '@r4/model-gateway';
 import { PostgresProductionStore, createPool, migrate, migrationStatus, type Pool } from '@r4/persistence-postgres';
 import { createSchedulerPlatform, type SchedulerConfig, type SchedulerPlatform } from '@r4/scheduler';
 import { createWorkerPlatform, type WorkerConfig, type WorkerPlatform } from '@r4/worker';
-import { SALES_AGENT_DIR, SALES_MIGRATIONS_DIR } from '../../definition.js';
+import { SALES_AGENT_DIR, SALES_MIGRATIONS_DIR, isSalesCandidateDefinition, loadSalesAgentDefinition } from '../../definition.js';
 import { SALES_AGENT_ID } from '../../ids.js';
 import { migrateSales } from '../../migrate.js';
 import { SALES_RUN_FAILURE_FALLBACK_TEXT, composeSalesProductionWorker, salesConversationTaskFactory, type SalesProductionWorkerOptions } from '../../production/composition.js';
@@ -160,6 +162,17 @@ export async function initCanary(canary: CanaryEnvironment, logger: Logger): Pro
     const identityVerification = await migrateIdentityVerification(pool);
     const canaryId = await assertIsolatedCanaryDatabase(pool);
     const definitions = await registerAgentDefinitions({ databaseUrl: canary.databaseUrl, directory: SALES_AGENT_DIR, agentIds: [SALES_AGENT_ID], migrationDirectories: [SALES_MIGRATIONS_DIR], logger });
+    // (R4-J5 F1) A canary-only profile pinned to a candidate definition registers it here, in this isolated database only.
+    const pinned = salesProductionAgentVersion(canary.profile);
+    if (isSalesCandidateDefinition(pinned)) {
+      const dir = mkdtempSync(join(tmpdir(), 'r4-sales-candidate-'));
+      try {
+        writeFileSync(join(dir, `sales.v${pinned}.agent.json`), JSON.stringify(loadSalesAgentDefinition(pinned)));
+        await registerAgentDefinitions({ databaseUrl: canary.databaseUrl, directory: dir, agentIds: [SALES_AGENT_ID], migrationDirectories: [SALES_MIGRATIONS_DIR], logger });
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
     const controls = new AutonomyControls({ store: new PostgresProductionStore(pool), logger });
     const enabled = (await controls.state()).globalEnabled;
     if (!enabled) await controls.set({ scope: 'global', autonomyEnabled: true, reason: 'isolated Sales canary database (synthetic traffic only)', changedBy: CANARY_ACTOR, correlationId: `sales-canary:${canaryId}:init` });

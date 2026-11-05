@@ -2,10 +2,11 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { loadAgentDefinitionsFromDirectory } from '@r4/agent-registry';
 import { createSilentLogger } from '@r4/observability';
 import { loadProductionConfig, profileFingerprint, profileLabel, type ProductionStore } from '@r4/live-ops';
 import { FixtureCatalog, FixtureQuoteV2Service, FixtureShipping, type CatalogPort, type QuoteV2Service, type ShippingService } from '@r4-adapters/domains';
-import { AUTONOMOUS_QUOTE_CAPABILITY_IDS, CAPABILITY_IDS, createQuoteParityGuard, loadSalesAgentDefinition, type AutonomousQuoteLimitsV6 } from '@r4-sales/agent';
+import { AUTONOMOUS_QUOTE_CAPABILITY_IDS, CAPABILITY_IDS, SALES_AGENT_DIR, createQuoteParityGuard, loadSalesAgentDefinition, type AutonomousQuoteLimitsV6 } from '@r4-sales/agent';
 import {
   SALES_CANARY_ONLY_PROFILES,
   SALES_F1_CANARY_LIMITS,
@@ -117,6 +118,12 @@ describe('B2. the isolated canary runtime applies the gate', () => {
 describe('C. definition v12 (decision B: derived from v7; explicit exception to cumulative versioning)', () => {
   const v7 = loadSalesAgentDefinition(7);
   const v12 = loadSalesAgentDefinition(12);
+
+  it('is a candidate, not a declared definition: no bootstrap, platform or harness registers it, and it never becomes "latest"', async () => {
+    const loaded = await loadAgentDefinitionsFromDirectory(SALES_AGENT_DIR);
+    expect(loaded.map((e) => `${e.definition.agentId}@${e.definition.version}`)).not.toContain('sales@12');
+    expect(Math.max(...loaded.filter((e) => e.definition.agentId === 'sales').map((e) => e.definition.version))).toBe(8);
+  });
 
   it('excludes Customer Profile, CIA, Checkout, cart and the unadjudicated G-sem block; no customer scope', () => {
     expect(v12.instructions).not.toMatch(/customer\.get_context|customer\.get_purchase_history|identity\.|checkout\.|cart\./i);
