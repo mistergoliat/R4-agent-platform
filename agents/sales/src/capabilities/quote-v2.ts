@@ -7,6 +7,7 @@ import {
   QUOTE_V2_TAX_RATE_PATTERN,
   canonicalJson,
   canonicalTaxRate,
+  catalogShortStock,
   normalizeCommuneName,
   quoteV2ChargeAmounts,
   quoteV2Totals,
@@ -232,6 +233,8 @@ async function prepareRequest(deps: QuoteV2CapabilityDeps, input: QuoteCreateV2I
     const item = await deps.catalog.getItemContext({ itemKey: line.itemKey, quantity: line.quantity }, options);
     const at = { line: index + 1, itemKey: line.itemKey };
     if (item.status !== 'found') return reject('item_not_sellable', `${line.itemKey} is not a sellable catalog item (${item.status})`, at);
+    const short = catalogShortStock(item.availability, line.quantity);
+    if (short !== null) return reject('insufficient_stock', `only ${short} units are available`, { ...at, available: short });
     if (item.availability.sellability !== 'sellable') return reject('item_not_sellable', `${item.parentProduct.name} is ${item.availability.sellability}`, { ...at, reason: item.availability.reason });
     if (item.availability.availableQuantity !== null && item.availability.availableQuantity < line.quantity) return reject('insufficient_stock', `only ${item.availability.availableQuantity} units are available`, { ...at, available: item.availability.availableQuantity });
     if (item.freshness.validUntil !== null && Date.parse(item.freshness.validUntil) <= now.getTime()) return reject('catalog_evidence_stale', 'the catalog answer is already past its owner validity', at);

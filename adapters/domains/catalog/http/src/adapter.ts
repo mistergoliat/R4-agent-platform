@@ -99,6 +99,7 @@ export class HttpCatalogAdapter implements CatalogPort {
     const parsed = await this.#call('getItemContext', 'GET', path, undefined, catalogItemContextResponseSchema, options);
     if (parsed.itemKey !== request.itemKey) throw this.#violation('getItemContext', 'key_mismatch', 'the owner answered for a different itemKey', options);
     if (parsed.status === 'found' && parsed.pricing.status === 'available' && parsed.pricing.quantity !== request.quantity) throw this.#violation('getItemContext', 'quantity_mismatch', 'the owner priced a different quantity', options);
+    if (parsed.status === 'found' && parsed.availability.requestedQuantity !== undefined && parsed.availability.requestedQuantity !== request.quantity) throw this.#violation('getItemContext', 'quantity_mismatch', 'the owner evaluated availability for a different quantity', options);
     const { schemaVersion: _, ...context } = parsed;
     return context;
   }

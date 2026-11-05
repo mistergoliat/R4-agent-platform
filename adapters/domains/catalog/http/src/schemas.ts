@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CATALOG_KEY_PATTERN, CATALOG_SELLABILITY, CATALOG_SELLABILITY_REASONS, CATALOG_SELLABILITY_REASON_VALUES } from '@r4-adapters/domains';
+import { CATALOG_KEY_PATTERN, CATALOG_SELLABILITY, CATALOG_SELLABILITY_REASONS, CATALOG_SELLABILITY_REASON_VALUES, CATALOG_STOCK_COVERAGE, catalogStockCoverageOf } from '@r4-adapters/domains';
 
 /**
  * Wire schemas of the Catalog read contract, schemaVersion 1, converged with
@@ -197,7 +197,14 @@ const itemFound = z
     parentProduct: z.object({ productKey: catalogKeySchema, name: nameText, sku: skuText.nullable() }),
     variant: z.object({ variantId: idSchema.nullable(), sku: skuText.nullable(), attributes: z.array(attribute).max(10) }),
     pricing,
-    availability: z.object({ sellability, reason, availableQuantity: z.int().nullable(), leadTime: z.null() }).superRefine(checkReason),
+    // (engine v2.3.0) requestedQuantity and stockCoverage are additive and OPTIONAL (v2.2.0 answers lack them), but come together and must agree with availableQuantity.
+    availability: z
+      .object({ sellability, reason, availableQuantity: z.int().nullable(), leadTime: z.null(), requestedQuantity: z.int().min(1).max(99).optional(), stockCoverage: z.enum(CATALOG_STOCK_COVERAGE).optional() })
+      .superRefine(checkReason)
+      .superRefine((a, ctx) => {
+        if ((a.requestedQuantity === undefined) !== (a.stockCoverage === undefined)) ctx.addIssue({ code: 'custom', path: ['stockCoverage'], message: 'requestedQuantity and stockCoverage come together' });
+        else if (a.requestedQuantity !== undefined && a.stockCoverage !== catalogStockCoverageOf(a.availableQuantity, a.requestedQuantity)) ctx.addIssue({ code: 'custom', path: ['stockCoverage'], message: 'stockCoverage disagrees with availableQuantity for requestedQuantity' });
+      }),
     provenance,
     freshness,
   })

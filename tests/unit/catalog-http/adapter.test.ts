@@ -74,8 +74,28 @@ describe('HttpCatalogAdapter — success paths (transport only, owner fixtures)'
     const { catalog, requests } = adapter(() => json(200, catalogFixture('item-promotion.json')));
     const item = await catalog.getItemContext({ itemKey: 'P12', quantity: 2 });
     expect(requests[0]!.url).toBe('http://127.0.0.1:4010/v2/catalog/items/P12/context?quantity=2');
-    expect(item).toMatchObject({ status: 'found', itemKey: 'P12', ref: { productId: '12', variantId: null }, pricing: { quantity: 2, regularGross: { amount: 119_000 }, finalGross: { amount: 107_100 }, promotion: { type: 'percentage', percentOff: 0.1, amountOffGross: null }, engineVersion: 'catalog-commercial-v2.2.0' }, availability: { leadTime: null } });
+    expect(item).toMatchObject({ status: 'found', itemKey: 'P12', ref: { productId: '12', variantId: null }, pricing: { quantity: 2, regularGross: { amount: 119_000 }, finalGross: { amount: 107_100 }, promotion: { type: 'percentage', percentOff: 0.1, amountOffGross: null }, engineVersion: 'catalog-commercial-v2.3.0' }, availability: { leadTime: null, requestedQuantity: 2, stockCoverage: 'full' } });
     expect(item.status === 'found' && item.pricing).not.toHaveProperty('lineFinalGross');
+  });
+
+  it('item context (engine v2.3.0): partial coverage is transported as the owner said, with the units on hand', async () => {
+    const cases: [string, string, unknown][] = [
+      ['P10', 'item-insufficient-stock.json', { availability: { sellability: 'not_sellable', reason: 'out_of_stock', availableQuantity: 4, requestedQuantity: 5, stockCoverage: 'partial' } }],
+      ['P53', 'item-insufficient-stock-backorder.json', { availability: { sellability: 'backorder', reason: 'backorder_allowed', availableQuantity: 2, requestedQuantity: 5, stockCoverage: 'partial' } }],
+    ];
+    for (const [key, file, expected] of cases) {
+      const { catalog } = adapter(() => json(200, catalogFixture(file)));
+      expect(await catalog.getItemContext({ itemKey: key, quantity: 5 }), file).toMatchObject(expected as object);
+    }
+  });
+
+  it('item context (engine v2.3.0): availability evaluated for another quantity is a contract violation', async () => {
+    const { catalog } = adapter(() => json(200, catalogFixture('item-insufficient-stock.json')));
+    // pricing.quantity is 5 as asked would be; a 4 asked makes both checks disagree, the availability one is the new one.
+    await expect(catalog.getItemContext({ itemKey: 'P10', quantity: 4 })).rejects.toMatchObject({ category: 'contract_violation', code: 'quantity_mismatch' });
+    const body = catalogFixture('item-insufficient-stock.json') as { availability: Record<string, unknown>; pricing: Record<string, unknown> };
+    const other = adapter(() => json(200, { ...body, availability: { ...body.availability, requestedQuantity: 3, stockCoverage: 'full' } }));
+    await expect(other.catalog.getItemContext({ itemKey: 'P10', quantity: 5 })).rejects.toMatchObject({ category: 'contract_violation', code: 'quantity_mismatch' });
   });
 
   it('item context: variant_required, stock unknown, backorder and pricing unavailable pass through as the owner said', async () => {

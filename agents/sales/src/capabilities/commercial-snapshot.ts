@@ -3,6 +3,7 @@ import {
   DomainError,
   canonicalJson,
   canonicalTaxRate,
+  catalogShortStock,
   normalizeCommuneName,
   quoteV2ChargeAmounts,
   quoteV2Totals,
@@ -124,6 +125,12 @@ export async function buildCommercialSnapshot(deps: { readonly catalog: CatalogP
     const item = await deps.catalog.getItemContext({ itemKey: selected.productId, quantity: selected.quantity }, options);
     if (item.status !== 'found') {
       block('item_not_sellable', `${selected.productId} is not a sellable catalog item (${item.status})`, at);
+      continue;
+    }
+    // Catalog v2.3.0 reports partial stock for the quantity as out_of_stock/backorder: it is insufficient stock, not "no stock".
+    const short = catalogShortStock(item.availability, selected.quantity);
+    if (short !== null) {
+      block('insufficient_stock', `only ${short} units of ${item.parentProduct.name} are available`, { ...at, available: short, requested: selected.quantity });
       continue;
     }
     if (item.availability.sellability !== 'sellable') {

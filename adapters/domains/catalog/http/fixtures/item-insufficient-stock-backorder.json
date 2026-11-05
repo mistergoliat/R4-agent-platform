@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "status": "found",
+  "itemKey": "P53",
+  "ref": {
+    "productId": "53",
+    "variantId": null
+  },
+  "parentProduct": {
+    "productKey": "P53",
+    "name": "Mancuerna a pedido parcial",
+    "sku": "MNC-53"
+  },
+  "variant": {
+    "variantId": null,
+    "sku": "MNC-53",
+    "attributes": []
+  },
+  "pricing": {
+    "status": "available",
+    "quantity": 5,
+    "regularGross": {
+      "amount": 119000,
+      "currency": "CLP"
+    },
+    "finalGross": {
+      "amount": 119000,
+      "currency": "CLP"
+    },
+    "promotion": null,
+    "tax": {
+      "included": true,
+      "rate": 0.19,
+      "basis": "configured_flat_rate"
+    },
+    "engineVersion": "catalog-commercial-v2.3.0"
+  },
+  "availability": {
+    "availableQuantity": 2,
+    "sellability": "backorder",
+    "reason": "backorder_allowed",
+    "leadTime": null,
+    "requestedQuantity": 5,
+    "stockCoverage": "partial"
+  },
+  "freshness": {
+    "asOf": "2026-09-29T12:00:00.000Z",
+    "cache": {
+      "hit": false,
+      "ageMs": 0
+    },
+    "validUntil": "2026-09-29T12:00:15.000Z"
+  },
+  "provenance": {
+    "source": "prestashop",
+    "service": "catalog-service",
+    "serviceBuildRef": "catalog-service@fixtures",
+    "sourceUpdatedAt": null
+  }
+}

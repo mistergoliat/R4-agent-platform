@@ -75,6 +75,29 @@ export interface CatalogProvenance {
 export const CATALOG_SELLABILITY = ['sellable', 'backorder', 'not_sellable', 'check_with_staff'] as const;
 export type CatalogSellability = (typeof CATALOG_SELLABILITY)[number];
 
+/** (Catalog engine v2.3.0) How much of the requested quantity the stock on hand covers. */
+export const CATALOG_STOCK_COVERAGE = ['full', 'partial', 'none', 'unknown'] as const;
+export type CatalogStockCoverage = (typeof CATALOG_STOCK_COVERAGE)[number];
+
+/** The owner's coverage rule (catalog-service `stockCoverage`), used only to check that an answer is self-consistent. */
+export function catalogStockCoverageOf(availableQuantity: number | null, requestedQuantity: number): CatalogStockCoverage {
+  if (availableQuantity === null) return 'unknown';
+  if (availableQuantity >= requestedQuantity) return 'full';
+  return availableQuantity > 0 ? 'partial' : 'none';
+}
+
+/**
+ * Units on hand when the stock covers only part of the requested quantity, else null. Engine v2.3.0 reports
+ * that case as `out_of_stock` (backorder denied) or `backorder_allowed`; before v2.3.0 it came as `sellable`
+ * with `availableQuantity` below the quantity. Either way it is insufficient stock, never "no stock".
+ */
+export function catalogShortStock(availability: { readonly sellability: CatalogSellability; readonly reason: string; readonly availableQuantity: number | null; readonly stockCoverage?: CatalogStockCoverage | undefined }, requestedQuantity: number): number | null {
+  const available = availability.availableQuantity;
+  if (available === null || available <= 0 || available >= requestedQuantity) return null;
+  if (availability.stockCoverage === 'partial' && (availability.reason === 'out_of_stock' || availability.reason === 'backorder_allowed')) return available;
+  return availability.sellability === 'sellable' ? available : null;
+}
+
 /** Which reasons each sellability may carry (a contract invariant, checked at the boundary). */
 export const CATALOG_SELLABILITY_REASONS = {
   sellable: ['in_stock'],
@@ -272,6 +295,12 @@ export type CatalogItemContext =
         readonly availableQuantity: number | null;
         /** The owner never promises a lead time it does not have. */
         readonly leadTime: null;
+        /**
+         * (Catalog engine v2.3.0, additive; absent before it) The quantity the sellability was evaluated for, and how
+         * much of it the stock on hand covers. `partial` means SOME units are available: never read it as no stock.
+         */
+        readonly requestedQuantity?: number | undefined;
+        readonly stockCoverage?: CatalogStockCoverage | undefined;
       };
       readonly provenance: CatalogProvenance;
       readonly freshness: CatalogFreshness;

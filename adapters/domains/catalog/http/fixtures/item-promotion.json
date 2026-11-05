@@ -38,13 +38,15 @@
       "rate": 0.19,
       "basis": "configured_flat_rate"
     },
-    "engineVersion": "catalog-commercial-v2.2.0"
+    "engineVersion": "catalog-commercial-v2.3.0"
   },
   "availability": {
     "availableQuantity": 4,
     "sellability": "sellable",
     "reason": "in_stock",
-    "leadTime": null
+    "leadTime": null,
+    "requestedQuantity": 2,
+    "stockCoverage": "full"
   },
   "freshness": {
     "asOf": "2026-09-29T12:00:00.000Z",
