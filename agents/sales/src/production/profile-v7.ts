@@ -31,7 +31,7 @@ export const SALES_PRODUCTION_PROFILE_V7: ProductionProfile = Object.freeze({
 } satisfies ProductionProfile);
 
 /** Profiles whose offer message is rendered by Sales and must be presented exactly (quote.preview@3, quote.create@5). */
-export const SALES_DETERMINISTIC_OFFER_PROFILES: ReadonlySet<string> = new Set(['sales-production@7', 'sales-production@8']);
+export const SALES_DETERMINISTIC_OFFER_PROFILES: ReadonlySet<string> = new Set(['sales-production@7', 'sales-production@8', 'sales-production@12']);
 
 export function isDeterministicOfferProfile(profile: ProductionProfile): boolean {
   return SALES_DETERMINISTIC_OFFER_PROFILES.has(profileLabel(profile));

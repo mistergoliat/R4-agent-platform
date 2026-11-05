@@ -42,6 +42,7 @@ const PINNED = {
     6: '2499d50f9297a44f1e3850ba60e4ef8f8a205f95261c8dcdee5dae43312eeff6',
     7: '1d593691a0308e47de55f3b35763be856a318e2b015600805f94141ae5c465e1',
     8: '1065b99836be5f66db05078e72b654531b30e8ae74400dcd7522e648d488e861',
+    12: '11ab557711ce659fdb73a3bc50a2c1c1d6224d7822f95145a218506b3a12cfa7', // R4-J5 F1 canary definition (development branch; final text before any registration)
   },
 } as const;
 
@@ -112,11 +113,25 @@ describe('B. the owner decisions hold in the clause and in the code', () => {
   });
 });
 
+describe('D. v12 is the recorded exception to cumulative versioning (owner, R4-J5 F1, 2026-11-05)', () => {
+  it('v12 derives functionally from v7, not from v8: no Customer, no conversation block; it keeps the promotion from v10 on', () => {
+    const v12 = loadSalesAgentDefinition(12).instructions;
+    const v7Lines = loadSalesAgentDefinition(7).instructions.split('\n');
+    expect(v12).toContain(PROMOTION);
+    expect(v12).not.toContain(CONVERSATION);
+    expect(v12).not.toMatch(/customer\.get_context/);
+    // Every v8-only line (Customer and identity guidance) is absent: the exception is real, not a partial merge.
+    const v8Only = V8.split('\n').filter((l) => !v7Lines.includes(l) && l.trim() !== '');
+    expect(v8Only.length).toBeGreaterThan(0);
+    expect(v8Only.filter((l) => v12.split('\n').includes(l))).toEqual([]);
+  });
+});
+
 describe('C. no version identifier carries divergent content', () => {
   const versions = Object.keys(SALES_AGENT_DEFINITION_FILES).map(Number) as SalesAgentDefinitionVersion[];
   const registered = versions.map((v) => ({ version: v, instructions: loadSalesAgentDefinition(v).instructions }));
 
-  it('v3–v8 keep their registered content', () => {
+  it('v3–v8 (and v12) keep their pinned content', () => {
     const pinned = Object.keys(PINNED.definitions).map(Number) as (keyof typeof PINNED.definitions)[];
     expect(Object.fromEntries(pinned.map((v) => [v, definitionContentHash(loadSalesAgentDefinition(v))]))).toEqual(PINNED.definitions);
   });

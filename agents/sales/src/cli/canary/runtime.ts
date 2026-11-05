@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { hostname } from 'node:os';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { hostname, tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Logger } from 'pino';
 import { createPlatform, registerAgentDefinitions } from '@r4/api';
 import { PlatformError, systemClock, uuidV7Generator, type Clock } from '@r4/contracts';
@@ -24,7 +26,7 @@ import type { ModelProvider } from '@r4/model-gateway';
 import { PostgresProductionStore, createPool, migrate, migrationStatus, type Pool } from '@r4/persistence-postgres';
 import { createSchedulerPlatform, type SchedulerConfig, type SchedulerPlatform } from '@r4/scheduler';
 import { createWorkerPlatform, type WorkerConfig, type WorkerPlatform } from '@r4/worker';
-import { SALES_AGENT_DIR, SALES_MIGRATIONS_DIR } from '../../definition.js';
+import { SALES_AGENT_DIR, SALES_MIGRATIONS_DIR, isSalesCandidateDefinition, loadSalesAgentDefinition } from '../../definition.js';
 import { SALES_AGENT_ID } from '../../ids.js';
 import { migrateSales } from '../../migrate.js';
 import { SALES_RUN_FAILURE_FALLBACK_TEXT, composeSalesProductionWorker, salesConversationTaskFactory, type SalesProductionWorkerOptions } from '../../production/composition.js';
@@ -36,7 +38,9 @@ import { SALES_PRODUCTION_PROFILE_V8, isCustomerIdentityProfile, salesProduction
 import { canaryIngressInspector } from '../../production/gateway-identity.js';
 import { IDENTITY_VERIFICATION_MIGRATIONS_DIR, migrateIdentityVerification } from '@r4-adapters/identity-verification';
 import { loadAutonomousQuoteLimits, loadAutonomousQuoteLimitsV6, type AutonomousQuoteLimits, type AutonomousQuoteLimitsV6 } from '../../capabilities/autonomy-limits.js';
+import { loadQuoteParityGuard, type QuoteParityGuard } from '../../capabilities/parity-guard.js';
 import type { ApprovalInspection } from '../../production/approvals.js';
+import { SALES_PRODUCTION_PROFILE_V12, assertF1CanaryWriteCeiling, isF1CanaryProfile } from '../../production/profile-v12.js';
 import { openApprovalInspection } from '../approval-inspection.js';
 import { CaptureOutboundAdapter, SYNTHETIC_ACCOUNT, SYNTHETIC_INBOUND_ADAPTER, syntheticConversationRef, syntheticInbound } from './channel.js';
 import { assertCanaryGatewayLive, assertUninspectedCanaryAllowed, parseCanaryTestHosts } from './identity.js';
@@ -49,7 +53,7 @@ export const CANARY_PROFILE: ProductionProfile = SALES_PRODUCTION_PROFILE_V4;
  * v7 (deterministic offer, R4-J3E-C1) and v8 (Customer and identity verification, R4-J4-R4; prepared for J4-R5, not run).
  * Never one a production worker runs today.
  */
-export const CANARY_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_PRODUCTION_PROFILE_V4, SALES_PRODUCTION_PROFILE_V5, SALES_PRODUCTION_PROFILE_V6, SALES_PRODUCTION_PROFILE_V7, SALES_PRODUCTION_PROFILE_V8]);
+export const CANARY_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_PRODUCTION_PROFILE_V4, SALES_PRODUCTION_PROFILE_V5, SALES_PRODUCTION_PROFILE_V6, SALES_PRODUCTION_PROFILE_V7, SALES_PRODUCTION_PROFILE_V8, SALES_PRODUCTION_PROFILE_V12]);
 
 const DATABASE_URL = /^postgres(ql)?:\/\//;
 
@@ -61,6 +65,8 @@ export interface CanaryEnvironment {
   readonly profile: ProductionProfile;
   /** (R4-J3E) The configured limits of autonomous issuance; present exactly for an autonomous profile (v5; v6 and v7 with total units and the confirmation window). */
   readonly autonomousQuoteLimits: AutonomousQuoteLimits | AutonomousQuoteLimitsV6 | null;
+  /** (R4-J5 F1, P-1) The parity-verified SKU set (R4_QUOTE_PARITY_*), or null when not configured; @12 refuses to compose without it. */
+  readonly quoteParity: QuoteParityGuard | null;
   /**
    * (R4-J4-R5 preparation) R4_CANARY_CONTEXT_EXPIRED_EVIDENCE: the expired-evidence policy every canary worker of this
    * environment must run (null: not declared, the worker's own). Required and `exclude` for @8 (owner decision: the J4
@@ -102,6 +108,12 @@ export function loadCanaryEnvironment(env: Readonly<Record<string, string | unde
       throw new ProductionConfigError('production_config_incomplete', (error as Error).message);
     }
   }
+  let quoteParity: QuoteParityGuard | null;
+  try {
+    quoteParity = loadQuoteParityGuard(env);
+  } catch (error) {
+    throw new ProductionConfigError('invalid_production_config', (error as Error).message);
+  }
   const databaseUrl = env.R4_CANARY_DATABASE_URL;
   if (!databaseUrl || !DATABASE_URL.test(databaseUrl)) throw new ProductionConfigError('production_config_incomplete', 'R4_CANARY_DATABASE_URL (postgres://) of the dedicated canary database is required');
   if (env.R4_DATABASE_URL && sameDatabase(env.R4_DATABASE_URL, databaseUrl)) {
@@ -116,7 +128,7 @@ export function loadCanaryEnvironment(env: Readonly<Record<string, string | unde
   } else if (testHosts.length > 0) {
     throw new ProductionConfigError('invalid_production_config', `R4_CANARY_TEST_HOSTS is for the Customer and identity owners of sales-production@8; ${profileLabel(profile)} has none`);
   }
-  return { databaseUrl, production, profile, autonomousQuoteLimits, contextExpiredEvidence, testHosts };
+  return { databaseUrl, production, profile, autonomousQuoteLimits, quoteParity, contextExpiredEvidence, testHosts };
 }
 
 function canaryPool(canary: CanaryEnvironment, logger: Logger, name: string): Pool {
@@ -150,6 +162,17 @@ export async function initCanary(canary: CanaryEnvironment, logger: Logger): Pro
     const identityVerification = await migrateIdentityVerification(pool);
     const canaryId = await assertIsolatedCanaryDatabase(pool);
     const definitions = await registerAgentDefinitions({ databaseUrl: canary.databaseUrl, directory: SALES_AGENT_DIR, agentIds: [SALES_AGENT_ID], migrationDirectories: [SALES_MIGRATIONS_DIR], logger });
+    // (R4-J5 F1) A canary-only profile pinned to a candidate definition registers it here, in this isolated database only.
+    const pinned = salesProductionAgentVersion(canary.profile);
+    if (isSalesCandidateDefinition(pinned)) {
+      const dir = mkdtempSync(join(tmpdir(), 'r4-sales-candidate-'));
+      try {
+        writeFileSync(join(dir, `sales.v${pinned}.agent.json`), JSON.stringify(loadSalesAgentDefinition(pinned)));
+        await registerAgentDefinitions({ databaseUrl: canary.databaseUrl, directory: dir, agentIds: [SALES_AGENT_ID], migrationDirectories: [SALES_MIGRATIONS_DIR], logger });
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
     const controls = new AutonomyControls({ store: new PostgresProductionStore(pool), logger });
     const enabled = (await controls.state()).globalEnabled;
     if (!enabled) await controls.set({ scope: 'global', autonomyEnabled: true, reason: 'isolated Sales canary database (synthetic traffic only)', changedBy: CANARY_ACTOR, correlationId: `sales-canary:${canaryId}:init` });
@@ -270,6 +293,8 @@ export async function startCanaryRuntime(canary: CanaryEnvironment, options: Can
     throw new PlatformError('precondition', 'canary_database_mismatch', 'the canary worker and scheduler must use the canary database');
   }
   const { logger } = options;
+  // (R4-J5 F1) The F1 canary worker runs with the owner-approved write ceiling (1..6), never 0 and never looser.
+  if (isF1CanaryProfile(canary.profile)) assertF1CanaryWriteCeiling(options.worker.execution.maxWriteActions);
   const pool = canaryPool(canary, logger, 'composition');
   let worker: WorkerPlatform | null = null;
   let scheduler: SchedulerPlatform | null = null;
@@ -287,7 +312,7 @@ export async function startCanaryRuntime(canary: CanaryEnvironment, options: Can
       await assertUninspectedCanaryAllowed(pool);
     }
     const store = new PostgresProductionStore(pool);
-    const composed = composeSalesProductionWorker({ pool, store, production: canary.production, modelProvider: options.modelProvider, logger, catalog: options.catalog, shipping: options.shipping, quotes: options.quotes, ...(canary.autonomousQuoteLimits ? { autonomousQuoteLimits: canary.autonomousQuoteLimits } : {}), ...(options.customer ? { customer: { ...options.customer, allowedHosts: canary.testHosts } } : {}) });
+    const composed = composeSalesProductionWorker({ canary: true, pool, store, production: canary.production, modelProvider: options.modelProvider, logger, catalog: options.catalog, shipping: options.shipping, quotes: options.quotes, ...(canary.autonomousQuoteLimits ? { autonomousQuoteLimits: canary.autonomousQuoteLimits } : {}), ...(canary.quoteParity ? { quoteParity: canary.quoteParity } : {}), ...(options.customer ? { customer: { ...options.customer, allowedHosts: canary.testHosts } } : {}) });
     worker = await createWorkerPlatform(options.worker, { ...composed.bindings, admission: new CanaryAdmission(pool, composed.controls) }, { logger });
     scheduler = options.scheduler ? await createSchedulerPlatform(options.scheduler, { logger }) : null;
     const capture = new CaptureOutboundAdapter(typeof options.captureFile === 'string' ? options.captureFile : options.captureFile(canaryId));

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from '@r4/persistence-postgres';
 import { migrateSales } from '@r4-sales/agent';
+import { isSalesCandidateDefinition } from '@r4-sales/agent';
 import { SALES_PRODUCTION_AGENT_VERSIONS } from '@r4-sales/agent/production';
 import { createMigratedTestDatabase, openPool, type TestDatabase } from '../support/database.js';
 import { IDENTITY_KEY } from '../support/live-ops.js';
@@ -31,7 +32,8 @@ afterEach(async () => {
 });
 
 /** Every Sales definition version a production profile pins: the bootstrap registers exactly these. */
-const PINNED = [...new Set(Object.values(SALES_PRODUCTION_AGENT_VERSIONS))].sort((a, b) => a - b);
+// (R4-J5 F1) A candidate definition (v12, pinned only by the canary-only @12) is never registered by the production bootstrap.
+const PINNED = [...new Set(Object.values(SALES_PRODUCTION_AGENT_VERSIONS))].filter((v) => !isSalesCandidateDefinition(v)).sort((a, b) => a - b);
 const PINNED_LIST = PINNED.map((v) => `sales@${v}`).join(', ');
 
 function run(env: Record<string, string | undefined>) {

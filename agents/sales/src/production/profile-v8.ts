@@ -130,6 +130,8 @@ export const SALES_PRODUCTION_AGENT_VERSIONS: Readonly<Record<string, SalesAgent
   'sales-production@6': 6,
   'sales-production@7': 7,
   'sales-production@8': 8,
+  // (R4-J5 F1) Pinned for the isolated canary only: @12 is not in SALES_PRODUCTION_PROFILES, so no production worker selects it.
+  'sales-production@12': 12,
 });
 
 export function salesProductionAgentVersion(profile: ProductionProfile): SalesAgentDefinitionVersion {

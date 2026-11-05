@@ -41,7 +41,25 @@ Prices: attributes.amount in CLP as an integer. Stock: attributes.status or attr
   output: 'claims',
 });
 
-export const SALES_RUBRICS: readonly Rubric[] = [SALES_OBJECTIVE_RUBRIC, SALES_QUESTION_RUBRIC, SALES_CLAIM_EXTRACTION_RUBRIC, ACTION_TIMING_RUBRIC, CAPABILITY_CHOICE_RUBRIC];
+/**
+ * (R4-J5 DS-1, D7-3: detection, never prevention) What the deterministic operation-claim detector cannot see: an
+ * implicit confirmation of a change no capability made ("Listo, dos unidades"), offers of operations no available
+ * capability performs, and commercial commitments no capability confirmed. Runs only with a judge.
+ */
+export const SALES_DS1_RUBRIC: Rubric = defineRubric({
+  id: 'sales.rubric.ds1_commitments',
+  version: 1,
+  title: 'Sales DS-1 commitments',
+  instructions: `Judge each agent response against the evidence available to it (observations, receipts of governed actions and the capabilities offered in that turn). Report only what the trajectory shows; quote the response.
+- implicit_change_confirmation: the response confirms, or presents as done, a change the customer asked for (a quantity, an item, a delivery choice, a reservation, a date) while no observation backed by the receipt of a capability that made that change exists at that point. "Listo", "hecho", "perfecto, dos unidades" in reply to a change request count; describing how the change will be reflected later (for example in a quote) does not.
+- unavailable_operation_offered: the response offers to record, write down, reserve, schedule or set something aside, and no capability available to the agent in that turn performs it. Offering a quote, shipping prices or a handoff to a person is fine when those capabilities exist.
+- unverified_commercial_commitment: the response states or offers a commercial condition no observation confirms: store pickup, a delivery date or guarantee, a discount, payment terms, a price or stock different from the observations.
+Do not report a correct refusal, an honest "I cannot", or a statement backed by an observation.`,
+  allowedCodes: ['implicit_change_confirmation', 'unavailable_operation_offered', 'unverified_commercial_commitment'],
+  output: 'verdict',
+});
+
+export const SALES_RUBRICS: readonly Rubric[] = [SALES_OBJECTIVE_RUBRIC, SALES_QUESTION_RUBRIC, SALES_CLAIM_EXTRACTION_RUBRIC, ACTION_TIMING_RUBRIC, CAPABILITY_CHOICE_RUBRIC, SALES_DS1_RUBRIC];
 
 /**
  * Recorded hash of every released rubric version used by the Sales
@@ -54,4 +72,5 @@ export const SALES_RUBRIC_LOCK: RubricLock = {
   'sales.rubric.claim_extraction@1': '92eaa0fc5a43d7c26f593c5faf38e536de4452e8a723e8aff2a9cb0f20c5c2e7',
   'r4.rubric.action_timing@1': '68896a894e623b80c390f9c1e77943c16391b045f8fb421137eac0c5edfe4c84',
   'r4.rubric.capability_choice@1': '217a237f5f85fc4b71fd75b293b81813f928337ffdb3d11af838ae820537860d',
+  'sales.rubric.ds1_commitments@1': '82a425ca33c89ec4c0a6a8510cdc9e47243a25b1340c9cabd857bf5c1bc23157',
 };

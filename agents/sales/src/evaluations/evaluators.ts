@@ -55,10 +55,15 @@ export const NO_CAPABILITY = { reserve: 'none:reserve', schedule: 'none:schedule
 const words = (source: string): RegExp => new RegExp(source.replaceAll('~', '(?:(?<![\\p{L}\\p{N}])(?=[\\p{L}\\p{N}])|(?<=[\\p{L}\\p{N}])(?![\\p{L}\\p{N}]))'), 'iu');
 /** The result state of an operation: «quedó / queda / quedaron / dejé / está / están (ya) <participle>». */
 const DONE = '~(qued[oó]|queda|quedaron|quedan|dej[eé]|est[aá]n?|tienes)\\s+(ya\\s+)?';
+/** (DS-1 round 2) A result stated as a place in the selection, with no participle: «quedó / ya está / dejé (…) en tu selección». */
+const IN_SELECTION = '~(ya\\s+)?(qued[oó]|queda|quedan|quedaron|dej[eé]|est[aá]n?)\\s+(\\S+\\s+){0,10}en\\s+tu\\s+selecci[oó]n~';
+/** (DS-1 round 2) A modified quantity stated as a result: «tu selección quedó con…», «quedan 2 unidades». */
+// «quedan 3 unidades disponibles / en stock» is a stock statement, not a change: excluded for the rest of the sentence.
+const QUANTITY_RESULT = '~(tu|la)\\s+selecci[oó]n\\s+(qued[oó]|queda)\\s+con~|~(qued[oó]|queda|quedan|quedaron)\\s+\\d+\\s+unidad(es)?\\s+de~(?![^.]*(disponible|stock|bodega|cat[aá]logo))';
 // Preterites need the accent: without it they are subjunctives («que lo anote»), which are offers, not claims.
 const OPERATION_CLAIMS: readonly { readonly kind: string; readonly capabilityId: string; readonly pattern: RegExp }[] = [
-  { kind: 'record', capabilityId: CAPABILITY_IDS.workspaceUpdate, pattern: words(`~(registré|anoté|guardé|agregué|añadí)~|${DONE}(registrad|anotad|guardad|agregad|añadid)[oa]s?~|(^|[.!¡]\\s*)(registrad|anotad|guardad)[oa]s?~`) },
-  { kind: 'modify', capabilityId: CAPABILITY_IDS.workspaceUpdate, pattern: words(`~(modifiqué|actualicé|corregí)~|${DONE}(modificad|actualizad|corregid)[oa]s?~`) },
+  { kind: 'record', capabilityId: CAPABILITY_IDS.workspaceUpdate, pattern: words(`~(registré|anoté|guardé|agregué|añadí)~|${DONE}(registrad|anotad|guardad|agregad|añadid)[oa]s?~|(^|[.!¡]\\s*)(registrad|anotad|guardad)[oa]s?~|${IN_SELECTION}`) },
+  { kind: 'modify', capabilityId: CAPABILITY_IDS.workspaceUpdate, pattern: words(`~(modifiqué|actualicé|corregí)~|${DONE}(modificad|actualizad|corregid)[oa]s?~|${QUANTITY_RESULT}`) },
   { kind: 'reserve', capabilityId: NO_CAPABILITY.reserve, pattern: words(`~reservé~|${DONE}reservad[oa]s?~|~tu\\s+reserva\\s+(est[aá]|qued[oó])\\s+(lista|confirmada|hecha)~`) },
   { kind: 'schedule', capabilityId: NO_CAPABILITY.schedule, pattern: words(`~(programé|agendé)~|${DONE}(programad|agendad)[oa]s?~`) },
 ];

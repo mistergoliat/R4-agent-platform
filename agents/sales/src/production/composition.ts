@@ -46,6 +46,7 @@ import { quoteCreateV5Capability, quoteWritesBlockedError } from '../capabilitie
 import { workspaceCapabilityV2 } from '../capabilities/workspace-v2.js';
 import type { AutonomousQuoteLimits, AutonomousQuoteLimitsV6 } from '../capabilities/autonomy-limits.js';
 import { assertQuoteParityConfigured, type QuoteParityGuard } from '../capabilities/parity-guard.js';
+import { SALES_CANARY_ONLY_PROFILES, assertF1CanaryLimits, isF1CanaryProfile } from './profile-v12.js';
 
 /** Who opens production Sales conversations: the channel ingress (a platform service, never the model). */
 export const SALES_CHANNEL_INGRESS: Principal = { kind: 'service', ref: 'sales-channel-ingress' };
@@ -86,6 +87,8 @@ export interface SalesProductionWorkerOptions {
   readonly autonomousQuoteLimits?: AutonomousQuoteLimits | AutonomousQuoteLimitsV6;
   /** (R4-J5 F1, P-1) The parity-verified SKU set for autonomous quotes (R4_QUOTE_PARITY_*); applied to the deterministic-offer path (v7 lineage) when given. The F1 profile gate must require it. */
   readonly quoteParity?: QuoteParityGuard | null;
+  /** (R4-J5 F1) Set only by the isolated canary runtime: it may also compose canary-only profiles (@12). A production worker never sets it. */
+  readonly canary?: boolean;
   /** (R4-J4-R4) The R4_CUSTOMER_* configuration of the worker; required when the selected profile composes Customer and identity verification (v8). */
   readonly customer?: {
     readonly env: Readonly<Record<string, string | undefined>>;
@@ -96,8 +99,8 @@ export interface SalesProductionWorkerOptions {
 }
 
 /** The Sales production profile the deployment declared, or a refusal (nothing is defaulted). */
-export function selectedSalesProductionProfile(config: ProductionConfig): ProductionProfile {
-  const profile = salesProductionProfile(config.policyProfile);
+export function selectedSalesProductionProfile(config: ProductionConfig, options: { readonly canary?: boolean } = {}): ProductionProfile {
+  const profile = salesProductionProfile(config.policyProfile) ?? (options.canary ? (SALES_CANARY_ONLY_PROFILES.find((p) => profileLabel(p) === config.policyProfile) ?? null) : null);
   if (!profile) throw new Error(`refusing production composition: R4_PROD_POLICY_PROFILE=${config.policyProfile} is not a Sales production profile (${SALES_PRODUCTION_PROFILES.map(profileLabel).join(', ')})`);
   return profile;
 }
@@ -124,7 +127,7 @@ export interface SalesProductionWorker {
  */
 export function composeSalesProductionWorker(options: SalesProductionWorkerOptions): SalesProductionWorker {
   const config = assertProductionMode(options.production.config);
-  const profile = selectedSalesProductionProfile(config);
+  const profile = selectedSalesProductionProfile(config, { canary: options.canary === true });
   const clock = options.clock ?? systemClock;
   const sales = new PostgresSalesStore(options.pool);
   const controls = new AutonomyControls({ store: options.store, logger: options.logger });
@@ -177,6 +180,8 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
           const quotes = killSwitchGuardedQuotes(options.quotes, controls, options.logger);
           // (R4-J5 F1, P-1) A profile that requires the parity-verified set never composes quote.create without it; the evidence in use is logged.
           assertQuoteParityConfigured(profileLabel(profile), options.quoteParity);
+          // (R4-J5 F1) The F1 canary runs within the owner-approved canary limits, never looser.
+          if (isF1CanaryProfile(profile)) assertF1CanaryLimits(limits);
           if (options.quoteParity) options.logger.info({ quoteParity: { profile: profileLabel(profile), fingerprint: options.quoteParity.fingerprint, items: options.quoteParity.items, maxAgeSeconds: options.quoteParity.maxAgeSeconds } }, 'sales quote parity evidence configured');
           if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV3Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now(), parity: options.quoteParity ?? null }));
           if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV5Capability({ store: sales, quotes, catalog, shipping: options.shipping, limits, conversation: options.store, admission: controls, now: () => clock.now(), parity: options.quoteParity ?? null }));
