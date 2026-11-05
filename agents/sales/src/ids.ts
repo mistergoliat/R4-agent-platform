@@ -21,6 +21,15 @@ export const AUTONOMOUS_QUOTE_CAPABILITY_IDS = {
   quotePreview: 'quote.preview',
 } as const;
 
+/**
+ * (ADR-045) Capabilities of the lane profile (sales-production@13) only: Catalog V2 Discover. Kept out of
+ * CAPABILITY_IDS: the reference composition and @1–@12 never register it.
+ */
+export const LANE_CAPABILITY_IDS = {
+  /** READ: need → candidates, Catalog V2 Discover. */
+  catalogDiscover: 'catalog.discover',
+} as const;
+
 export const SCOPES = {
   customerRead: 'customer.read',
   catalogRead: 'catalog.read',

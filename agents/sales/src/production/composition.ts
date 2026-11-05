@@ -15,6 +15,7 @@ import {
   capabilityAvailability,
   guardProductionWrites,
   profileLabel,
+  type ConversationLane,
   type ConversationTaskFactory,
   type ProductionCompositionReport,
   type ProductionProfile,
@@ -47,6 +48,9 @@ import { workspaceCapabilityV2 } from '../capabilities/workspace-v2.js';
 import type { AutonomousQuoteLimits, AutonomousQuoteLimitsV6 } from '../capabilities/autonomy-limits.js';
 import { assertQuoteParityConfigured, type QuoteParityGuard } from '../capabilities/parity-guard.js';
 import { SALES_CANARY_ONLY_PROFILES, assertF1CanaryLimits, isF1CanaryProfile } from './profile-v12.js';
+import { SALES_LANE_PROFILES, isSalesLaneProfile } from './profile-v13.js';
+import { catalogDiscoverCapability } from '../capabilities/catalog-discover.js';
+import type { CatalogDiscoverPort } from '@r4-adapters/catalog-http';
 
 /** Who opens production Sales conversations: the channel ingress (a platform service, never the model). */
 export const SALES_CHANNEL_INGRESS: Principal = { kind: 'service', ref: 'sales-channel-ingress' };
@@ -79,6 +83,8 @@ export interface SalesProductionWorkerOptions {
   readonly clock?: Clock;
   /** The catalog-service binding; required when the selected profile makes Catalog REAL (v2). */
   readonly catalog?: CatalogPort & { readonly bindingKind: string };
+  /** (ADR-045) Catalog V2 Discover; required when the selected profile is a lane profile (@13), ignored otherwise. */
+  readonly catalogDiscover?: CatalogDiscoverPort;
   /** The pc-carrier binding (ProductionShippingAdapter); required when the selected profile makes Shipping REAL (v3). */
   readonly shipping?: ShippingService & { readonly bindingKind: string };
   /** The Quote V2 binding (QuoteV2HttpClient); required when the selected profile makes Quote REAL (v4). */
@@ -99,8 +105,12 @@ export interface SalesProductionWorkerOptions {
 }
 
 /** The Sales production profile the deployment declared, or a refusal (nothing is defaulted). */
-export function selectedSalesProductionProfile(config: ProductionConfig, options: { readonly canary?: boolean } = {}): ProductionProfile {
-  const profile = salesProductionProfile(config.policyProfile) ?? (options.canary ? (SALES_CANARY_ONLY_PROFILES.find((p) => profileLabel(p) === config.policyProfile) ?? null) : null);
+export function selectedSalesProductionProfile(config: ProductionConfig, options: { readonly canary?: boolean; readonly lane?: boolean } = {}): ProductionProfile {
+  const profile =
+    salesProductionProfile(config.policyProfile) ??
+    (options.canary ? (SALES_CANARY_ONLY_PROFILES.find((p) => profileLabel(p) === config.policyProfile) ?? null) : null) ??
+    // (ADR-045) A lane profile is selected only by a production worker; a gateway serves it as its lane, never as its main profile.
+    (options.lane ? (SALES_LANE_PROFILES.find((p) => profileLabel(p) === config.policyProfile) ?? null) : null);
   if (!profile) throw new Error(`refusing production composition: R4_PROD_POLICY_PROFILE=${config.policyProfile} is not a Sales production profile (${SALES_PRODUCTION_PROFILES.map(profileLabel).join(', ')})`);
   return profile;
 }
@@ -127,7 +137,7 @@ export interface SalesProductionWorker {
  */
 export function composeSalesProductionWorker(options: SalesProductionWorkerOptions): SalesProductionWorker {
   const config = assertProductionMode(options.production.config);
-  const profile = selectedSalesProductionProfile(config, { canary: options.canary === true });
+  const profile = selectedSalesProductionProfile(config, { canary: options.canary === true, lane: true });
   const clock = options.clock ?? systemClock;
   const sales = new PostgresSalesStore(options.pool);
   const controls = new AutonomyControls({ store: options.store, logger: options.logger });
@@ -148,6 +158,11 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
     const [catalogSearch, productContext] = catalogCapabilities(catalog);
     capabilities.register(catalogSearch);
     capabilities.register(productContext);
+  }
+  // (ADR-045) The lane profile reads Catalog V2 Discover; it never composes without it.
+  if (isSalesLaneProfile(profile)) {
+    if (!catalogReal || !options.catalogDiscover) throw new Error(`refusing production composition: ${profileLabel(profile)} requires Catalog V2 Discover (R4_CATALOG_V2_* and R4_CATALOG_V2_DISCOVER_API_KEY)`);
+    capabilities.register(catalogDiscoverCapability(options.catalogDiscover));
   }
   // Shipping is bound only when the profile makes it REAL (v3): the pc-carrier HTTP adapter, never a fixture.
   // Its order basis reads Catalog, so a REAL Shipping without a REAL Catalog is refused too.
@@ -316,10 +331,34 @@ export function composeSalesGateway(options: SalesGatewayOptions): { bindings: G
       outbound: [new WhatsAppOutboundAdapter(whatsapp, options.fetch ? { fetch: options.fetch } : {})],
       taskFactory: salesConversationTaskFactory(options.pool, salesProductionAgentVersion(profile)),
       runFailureFallback: { text: SALES_RUN_FAILURE_FALLBACK_TEXT },
+      ...laneOf(salesGatewayLane(options.env, options.pool)),
       // (R4-J4-R4) v8 never runs without the inbound inspector, requested in full (ADR-040).
       ...(isCustomerIdentityProfile(profile) ? { inspection: salesGatewayInspection(profile, options.env, { transport: options.identityFetch, allowedHosts: options.allowedHosts }) } : {}),
     },
   };
+}
+
+/** (ADR-045) The lane variables of the gateway: both set (the lane) or neither (exactly R4-I). */
+export const SALES_LANE_ENV = ['R4_PROD_LANE_PROFILE', 'R4_PROD_LANE_ALLOWLIST'] as const;
+
+/**
+ * (ADR-045) The gateway's lane: a lane profile (sales-production@13) for an explicit list of conversation keys, each
+ * of which ChannelIngress also requires to be allowlisted in the rollout. Refuses partial or malformed configuration.
+ */
+export function salesGatewayLane(env: Readonly<Record<string, string | undefined>>, pool: pg.Pool): ConversationLane | undefined {
+  const label = env.R4_PROD_LANE_PROFILE?.trim() ?? '';
+  const raw = env.R4_PROD_LANE_ALLOWLIST?.trim() ?? '';
+  if (label === '' && raw === '') return undefined;
+  if (label === '' || raw === '') throw new Error(`refusing the gateway lane: ${SALES_LANE_ENV.join(' and ')} are set together or not at all`);
+  const profile = SALES_LANE_PROFILES.find((p) => profileLabel(p) === label);
+  if (!profile) throw new Error(`refusing the gateway lane: R4_PROD_LANE_PROFILE=${label} is not a Sales lane profile (${SALES_LANE_PROFILES.map(profileLabel).join(', ')})`);
+  const keys = [...new Set(raw.split(/[s,]+/).map((k) => k.trim().toLowerCase()).filter(Boolean))];
+  if (keys.some((k) => !/^[0-9a-f]{64}$/.test(k))) throw new Error('refusing the gateway lane: R4_PROD_LANE_ALLOWLIST must list 64-hex conversation keys (--identity-key)');
+  return { conversationKeys: keys, profile, taskFactory: salesConversationTaskFactory(pool, salesProductionAgentVersion(profile)) };
+}
+
+function laneOf(lane: ConversationLane | undefined): { lane?: ConversationLane } {
+  return lane ? { lane } : {};
 }
 
 /**

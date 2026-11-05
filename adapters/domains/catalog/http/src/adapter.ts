@@ -11,7 +11,8 @@ import {
   type CatalogSearchRequest,
   type DomainErrorCategory,
 } from '@r4-adapters/domains';
-import { catalogEnvOf, type CatalogHttpConfig } from './config.js';
+import { CATALOG_V2_DISCOVER_KEY_ENV, catalogEnvOf, type CatalogHttpConfig } from './config.js';
+import { catalogDiscoverRequestSchema, catalogDiscoverResponseSchema, type CatalogDiscoverAnswer, type CatalogDiscoverPort, type CatalogDiscoverRequest } from './discover.js';
 import {
   CATALOG_SCHEMA_VERSION,
   catalogErrorBodySchema,
@@ -24,7 +25,7 @@ import {
 /** The subset of `fetch` the adapter uses (injected: tests and deployments decide the transport). */
 export type CatalogFetch = (url: string, init: { method: 'GET' | 'POST'; headers: Record<string, string>; body?: string; signal: AbortSignal }) => Promise<{ status: number; text(): Promise<string> }>;
 
-export type CatalogOperation = 'search' | 'getProductContext' | 'getItemContext';
+export type CatalogOperation = 'search' | 'getProductContext' | 'getItemContext' | 'discover';
 
 /** One call's outcome for telemetry. Carries no key, no body and no API key. */
 export interface CatalogCallTelemetry {
@@ -65,7 +66,7 @@ const MAX_RESPONSE_CHARS = 1_000_000;
  *   unparseable / invalid body  → contract_violation (not retryable)
  *   unsupported schemaVersion   → contract_violation (breaking change)
  */
-export class HttpCatalogAdapter implements CatalogPort {
+export class HttpCatalogAdapter implements CatalogPort, CatalogDiscoverPort {
   readonly bindingKind = 'http' as const;
   readonly #config: CatalogHttpConfig;
   readonly #fetch: CatalogFetch;
@@ -104,7 +105,21 @@ export class HttpCatalogAdapter implements CatalogPort {
     return context;
   }
 
-  async #call<S extends z.ZodType>(operation: CatalogOperation, method: 'GET' | 'POST', path: string, body: string | undefined, schema: S, options: CallOptions | undefined): Promise<z.output<S>> {
+  /**
+   * (ADR-045) Catalog V2 Discover, read-only, with its own key. Refused locally (no call) on V1, without the
+   * Discover key, or for a request the contract rejects. The answer is returned as the owner sent it (tolerant
+   * parse): no candidate is added, removed or reordered.
+   */
+  async discover(request: CatalogDiscoverRequest, options?: CallOptions): Promise<CatalogDiscoverAnswer> {
+    if (this.#config.source !== 'v2' || !this.#config.discoverApiKey) throw new DomainError('unauthorized', 'discover_not_configured', `Discover is served only by Catalog V2 with ${CATALOG_V2_DISCOVER_KEY_ENV}`);
+    const parsed = catalogDiscoverRequestSchema.safeParse(request);
+    if (!parsed.success) throw new DomainError('validation', 'invalid_request', `the discover request violates the contract at ${parsed.error.issues[0]?.path.join('.') || '(root)'}`);
+    const correlationId = options?.correlationId;
+    const body = { ...parsed.data, ...(correlationId && /^[A-Za-z0-9._:-]{1,64}$/u.test(correlationId) ? { context: { correlationId } } : {}) };
+    return this.#call('discover', 'POST', '/v2/catalog/discover', JSON.stringify(body), catalogDiscoverResponseSchema, options, this.#config.discoverApiKey, CATALOG_V2_DISCOVER_KEY_ENV);
+  }
+
+  async #call<S extends z.ZodType>(operation: CatalogOperation, method: 'GET' | 'POST', path: string, body: string | undefined, schema: S, options: CallOptions | undefined, apiKey = this.#config.apiKey, keyVar = catalogEnvOf(this.#config.source ?? 'v1')[1]): Promise<z.output<S>> {
     const started = performance.now();
     const correlationId = options?.correlationId ?? null;
     let httpStatus: number | null = null;
@@ -112,7 +127,7 @@ export class HttpCatalogAdapter implements CatalogPort {
       if (options?.signal?.aborted) throw new DomainError('timeout', 'deadline_exceeded', 'the caller deadline passed before the catalog was called');
       const deadline = AbortSignal.timeout(this.#config.timeoutMs);
       const signal = options?.signal ? AbortSignal.any([options.signal, deadline]) : deadline;
-      const headers: Record<string, string> = { accept: 'application/json', 'x-api-key': this.#config.apiKey };
+      const headers: Record<string, string> = { accept: 'application/json', 'x-api-key': apiKey };
       if (correlationId) headers['x-correlation-id'] = correlationId;
       if (body !== undefined) headers['content-type'] = 'application/json';
       let text: string;
@@ -124,7 +139,7 @@ export class HttpCatalogAdapter implements CatalogPort {
         if (signal.aborted) throw new DomainError('timeout', 'deadline_exceeded', 'the catalog did not answer before the deadline');
         throw new DomainError('temporarily_unavailable', 'catalog_unreachable', `the catalog could not be reached (${error instanceof Error ? error.name : 'error'})`);
       }
-      if (httpStatus !== 200) throw failureOf(httpStatus, text, catalogEnvOf(this.#config.source ?? 'v1')[1]);
+      if (httpStatus !== 200) throw failureOf(httpStatus, text, keyVar);
       if (text.length > MAX_RESPONSE_CHARS) throw new DomainError('contract_violation', 'response_too_large', 'the catalog answer exceeds the contract size');
       let json: unknown;
       try {

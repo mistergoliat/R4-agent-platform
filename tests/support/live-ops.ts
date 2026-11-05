@@ -3,14 +3,15 @@ import { createPlatform, type Platform } from '@r4/api';
 import { createGatewayPlatform, type GatewayPlatform } from '@r4/channel-gateway';
 import type { ContextCompactor, ContextCompilationPolicyInput } from '@r4/context-compiler';
 import type { TrustedHumanContext } from '@r4/contracts';
-import type { CatalogPort } from '@r4-adapters/domains';
+import type { CatalogPort, ShippingService } from '@r4-adapters/domains';
+import type { CatalogDiscoverPort } from '@r4-adapters/catalog-http';
 import { FakeModelProvider, type FakeModelStep, type ModelRequest } from '@r4/model-gateway';
 import { createSilentLogger } from '@r4/observability';
 import { PostgresProductionStore, type Pool } from '@r4/persistence-postgres';
 import { conversationKey, loadProductionConfig, type ProductionConfig, type ProductionSecrets } from '@r4/live-ops';
 import { createWorkerPlatform, type WorkerAdmission, type WorkerCycle, type WorkerPlatform, type WorkerPresenceBinding } from '@r4/worker';
 import { SALES_AGENT_DIR, migrateSales } from '@r4-sales/agent';
-import { composeSalesGateway, composeSalesProductionWorker } from '@r4-sales/agent/production';
+import { composeSalesGateway, composeSalesProductionWorker, runProductionBootstrap } from '@r4-sales/agent/production';
 import { identityVerificationInspection, migrateIdentityVerification, type IdentityVerificationInspectionOptions } from '@r4-adapters/identity-verification';
 import { FakeWhatsAppProvider, notification, signNotification, type NotificationMessage, type NotificationStatus } from '@r4-adapters/whatsapp-cloud/testing';
 import { createMigratedTestDatabase, openPool, type TestDatabase } from './database.js';
@@ -50,6 +51,13 @@ export interface TestbedOptions {
   readonly identityVerification?: IdentityVerificationInspectionOptions;
   /** (SEC-S7) The gateway logger (default: silent), e.g. to sweep its output for leaked secrets. */
   readonly gatewayLogger?: Logger;
+  /** (ADR-045) wa_ids served by the lane profile sales-production@13 (each must also be allowlisted). Absent: no lane. */
+  readonly lane?: readonly string[];
+}
+
+/** (ADR-045) The gateway environment of a lane (or its absence). */
+export function laneEnv(lane: readonly string[] | undefined): Record<string, string> {
+  return lane ? { R4_PROD_LANE_PROFILE: 'sales-production@13', R4_PROD_LANE_ALLOWLIST: lane.map(keyOf).join(',') } : {};
 }
 
 /**
@@ -115,6 +123,7 @@ export class LiveOpsTestbed {
       R4_WHATSAPP_ACCESS_TOKEN: ACCESS_TOKEN,
       R4_WHATSAPP_PHONE_NUMBER_ID: CANARY_PHONE_ID,
       R4_WHATSAPP_GRAPH_BASE_URL: provider.baseUrl,
+      ...laneEnv(options.lane),
       ...options.env,
     };
     const production = loadProductionConfig(env);
@@ -139,8 +148,9 @@ export class LiveOpsTestbed {
    * database with another allowlist (everything else unchanged). Open
    * bindings keep the eligibility they were opened with.
    */
-  async redeployGateway(rollout: { readonly allowlist: readonly string[] }): Promise<void> {
-    const env = { ...this.env, R4_PROD_ROLLOUT_ALLOWLIST: rollout.allowlist.map(keyOf).join(',') };
+  async redeployGateway(rollout: { readonly allowlist: readonly string[]; readonly lane?: readonly string[] }): Promise<void> {
+    const { R4_PROD_LANE_PROFILE: _p, R4_PROD_LANE_ALLOWLIST: _a, ...rest } = this.env;
+    const env = { ...rest, R4_PROD_ROLLOUT_ALLOWLIST: rollout.allowlist.map(keyOf).join(','), ...laneEnv(rollout.lane) };
     const production = loadProductionConfig(env);
     await this.gateway.close();
     this.gateway = await startGateway(this.db.url, this.pool, production, env, this.#identityVerification, this.#gatewayLogger);
@@ -195,6 +205,42 @@ export class LiveOpsTestbed {
     );
     this.#workers.push(worker);
     return worker;
+  }
+
+  /**
+   * (ADR-045) The lane worker: the real production worker composition with R4_PROD_POLICY_PROFILE=sales-production@13
+   * over the same database, given stand-ins for its owners (Catalog V2 with Discover, Shipping). Registers definition
+   * v13 through `production:sales:bootstrap --lane` first, as a deployment would.
+   */
+  async laneWorker(owners: { readonly catalog: CatalogPort & { readonly bindingKind: string }; readonly discover: CatalogDiscoverPort; readonly shipping: ShippingService & { readonly bindingKind: string } }, workerId = 'lane-worker-1'): Promise<WorkerPlatform> {
+    const env = { ...this.env, R4_PROD_POLICY_PROFILE: 'sales-production@13' };
+    const lines: string[] = [];
+    const code = await runProductionBootstrap(env, { out: (l) => lines.push(l), err: (l) => lines.push(l) }, { lane: true });
+    if (code !== 0) throw new Error(`lane bootstrap failed: ${lines.join(' | ')}`);
+    const production = loadProductionConfig(env);
+    const composition = composeSalesProductionWorker({ pool: this.pool, store: this.store, production, modelProvider: this.model, logger: createSilentLogger(), catalog: owners.catalog, catalogDiscover: owners.discover, shipping: owners.shipping });
+    const worker = await createWorkerPlatform(
+      {
+        databaseUrl: this.db.url, logLevel: 'silent', dbPoolMax: 3, workerId, leaseDurationMs: 60_000, heartbeatIntervalMs: 10_000, pollIntervalMs: 20, maxRunRecoveries: 3, maxRunFailureRecoveries: 1,
+        execution: { maxIterations: 20, maxModelCalls: 20, maxReadCapabilityCalls: 20, maxRunDurationMs: 60_000, modelCallTimeoutMs: 10_000, maxWriteActions: 50 },
+        context: { budget: { mode: 'unbounded' } },
+      },
+      composition.bindings,
+      { logger: createSilentLogger() },
+    );
+    this.#workers.push(worker);
+    return worker;
+  }
+
+  /** Cycles of one given worker until idle. */
+  async runWorker(worker: WorkerPlatform, maxCycles = 20): Promise<WorkerCycle['kind'][]> {
+    const cycles: WorkerCycle['kind'][] = [];
+    for (let i = 0; i < maxCycles; i += 1) {
+      const cycle = await worker.worker.runOnce();
+      if (cycle.kind === 'idle') break;
+      cycles.push(cycle.kind);
+    }
+    return cycles;
   }
 
   /** Worker cycles until idle. */

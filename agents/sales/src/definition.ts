@@ -29,8 +29,10 @@ export const SALES_AGENT_DEFINITION_FILES = Object.freeze({ 3: 'sales.agent.json
  * (R4-J5 F1) Candidate definitions: NOT `*.agent.json`, so no bootstrap, platform or harness registers them (they
  * would also become the registry's "latest"). Only the isolated canary registers one, in its own database, for the
  * profile pinned to it (sales-production@12 → v12). Owner decision B: not registered in production.
+ * (ADR-045) v13 = v4 + the catalog.discover guidance, for the lane profile sales-production@13 only; registered in
+ * production solely by `production:sales:bootstrap --lane`, never by the plain bootstrap.
  */
-export const SALES_CANDIDATE_DEFINITION_FILES = Object.freeze({ 12: 'candidates/sales.v12.candidate.json' } as const);
+export const SALES_CANDIDATE_DEFINITION_FILES = Object.freeze({ 12: 'candidates/sales.v12.candidate.json', 13: 'candidates/sales.v13.candidate.json' } as const);
 export type SalesAgentDefinitionVersion = keyof typeof SALES_AGENT_DEFINITION_FILES | keyof typeof SALES_CANDIDATE_DEFINITION_FILES;
 /** The pack's current definition (what non-production compositions, which register every capability, run). */
 export const SALES_AGENT_LATEST_VERSION: SalesAgentDefinitionVersion = 4;

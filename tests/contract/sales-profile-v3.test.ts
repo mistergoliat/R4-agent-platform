@@ -134,7 +134,7 @@ describe('B. profile isolation', () => {
 
   it('every profile pins its Sales definition: v1/v2 run v3, v3/v4 run v4 (never "latest")', () => {
     expect(SALES_PRODUCTION_PROFILES.map(profileLabel)).toEqual(['sales-production@1', 'sales-production@2', 'sales-production@3', 'sales-production@4', 'sales-production@5', 'sales-production@6', 'sales-production@7', 'sales-production@8']);
-    expect(SALES_PRODUCTION_AGENT_VERSIONS).toEqual({ 'sales-production@1': 3, 'sales-production@2': 3, 'sales-production@3': 4, 'sales-production@4': 4, 'sales-production@5': 5, 'sales-production@6': 6, 'sales-production@7': 7, 'sales-production@8': 8, 'sales-production@12': 12 });
+    expect(SALES_PRODUCTION_AGENT_VERSIONS).toEqual({ 'sales-production@1': 3, 'sales-production@2': 3, 'sales-production@3': 4, 'sales-production@4': 4, 'sales-production@5': 5, 'sales-production@6': 6, 'sales-production@7': 7, 'sales-production@8': 8, 'sales-production@12': 12, 'sales-production@13': 13 });
     expect(SALES_PRODUCTION_PROFILES.map(salesProductionAgentVersion)).toEqual([3, 3, 4, 4, 5, 6, 7, 8]);
     const pool = {} as never;
     expect(salesConversationTaskFactory(pool, 3).request({ bindingId: 'b1', channel: 'whatsapp' })).toMatchObject({ agentId: 'sales', agentVersion: 3 });

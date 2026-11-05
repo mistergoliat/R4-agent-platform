@@ -29,6 +29,7 @@ import { isCustomerIdentityProfile, salesProductionAgentVersion } from '../produ
 import { loadAutonomousQuoteLimits, loadAutonomousQuoteLimitsV6 } from '../capabilities/autonomy-limits.js';
 import { salesShippingPlan } from '../production/shipping-plan.js';
 import { SALES_DOMAINS, SALES_PRODUCTION_PROFILE } from '../production/profile.js';
+import { isSalesLaneProfile, salesCatalogSourceOf } from '../production/profile-v13.js';
 import { SALES_PRODUCTION_PROCESSES, schedulerConfigurationStatus } from '../production/topology.js';
 import { flag, loadLocalEnv, option, print } from './common.js';
 import { VALIDATION_SCENARIOS, VALIDATION_SECRETS, validationIdentity, type ScenarioResult } from './production-validation.js';
@@ -87,15 +88,24 @@ async function main(): Promise<void> {
   print('usage: --plan | --validate | --smoke | --gateway | --worker | --identity-key <wa_id>');
 }
 
+/** (ADR-045) The profile a production WORKER (and its plan) runs: a production profile or a lane profile (@13). The gateway's main profile never is a lane profile. */
+function workerProfile(production: ReturnType<typeof loadProductionConfig>) {
+  return selectedSalesProductionProfile(production.config, { lane: true });
+}
+
 const nodeFetch: CatalogFetch = async (url, init) => {
   const response = await fetch(url, init);
   return { status: response.status, text: () => response.text() };
 };
 
-/** The catalog-service binding when the selected profile makes Catalog REAL (v2); undefined under v1. Nothing is called here. */
+/**
+ * The catalog-service binding when the selected profile makes Catalog REAL (v2); undefined under v1. Nothing is called
+ * here. (ADR-045) The source is the profile's: Catalog V2 (with Discover) only for the lane profile, never a variable.
+ */
 function productionCatalog(production: ReturnType<typeof loadProductionConfig>, logger?: ReturnType<typeof createLogger>): HttpCatalogAdapter | undefined {
-  if (selectedSalesProductionProfile(production.config).domains[SALES_DOMAINS.catalog]?.status !== 'REAL') return undefined;
-  const config = loadCatalogHttpConfig(process.env, { allowNetwork: production.config.allowNetwork });
+  const profile = workerProfile(production);
+  if (profile.domains[SALES_DOMAINS.catalog]?.status !== 'REAL') return undefined;
+  const config = loadCatalogHttpConfig(process.env, { allowNetwork: production.config.allowNetwork, source: salesCatalogSourceOf(profile) });
   return new HttpCatalogAdapter({ config, fetch: nodeFetch, ...(logger ? { onCall: (event) => logger.info({ event: 'catalog.call', ...event }, 'catalog call') } : {}) });
 }
 
@@ -109,7 +119,7 @@ const shippingFetch: ShippingFetch = async (url, init) => {
  * Fails closed on an incomplete R4_SHIPPING_* configuration. Nothing is called here.
  */
 function productionShipping(production: ReturnType<typeof loadProductionConfig>, logger?: ReturnType<typeof createLogger>): ProductionShippingAdapter | undefined {
-  if (selectedSalesProductionProfile(production.config).domains[SALES_DOMAINS.shipping]?.status !== 'REAL') return undefined;
+  if (workerProfile(production).domains[SALES_DOMAINS.shipping]?.status !== 'REAL') return undefined;
   const config = loadShippingHttpConfig(process.env, { allowNetwork: production.config.allowNetwork });
   return new ProductionShippingAdapter({ config, fetch: shippingFetch, ...(logger ? { onEvent: (event) => logger.info({ event: `shipping.${event.kind}`, ...event }, 'shipping call') } : {}) });
 }
@@ -121,14 +131,14 @@ const quoteFetch: QuoteFetch = (url, init) => fetch(url, init);
  * Fails closed on an incomplete R4_QUOTE_* configuration. Nothing is called here; the token is never logged.
  */
 function productionQuotes(production: ReturnType<typeof loadProductionConfig>, logger?: ReturnType<typeof createLogger>): QuoteV2HttpClient | undefined {
-  if (selectedSalesProductionProfile(production.config).domains[SALES_DOMAINS.quote]?.status !== 'REAL') return undefined;
+  if (workerProfile(production).domains[SALES_DOMAINS.quote]?.status !== 'REAL') return undefined;
   const config = loadQuoteHttpConfig(process.env, { allowNetwork: production.config.allowNetwork });
   return new QuoteV2HttpClient({ config, fetch: quoteFetch, ...(logger ? { onCall: (event) => logger.info({ event: 'quote.call', ...event }, 'quote call') } : {}) });
 }
 
 /** (R4-J3E) The autonomous issuance limits, read only when the selected profile issues quotes autonomously (v5); fails closed without them. */
 function autonomousLimits(production: ReturnType<typeof loadProductionConfig>) {
-  const profile = selectedSalesProductionProfile(production.config);
+  const profile = workerProfile(production);
   if (!isAutonomousQuoteProfile(profile)) return {};
   // (R4-J3E-B) @6 also requires the total-units limit and the confirmation window.
   return { autonomousQuoteLimits: isConfirmedIntentProfile(profile) ? loadAutonomousQuoteLimitsV6(process.env) : loadAutonomousQuoteLimits(process.env) };
@@ -141,12 +151,17 @@ function composition() {
   const catalog = productionCatalog(production);
   const shipping = productionShipping(production);
   const quotes = productionQuotes(production);
-  return composeSalesProductionWorker({ pool: { query: () => Promise.reject(new Error('plan only')) } as never, store: noStore, production, modelProvider: { providerId: 'plan', invoke: () => Promise.reject(new Error('plan only')) }, logger: createLogger({ service: 'plan', level: 'silent' }), ...(catalog ? { catalog } : {}), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production) });
+  return composeSalesProductionWorker({ pool: { query: () => Promise.reject(new Error('plan only')) } as never, store: noStore, production, modelProvider: { providerId: 'plan', invoke: () => Promise.reject(new Error('plan only')) }, logger: createLogger({ service: 'plan', level: 'silent' }), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production) });
+}
+
+/** (ADR-045) The lane profile's Discover binding: the same Catalog V2 adapter (its Discover key is checked when composed). */
+function discoverOf(production: ReturnType<typeof loadProductionConfig>, catalog: HttpCatalogAdapter | undefined) {
+  return catalog && isSalesLaneProfile(workerProfile(production)) ? { catalogDiscover: catalog } : {};
 }
 
 /** (R4-J4-R4) The worker's R4_CUSTOMER_* configuration, passed only when the selected profile composes Customer (v8). */
 function customerOf(production: ReturnType<typeof loadProductionConfig>) {
-  return isCustomerIdentityProfile(selectedSalesProductionProfile(production.config)) ? { customer: { env: process.env } } : {};
+  return isCustomerIdentityProfile(workerProfile(production)) ? { customer: { env: process.env } } : {};
 }
 
 async function plan(production: ReturnType<typeof loadProductionConfig>): Promise<void> {
@@ -159,18 +174,18 @@ async function plan(production: ReturnType<typeof loadProductionConfig>): Promis
   })();
   // A well-formed configuration proves neither authentication nor connectivity (nothing is probed here).
   const catalog = (() => {
-    const gate = selectedSalesProductionProfile(production.config).domains[SALES_DOMAINS.catalog]?.status === 'REAL' ? 'REAL: catalog-service v2 over HTTP (read-only)' : 'UNAVAILABLE in this profile';
+    const gate = workerProfile(production).domains[SALES_DOMAINS.catalog]?.status === 'REAL' ? 'REAL: catalog-service v2 over HTTP (read-only)' : 'UNAVAILABLE in this profile';
     try {
-      return { binding: gate, ...describeCatalogHttpConfig(loadCatalogHttpConfig(process.env, { allowNetwork: production.config.allowNetwork })) };
+      return { binding: gate, ...describeCatalogHttpConfig(loadCatalogHttpConfig(process.env, { allowNetwork: production.config.allowNetwork, source: salesCatalogSourceOf(workerProfile(production)) })) };
     } catch (error) {
       return { binding: gate, configuration: `not usable: ${error instanceof Error ? error.message : String(error)}` };
     }
   })();
   // Shipping is composed only when the profile makes it REAL (sales-production@3); nothing is probed here.
-  const shipping = salesShippingPlan(selectedSalesProductionProfile(production.config), process.env, { allowNetwork: production.config.allowNetwork });
+  const shipping = salesShippingPlan(workerProfile(production), process.env, { allowNetwork: production.config.allowNetwork });
   // Quote is composed only when the profile makes it REAL (sales-production@4); nothing is probed here.
   const quote = (() => {
-    const gate = selectedSalesProductionProfile(production.config).domains[SALES_DOMAINS.quote]?.status === 'REAL' ? 'REAL: Quote Service V2 over HTTP (quote.create@2, approval required)' : 'UNAVAILABLE in this profile (not composed)';
+    const gate = workerProfile(production).domains[SALES_DOMAINS.quote]?.status === 'REAL' ? 'REAL: Quote Service V2 over HTTP (quote.create@2, approval required)' : 'UNAVAILABLE in this profile (not composed)';
     try {
       if (quoteModeOf(process.env) !== 'real') return { binding: gate, configuration: 'not configured (R4_QUOTE_MODE unset)' };
       return { profile: gate, ...describeQuoteHttpConfig(loadQuoteHttpConfig(process.env, { allowNetwork: production.config.allowNetwork })) };
@@ -210,7 +225,7 @@ async function plan(production: ReturnType<typeof loadProductionConfig>): Promis
     networkAllowed: production.config.allowNetwork,
     profile: report.profile,
     profileFingerprint: report.profileFingerprint,
-    agentDefinition: `sales@${salesProductionAgentVersion(selectedSalesProductionProfile(production.config))}`,
+    agentDefinition: `sales@${salesProductionAgentVersion(workerProfile(production))}`,
     productionConfigFingerprint: productionConfigFingerprint(production.config),
     model: model ? { provider: 'openai_compatible', ...model.description } : 'not configured (R4_MODEL_*)',
     channel: whatsapp,
@@ -218,6 +233,8 @@ async function plan(production: ReturnType<typeof loadProductionConfig>): Promis
     shipping,
     quote,
     recipient: recipientKey ? { conversationKey: `${recipientKey.slice(0, 12)}…`, eligibility: rolloutEligibility(production.config.rollout, recipientKey) } : 'R4_PROD_SMOKE_RECIPIENT not set',
+    // (ADR-045) What a gateway with this environment serves as its lane (keys counted, never echoed).
+    lane: process.env.R4_PROD_LANE_PROFILE ? { profile: process.env.R4_PROD_LANE_PROFILE, conversations: (process.env.R4_PROD_LANE_ALLOWLIST ?? '').split(/[s,]+/).filter(Boolean).length } : 'none',
     rollout: { percent: production.config.rollout.percent, allowlisted: production.config.rollout.allowlist.length, denylisted: production.config.rollout.denylist.length, fingerprint: rolloutFingerprint(production.config.rollout) },
     killSwitch,
     processes: SALES_PRODUCTION_PROCESSES.map((p) => ({ name: p.name, command: `npm run ${p.script}`, owns: p.owns })),
@@ -248,8 +265,8 @@ async function worker(production: ReturnType<typeof loadProductionConfig>): Prom
   const catalog = productionCatalog(production, logger);
   const shipping = productionShipping(production, logger);
   const quotes = productionQuotes(production, logger);
-  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...(catalog ? { catalog } : {}), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production) });
-  await assertSalesProductionPrerequisites(selectedSalesProductionProfile(production.config), pool);
+  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production) });
+  await assertSalesProductionPrerequisites(workerProfile(production), pool);
   logger.info({ event: 'service.composed', profile: composed.report.profile, profileFingerprint: composed.report.profileFingerprint }, 'production worker composed');
   await runWorkerProcess(config, composed.bindings, { logger });
 }
@@ -326,7 +343,7 @@ async function smoke(production: ReturnType<typeof loadProductionConfig>): Promi
         const git = gitState();
         const id = `psmoke_${new Date().toISOString().replace(/[:.]/g, '-')}`;
         const files = {
-          'manifest.json': stableJson({ smokeId: id, kind: 'real-channel-smoke', gitSha: git.sha, gitDirty: git.dirty, profile: profileLabel(selectedSalesProductionProfile(production.config)), conversationKey: `${key.slice(0, 12)}…`, rolloutFingerprint: rolloutFingerprint(production.config.rollout) }),
+          'manifest.json': stableJson({ smokeId: id, kind: 'real-channel-smoke', gitSha: git.sha, gitDirty: git.dirty, profile: profileLabel(workerProfile(production)), conversationKey: `${key.slice(0, 12)}…`, rolloutFingerprint: rolloutFingerprint(production.config.rollout) }),
           'outbound.json': stableJson(outbound.map((o) => ({ outboundId: o.outboundId, status: o.status, attempts: o.attempts, providerMessageIdKnown: o.providerMessageId !== null, acceptedAt: o.acceptedAt, deliveredAt: o.deliveredAt, readAt: o.readAt }))),
           'metrics.json': stableJson(await store.metrics()),
         };

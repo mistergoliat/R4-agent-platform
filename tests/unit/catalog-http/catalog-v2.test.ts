@@ -63,18 +63,20 @@ describe('A. configuration: one adapter, an explicit source, no fallback between
 
   it('descriptions carry no secret; v1 descriptions are unchanged, v2 ones say v2', () => {
     const v2 = describeCatalogHttpConfig(V2);
-    expect(v2).toEqual({ source: 'v2', baseHost: '127.0.0.1:4011', timeoutMs: 5000, apiKeyConfigured: true, authentication: 'declared, not verified', connectivity: 'not tested' });
+    // (ADR-045) v2 also says whether its Discover key is configured (never the key).
+    expect(v2).toEqual({ source: 'v2', baseHost: '127.0.0.1:4011', timeoutMs: 5000, apiKeyConfigured: true, discoverKeyConfigured: false, authentication: 'declared, not verified', connectivity: 'not tested' });
     expect(JSON.stringify(v2)).not.toContain(V2_ENV.R4_CATALOG_V2_API_KEY);
     expect(Object.keys(describeCatalogHttpConfig(loadCatalogHttpConfig(V1_ENV, { allowNetwork: false })))).toEqual(['baseHost', 'timeoutMs', 'apiKeyConfigured', 'authentication', 'connectivity']);
   });
 
-  it('calls the V2 base URL with the V2 key in x-api-key, and the three contract endpoints only', async () => {
+  it('calls the V2 base URL with the V2 key in x-api-key; the three read endpoints plus Discover (ADR-045), and nothing else', async () => {
     const { catalog, requests } = serving(200, catalogFixture('item-simple.json'));
     await catalog.getItemContext({ itemKey: 'P10', quantity: 1 });
     expect(requests[0]).toMatchObject({ url: 'http://127.0.0.1:4011/v2/catalog/items/P10/context?quantity=1', method: 'GET', headers: { 'x-api-key': V2_ENV.R4_CATALOG_V2_API_KEY } });
     const adapter = readFileSync(fileURLToPath(new URL('../../../adapters/domains/catalog/http/src/adapter.ts', import.meta.url)), 'utf8');
-    expect(adapter.match(/'\/v2\/catalog\/[^'`$]*|`\/v2\/catalog\/[^`$]*/g)).toEqual(["'/v2/catalog/search", '`/v2/catalog/products/', '`/v2/catalog/items/']);
-    expect(adapter).not.toMatch(/discover/i);
+    expect(adapter.match(/'\/v2\/catalog\/[^'`$]*|`\/v2\/catalog\/[^`$]*/g)).toEqual(["'/v2/catalog/search", '`/v2/catalog/products/', '`/v2/catalog/items/', "'/v2/catalog/discover"]);
+    // Discover is called only through discover(), with its own key (catalog-discover.test.ts).
+    expect(adapter.match(/\/v2\/catalog\/discover/g)).toHaveLength(1);
   });
 });
 

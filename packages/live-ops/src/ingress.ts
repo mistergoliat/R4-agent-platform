@@ -22,6 +22,18 @@ export interface ConversationTaskFactory {
   afterOpen?(taskId: string, binding: ConversationBindingRecord): Promise<void>;
 }
 
+/**
+ * (ADR-045) One extra profile the same gateway serves for an explicit, closed set of conversations (keyed
+ * hashes, never addresses). The lane is decided only when a binding is OPENED and persisted on it
+ * (`binding.profile`); everything after that follows the binding, never the current configuration. Every lane
+ * conversation must also be allowlisted in the rollout: a lane never widens who gets autonomy.
+ */
+export interface ConversationLane {
+  readonly conversationKeys: readonly string[];
+  readonly profile: ProductionProfile;
+  readonly taskFactory: ConversationTaskFactory;
+}
+
 export interface ChannelIngressOptions {
   readonly store: ProductionStore;
   readonly tasks: TaskRuntime;
@@ -38,6 +50,15 @@ export interface ChannelIngressOptions {
   readonly logger: StructuredLogger;
   /** R4-I.1 (ADR-040): the single inspection point, by composition. Absent: ingress is exactly R4-I. */
   readonly inspector?: InboundInspector;
+  /** ADR-045: absent, ingress is exactly R4-I (one profile per gateway). */
+  readonly lane?: ConversationLane;
+}
+
+interface ServedProfile {
+  readonly label: string;
+  readonly fingerprint: string;
+  readonly profile: ProductionProfile;
+  readonly taskFactory: ConversationTaskFactory;
 }
 
 export type IngestOutcome =
@@ -72,16 +93,40 @@ export function unsupportedContentMarker(contentType: string): string {
 export class ChannelIngress {
   readonly #o: ChannelIngressOptions;
   readonly #adapters: ReadonlyMap<string, InboundChannelAdapter>;
-  readonly #profile: string;
-  readonly #profileFingerprint: string;
+  readonly #main: ServedProfile;
+  readonly #lane: (ServedProfile & { readonly keys: ReadonlySet<string> }) | null;
   readonly #rolloutFingerprint: string;
 
   constructor(options: ChannelIngressOptions) {
     this.#o = options;
     this.#adapters = new Map(options.adapters.map((a) => [a.channel, a]));
-    this.#profile = profileLabel(options.profile);
-    this.#profileFingerprint = profileFingerprint(options.profile);
+    this.#main = { label: profileLabel(options.profile), fingerprint: profileFingerprint(options.profile), profile: options.profile, taskFactory: options.taskFactory };
+    const lane = options.lane;
+    this.#lane = lane ? { label: profileLabel(lane.profile), fingerprint: profileFingerprint(lane.profile), profile: lane.profile, taskFactory: lane.taskFactory, keys: new Set(lane.conversationKeys) } : null;
+    if (this.#lane) {
+      const { rollout } = options.config;
+      const problems: string[] = [];
+      if (this.#lane.label === this.#main.label) problems.push(`the lane profile ${this.#lane.label} is the gateway profile`);
+      if (this.#lane.profile.channel.id !== options.profile.channel.id) problems.push(`the lane profile serves channel ${this.#lane.profile.channel.id}, not ${options.profile.channel.id}`);
+      if (this.#lane.keys.size === 0) problems.push('the lane has no conversations');
+      for (const key of this.#lane.keys) {
+        if (!rollout.allowlist.includes(key) || rollout.denylist.includes(key)) problems.push(`lane conversation ${key.slice(0, 12)}… is not allowlisted (or is denied) in the rollout`);
+      }
+      if (problems.length > 0) throw new PlatformError('precondition', 'conversation_lane_refused', `refusing the conversation lane:\n- ${problems.join('\n- ')}`);
+    }
     this.#rolloutFingerprint = rolloutFingerprint(options.config.rollout);
+  }
+
+  /** The profile a NEW binding of this conversation is opened with. */
+  #assign(key: string): ServedProfile {
+    return this.#lane?.keys.has(key) ? this.#lane : this.#main;
+  }
+
+  /** The composed profile an existing binding was opened with (null: none of this gateway's). */
+  #servedBy(binding: ConversationBindingRecord): ServedProfile | null {
+    if (binding.profile === this.#main.label) return this.#main;
+    if (this.#lane && binding.profile === this.#lane.label) return this.#lane;
+    return null;
   }
 
   channels(): string[] {
@@ -183,7 +228,7 @@ export class ChannelIngress {
   }
 
   async #process(record: InboundEventRecord): Promise<IngestOutcome> {
-    const { store, controls, config, profile, taskFactory, temporal, tasks, logger } = this.#o;
+    const { store, controls, config, temporal, tasks, logger } = this.#o;
     if (record.conversationKey === null || record.accountRef === null || record.conversationRef === null || record.content === null || record.occurredAt === null) {
       await store.settleInbound(record.inboundId, { status: 'failed', failureCode: 'incomplete_inbound_record' });
       return { kind: 'failed', inboundId: record.inboundId, code: 'incomplete_inbound_record' };
@@ -201,22 +246,33 @@ export class ChannelIngress {
             binding = null;
           }
         }
+        // A binding opened for a profile this gateway no longer composes, whose task never opened (a crash between
+        // the two): reopen it under the current assignment instead of creating a task of another profile on it.
+        if (binding && !binding.taskId && !this.#servedBy(binding)) {
+          await store.closeBinding(binding.bindingId, 'profile_not_served');
+          emitTelemetry(logger, 'conversation.binding.closed', { channel: record.channel, bindingId: binding.bindingId, taskId: null, reason: 'profile_not_served' });
+          binding = null;
+        }
         if (!binding) {
           const eligibility = rolloutEligibility(config.rollout, record.conversationKey);
+          const assigned = this.#assign(record.conversationKey);
           binding = await store.openBinding({
             bindingId: this.#o.ids.next(), channel: record.channel, conversationKey: record.conversationKey, accountRef: record.accountRef, recipientRef: record.conversationRef,
             autonomy: eligibility.eligible ? 'autonomous' : 'excluded', eligibilityReason: eligibility.reason, rolloutFingerprint: this.#rolloutFingerprint,
-            profile: this.#profile, profileFingerprint: this.#profileFingerprint,
+            profile: assigned.label, profileFingerprint: assigned.fingerprint,
           });
-          emitTelemetry(logger, 'conversation.binding.opened', { channel: record.channel, bindingId: binding.bindingId, autonomy: binding.autonomy, eligibilityReason: binding.eligibilityReason, rolloutBucketed: eligibility.reason === 'cohort' });
+          emitTelemetry(logger, 'conversation.binding.opened', { channel: record.channel, bindingId: binding.bindingId, autonomy: binding.autonomy, eligibilityReason: binding.eligibilityReason, rolloutBucketed: eligibility.reason === 'cohort', profile: binding.profile });
         }
+        // Everything after the opening follows the binding (ADR-045): its profile, never the current lane configuration.
+        const served = this.#servedBy(binding) ?? this.#main;
+        const { taskFactory } = served;
         const decision: InboundAutonomyDecision = decideInboundAutonomy({
           controls: await controls.state(),
           channel: record.channel,
           deniedNow: config.rollout.denylist.includes(record.conversationKey),
           bindingAutonomous: binding.autonomy === 'autonomous',
           unsupportedContent: unsupported,
-          unsupportedContentPolicy: profile.unsupportedContent,
+          unsupportedContentPolicy: served.profile.unsupportedContent,
         });
         const hold = decision.kind === 'hold' ? { reason: decision.reason, summary: decision.summary } : undefined;
         const input = { externalKey: record.providerEventId, content: record.content, sourceRef: `channel:${record.channel}`, occurredAt: record.occurredAt };
