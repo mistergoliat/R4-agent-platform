@@ -1,7 +1,7 @@
 ---
 title: R4-J5 — Preparación de F1 (Quote V2) y F2 (Catalog vigente)
-status: PREPARACIÓN — no autoriza la ejecución de F1 ni de F2
-mandate: «R4 — J5 D-7 Owner Decision» (owner, 2026-11-05), §4
+status: PREPARACIÓN — desarrollo de F1/F2 autorizado por gates específicos (§11); sin despliegues ni activación
+mandate: «R4 — J5 D-7 Owner Decision» (owner, 2026-11-05), §4; «R4 — J5 F1/F2 Implementation Preparation» (owner, 2026-11-05)
 date: 2026-11-05
 base: main d895413
 depends-on: R4_J5_COMMERCIAL_INTEGRATION_READINESS.md §3, §4 y §7; R4_J5_F0_PLAN.md; R4_J5_F0_OWNER_DECISION_RECORD.md; R4_J5_D7_COMMERCIAL_AUTONOMY_DECISION.md; R4_TEST_STRATEGY_02.md
@@ -27,7 +27,9 @@ Este documento prepara la ejecución en paralelo de F1 (cotización productiva) 
 - No hay cambios de kernel ni despliegues.
 - No hay llamadas a modelos de pago.
 
-Ejecutar F1 o F2 requiere un mandato y una autorización de despliegue por SHA.
+Ejecutar F1 o F2 requiere un mandato y una autorización de despliegue por SHA. El owner autorizó el **desarrollo**
+de F1 y F2 por gates específicos, no su activación. Sus decisiones del 2026-11-05 sobre P-1, P-2, GAP-14 y la
+vigencia están en §11 y prevalecen sobre las propuestas de este documento.
 
 ## 1. Estado de referencia (verificado el 2026-11-05)
 
@@ -57,12 +59,12 @@ Ejecutar F1 o F2 requiere un mandato y una autorización de despliegue por SHA.
 |---|---|---|---|---|
 | **Q-1** | **SHA de Quote para F1.** `main` incluye, además de A10, la migración y el código del carrito, desactivado por defecto. Hay que elegir entre desplegar `main` con el carrito apagado y preparar su migración, o fijar un SHA anterior al carrito | Owner Quote | Abierta | Despliegue de F1 |
 | **Q-2** | **Lockstep A10:** fusionar R4 #32 y desplegarlo junto con Quote. La verificación posterior ya está definida: una cotización multilínea con totales esperados conocidos (handoff A10 §4.3) | Owner R4 + owner Quote | R4 #32 abierto | G1 |
-| **Q-3** | **Vigencia de la cotización (D-05 / B13).** La política de 60 minutos está aprobada como política, pero su principal está autorizado sólo para sintético o staging. Usarla con ofertas reales exige seis condiciones (V1–V6: clasificación en Catalog, vigencia de Shipping, política de compromiso de precio del e-commerce, gate de elegibilidad en R4, ejecución en staging y decisión de mapeo). Ninguna está cumplida. La alternativa es la vigencia actual de 5 días | Owner comercial + owner Quote | Abierta | Principal de F1 |
+| **Q-3** | **Vigencia de la cotización (D-05 / B13).** La política de 60 minutos está aprobada como política, pero su principal está autorizado sólo para sintético o staging. Usarla con ofertas reales exige seis condiciones (V1–V6: clasificación en Catalog, vigencia de Shipping, política de compromiso de precio del e-commerce, gate de elegibilidad en R4, ejecución en staging y decisión de mapeo). Ninguna está cumplida. La alternativa es la vigencia actual de 5 días | Owner comercial + owner Quote | **Candidato decidido (§11):** perfil por sesión de 60 min; falta verificar su compatibilidad y autorización con el principal R4 | Principal de F1 |
 | **Q-4** | **Gate R1.7 de Quote:** respaldo y restauración verificada, arranque tras reinicio del host, holgura de disco, canary sintético aprobado y 7 días estables. Hoy `QUOTE_V2_READY_FOR_REAL_CUSTOMERS=NO`, con deudas abiertas de disco, respaldo y reinicio | Owner Quote + infraestructura | No cumplido | F1 |
 | **Q-5** | **Principal R4 en Quote:** scopes exactos `quotes:create`, `quotes:read` y `quotes:document:read` (ADR-034 §8). El perfil de vigencia del principal sigue sin definir (depende de Q-3) | Owner Quote | Abierta | F1 |
 | **Q-6** | **Retención de cotizaciones (U1):** debe decidirse antes de que se acumulen datos productivos | Owner Quote | Abierta | F1 |
 | **Q-7** | **Perfil R4 que lleva F1 (D-10).** `@7` es el linaje de cotización autónoma del canary J3. `@8` agrega Customer e identidad, sólo sintéticos, y su confiabilidad conversacional (F-1, G-sem) está pendiente. v9/`@9` están retirados y v10/v11 reservados. Las instrucciones de DS-1 exigen una versión nueva del perfil (§5) | Owner R4 | Abierta | F1 |
-| **Q-8** | **Conflicto en GAP-14.** Su prueba de aceptación exige un «PDF con estado `delivered`», pero la entrega de documentos está diferida (ADR-038, R4 Media) y `@7`/`@8` no entregan el PDF. Hay que redefinir la aceptación de GAP-14 sin entrega de documento, o incluir esa entrega en F1 | Owner R4 | Abierta | G1 |
+| **Q-8** | **Conflicto en GAP-14.** Su prueba de aceptación exige un «PDF con estado `delivered`», pero la entrega de documentos está diferida (ADR-038, R4 Media) y `@7`/`@8` no entregan el PDF. Hay que redefinir la aceptación de GAP-14 sin entrega de documento, o incluir esa entrega en F1 | Owner R4 | **Decidida (§11):** F1 no exige entregar el PDF | G1 |
 
 Los ítems X-1..X-7 del plan F0 corresponden al carrito y a H3 (F4). No bloquean F1. X-7 parece resuelto en Quote
 `main`. X-1, la audiencia `azp` del binding, sigue contradictoria entre documentos de Quote.
@@ -111,9 +113,11 @@ copia anterior no debe usarse. Hoy:
 - **Formalmente, G1 no exige G2.** El informe de preparación las declara paralelas.
 - **Pero Quote V2 congela lo que R4 le envía (Modelo B).** Quote no consulta Catalog. Una cotización emitida antes
   de F2 congelaría en una cotización inmutable el precio y el stock leídos de la copia desactualizada.
-- **Propuesta P-1:** la primera cotización controlada de F1 se limita a SKUs con paridad verificada contra la tienda
-  viva. Puede ser el conjunto interino de la opción B. Con eso, la convergencia mínima de los dos frentes es
-  «G2 sobre los SKUs del escenario», no el cutover completo.
+- **P-1 (aprobada, §11):** la primera cotización controlada usa exclusivamente SKUs con precio, stock e identidad
+  comercial verificados contra PrestaShop vivo, y la paridad se vuelve a comprobar antes de cada emisión real.
+  Puede ser el conjunto interino de la opción B. Con eso, la convergencia mínima de los dos frentes es
+  «G2 sobre los SKUs del escenario», no el cutover completo. La base de desarrollo de V2 no es una fuente
+  productiva autorizada.
 
 ## 5. Límites de autonomía que requieren valores aprobados
 
@@ -166,11 +170,11 @@ significa:
 | GAP-11 (observabilidad de decisiones autónomas) | Abierto: sin alertas para `unknown`, `needs_reconciliation` ni handoffs |
 | GAP-12 (límites) | Abierto, P0 (§5) |
 | GAP-13 (gates del perfil exigidos en código) | Abierto |
-| GAP-14 (WhatsApp real) | Abierto, P0, con el conflicto de Q-8 |
+| GAP-14 (WhatsApp real) | Abierto, P0. Aceptación redefinida sin entrega de PDF (§11) |
 | GAP-16 (emisión varada) | Corregido en `quote.create@5`; quedan pendientes L1–L6 de ADR-037 |
 | Kill switch | Existe y arranca deshabilitado. D7-4 exige probarlo antes de F1. El kill switch por canal no detiene las escrituras de `@7` (GAP-07) |
 | DS-1 (§6) | Requiere mandato propio |
-| G2 sobre los SKUs del escenario (P-1) | Propuesto |
+| G2 sobre los SKUs del escenario (P-1) | **Aprobado** como condición; con nueva comprobación antes de cada emisión real |
 | Pruebas | L2 como piso; L3 sobre el SHA desplegado con el servicio real, coordinado entre repositorios; canary con allowlist. Un `NOT_RUN` bloquea. El gate financiero F-1..F-7 no aplica a F1 (cubre pago y orden) |
 
 ## 8. Plan paralelo
@@ -195,18 +199,67 @@ Cada paso requiere su autorización. El orden dentro de cada frente es el de dep
 4. Re-enlace de R4 si se elige A (C-c). Es un despliegue y requiere autorización.
 5. G2.
 
-**Convergencia:** la primera cotización controlada usa SKUs que pasaron G2 (P-1).
+**Convergencia:** la primera cotización controlada usa sólo SKUs que pasaron G2 y se re-verifican antes de emitir (P-1).
 
 ## 9. Decisiones solicitadas al owner
 
-1. **Alcance de G0 para F1/F2.** G0 exige aceptar A7, H3 y Checkout `/v1`, que corresponden al carrito y al pago
-   (F4–F6). **Propuesta P-2:** permitir que F1 y F2 avancen con las decisiones y los responsables que les
-   corresponden (D-01, D-05, D-10 y los owners de Quote y Catalog), y que A7, H3 y `/v1` sigan su curso hacia G0
-   antes de F4.
-2. Las decisiones Q-1..Q-8 (§2) y C-a, C-h (§3), cada una con su dueño.
-3. **P-1:** la primera cotización controlada se limita a SKUs con paridad verificada.
-4. El mandato de DS-1 (§6) y, aparte, la autorización de gasto de su campaña con el modelo real.
-5. Los valores de los límites y del techo (§5), junto con la autorización de F1.
+Estado tras la decisión del owner del 2026-11-05 (§11):
+
+1. **Alcance de G0 para F1/F2 (P-2):** **aprobada.**
+2. **Q-1..Q-8 y C-a, C-h:**
+   - Q-3 tiene un candidato decidido. Q-8 está decidida.
+   - Las demás siguen abiertas, con su dueño.
+3. **P-1:** **aprobada.**
+4. **DS-1:** incorporado al trabajo de Sales, con pruebas deterministas y una evaluación semántica focalizada.
+   - Su ejecución con modelos de pago sigue sujeta a un presupuesto aprobado.
+5. **Valores de los límites y del techo (§5):** pendientes, junto con la autorización de F1.
+
+## 11. Decisiones del owner (2026-11-05, «R4 — J5 F1/F2 Implementation Preparation»)
+
+Estado: `R4_J5_F1_F2_DEVELOPMENT_AUTHORIZED`. Se autoriza el **desarrollo**, no la activación.
+
+**P-1 — Catálogo.**
+
+- La primera cotización controlada usa **exclusivamente** SKUs cuyo precio, stock e identidad comercial se hayan
+  verificado contra PrestaShop vivo.
+- La paridad se comprueba **otra vez antes de una emisión real**.
+- La base de desarrollo de Catalog V2 **no es una fuente productiva autorizada**.
+
+**P-2 — Gates.**
+
+- F1 y F2 avanzan en su implementación mediante gates específicos.
+- **G0 global sigue `NOT_APPROVED`.**
+- A7, H3 y Checkout `/v1` siguen pendientes. Son obligatorios antes de habilitar las operaciones posteriores que
+  dependan de ellos: carrito, Checkout y pago.
+
+**GAP-14 — PDF (resuelve Q-8).**
+
+- F1 **no exige** entregar un PDF adjunto por WhatsApp.
+- Exige cuatro cosas:
+  - la emisión persistida;
+  - un identificador verificable;
+  - el snapshot correcto;
+  - la comunicación de la oferta confirmada.
+- Se verifica la generación y la recuperación del PDF según el contrato vigente de Quote. La entrega de documentos no
+  entra en el alcance de F1 (sigue diferida, ADR-038).
+
+**Vigencia (Q-3).**
+
+- El candidato es el perfil de cotizaciones por sesión, de 60 minutos.
+- Hay que verificar su compatibilidad y su autorización con el principal R4.
+- Las políticas productivas de Quote no se modifican sin aprobación.
+
+**Restricciones que se mantienen.**
+
+- Sin despliegues ni cambios en EC2.
+- Sin cotizaciones reales ni escrituras comerciales productivas.
+- No se crean ni se activan perfiles productivos.
+- `sales-production@3` no se modifica.
+- Sin carrito, sin Checkout y sin pagos.
+- Sin cambios en el kernel, incluido cualquier supervisor.
+- La migración de Catalog V2 no se altera.
+- Sin modelos de pago sin presupuesto aprobado.
+- La integración de este documento no autoriza despliegues.
 
 ## 10. Qué no hace este documento
 
