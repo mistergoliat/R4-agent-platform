@@ -58,7 +58,7 @@ export interface QuoteParityGuard {
  * Profiles that may compose quote.create only with the parity guard (R4-J5 F1, P-1): their composition refuses
  * without it. Sales configuration, by profile label; the F1 canary profile is added with its definition.
  */
-export const QUOTE_PARITY_REQUIRED_PROFILES: ReadonlySet<string> = new Set<string>();
+export const QUOTE_PARITY_REQUIRED_PROFILES: ReadonlySet<string> = new Set<string>(['sales-production@12']);
 
 /** Throws when the profile requires the parity guard and none is configured (no silent fallback to unverified data). */
 export function assertQuoteParityConfigured(profileLabel: string, guard: QuoteParityGuard | null | undefined, required: ReadonlySet<string> = QUOTE_PARITY_REQUIRED_PROFILES): void {
