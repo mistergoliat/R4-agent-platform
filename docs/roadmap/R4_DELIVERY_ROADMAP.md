@@ -59,7 +59,9 @@ automáticamente.
 - **DS-1:** pasa a ser un requisito de Sales y no se implementa en el kernel
   ([backlog §C](../architecture/R4_R7_4_FOLLOWUPS_AND_SALES_BACKLOG.md)).
 - **D-7:** se mantiene la política de escritura productiva actual. `maxWriteActions` no se aumenta automáticamente.
-  La autonomía de las operaciones comerciales se resolverá en una decisión separada.
+  La autonomía de las operaciones comerciales quedó decidida el mismo día en
+  [R4_J5_D7_COMMERCIAL_AUTONOMY_DECISION](../architecture/R4_J5_D7_COMMERCIAL_AUTONOMY_DECISION.md): autonomía por
+  operación, `@3` en 0 y D7-6 pendiente de F6.
 - **Evidencia:** los informes productivos y la evidencia del EC2 se guardan fuera de este repositorio.
 
 **Separación normativa** (owner, 2026-10-22, mandato `R4-J4-R4-COMPOSITION-AND-PROFILE-09`).

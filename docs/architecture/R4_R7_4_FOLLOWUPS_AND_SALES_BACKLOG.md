@@ -48,8 +48,9 @@ nuevo.
 **D-7: se mantiene la política de escritura productiva.**
 
 - `maxWriteActions` sigue en 0 en producción y no se aumenta automáticamente. La opción (a) de §B no se aplica.
-- Pendiente: una decisión separada sobre la autonomía de las operaciones comerciales. Debe definir qué escrituras
-  puede hacer el agente, con qué presupuesto y con qué aprobación.
+- La decisión separada sobre la autonomía de las operaciones comerciales está registrada en
+  [R4_J5_D7_COMMERCIAL_AUTONOMY_DECISION](R4_J5_D7_COMMERCIAL_AUTONOMY_DECISION.md) (owner, 2026-11-05). DS-1 se
+  cumple en tres capas (D7-3). Su implementación requiere un mandato propio antes de habilitar escrituras.
 
 **DS-2** sigue abierto. El owner no lo decidió en este mandato.
 
