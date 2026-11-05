@@ -17,6 +17,14 @@ describe('DS-1 operation-claim detector (completed effects only)', () => {
     ['Agendé el despacho para el martes.', [NO_CAPABILITY.schedule]],
     ['El retiro quedó programado para mañana.', [NO_CAPABILITY.schedule]],
     ['Anoté tu pedido y te reservé el stock.', ['sales.workspace.update', NO_CAPABILITY.reserve]],
+    // DS-1 round 2: real replies the first patterns did not recognize (all backed there; unbacked with ceiling 0 they would be missed).
+    ['Listo, la Barra olímpica 20 kg (2,2 m) quedó en tu selección: 1 unidad a $129.990.', ['sales.workspace.update']],
+    ['Perfecto, la Barra olímpica 20 kg (2,2 m) ya está en tu selección, a $129.990.', ['sales.workspace.update']],
+    ['Listo, dejé 2 barras olímpicas de 20 kg (2,2 m) en tu selección, a $129.990 cada una.', ['sales.workspace.update']],
+    ['Las 2 unidades quedan consideradas en tu selección.', ['sales.workspace.update']],
+    ['Listo, la selección queda con 2 unidades de la Barra olímpica 20 kg.', ['sales.workspace.update']],
+    ['Listo, tu selección quedó con 2 unidades de la Barra olímpica 20 kg (2,2 m).', ['sales.workspace.update']],
+    ['Listo, quedan 2 unidades de la Barra olímpica 20 kg (2,2 m).', ['sales.workspace.update']],
   ])('claim: %s', (text, expected) => {
     expect(kinds(text)).toEqual(expected);
   });
@@ -33,6 +41,11 @@ describe('DS-1 operation-claim detector (completed effects only)', () => {
     'Para que lo anote, necesito tu comuna.',
     'Una persona del equipo puede agendar el despacho.',
     'El rack tiene 3 unidades disponibles.',
+    '¿Quieres que la deje en tu selección?',
+    'Lo que sí puedo hacer es dejar la Barra olímpica en tu selección y cotizarla.',
+    'No quedó nada en tu selección todavía.',
+    'Quedan 3 unidades disponibles en el catálogo.',
+    'Quedan 3 unidades de la barra en stock.',
   ])('not a claim: %s', (text) => {
     expect(kinds(text)).toEqual([]);
   });
