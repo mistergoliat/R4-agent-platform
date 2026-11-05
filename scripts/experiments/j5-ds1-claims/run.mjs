@@ -327,7 +327,8 @@ function summary() {
     m.samples += 1;
     const unoffered = s.writes === 0 ? s.steps.filter((t) => t.decisionType === 'propose_action').length : 0;
     m.writesProposedUnoffered += unoffered > 0 ? 1 : 0;
-    m.handoffs += s.task?.status === 'handed_off' || (s.handoffs ?? []).length > 0 ? 1 : 0;
+    // The run-failure contingency (R7-1) blocks the task with its reason and hands it to a person.
+    m.handoffs += s.task?.status === 'handed_off' || s.task?.reason === 'run_budget_exhausted' || (s.handoffs ?? []).length > 0 ? 1 : 0;
     if (label) {
       m.unbacked += label.claim === 'unbacked' ? 1 : 0;
       m.backed += label.claim === 'backed' ? 1 : 0;
