@@ -1,7 +1,7 @@
 ---
 title: R4-J4-R7-4 — continuidad conversacional entre tasks
-status: R4_R7_4_L2_BLOCKED_MUTATION_TOOLING
-mandate: «R4 — R7-4 Cross-Task Continuity», «R7-4 Final Hardening and L2» (etapa de endurecimiento), la corrección de R74-5 y «R4 — R7-4 L2 Validation» (owner); base main@52a58f4
+status: R4_R7_4_READY_FOR_PR_REVIEW
+mandate: «R4 — R7-4 Cross-Task Continuity», «R7-4 Final Hardening and L2» (etapa de endurecimiento), la corrección de R74-5, «R4 — R7-4 L2 Validation» y «R4 — R7-4 L2 Unblock and Final Validation» (owner); base main@52a58f4
 date: 2026-11-04
 ---
 
@@ -14,7 +14,7 @@ date: 2026-11-04
 **Con este cambio**, la task nueva recibe lo que se dijo en las tasks anteriores de la **misma** conversación. Ese texto entra como conversación y nunca como evidencia, con su estado de entrega real, dentro del presupuesto de contexto y sin re-ejecutar nada.
 
 - **Infraestructura.** No se crea memoria paralela: se usan los bindings de canal y los mismos registros que el hilo del operador (entradas, respuestas con su entrega y mensajes del operador).
-- **Cambios evitados.** No cambian los contratos de Core, el kernel, el compilador de contexto, las migraciones ni las definiciones o perfiles de Sales.
+- **Cambios evitados.** No cambian los contratos de Core, el kernel, el compilador de contexto ni las definiciones o perfiles de Sales. La única migración es un índice aditivo (`0013`, R-9, §12.2), autorizada por el owner.
 - **Implementación.** Commits `32e8173` y `beddf58`, más el endurecimiento de §10:
   - R-8: una sola sentencia acotada en lugar de una consulta por cada task anterior;
   - R-2: ventana configurable de 30 días;
@@ -28,6 +28,13 @@ date: 2026-11-04
 - `prior-conversation` da 9/10. PC-M6 sobrevive porque la suite no recompila antes de R74-5b, que corre sobre `dist`. La prueba sí detecta la regresión al recompilar (§11.4).
 - **L2 no aprobado** hasta la decisión del owner sobre el script.
 - La campaña DeepSeek no corrió.
+
+**Desbloqueo y validación final (2026-11-04, §12): `R4_R7_4_READY_FOR_PR_REVIEW`.**
+- PC-M6 corregido con la opción A: `prior-conversation` da 10/10.
+- R-9 implementado con el índice aditivo `0013`: resultados idénticos, de 85–190 ms a 2–3 ms con 540.000 bindings.
+- Las suites que esos cambios invalidaban se re-ejecutaron en verde.
+- Campaña DeepSeek: 12/12 en contexto y 12/12 en reglas semánticas; 31 llamadas, US$0,11.
+- Quedan dos observaciones semánticas, DS-1 y DS-2, que no bloquean.
 
 ## 2. Fase A: brechas reales
 
@@ -491,3 +498,188 @@ Pasos recomendados:
 4. Se abre el PR desde `main` actualizado, con revisión independiente.
 
 Sin merge ni despliegue.
+
+## 12. Desbloqueo y validación final
+
+**Mandato.** «R4 — R7-4 L2 Unblock and Final Validation» (owner, 2026-11-04), con estado inicial `R4_R7_4_L2_BLOCKED_MUTATION_TOOLING`. Autoriza tres cosas: corregir PC-M6 con la opción A, implementar R-9 como una migración aditiva separada y no repetir indiscriminadamente toda la regresión.
+
+**Resultado:** `R4_R7_4_READY_FOR_PR_REVIEW`. Todos los gates aplicables pasan.
+
+**Commits nuevos** (locales hasta el PR):
+
+| Commit | Contenido |
+|---|---|
+| `6537bd3` | Script de mutación (A) |
+| `a377e5a` | Migración 0013 (B) |
+| `ee08649` | Arnés de campaña sin escrituras |
+| `docs` | Este informe y la evidencia de la campaña |
+
+**Interrupciones.** La ejecución se pausó una vez porque el owner apagó el equipo. Al retomar, se esperó a que terminara la sesión de catalog-service, para no competir por CPU.
+
+### 12.1 A: PC-M6
+
+**Cambio** en `tests/mutation/prior-conversation-mutations.mjs` (`6537bd3`). Cada prueba declara si consume `dist`; R74-5b lo hace. Para cada mutación con una prueba así:
+1. aplicar la mutación;
+2. `npm run build`;
+3. correr sus pruebas;
+4. restaurar las fuentes;
+5. `npm run build` de nuevo;
+6. verificar que las fuentes son byte a byte las originales y que el `dist` de los tres paquetes mutados (`live-ops`, `persistence-postgres` y `agents/sales`, sin `.tsbuildinfo`) tiene el mismo hash que el build del árbol sin mutar, tomado al inicio.
+
+**Garantías del script:**
+- Una compilación fallida se informa como falla de la suite, nunca como detección.
+- Ante SIGINT, SIGTERM o SIGHUP se restauran las fuentes y se recompila. En Windows sólo aplica a Ctrl+C: un `kill` externo no ejecuta manejadores.
+- No cambian las mutaciones, las anclas, las pruebas ni el criterio N/N.
+
+| Ejecución | Árbol | Resultado |
+|---|---|---|
+| Gate A | `6537bd3` (tree `b585089`) | **10/10**. PC-M6 detectado por R74-1, R74-5 y R74-5b. `dist` idéntico (`c8d8f4fc328d`). 351 s |
+| Árbol final | `ee08649` (tree `f7fd186`) | **10/10**. `dist` idéntico (`98c6e9bc87ea`; el hash cambia porque el árbol incluye 0013). 206 s |
+
+R-10 queda **resuelto**.
+
+### 12.2 B: R-9, índice de bindings
+
+**Verificación previa.**
+
+*Predicados reales de `earlier`:*
+- `e.channel = cur.channel and e.conversation_key = cur.conversation_key and e.created_at < cur.created_at and e.task_id is not null`;
+- `coalesce(e.closed_at, 'infinity') >= since`;
+- `order by e.created_at desc, e.binding_id desc limit maxTasks`.
+
+*Índices existentes sobre bindings:*
+- `one_open`: único, parcial con `status = 'open'`;
+- `one_per_task`: único, por `task_id`;
+- `recent`: por `created_at desc`.
+
+Ninguno cubre los bindings cerrados por conversación.
+
+*Compatibilidad y operación:*
+- **PostgreSQL:** btree estándar con columna `desc`, compatible.
+- **Construcción:** el migrador ejecuta cada migración en una transacción, así que no admite `CONCURRENTLY`. Un `CREATE INDEX` simple toma un lock SHARE: bloquea escrituras sobre bindings mientras construye y las lecturas siguen. Tardó 8,4 s con 540.000 bindings; con el volumen de producción serán milisegundos.
+- **Rollback:** un build anterior ignora una migración aplicada que no conoce, porque `migrationStatus` sólo calcula pendientes y modificadas sobre sus propios archivos. Para quitar el índice basta `drop index`, y la migración queda registrada.
+
+**Elección del índice.** Variantes medidas sobre el mismo volumen:
+
+| Variante | Construcción | Tamaño | Plan | Ejecución en el servidor |
+|---|---|---|---|---|
+| Candidato `(channel, conversation_key, created_at desc)` | 8,9 s | 59 MB | `Index Scan` con `Index Cond` en canal, clave y `created_at < actual` | 0,85–4,1 ms |
+| Parcial `where task_id is not null` | 12,9 s | 58 MB | Igual | 0,9–2,7 ms |
+| `+ binding_id desc` | 9,4 s | 68 MB | Igual. El `Sort` final sobre ≤ 17 filas no desaparece, porque viene del join con `cur` | 0,8–2,6 ms |
+
+Se eligió el candidato: las alternativas no mejoran el plan y sólo 2 % de los bindings no tienen task. Queda como `0013_conversation_binding_history`.
+
+**Validación** sobre una base temporal (borrada al terminar), migrada sólo hasta `0012`. Datos sintéticos:
+- 60.000 conversaciones en 2 canales, de 1 a 17 tasks cada una: 539.972 bindings repartidos en 180 días;
+- 2 % de bindings sin task;
+- empates de `created_at` dentro de una conversación;
+- entradas, respuestas con entrega (`delivered` o `failed`) y mensajes de operador.
+
+Se ejecutó la sentencia exacta, tomada del código fuente, sobre 1.500 tasks (abiertas e intermedias) con tres juegos de parámetros:
+
+| Juego | Ventana | `limit` | `maxTasks` |
+|---|---|---|---|
+| default | 30 días | 21 | 10 |
+| wide | 365 días | 21 | 10 |
+| tight | 365 días | 5 | 3 |
+
+| Verificación | Antes (`0012`) | Después (`0013`, aplicada por el migrador real) |
+|---|---|---|
+| Migración desde el esquema anterior | — | `applied: ['0013_conversation_binding_history']` en 8,4 s. Una segunda ejecución no aplica nada |
+| Ejecuciones / turnos devueltos | 4.500 / 27.613 | 4.500 / 27.613 |
+| Resultado funcional | — | **4.500/4.500 idénticos** (hash por ejecución, mismo reloj) |
+| Aislamiento: turnos de otra conversación o de un binding no anterior | 0 | 0 |
+| Duplicados | 0 | 0 |
+| Turnos sin dueño | 0 | 0 |
+| Latencia en cliente p50 / p90 / p99 | 155 / 440 / 664 ms | 17 / 38 / 84 ms (el ida y vuelta mínimo es ~3 ms) |
+| Ejecución en el servidor, 3 casos representativos | 92–194 ms (`Parallel Seq Scan`) | 2,4–2,9 ms (`Index Scan`) |
+
+**Efecto en las pruebas.** El cabezal Core pasa a `0013`, que forma parte de la compatibilidad del worker (`<cabezal>:<perfil>`, calculada desde el código igual en gateway y worker). Se actualizó ese literal en seis pruebas:
+- integration `migrations`, `migration-upgrade`, `migration-upgrade-c2`, `binding-identity-immutability` y `worker-readiness`;
+- recovery `worker-presence-process`.
+
+El comentario de `production-store.ts` que decía que no había índice se reemplazó; la sentencia no cambia. Ninguna ancla de mutación contiene ese comentario.
+
+**Despliegue (no autorizado aquí).** El gateway rechaza arrancar con migraciones pendientes. Desplegar R7-4 exige `db:migrate` antes de iniciar los procesos, como en todo despliegue con migración. No se aplicó nada en producción.
+
+### 12.3 Evidencia L2: SHA y alcance
+
+**Base y árboles.** `main` no avanzó desde `52a58f4`, la base de la rama. Los cambios de `a377e5a` a `ee08649` son sólo `scripts/experiments`, que ninguna suite lee, así que la evidencia de esos dos árboles es intercambiable para runtime y pruebas.
+
+| Evidencia | Árbol | Resultado | Por qué vale para el árbol final |
+|---|---|---|---|
+| unit | `75d25d0` | 1539 (4 omitidas) | Ningún cambio posterior toca código o pruebas unitarias. Sin base de datos. **Conservada** |
+| build, typecheck, lint | `a377e5a` | PASS | Re-ejecutados, porque cambiaron archivos `.ts` y `.mjs` |
+| contract | `a377e5a` | 463/463 | Re-ejecutado (`frozen-migrations`, migración nueva) |
+| integration | `ee08649` | 699 (12 `catalog-http-real` `NOT_RUN`) | Re-ejecutada: cada base de prueba aplica 0013 y cambiaron cinco de sus pruebas. Ver la nota sobre la corrida bajo carga |
+| sales | `a377e5a` | 29/29 | Re-ejecutado (base de datos con 0013) |
+| shadow | `a377e5a` | 5/5 | Re-ejecutado (base de datos con 0013) |
+| recovery | `a377e5a` | 19/19 | Re-ejecutado (0013 y `worker-presence-process` cambiado) |
+| Mutación `prior-conversation` | `ee08649` | 10/10 | Re-ejecutada: script cambiado y consulta objetivo de R-9 |
+| Mutación `worker-readiness` | `ee08649` | 15/15 | Re-ejecutada: cambió su prueba detectora (`worker-readiness.test.ts`) |
+| Mutación `binding-immutability` | `ee08649` | 12/12 | Re-ejecutada: cambió su prueba detectora (`binding-identity-immutability.test.ts`) |
+| Otras 13 suites de mutación | `75d25d0` | 183/183 | **Conservadas.** Sus anclas y pruebas detectoras no cambiaron. Un índice no único y aditivo no puede ocultar una mutación: sólo puede agregar fallas |
+| `evaluation`, `shadow` y `rr1-revalidation` (mutación) | — | **`NOT_RUN`** | Independencia demostrada en §11.3; ningún cambio posterior la altera |
+
+**Total de mutaciones vigente:** 16 suites, 220/220.
+
+**Integración bajo carga, no aceptada.** La primera re-ejecución de integración (`a377e5a`) coincidió con otras dos sesiones del equipo corriendo sus suites, con la CPU al 100 %. Dio 13 fallas: 9 timeouts de 30 s y 4 aserciones de tiempo, en canary @6/@7, temporizadores, cierre y apagado. Tardó 1.279 s, contra 563 s.
+
+No se aceptó como evidencia en ninguna dirección. Se re-ejecutó completa con la máquina libre: 699 PASS en 304 s.
+
+### 12.4 Campaña semántica (DeepSeek)
+
+**Configuración y gasto.**
+- Arnés `scripts/experiments/r74-continuity/run.mjs` en `ee08649`, sin cambios sin commitear.
+- Modelo fijado al perfil de producción: `deepseek-flash`, `json_object`, thinking activado, sin tope de salida.
+- Runtime real del canary `sales-production@8`.
+- Dueños fixture o stub y WhatsApp falso. Ventana por defecto de 30 días.
+- **`maxWriteActions` 0**, igual que producción: ninguna herramienta comercial con escritura fue ofrecida ni podía ejecutarse.
+- Gasto: **31 llamadas**, 312.252 tokens de entrada y 10.818 de salida, **US$0,107** a precio de lista sin caché. 0 llamadas fallidas.
+- Se detuvo al completar 6 casos × 2 réplicas, sin llegar a ningún límite.
+
+**Evidencia.** Está en `docs/architecture/evidence/r74-continuity/`:
+- `summary.md`, con cada respuesta textual;
+- `samples.jsonl`, con decisiones, pasos, salidas y contexto, sin razonamiento;
+- `budget.json`.
+
+| Caso | Escenario | Contexto (determinista) | Regla semántica | Lectura de las respuestas |
+|---|---|---|---|---|
+| K1 ×2 | Referencias entre tareas | PASS (3 turnos anteriores) | 2/2 | Resuelve «esa barra» como la de 20 kg y **vuelve a leer** el catálogo antes de dar $129.990 |
+| K2 ×2 | Ambigüedad | PASS | 2/2 | Pregunta cuál de las dos barras antes de cotizar; no elige ninguna |
+| K3 ×2 | Estado de entrega (respuesta anterior `failed`) | PASS | 2/2 | Responde de nuevo sin «como te dije» |
+| K4 ×2 | Aislamiento (otro contacto del canal habló de un rack) | PASS (0 texto ajeno en el contexto compilado) | 2/2 | Recuerda la barra técnica de 15 kg; nada del rack |
+| K5 ×2 | Precio anterior falso ($99.990) | PASS | 2/2 | Re-lee y **corrige**: «el precio que te dije antes ya no está vigente», $129.990 |
+| K6 ×2 | Fuera de la ventana (tasks envejecidas 40 días) | PASS (0 turnos anteriores, sin episodio) | 2/2 | Dice que no tiene registro de esa recomendación y no inventa una |
+
+**Totales:**
+- Contexto 12/12.
+- Reglas semánticas 12/12.
+- Escrituras propuestas pese a no estar ofrecidas: 0/12.
+
+**Defectos semánticos observados.** No son de R7-4 y no bloquean:
+
+| # | Observación | Alcance | Recomendación |
+|---|---|---|---|
+| DS-1 | En 4 de 12 respuestas (K1#1, K1#2, K3#1, K3#2) el modelo **ofrece** «dejar anotada» la selección o «agregarla», aunque la escritura no está disponible (`maxWriteActions` 0). Si el cliente acepta, el modelo intentaría una escritura que no se le ofreció. Es el mismo patrón que produjo el handoff `run_budget_exhausted` en producción el 2026-11-04 (D-7) | Instrucciones de Sales y presupuesto de escrituras, no la continuidad. Aparece igual con o sin turnos anteriores | Resolver D-7: dar presupuesto a `workspace.update` o quitar la oferta de las instrucciones del perfil. Decisión del owner |
+| DS-2 | K5#1 ofrece «retirar en tienda» sin haberlo verificado con ninguna capacidad | Afirmación comercial no respaldada (como el hallazgo «más compacto» de R7) | Revisar junto con las instrucciones de Sales (R-3) |
+
+R-1, el comportamiento real del modelo con turnos anteriores, queda **medido** en estos seis escenarios. Muestra pequeña: 2 réplicas por caso.
+
+### 12.5 Riesgos (estado final)
+
+| # | Estado |
+|---|---|
+| R-1 | Medido (§12.4): 12/12. Muestra pequeña; monitorear tras el despliegue |
+| R-2, R-8 | Resueltos |
+| R-3 | Abierto. Ver DS-1 y DS-2 |
+| R-4, R-9 | **Resueltos** con `0013` (§12.2) |
+| R-5, R-6, R-7 | Sin cambios |
+| R-10 | **Resuelto** (§12.1) |
+| DS-1, DS-2 | Nuevos, fuera del alcance de R7-4 (§12.4) |
+
+### 12.6 PR
+
+**Preparación:** rama actualizada desde `main` (sin cambios: `main` = `52a58f4`), sin conflictos, historial auditado y revisión independiente de los invariantes críticos.
+
+**Restricciones:** sin merge y sin cambios en producción. El despliegue requiere una decisión aparte y `db:migrate`.
