@@ -13,12 +13,12 @@ import {
 import { SalesClaimVerifier } from './claims.js';
 import { SalesCorrectionEvaluator, SalesQuoteEvaluator, operationClaimDetector, quoteClaimDetector, salesKnownState, salesQuestionClassifier, salesWorkspaceHistories } from './evaluators.js';
 import { salesDomainView } from './projection.js';
-import { SALES_CLAIM_EXTRACTION_RUBRIC, SALES_OBJECTIVE_RUBRIC, SALES_QUESTION_RUBRIC } from './rubrics.js';
+import { SALES_CLAIM_EXTRACTION_RUBRIC, SALES_DS1_RUBRIC, SALES_OBJECTIVE_RUBRIC, SALES_QUESTION_RUBRIC } from './rubrics.js';
 import { salesTaxonomy } from './taxonomy.js';
 
 export const SALES_EVALUATION_ID = 'sales.reference';
-/** 2: adds the DS-1 operation-claim evaluator (`operation_claim_without_receipt`). */
-export const SALES_EVALUATION_VERSION = 2;
+/** 2: DS-1 operation-claim evaluator (`operation_claim_without_receipt`). 3: DS-1 semantic rubric (judge only). */
+export const SALES_EVALUATION_VERSION = 3;
 
 /**
  * The Sales evaluation definition (R4-G): the generic deterministic
@@ -50,6 +50,8 @@ export function salesEvaluationDefinition(): EvaluationDefinition {
       }),
       new RubricEvaluator({ ref: { id: 'sales.objective_continuity', version: 1 }, rubric: SALES_OBJECTIVE_RUBRIC, description: 'Whether the trajectory kept serving the customer objective (incidental questions, corrections, waits).', assessesObjective: true }),
       new RubricEvaluator({ ref: { id: 'sales.question_quality', version: 1 }, rubric: SALES_QUESTION_RUBRIC, description: 'Necessary vs redundant / already-known / unnecessary questions, in context.' }),
+      // DS-1 semantic detection (judge only; inconclusive without one): implicit confirmations, unavailable offers, unverified commitments.
+      new RubricEvaluator({ ref: { id: 'sales.ds1_commitments', version: 1 }, rubric: SALES_DS1_RUBRIC, description: 'DS-1: implicit confirmations of changes no capability made, offers of unavailable operations, unverified commercial commitments.' }),
       new RubricEvaluator({ ref: { id: 'r4.action_timing', version: 1 }, rubric: ACTION_TIMING_RUBRIC, description: 'Premature or unnecessarily delayed governed writes.' }),
       new RubricEvaluator({ ref: { id: 'r4.capability_choice', version: 1 }, rubric: CAPABILITY_CHOICE_RUBRIC, description: 'Wrong capability or missing required read.' }),
     ],

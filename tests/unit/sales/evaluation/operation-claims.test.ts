@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SubjectResponse } from '@r4/evaluation';
-import { NO_CAPABILITY, SalesFixture, evaluateSalesSubject, operationClaimDetector } from '@r4-sales/agent/evaluations';
+import { NO_CAPABILITY, SalesFixture, evaluateSalesSubject, operationClaimDetector, salesEvaluationDefinition, salesTaxonomy } from '@r4-sales/agent/evaluations';
 
 const kinds = (text: string) => operationClaimDetector.detect({ responseId: 'r', text } as SubjectResponse).map((c) => c.capabilityId);
 const evaluate = (f: SalesFixture) => evaluateSalesSubject(f.build(), { judge: null, modelUnderTest: null, repro: { gitSha: 'unknown' } });
@@ -39,6 +39,25 @@ describe('DS-1 operation-claim detector (completed effects only)', () => {
 
   it('one claim per kind per response', () => {
     expect(kinds('Anoté el rack. También anoté la barra.')).toEqual(['sales.workspace.update']);
+  });
+});
+
+describe('DS-1 semantic rubric (detection with a judge; separate from the deterministic detector and from prevention)', () => {
+  it('is wired, its codes are semantic Sales codes, and without a judge it reports nothing', async () => {
+    const rubric = salesEvaluationDefinition().evaluators.find((e) => e.descriptor.ref.id === 'sales.ds1_commitments');
+    expect(rubric?.descriptor.kind).toBe('semantic');
+    const taxonomy = salesTaxonomy();
+    for (const code of ['implicit_change_confirmation', 'unavailable_operation_offered', 'unverified_commercial_commitment']) {
+      expect(taxonomy.get(code), code).toMatchObject({ detection: 'semantic', origin: 'sales' });
+    }
+    const f = new SalesFixture({ id: 'ds1-implicit-no-judge' });
+    f.turn('Mejor cámbialo a dos unidades');
+    f.respond('Listo, dos unidades de la Barra olímpica 20 kg.');
+    f.wait();
+    const codes = (await evaluate(f)).run.result.findings.map((x) => x.code);
+    expect(codes).not.toContain('implicit_change_confirmation');
+    // The deterministic detector does not see an implicit confirmation either: that is why the rubric exists (round 1, D4#B).
+    expect(codes).not.toContain('operation_claim_without_receipt');
   });
 });
 
