@@ -1,7 +1,7 @@
 ---
-title: R4-J5 — D-7, autonomía de las operaciones comerciales (propuesta de decisión)
-status: PROPUESTA — pendiente de decisión del owner. No autoriza cambios
-mandate: «R4 — J5 Transition and R7-4 Documentation Closure» (owner, 2026-11-05), §C
+title: R4-J5 — D-7, autonomía de las operaciones comerciales (decisión)
+status: R4_J5_D7_APPROVED_WITH_DOCUMENTATION_CHANGES — D7-1, D7-2, D7-4, D7-5 y D7-7 aprobadas; D7-3 corregida por el owner; D7-6 pendiente de F6; D7-8 aceptada provisionalmente (§10). No autoriza cambios productivos
+mandate: «R4 — J5 Transition and R7-4 Documentation Closure» (owner, 2026-11-05), §C; «R4 — J5 D-7 Owner Decision» (owner, 2026-11-05)
 date: 2026-11-05
 base: main 3e2d1ea
 depends-on: R4_R7_4_FOLLOWUPS_AND_SALES_BACKLOG.md §B–§C, R4_J5_COMMERCIAL_INTEGRATION_READINESS.md §4 y §7, R4_J5_F0_PLAN.md, ADR-016, ADR-017, ADR-018, ADR-034, ADR-035, ADR-043, R4_J4_R7_3_SCOPE_PROPOSAL.md
@@ -16,14 +16,15 @@ D-7 nació como una revisión técnica: `maxWriteActions` es de alcance task y c
 separada que defina **qué escrituras puede hacer el agente, con qué presupuesto y con qué aprobación**
 ([backlog §C](R4_R7_4_FOLLOWUPS_AND_SALES_BACKLOG.md)).
 
-Este documento reúne los hechos (§1–§9) y propone ocho decisiones (§10). **Nada cambia con este documento:**
+Este documento reúne los hechos (§1–§9) y registra la decisión del owner sobre ocho puntos (§10). **Nada cambia
+en producción con este documento:**
 
 - `maxWriteActions` sigue en 0 en producción.
 - No cambia ninguna política productiva ni el perfil `sales-production@3`.
 - Quote y Checkout siguen inactivos.
 - G0 sigue `NOT_APPROVED`. F1 y F2 no están autorizados.
 
-**Tesis de la propuesta.** La autonomía se decide **por operación**, con el Policy Engine y los gates de cada
+**Principio (D7-1, aprobado).** La autonomía se decide **por operación**, con el Policy Engine y los gates de cada
 capacidad. `maxWriteActions` es un techo de seguridad por task y no sirve como instrumento de política. Hoy es 0 y
 cumple las dos funciones a la vez. Por eso el primer síntoma (DS-1) fue un handoff y no una denegación explicada.
 
@@ -183,23 +184,25 @@ condiciona al siguiente:
    proveedor y orden sólo tras pago confirmado por el proveedor. Corresponde a F-3, F-5 y F-6 del gate financiero.
 
 **Relación con DS-1.** El requisito DS-1 es el reverso de esta cadena: el agente sólo puede afirmar un efecto si
-existe un recibo. Hoy:
+una capacidad autorizada lo ejecutó y existe su recibo. Hoy hay dos piezas parciales:
 
-- la única verificación de afirmaciones contra recibos es offline: `ReceiptBackedClaimEvaluator`
-  (`packages/evaluation/src/evaluators/governance.ts:83-124`);
-- Sales sólo la conecta para cotizaciones (`quote_claim_without_receipt`,
-  `agents/sales/src/evaluations/evaluators.ts:25-36`);
-- no cubre afirmaciones de registro, reserva, modificación o programación;
-- el resto es una instrucción del perfil (`sales.v4.agent.json:7`).
+- **Instrucción del perfil** (`sales.v4.agent.json:7`): previene, pero depende de que el modelo la siga.
+- **Evaluación offline**: `ReceiptBackedClaimEvaluator` (`packages/evaluation/src/evaluators/governance.ts:83-124`)
+  contrasta afirmaciones con recibos.
+  - Sales sólo la conecta para cotizaciones (`quote_claim_without_receipt`,
+    `agents/sales/src/evaluations/evaluators.ts:25-36`).
+  - No cubre afirmaciones de registro, reserva, modificación o programación.
+  - Detecta después de los hechos. **No impide, por sí sola, una promesa incorrecta en producción.**
 
-Ampliar el detector de Sales cumple DS-1 **fuera del kernel**: el evaluador genérico ya existe.
+Ninguna comprobación en tiempo de ejecución compara el texto de una respuesta con los recibos. Las tres capas de
+DS-1 están en D7-3 (§10).
 
 ## 9. Compatibilidad con F0–F8
 
 | Fase | Escrituras del agente | Qué exige de D-7 |
 |---|---|---|
 | F0: decisiones y contratos | Ninguna | Esta decisión. No cambia producción |
-| F1: cotización productiva | `quote.create` (IRREVERSIBLE, autónoma, ADR-043); el workspace si se usa `record_quote_request` | **Techo > 0** en el perfil que lleve F1; límites ADR-034 aprobados (GAP-12); DS-1 implementado antes |
+| F1: cotización productiva | `quote.create` (IRREVERSIBLE, autónoma, ADR-043); el workspace si se usa `record_quote_request` | **Techo > 0** en el perfil que lleve F1; límites ADR-034 aprobados (GAP-12); DS-1 implementado y validado con mandato propio antes de habilitar escrituras (D7-3) |
 | F2: catálogo vigente | Ninguna | Nada |
 | F3: identidad real | `identity.start_verification` (EXTERNAL_COMMUNICATION) | La decisión ya está en `@8` (ALLOW); el techo debe contarla |
 | F4: carrito técnico en Quote | Ninguna del agente: el carrito lo crea Quote (C-2) | Nada |
@@ -211,26 +214,67 @@ Ampliar el detector de Sales cumple DS-1 **fuera del kernel**: el evaluador gen�
 La propuesta es compatible con F0–F8: no adelanta ninguna fase y fija, para cada una, la condición de escritura que
 deberá cumplir cuando el owner la autorice.
 
-## 10. Decisiones propuestas
+## 10. Decisión del owner (2026-11-05)
 
-Cada una necesita la decisión del owner. Ninguna se implementa sin mandato propio, y cada implementación trae su
-prueba, su mutación y, si toca el comportamiento comercial, una campaña acotada con el modelo real.
+Ninguna decisión se implementa sin mandato propio. Cada implementación trae su prueba, su mutación y, si toca el
+comportamiento comercial, una campaña acotada con el modelo real.
 
-| ID | Decisión | Opciones | Recomendación |
+**Una decisión aprobada fija la política, no la activa.** Activar cualquier fase sigue exigiendo su gate y una
+autorización específica.
+
+| ID | Decisión | Estado | Contenido |
 |---|---|---|---|
-| **D7-1** | Modelo de autonomía | (a) Un número global (`maxWriteActions`) decide qué puede hacer el agente. (b) La autonomía se decide por operación (perfil, Policy Engine y gates de la capacidad), y `maxWriteActions` es sólo un techo de seguridad por task | **(b)** |
-| **D7-2** | `@3` en producción | (a) Se mantiene en 0. (b) Se habilita `workspace.update` con un techo bajo | **(a)** hasta F1. `@3` no cotiza: habilitar el workspace sólo agregaría anotaciones sin efecto comercial, y antes exige DS-1 |
-| **D7-3** | Requisito previo a cualquier techo > 0 en producción | — | **DS-1 implementado en Sales:** instrucciones en una versión nueva del perfil y el detector de afirmaciones ampliado a registrar, reservar, modificar y programar (§8). Sin cambios en el kernel |
-| **D7-4** | Cotización autónoma (F1) | (a) Autónoma dentro de límites (ADR-043). (b) Con aprobación humana (`@4`) | **(a).** No depende de R7-3. Condiciones: límites ADR-034/035 aprobados (GAP-12), GAP-13 cerrado, gate de confirmación activo, kill switch probado y techo dimensionado contra `maxQuotesPerConversation` |
-| **D7-5** | Dimensionamiento del techo | (a) Un valor fijo. (b) Un valor derivado de los límites de la fase, revisado en cada fase | **(b).** El owner fija el valor junto con la autorización de F1. Debe cubrir las escrituras esperadas de una task y fallar con handoff si se excede |
-| **D7-6** | FINANCIAL (F6, D-06) | (a) ADR de autonomía FINANCIAL con identidad `verified` y límite de monto en la capacidad. (b) Aprobación humana | **Decidir antes de F6**, no ahora. Si se elige (b), depende de R7-3b (Approval Horizon Hold). Si se elige (a), depende de F3 (`verified`) |
-| **D7-7** | Aprobaciones en canales autónomos | — | Se mantiene la regla BLK-AP1: ningún perfil con REQUIRE_APPROVAL en un canal autónomo con clientes reales hasta que exista el Approval Horizon Hold. REQUIRE_APPROVAL queda para operaciones excepcionales (ADR-043) |
-| **D7-8** | Propuestas de escritura no ofrecidas | (a) Se mantiene el handoff `run_budget_exhausted`. (b) El runtime devuelve un rechazo al modelo (opción (c) de DS-1) | **(a).** El owner excluyó (b) del kernel. Con DS-1 y un techo dimensionado, el caso debería ser raro. Medirlo en la observación de cada fase |
+| **D7-1** | Modelo de autonomía | **APROBADA** | La autonomía se decide por operación (perfil, Policy Engine y gates de la capacidad). `maxWriteActions` es sólo un techo de seguridad por task |
+| **D7-2** | `@3` en producción | **APROBADA** | `@3` mantiene `maxWriteActions=0`. No cotiza, y habilitar el workspace sólo agregaría anotaciones sin efecto comercial |
+| **D7-3** | DS-1 antes de habilitar escrituras | **CORREGIDA** por el owner | Ver «D7-3: las tres capas de DS-1», debajo de esta tabla |
+| **D7-4** | Cotizaciones ordinarias (F1) | **APROBADA** | Autónomas y sin aprobación humana (ADR-043), sujetas a los gates existentes: ver la nota de D7-4 |
+| **D7-5** | Dimensionamiento del techo | **APROBADA** | Se dimensiona según las operaciones de cada fase y se revisa en cada una. El owner fija el valor junto con la autorización de la fase. Debe cubrir las escrituras esperadas de una task y fallar con handoff si se excede |
+| **D7-6** | FINANCIAL (F6, D-06) | **PENDIENTE DE F6** | Opciones: (a) una ADR de autonomía FINANCIAL con identidad `verified` y límite de monto en la capacidad, que depende de F3; (b) aprobación humana, que depende de R7-3b (Approval Horizon Hold) |
+| **D7-7** | Aprobaciones en canales autónomos | **APROBADA** | BLK-AP1 se mantiene hasta implementar el Approval Horizon Hold. Ningún perfil con REQUIRE_APPROVAL se usa en un canal autónomo con clientes reales. REQUIRE_APPROVAL queda para operaciones excepcionales (ADR-043) |
+| **D7-8** | Propuestas de escritura no ofrecidas | **ACEPTADA PROVISIONALMENTE** | Ver la nota de D7-8 |
+
+**Nota de D7-4: gates existentes.**
+
+- Los límites ADR-034 y ADR-035, con valores aprobados (GAP-12).
+- GAP-13 cerrado.
+- El gate de confirmación J3 activo: sólo puede denegar.
+- El kill switch probado.
+- La regresión que exige ADR-043: `sales-autonomous-quote`, `sales-confirmed-intent-*` y
+  `sales-deterministic-offer-*`.
+- El techo dimensionado contra `maxQuotesPerConversation`.
+
+No depende de R7-3. No activa F1.
+
+**Nota de D7-8: comportamiento provisional.**
+
+- Se conserva el comportamiento actual: el handoff `run_budget_exhausted`, sin cambios en el runtime. La opción (c)
+  de DS-1 queda excluida del kernel.
+- Los handoffs causados por presupuesto se registran y se cuentan en cada informe de observación y en cada fase.
+  La razón `run_budget_exhausted` ya queda en el handoff.
+- La decisión se revisa con esos datos.
+
+**D7-3: las tres capas de DS-1.**
+
+DS-1 exige que el agente no afirme haber registrado, reservado, modificado o programado una operación sin la
+confirmación de una capacidad autorizada. Se cumple con tres capas distintas, y ninguna sustituye a las otras:
+
+| Capa | Mecanismo | Qué garantiza | Qué no garantiza |
+|---|---|---|---|
+| **Prevención** | Instrucciones de Sales en una versión nueva del perfil. No se modifica un perfil publicado | Reduce las afirmaciones y ofertas sin respaldo | Depende del modelo: no es una garantía |
+| **Evaluación offline** | `ReceiptBackedClaimEvaluator` con un detector de Sales ampliado a registrar, reservar, modificar y programar | Mide la tasa de afirmaciones sin recibo en campañas y en la observación | **No impide por sí misma** una promesa incorrecta en producción: detecta después |
+| **Confirmación del efecto** | El efecto comercial sólo existe si un servicio autorizado lo ejecutó y emitió su recibo: Quote para cotizaciones y Checkout o el proveedor de pago para pagos (§8) | Ningún efecto existe sin su dueño. Las respuestas al cliente sobre un efecto deben apoyarse en ese recibo | No corrige el texto del modelo: por eso hacen falta las otras dos capas |
+
+Las tres capas viven en Sales o en los servicios dueños del efecto. **Nada se introduce en el kernel.**
+
+La implementación y la validación de DS-1 requieren un **mandato propio**, y deben completarse **antes de habilitar
+escrituras** en cualquier perfil productivo.
 
 ## 11. Qué no hace este documento
 
 - No aumenta `maxWriteActions` ni cambia ninguna variable o política productiva.
 - No registra capacidades ni crea perfiles.
 - No activa Quote ni Checkout.
-- No autoriza F1, F2, F6 ni despliegues.
+- No autoriza F1, F2, F6 ni despliegues. Aprobar D7-4 y D7-5 no fija valores de límites ni techos: se fijan con la
+  autorización de cada fase.
+- No autoriza implementar DS-1. Requiere su propio mandato.
 - No modifica el kernel.
