@@ -9,6 +9,7 @@ import type { ModelProvider } from '@r4/model-gateway';
 import {
   AutonomyControls,
   DeliveryStateContextSource,
+  PriorConversationContextSource,
   assertProductionComposition,
   assertProductionMode,
   capabilityAvailability,
@@ -208,7 +209,7 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
     bindings: {
       modelProvider: options.modelProvider,
       capabilities,
-      contextSources: [new SalesWorkspaceContextSource(sales), new DeliveryStateContextSource(options.store)],
+      contextSources: [new SalesWorkspaceContextSource(sales), new DeliveryStateContextSource(options.store), new PriorConversationContextSource(options.store, { windowDays: config.priorConversationDays })],
       actionPolicy: salesActionPolicyFor(profile),
       admission: controls,
       presence: { executionMode: 'production', runtimeProfile: profileLabel(profile) },

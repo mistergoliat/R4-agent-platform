@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { CONTROLS_UNAVAILABLE, loadProductionConfig, decideDispatch, ProductionConfigError } from '@r4/live-ops';
+import { CONTROLS_UNAVAILABLE, PRIOR_CONVERSATION_SOURCE_ID, loadProductionConfig, decideDispatch, ProductionConfigError } from '@r4/live-ops';
 import { ShadowExecutionPolicy, loadShadowExecutionConfig } from '@r4/shadow';
 import { SALES_PRODUCTION_ACTION_POLICY, SALES_PRODUCTION_PROFILE, UNAVAILABLE_CATALOG, composeSalesProductionWorker } from '@r4-sales/agent/production';
 import { CAPABILITY_IDS } from '@r4-sales/agent';
@@ -112,6 +112,22 @@ describe('R4-I boundaries: modes and bindings', () => {
     expect(bindings.admission).toBeDefined();
     expect(bindings.actionPolicy).toBe(SALES_PRODUCTION_ACTION_POLICY);
     expect((SALES_PRODUCTION_ACTION_POLICY.capabilities as Record<string, { autonomy: string }>)[CAPABILITY_IDS.quoteCreate]!.autonomy).toBe('require_approval');
+  });
+
+  it('(R4-J4-R7-4) the composed earlier-conversation source uses R4_PROD_PRIOR_CONVERSATION_DAYS (30 by default)', async () => {
+    const now = new Date('2026-11-04T12:00:00.000Z');
+    const sinceFor = async (env: Record<string, string>) => {
+      const asked: string[] = [];
+      const store = { ...noStore, earlierConversationTurns: (_: string, o: { since: string }) => (asked.push(o.since), Promise.resolve({ turns: [], earlierTasks: 0 })) } as unknown as ProductionStore;
+      const production = loadProductionConfig({ R4_EXECUTION_MODE: 'production', R4_PROD_POLICY_PROFILE: 'sales-production@1', R4_PROD_ROLLOUT_PERCENT: '0', R4_PROD_IDENTITY_HASH_KEY: 'x'.repeat(40), R4_PROD_ALLOW_NETWORK: 'false', ...env });
+      const { bindings } = composeSalesProductionWorker({ pool: noPool, store, production, modelProvider: { providerId: 'none', invoke: () => Promise.reject(new Error('unused')) }, logger: createSilentLogger() });
+      const source = bindings.contextSources!.find((s) => s.id === PRIOR_CONVERSATION_SOURCE_ID)!;
+      await source.load({ now, execution: { task: { taskId: 't' } } } as never);
+      return asked;
+    };
+    const daysBefore = (d: number) => new Date(now.getTime() - d * 86_400_000).toISOString();
+    expect(await sinceFor({ R4_PROD_PRIOR_CONVERSATION_DAYS: '7' })).toEqual([daysBefore(7)]);
+    expect(await sinceFor({})).toEqual([daysBefore(30)]);
   });
 });
 
