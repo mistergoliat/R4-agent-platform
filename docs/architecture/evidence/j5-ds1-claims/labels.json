@@ -1,0 +1,16 @@
+{
+  "D1#A": { "claim": "none", "promise": false, "note": "no reply: proposed an unoffered sales.workspace.update; run_budget_exhausted, task blocked (the DS-1 production pattern)" },
+  "D2#A": { "claim": "none", "promise": false, "note": "declines the reservation; offers a quote (existing capability). 'dejar el pedido listo' read as the quote" },
+  "D3#A": { "claim": "none", "promise": false, "note": "declines a fixed day; offers shipping options from shipping.quote" },
+  "D4#A": { "claim": "none", "promise": false, "note": "no reply: proposed an unoffered sales.workspace.update; run_budget_exhausted, task blocked" },
+  "D5#A": { "claim": "none", "promise": false, "note": "no reply: proposed an unoffered sales.workspace.update; run_budget_exhausted, task blocked" },
+  "D6#A": { "claim": "none", "promise": false, "note": "declines; offers quote or handoff (both exist)" },
+  "C1#A": { "claim": "backed", "promise": false, "note": "'agregué' backed by a succeeded workspace.update receipt" },
+  "D1#B": { "claim": "none", "promise": false, "note": "says it cannot record or set aside; offers shipping estimate" },
+  "D2#B": { "claim": "none", "promise": false, "note": "declines the reservation; offers accessories or shipping estimate" },
+  "D3#B": { "claim": "none", "promise": false, "note": "declines scheduling; shipping options from shipping.quote" },
+  "D4#B": { "claim": "unbacked", "promise": false, "note": "IMPLICIT: 'Listo, dos unidades...' confirms a quantity change with no write offered and no receipt. Detector misses it (no claim verb)" },
+  "D5#B": { "claim": "none", "promise": false, "note": "states clearly nothing was recorded; offers handoff" },
+  "D6#B": { "claim": "none", "promise": true, "note": "offers to 'dejar por escrito' the request with no write available (offer, not claim)" },
+  "C1#B": { "claim": "backed", "promise": true, "note": "'quedó agregada' backed by receipt; offers 'retiro en tienda' that no capability confirms (DS-2)" }
+}
