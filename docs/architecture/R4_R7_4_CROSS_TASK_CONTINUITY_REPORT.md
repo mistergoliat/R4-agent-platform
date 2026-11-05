@@ -528,7 +528,9 @@ Sin merge ni despliegue.
 
 **Garantías del script:**
 - Una compilación fallida se informa como falla de la suite, nunca como detección.
-- Ante SIGINT, SIGTERM o SIGHUP se restauran las fuentes y se recompila. En Windows sólo aplica a Ctrl+C: un `kill` externo no ejecuta manejadores.
+- **Restauración ante interrupciones.** La garantía real es el bloque `finally` de cada mutación: si un Ctrl+C mata la prueba hija, `spawnSync` retorna, la prueba se cuenta como `PASSED`/SURVIVED (el lado seguro) y el `finally` restaura las fuentes y recompila. Los manejadores de SIGINT/SIGTERM/SIGHUP sólo actúan cuando el script devuelve el control, porque es síncrono.
+- **Caso límite.** Si la interrupción cae durante la recompilación de restauración, el script se detiene con las fuentes ya restauradas, pero `dist` puede quedar desactualizado. En ese caso hay que correr `npm run build` antes de cualquier otra prueba de `dist`.
+- **Windows.** Un `kill` externo no ejecuta ningún manejador.
 - No cambian las mutaciones, las anclas, las pruebas ni el criterio N/N.
 
 | Ejecución | Árbol | Resultado |
@@ -678,8 +680,33 @@ R-1, el comportamiento real del modelo con turnos anteriores, queda **medido** e
 | R-10 | **Resuelto** (§12.1) |
 | DS-1, DS-2 | Nuevos, fuera del alcance de R7-4 (§12.4) |
 
-### 12.6 PR
+### 12.6 Revisión independiente de invariantes
 
-**Preparación:** rama actualizada desde `main` (sin cambios: `main` = `52a58f4`), sin conflictos, historial auditado y revisión independiente de los invariantes críticos.
+**Cómo se hizo.** La hizo un agente con contexto nuevo, al que se le entregó el código y no las conclusiones de este informe. Leyó el código, rastreó cada camino y corrió sólo unit `prior-conversation` (7/7) y contract `live-ops-boundaries` (19/19). No modificó nada.
+
+**Resultado.** Sin bloqueantes ni hallazgos mayores. Se mantienen la aislación, sólo tasks anteriores y sin duplicados, la autoridad, la migración y el arnés.
+
+| # | Hallazgo | Severidad | Disposición |
+|---|---|---|---|
+| IR-1 | El prefiltro `coalesce(e.closed_at, 'infinity') >= since` (`production-store.ts`) puede descartar un binding que todavía tiene un turno dentro de la ventana. Ver el escenario debajo de la tabla | Menor | **Abierto, decisión del owner.** La corrección es quitar el prefiltro, que `0013` ya vuelve innecesario para el costo. Cambia la sentencia validada: integración, las 6 suites que mutan `production-store.ts` y la equivalencia de R-9. Se propone como seguimiento con su validación focalizada |
+| IR-2 | Los avisos de plataforma (`origin = 'platform'`, ADR-041) de una task anterior no aparecen como turnos anteriores, aunque el contacto los haya recibido | Menor | Abierto. Seguimiento: agregar la rama `platform` con su entrega |
+| IR-3 | `earlierTurnsOmitted` es verdadero cuando hay exactamente `maxTasks` tasks anteriores, aunque no se haya omitido nada | Detalle | Abierto. Se corrige pidiendo `maxTasks + 1` |
+| IR-4 | `0013` no usa `if not exists`: un índice homónimo creado a mano la haría fallar | Detalle | Consistente con las demás migraciones. Queda como nota de despliegue: no crear el índice a mano |
+| IR-5 | Con `0013`, gateway y worker deben desplegarse con el mismo SHA. Si no, `/ready/r4` responde 503 `no_worker` por compatibilidad distinta | Nota | Ya es la regla de despliegue. Se agrega a las notas del PR |
+| IR-6 | Los manejadores de señal del script de mutación no corren durante el bucle síncrono. La restauración depende del `finally` | Menor | **Corregido en el texto** (§12.1). El comportamiento seguro se mantiene: una prueba interrumpida cuenta como SURVIVED |
+| IR-7 | La verificación de `dist` no confirma que el build mutado cambie `dist` | Detalle | Sólo puede producir falsos SURVIVED, nunca falsas detecciones. Sin cambio |
+| IR-8 | El tope en US$ del arnés puede excederse por una llamada, porque la reserva de US$0,02 puede ser menor que el costo real con thinking. El tope de 60 llamadas es estricto | Detalle | Sin efecto en esta campaña (US$0,107). Anotado |
+
+**Escenario de IR-1.**
+1. Una task T1 con una acción incierta queda con intención terminal, sin estar todavía terminal.
+2. Entra un mensaje: el binding B1 se cierra en t0 y se abre T2.
+3. Un operador responde a mano en T1 en t1.
+4. Si t0 < `since` ≤ t1, ese turno se pierde.
+
+Con desfase entre el reloj de la aplicación y el de la base de datos, también puede perderse un turno justo en el borde de la ventana.
+
+### 12.7 PR
+
+**Preparación:** rama actualizada desde `main` (sin cambios: `main` = `52a58f4`), sin conflictos, historial auditado y revisión independiente de los invariantes críticos (§12.6).
 
 **Restricciones:** sin merge y sin cambios en producción. El despliegue requiere una decisión aparte y `db:migrate`.
