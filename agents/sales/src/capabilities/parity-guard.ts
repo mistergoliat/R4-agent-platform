@@ -1,5 +1,7 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
+import { canonicalJson } from '@r4-adapters/domains';
 import type { CommercialBlocker } from './commercial-snapshot.js';
 
 /**
@@ -46,6 +48,23 @@ export interface QuoteParityLine {
 export interface QuoteParityGuard {
   /** A blocker when the line is outside the verified set, its verification is not current, or the owner's answer differs from what was verified. */
   check(line: QuoteParityLine, now: Date): CommercialBlocker | null;
+  /** SHA-256 of the canonical evidence, logged at composition: a replaced evidence file is never silent. */
+  readonly fingerprint: string;
+  readonly items: number;
+  readonly maxAgeSeconds: number;
+}
+
+/**
+ * Profiles that may compose quote.create only with the parity guard (R4-J5 F1, P-1): their composition refuses
+ * without it. Sales configuration, by profile label; the F1 canary profile is added with its definition.
+ */
+export const QUOTE_PARITY_REQUIRED_PROFILES: ReadonlySet<string> = new Set<string>();
+
+/** Throws when the profile requires the parity guard and none is configured (no silent fallback to unverified data). */
+export function assertQuoteParityConfigured(profileLabel: string, guard: QuoteParityGuard | null | undefined, required: ReadonlySet<string> = QUOTE_PARITY_REQUIRED_PROFILES): void {
+  if (required.has(profileLabel) && !guard) {
+    throw new Error(`refusing production composition: ${profileLabel} issues quotes only for the parity-verified SKU set, and none is configured (${QUOTE_PARITY_ENV.file}, ${QUOTE_PARITY_ENV.maxAgeSeconds})`);
+  }
 }
 
 export function createQuoteParityGuard(input: { readonly evidence: unknown; readonly maxAgeSeconds: number }): QuoteParityGuard {
@@ -61,6 +80,9 @@ export function createQuoteParityGuard(input: { readonly evidence: unknown; read
   }
   const maxAgeMs = input.maxAgeSeconds * 1000;
   return {
+    fingerprint: createHash('sha256').update(canonicalJson(parsed.data)).digest('hex'),
+    items: byKey.size,
+    maxAgeSeconds: input.maxAgeSeconds,
     check(line, now) {
       const at = { itemKey: line.itemKey };
       const verified = byKey.get(line.itemKey);

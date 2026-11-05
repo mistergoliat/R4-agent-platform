@@ -109,7 +109,7 @@ function world(options: { limits?: Partial<AutonomousQuoteLimitsV6>; owner?: Fix
   const limits = { ...LIMITS, ...options.limits };
   const state = { catalogPatch: null as null | ((item: CatalogItemContext) => CatalogItemContext | Promise<CatalogItemContext>), parity: options.parity ?? null };
   // (R4-J5 F1, P-1) Swappable, so a case can change the verified set between the preview and the issuance.
-  const parity: QuoteParityGuard | null = options.parity ? { check: (line, now) => state.parity?.check(line, now) ?? null } : null;
+  const parity: QuoteParityGuard | null = options.parity ? { ...options.parity, check: (line, now) => state.parity?.check(line, now) ?? null } : null;
   const catalog: CatalogPort = {
     search: (...a) => baseCatalog.search(...a),
     getProductContext: (...a) => baseCatalog.getProductContext(...a),
