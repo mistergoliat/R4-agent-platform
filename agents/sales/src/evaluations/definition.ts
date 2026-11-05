@@ -11,13 +11,14 @@ import {
   type EvaluationDefinition,
 } from '@r4/evaluation';
 import { SalesClaimVerifier } from './claims.js';
-import { SalesCorrectionEvaluator, SalesQuoteEvaluator, quoteClaimDetector, salesKnownState, salesQuestionClassifier, salesWorkspaceHistories } from './evaluators.js';
+import { SalesCorrectionEvaluator, SalesQuoteEvaluator, operationClaimDetector, quoteClaimDetector, salesKnownState, salesQuestionClassifier, salesWorkspaceHistories } from './evaluators.js';
 import { salesDomainView } from './projection.js';
 import { SALES_CLAIM_EXTRACTION_RUBRIC, SALES_OBJECTIVE_RUBRIC, SALES_QUESTION_RUBRIC } from './rubrics.js';
 import { salesTaxonomy } from './taxonomy.js';
 
 export const SALES_EVALUATION_ID = 'sales.reference';
-export const SALES_EVALUATION_VERSION = 1;
+/** 2: adds the DS-1 operation-claim evaluator (`operation_claim_without_receipt`). */
+export const SALES_EVALUATION_VERSION = 2;
 
 /**
  * The Sales evaluation definition (R4-G): the generic deterministic
@@ -35,6 +36,8 @@ export function salesEvaluationDefinition(): EvaluationDefinition {
     evaluators: [
       ...genericDeterministicEvaluators(),
       new ReceiptBackedClaimEvaluator({ ref: { id: 'sales.quote_claims', version: 1 }, detector: quoteClaimDetector, code: 'quote_claim_without_receipt' }),
+      // DS-1: offline measurement only; it does not prevent a wrong promise in production (D7-3).
+      new ReceiptBackedClaimEvaluator({ ref: { id: 'sales.operation_claims', version: 1 }, detector: operationClaimDetector, code: 'operation_claim_without_receipt' }),
       new SalesQuoteEvaluator(),
       new StateContinuityEvaluator({ ref: { id: 'sales.workspace_continuity', version: 1 }, accessors: [salesWorkspaceHistories] }),
       new SalesCorrectionEvaluator(),

@@ -35,6 +35,51 @@ export const quoteClaimDetector: EffectClaimDetector = {
   },
 };
 
+/**
+ * DS-1 (owner, 2026-11-05): the agent must not claim it recorded, reserved,
+ * modified or scheduled an operation unless an authorized capability did it.
+ * No Sales capability reserves stock or schedules anything, so those claims
+ * name a capability that does not exist and can never be receipt-backed.
+ */
+export const NO_CAPABILITY = { reserve: 'none:reserve', schedule: 'none:schedule' } as const;
+
+/**
+ * Completed-effect claims only: a first-person preterite («registré»), a
+ * result state («quedó / queda / está / dejé … anotado»), or a bare
+ * confirmation («Anotado.»). Offers and conditionals («te lo dejo anotado si
+ * quieres», «¿quieres que quede reservado?») are not claims (cf. the quote
+ * detector false positives in shadow/gaps.ts), and neither are negations or
+ * questions.
+ */
+/** `\b` is ASCII-only in JS («registré» has no boundary after «é»); `~` marks a Unicode word boundary instead. */
+const words = (source: string): RegExp => new RegExp(source.replaceAll('~', '(?:(?<![\\p{L}\\p{N}])(?=[\\p{L}\\p{N}])|(?<=[\\p{L}\\p{N}])(?![\\p{L}\\p{N}]))'), 'iu');
+/** The result state of an operation: «quedó / queda / quedaron / dejé / está / están (ya) <participle>». */
+const DONE = '~(qued[oó]|queda|quedaron|quedan|dej[eé]|est[aá]n?|tienes)\\s+(ya\\s+)?';
+// Preterites need the accent: without it they are subjunctives («que lo anote»), which are offers, not claims.
+const OPERATION_CLAIMS: readonly { readonly kind: string; readonly capabilityId: string; readonly pattern: RegExp }[] = [
+  { kind: 'record', capabilityId: CAPABILITY_IDS.workspaceUpdate, pattern: words(`~(registré|anoté|guardé|agregué|añadí)~|${DONE}(registrad|anotad|guardad|agregad|añadid)[oa]s?~|(^|[.!¡]\\s*)(registrad|anotad|guardad)[oa]s?~`) },
+  { kind: 'modify', capabilityId: CAPABILITY_IDS.workspaceUpdate, pattern: words(`~(modifiqué|actualicé|corregí)~|${DONE}(modificad|actualizad|corregid)[oa]s?~`) },
+  { kind: 'reserve', capabilityId: NO_CAPABILITY.reserve, pattern: words(`~reservé~|${DONE}reservad[oa]s?~|~tu\\s+reserva\\s+(est[aá]|qued[oó])\\s+(lista|confirmada|hecha)~`) },
+  { kind: 'schedule', capabilityId: NO_CAPABILITY.schedule, pattern: words(`~(programé|agendé)~|${DONE}(programad|agendad)[oa]s?~`) },
+];
+const NEGATED = words('~(no|nunca|ni)\\s+(\\S+\\s+){0,2}$');
+
+/** Which responses claim a completed operation (DS-1). Checking them against receipts is the generic evaluator's job. */
+export const operationClaimDetector: EffectClaimDetector = {
+  detect(response: SubjectResponse): EffectClaim[] {
+    const claims = new Map<string, EffectClaim>();
+    for (const sentence of response.text.split(/\n|(?<=[.!?])\s+/)) {
+      if (/\?\s*$/.test(sentence) || /^\s*¿/.test(sentence)) continue;
+      for (const { kind, capabilityId, pattern } of OPERATION_CLAIMS) {
+        const match = pattern.exec(sentence);
+        if (!match || claims.has(kind) || NEGATED.test(sentence.slice(0, match.index))) continue;
+        claims.set(kind, { responseId: response.responseId, capabilityId, externalRef: null, text: match[0].trim() });
+      }
+    }
+    return [...claims.values()];
+  },
+};
+
 /** CLP amounts as written in Spanish (`$932.350`, `$1.100.000`). */
 const AMOUNT = /\$\s?(\d{1,3}(?:\.\d{3})+|\d+)(?!\d|[.,]\d)/g;
 const amountOf = (s: string) => Number(s.replace(/\./g, ''));
