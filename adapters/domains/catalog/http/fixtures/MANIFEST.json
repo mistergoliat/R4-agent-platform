@@ -40,7 +40,7 @@
       "file": "product-simple.json",
       "endpoint": "GET /v2/catalog/products/{productKey}/context",
       "httpStatus": 200,
-      "sha256": "9d61bee81b213f63637c8b683a508e8d0f729a12d6416d9f9e688b41855a18c4"
+      "sha256": "0132fc4c05a514bed5a799271cff2083b8804e0af27057e724215760c0290f0c"
     },
     {
       "file": "product-with-fbt.json",
@@ -52,19 +52,19 @@
       "file": "product-with-variants.json",
       "endpoint": "GET /v2/catalog/products/{productKey}/context",
       "httpStatus": 200,
-      "sha256": "39ac3f540cea80aac62ec0a9c24412668a398fec6e7e7f17575ec9c09c6a8664"
+      "sha256": "e595432ff9488764eba8153b11ead380735bec52b7253ff843cddd563a8afdd4"
     },
     {
       "file": "product-inactive.json",
       "endpoint": "GET /v2/catalog/products/{productKey}/context",
       "httpStatus": 200,
-      "sha256": "ee1aaa96b231e7304b54972ccf5921e5203b1ba0b412c57d35b7891f7fd5913b"
+      "sha256": "671427ee9e889abf3cf42ee4618d24c40a4aac9f7988f24ee3323149c651b4f5"
     },
     {
       "file": "product-not-listed.json",
       "endpoint": "GET /v2/catalog/products/{productKey}/context",
       "httpStatus": 200,
-      "sha256": "27ac5218c73f62eeb44536fc31bfeb0fc04b2caf90d11d1ecd10f185da8e5a92"
+      "sha256": "f5cd0a224c788acab7dd2c94052135022c5426ecf4bd4b370aaf2039e2996bd9"
     },
     {
       "file": "product-not-found.json",
@@ -76,13 +76,13 @@
       "file": "item-simple.json",
       "endpoint": "GET /v2/catalog/items/{itemKey}/context",
       "httpStatus": 200,
-      "sha256": "52f24e8dd9827498237122e6ed9b1543753da7e46f2a7466564a2a615bdfa571"
+      "sha256": "24d04d0be7115471fb01fad62ebdfb57b8d867fc42b37c00b778f5a800d4982a"
     },
     {
       "file": "item-variant.json",
       "endpoint": "GET /v2/catalog/items/{itemKey}/context",
       "httpStatus": 200,
-      "sha256": "aa736bd712b175fb527a4e21ee307abb85d849008c480e91542d701a53015122"
+      "sha256": "09f3746c5869a3d2d17a1137ee9faabdd7a7bc27a19bb52bea9a283fd024d171"
     },
     {
       "file": "item-variant-required.json",
@@ -94,31 +94,43 @@
       "file": "item-promotion.json",
       "endpoint": "GET /v2/catalog/items/{itemKey}/context",
       "httpStatus": 200,
-      "sha256": "aad618ce2c383ad0a382c2ed7f5375a9bb0211dc70d5646f1bbe1bb5661331ad"
+      "sha256": "7e26c03f097fc8a37f43228a6c059258d8fb667407c36a638121dfe388939754"
     },
     {
       "file": "item-backorder.json",
       "endpoint": "GET /v2/catalog/items/{itemKey}/context",
       "httpStatus": 200,
-      "sha256": "6cea289fe694846fc698db474e9ee88d8aabe45f290b5632cd48f34a30e0cb1f"
+      "sha256": "d22ddc62dbe60df7f7e20469e89dc9d06e03e6a15bd78539a18b95a654695442"
     },
     {
       "file": "item-not-sellable.json",
       "endpoint": "GET /v2/catalog/items/{itemKey}/context",
       "httpStatus": 200,
-      "sha256": "c8da08dd81f189d6f7d6d5a69c21e76db1540172274f3d04bb66161ccb1f3542"
+      "sha256": "29769dcfb9ac822a3914330ccaab86034a7f6e6d3ed68e6b3c1124d548b6e5cc"
     },
     {
       "file": "item-stock-unknown.json",
       "endpoint": "GET /v2/catalog/items/{itemKey}/context",
       "httpStatus": 200,
-      "sha256": "5970bb18b4526e46382b0c508bc08cc71ce1f786b28ee2bd65ec4a39c8e1b6e3"
+      "sha256": "881d99f9e40f2fbd9ad0f2fe45dea98731bc0b9b9122d662d8d111f18a4795bd"
+    },
+    {
+      "file": "item-insufficient-stock.json",
+      "endpoint": "GET /v2/catalog/items/{itemKey}/context",
+      "httpStatus": 200,
+      "sha256": "02e5c8faeab1df6168449f0079ddb2521e4c2d770f0ebf53deb2068498f3a2fc"
+    },
+    {
+      "file": "item-insufficient-stock-backorder.json",
+      "endpoint": "GET /v2/catalog/items/{itemKey}/context",
+      "httpStatus": 200,
+      "sha256": "228aa2414fe2572f7eec2f5042b3ef2a1d6fca204b229b8e1a0ad03bcf8ca7f8"
     },
     {
       "file": "item-pricing-unavailable.json",
       "endpoint": "GET /v2/catalog/items/{itemKey}/context",
       "httpStatus": 200,
-      "sha256": "5dbeaaee7768ddd0096dbc6ee26127e85fc9309de33a5cc5ac5bb2bdc11a8ebe"
+      "sha256": "4eaf0bfd7a590d83f691dc5bbf738664b7bad029bc1f73b3b6be80b5727be89f"
     },
     {
       "file": "item-not-found.json",
