@@ -24,7 +24,9 @@
     "availableQuantity": 4,
     "sellability": "sellable",
     "reason": "in_stock",
-    "leadTime": null
+    "leadTime": null,
+    "requestedQuantity": 1,
+    "stockCoverage": "full"
   },
   "freshness": {
     "asOf": "2026-09-29T12:00:00.000Z",

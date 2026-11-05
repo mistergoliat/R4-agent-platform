@@ -42,7 +42,7 @@ describe('owner fixtures: one source of truth (catalog-service MANIFEST.json)', 
 
   it('covers every case the consumer must handle', () => {
     expect(manifest.fixtures.map((f) => `${f.httpStatus} ${f.file}`).sort()).toEqual([
-      '200 item-backorder.json', '200 item-not-found.json', '200 item-not-sellable.json', '200 item-pricing-unavailable.json', '200 item-promotion.json', '200 item-simple.json', '200 item-stock-unknown.json', '200 item-variant-required.json', '200 item-variant.json',
+      '200 item-backorder.json', '200 item-insufficient-stock-backorder.json', '200 item-insufficient-stock.json', '200 item-not-found.json', '200 item-not-sellable.json', '200 item-pricing-unavailable.json', '200 item-promotion.json', '200 item-simple.json', '200 item-stock-unknown.json', '200 item-variant-required.json', '200 item-variant.json',
       '200 product-inactive.json', '200 product-not-found.json', '200 product-not-listed.json', '200 product-simple.json', '200 product-with-fbt.json', '200 product-with-variants.json',
       '200 search-empty.json', '200 search-success.json', '200 search-truncated.json', '200 search-with-variants.json', '200 search-zero-stock-visible.json',
       '400 error-invalid-request.json', '401 error-unauthorized.json', '429 error-rate-limited.json', '503 error-source-unavailable.json',
@@ -51,6 +51,19 @@ describe('owner fixtures: one source of truth (catalog-service MANIFEST.json)', 
 });
 
 describe('Catalog contract (schemaVersion 1): additive evolution', () => {
+  it('engine v2.3.0 availability fields: optional (v2.2.0 answers lack them), together, and consistent with the stock', () => {
+    const base = catalogFixture('item-insufficient-stock.json') as { availability: Record<string, unknown> };
+    const schema = schemaFor('item-insufficient-stock.json');
+    const { requestedQuantity: _r, stockCoverage: _s, ...v220 } = base.availability;
+    const parses = (availability: Record<string, unknown>) => schema.safeParse({ ...base, availability }).success;
+    expect(parses(v220), 'v2.2.0 shape').toBe(true);
+    expect(parses({ ...v220, requestedQuantity: 5 }), 'requestedQuantity alone').toBe(false);
+    expect(parses({ ...v220, stockCoverage: 'partial' }), 'stockCoverage alone').toBe(false);
+    for (const coverage of ['full', 'none', 'unknown']) expect(parses({ ...base.availability, stockCoverage: coverage }), `4 of 5 is not ${coverage}`).toBe(false);
+    expect(parses({ ...base.availability, stockCoverage: 'empty' }), 'unknown coverage value').toBe(false);
+    expect(parses({ ...base.availability, requestedQuantity: 100 }), 'quantity above the contract range').toBe(false);
+  });
+
   it.each(answers.map((f) => f.file))('%s validates against the adapter schema', (file) => {
     const parsed = schemaFor(file).safeParse(catalogFixture(file));
     expect(parsed.success, parsed.success ? '' : JSON.stringify(parsed.error.issues)).toBe(true);

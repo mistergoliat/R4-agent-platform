@@ -59,7 +59,7 @@
   "inferred": {
     "frequentlyBoughtTogether": {
       "status": "unavailable",
-      "reason": "snapshot_unavailable"
+      "reason": "not_supported"
     }
   },
   "provenance": {
