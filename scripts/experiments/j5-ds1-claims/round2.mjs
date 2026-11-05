@@ -336,7 +336,9 @@ const answers = (s) => s.outbound.filter((o) => o.origin === 'agent').slice(s.sc
  */
 function summary() {
   const all = samples();
-  const valid = all.filter((s) => !s.setupFailed && !s.infra && !s.aborted);
+  // A sample the harness cut at its per-sample call cap before any reply is not a model outcome: invalid.
+  const capped = (s) => s.capReached && answers(s).length === 0;
+  const valid = all.filter((s) => !s.setupFailed && !s.infra && !s.aborted && !capped(s));
   const labels = existsSync(LABELS) ? JSON.parse(readFileSync(LABELS, 'utf8')) : {};
   const ledgerNow = existsSync(LEDGER) ? JSON.parse(readFileSync(LEDGER, 'utf8')) : null;
   const rows = [];
@@ -377,7 +379,7 @@ function summary() {
   for (const r of rows) {
     lines.push(`### ${r.key} — ${r.topic}`, '', `- Label: ${JSON.stringify(r.label ?? null)}`, `- Detector (unbacked): ${r.detector.join('; ') || 'none'}`, `- Receipts: ${r.receipts.join(', ') || 'none'}; unoffered write proposals: ${r.unoffered}; task: ${r.task?.status}${r.task?.reason ? ` (${r.task.reason})` : ''}; real calls: ${r.calls}`, '', '```text', r.text || '(no reply)', '```', '');
   }
-  for (const s of all.filter((x) => x.setupFailed || x.infra || x.aborted)) lines.push(`- INVALID ${s.caseId}#${s.condition}#${s.replica}: ${s.setupFailed ?? s.infra ?? s.aborted}`);
+  for (const s of all.filter((x) => x.setupFailed || x.infra || x.aborted || capped(x))) lines.push(`- INVALID ${s.caseId}#${s.condition}#${s.replica}: ${s.setupFailed ?? s.infra ?? s.aborted ?? 'harness per-sample call cap reached before any reply'}`);
   writeFileSync(join(args.root, 'summary.md'), `${lines.join('\n')}\n`);
   say(lines.slice(0, 16).join('\n'));
 }
