@@ -199,8 +199,18 @@ Decisiones P-1..P-8 del plan:
 
 ## 9. R7-4
 
-R7-4 avanza independientemente de Quote, en su propia rama local (`feat/r4-r7-4-cross-task-continuity`, `32e8173`).
-**No está terminado ni se solicita su aceptación.**
+**Actualización 2026-11-05: R7-4 CLOSED.** El código está en `main` `9078584` (PR #36). El owner aceptó la
+validación productiva y cerró la funcionalidad para el alcance aprobado
+([registro](R4_J5_F0_OWNER_DECISION_RECORD.md) §8). La evidencia final está en
+`R4_R7_4_CROSS_TASK_CONTINUITY_REPORT.md` §11–§13:
+
+- L2 con las suites de mutación seleccionadas por matriz (§12.3).
+- R74-5b: reinicio real del proceso en `tests/recovery` (§10.3 y §11.6). Cierra la brecha señalada abajo.
+- Una campaña acotada con el modelo real (§12.4).
+- La corrección IR-1 de la revisión final (§13).
+
+Los informes productivos quedan fuera del repositorio. La tabla siguiente es el estado al 2026-11-02 y se conserva
+como historial.
 
 | Requisito del owner | Estado (2026-11-02) |
 |---|---|
@@ -227,3 +237,6 @@ Pendiente del owner:
 - asignación de personas;
 - D-01..D-13;
 - P-1..P-8.
+
+Después de F0 (owner, 2026-11-05): preparar F1 (Quote V2) y F2 (Catalog con fuente comercial vigente). Ninguna se
+despliega sin autorización específica.

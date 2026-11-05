@@ -75,3 +75,18 @@ integración J5/Quote.
 - Sin perfiles productivos nuevos.
 - Sin activar `enforce`.
 - Sin llamadas a modelos de pago no autorizadas.
+
+## 8. Cierre de R7-4 y transición a J5 (owner, 2026-11-05)
+
+- **R7-4 queda cerrado** para el alcance aprobado, con la validación productiva aceptada. Sólo se modifica por
+  defectos materiales. Esto cumple §6.
+- **J5 está activo.** La prioridad es cerrar J5-F0 (G0 sigue sin aprobar) y preparar:
+  - F1: Quote V2;
+  - F2: Catalog con fuente comercial vigente.
+- **Despliegues comerciales:** ninguno sin autorización específica. Las restricciones de §7 siguen vigentes.
+- **DS-1:** es un requisito de Sales, no del kernel. El agente no puede afirmar que registró, reservó, modificó o
+  programó una operación sin confirmación de una capacidad que realmente haya ejecutado esa acción.
+- **D-7:** se mantiene la política de escritura productiva (`maxWriteActions=0`), que no se aumenta automáticamente.
+  La autonomía de las operaciones comerciales se resolverá en una decisión separada.
+
+Detalle: `R4_R7_4_FOLLOWUPS_AND_SALES_BACKLOG.md` §C.
