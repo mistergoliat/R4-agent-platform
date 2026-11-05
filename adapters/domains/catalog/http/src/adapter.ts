@@ -11,7 +11,7 @@ import {
   type CatalogSearchRequest,
   type DomainErrorCategory,
 } from '@r4-adapters/domains';
-import type { CatalogHttpConfig } from './config.js';
+import { catalogEnvOf, type CatalogHttpConfig } from './config.js';
 import {
   CATALOG_SCHEMA_VERSION,
   catalogErrorBodySchema,
@@ -124,7 +124,7 @@ export class HttpCatalogAdapter implements CatalogPort {
         if (signal.aborted) throw new DomainError('timeout', 'deadline_exceeded', 'the catalog did not answer before the deadline');
         throw new DomainError('temporarily_unavailable', 'catalog_unreachable', `the catalog could not be reached (${error instanceof Error ? error.name : 'error'})`);
       }
-      if (httpStatus !== 200) throw failureOf(httpStatus, text);
+      if (httpStatus !== 200) throw failureOf(httpStatus, text, catalogEnvOf(this.#config.source ?? 'v1')[1]);
       if (text.length > MAX_RESPONSE_CHARS) throw new DomainError('contract_violation', 'response_too_large', 'the catalog answer exceeds the contract size');
       let json: unknown;
       try {
@@ -166,10 +166,10 @@ function requireKey(value: string, name: string): void {
   if (!catalogKeySchema.safeParse(value).success) throw new DomainError('validation', 'invalid_request', `${name} is not a catalog key`);
 }
 
-function failureOf(status: number, text: string): DomainError {
+function failureOf(status: number, text: string, keyVar: string): DomainError {
   const code = ownerCode(text);
   if (status === 400) return new DomainError('validation', code ?? 'invalid_request', 'the catalog refused the request as invalid', { httpStatus: status });
-  if (status === 401 || status === 403) return new DomainError('unauthorized', code ?? 'unauthorized', 'the catalog refused R4 credentials; check R4_CATALOG_API_KEY', { httpStatus: status });
+  if (status === 401 || status === 403) return new DomainError('unauthorized', code ?? 'unauthorized', `the catalog refused R4 credentials; check ${keyVar}`, { httpStatus: status });
   if (status === 429) return new DomainError('temporarily_unavailable', 'rate_limited', 'the catalog is rate limiting R4', { httpStatus: status });
   if (status >= 500 && status <= 599) return new DomainError('temporarily_unavailable', code ?? 'catalog_unavailable', 'the catalog is temporarily unavailable', { httpStatus: status });
   // 404 included: the contract answers "not found" as data, so an HTTP 404 means a wrong route or a broken contract.
