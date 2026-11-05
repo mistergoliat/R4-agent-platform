@@ -488,7 +488,7 @@ Estado de los repositorios al 2026-11-05: Catalog `main` `5f2c086` y Quote `main
 | Quote R1.7 | **Pendiente** (Quote #32) | Owner Quote | Canary |
 | SHA de Quote + A10 en lockstep + verificación | Pendiente (Quote #32) | Owner Quote + owner R4 | Canary |
 | Vigencia de 60 min para el principal R4 | Pendiente (Quote #32) | Owner Quote | Canary |
-| Aceptación de DS-1 de v12 | **No aceptada**: residuo de retiro (§10.5). Corrección de texto evaluada en `R4_J5_F1_DS1_PICKUP_CORRECTION_REPORT.md` §8, pendiente de aceptación del owner | Owner | Canary |
+| Aceptación de DS-1 de v12 | **Texto aceptado** (`DS1_V12_TEXT_ACCEPTED`, en `main` 6962ae7); **release del canary no aceptado**; L3 requerida (`R4_J5_F1_DS1_PICKUP_CORRECTION_REPORT.md` §9) | Owner | Canary |
 | Muestra ambigua D5#A#2 (v7) | Adjudicada `UNSUPPORTED` (`R4_J5_F1_DS1_PICKUP_CORRECTION_REPORT.md` §5) | Owner | — (v7 no es la candidata) |
 | Rúbrica DS-1 con juez | Ejecutada en la ronda 3 (exploratoria); falta en L3 sobre los SHA exactos | Owner R4 | Canary |
 | GAP-11: alertas de `unknown`, `needs_reconciliation` y `run_budget_exhausted` | Por diseñar | Owner R4 + infraestructura | Canary |

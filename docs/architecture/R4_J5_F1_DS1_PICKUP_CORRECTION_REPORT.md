@@ -1,9 +1,9 @@
 ---
 title: R4-J5 F1 — Corrección DS-1 de retiro en tienda (v12 candidata)
-status: R4_J5_F1_DS1_PICKUP_FIX_READY_FOR_REVIEW — v12 sigue siendo candidata; nada registrado, activado ni desplegado
-mandate: «R4 — J5 F1 DS-1 Pickup Correction» (owner, 2026-11-05), estado de entrada R4_J5_F1_CANARY_CODE_MERGED_EXTERNAL_GATES_PENDING
+status: R4_J5_F1_DS1_TEXT_MERGED_L3_PENDING_EXTERNAL_GATES — texto v12 aceptado y fusionado (6962ae7); release del canary no aceptado; L3 requerida; nada registrado, activado ni desplegado
+mandate: «R4 — J5 F1 DS-1 Pickup Correction» (owner, 2026-11-05), estado de entrada R4_J5_F1_CANARY_CODE_MERGED_EXTERNAL_GATES_PENDING; «R4 — J5 F1 DS-1 Acceptance and PR #47 Merge» (owner, 2026-11-05, §9)
 date: 2026-11-05
-base: main bc5056a (PR #46 fusionado sobre 34f4230)
+base: main bc5056a (PR #46 fusionado sobre 34f4230); main 6962ae7 (PR #47 fusionado, §9)
 ---
 
 # R4-J5 F1 — Corrección DS-1 de retiro en tienda
@@ -216,6 +216,8 @@ Sin cambios ni intervención en esos servicios.
 
 ## 8. Gate DS-1 actualizado
 
+> Gate al cierre de la corrección. **La decisión del owner y el gate L3 vigentes están en el §9.**
+
 | Gate | Antes | Ahora | Responsable | Bloquea |
 |---|---|---|---|---|
 | Aceptación de DS-1 de v12 | No aceptada (retiro sin verificar: 3 de 21) | **Corrección implementada y evaluada; pendiente de aceptación del owner.** Retiro sin verificar: 0 de 9, control positivo correcto, juez 9 de 9 | Owner | Canary |
@@ -231,3 +233,86 @@ Sin cambios ni intervención en esos servicios.
 **Recomendación:** aceptar la corrección como texto candidato de v12. Antes del canary, confirmar con más réplicas en la
 L3, que es obligatoria de todos modos, incluida P1. No se declara DS-1 aprobado sólo por la ausencia de handoffs: no
 hubo ninguno en la campaña, y la evaluación se basa en las respuestas y la evidencia.
+
+## 9. Decisión del owner y gate L3 (mandato «R4 — J5 F1 DS-1 Acceptance and PR #47 Merge»)
+
+Estado autorizado por el mandato: `R4_J5_F1_DS1_TEXT_ACCEPTED_L3_PENDING`. Estado de salida:
+**`R4_J5_F1_DS1_TEXT_MERGED_L3_PENDING_EXTERNAL_GATES`**.
+
+### 9.1 Decisión registrada
+
+```text
+DS1_V12_TEXT_ACCEPTED           = true    # la cláusula de modalidad de entrega de v12, para el alcance del canary F1
+DS1_F1_CANARY_RELEASE_ACCEPTED  = false
+DS1_L3_REQUIRED                 = true
+```
+
+La aceptación del texto **no autoriza su despliegue ni demuestra confiabilidad semántica general.**
+
+### 9.2 Adjudicación de P5
+
+P5 queda como **`BORDERLINE_ACCEPTABLE_FOR_TEXT_REVIEW`**:
+
+- no se cuenta como evidencia inequívoca de cumplimiento;
+- es un caso adversarial obligatorio de la L3.
+
+| Métrica de la campaña (§4) | Antes | Con la adjudicación |
+|---|---|---|
+| Retiro ofrecido o afirmado sin evidencia | 0 de 9 | 0 de 9 (sin cambios) |
+| Retiro pedido o sugerido, respondido con «debe verificarse» | 3 de 3 | **2 inequívocas (P2, P3) + 1 limítrofe (P5)** |
+
+La etiqueta original de la campaña (`evidence/j5-ds1-pickup/labels.json`) no se modifica. La adjudicación está en
+`evidence/j5-ds1-pickup/adjudication.json`.
+
+### 9.3 PR #47
+
+| Verificación | Resultado |
+|---|---|
+| HEAD y base | HEAD `6663f85`, base `main` `bc5056a`, sin conflictos |
+| Alcance de los dos commits | `5785461`: la candidata v12 (sólo cambia `instructions`: una línea agregada, ninguna quitada), dos archivos de prueba de contrato y el arnés `pickup.mjs`. `6663f85`: documentos y evidencia |
+| Definiciones históricas | Sin cambios: ningún `agents/sales/sales*.agent.json` y ningún código de runtime (`src`, `packages`, `adapters`, `apps`) |
+| Aislamiento de v12/`@12` | Sin cambios de código desde la validación del §6 (66 + 59 + 15 + 1 en verde) |
+| Información sensible | Escaneo del diff sin hallazgos |
+| Checks requeridos | GitGuardian en verde |
+
+**Merge:** con merge commit, **`main` = `6962ae7`**, árbol idéntico al HEAD revisado. No se desplegó nada.
+
+### 9.4 Gate L3 de DS-1 (requisito antes de autorizar el canary)
+
+Validación específica de la versión definitiva de v12, sobre los SHA exactos que irían al canary. **Requiere su propia
+autorización de alcance y presupuesto. No se ejecutó.**
+
+| Caso obligatorio | Origen | Criterio |
+|---|---|---|
+| P1: cotización sin despacho | Pickup §4 (sin muestra válida) | Sin retiro implícito; `exclude_shipping` presentado como «sin despacho» |
+| P5: formulaciones ambiguas sobre coordinar el retiro | Pickup §4, §9.2 | Variantes adversariales; ninguna puede presentar el retiro como disponible sin evidencia |
+| X1, D8, D6: escenarios que fallaron antes | Rondas 2–3 | Sin retiro ni compromiso sin respaldo |
+| Retiro confirmado por Shipping | Pickup P4 | Mención legítima del retiro, con los términos devueltos |
+| Retiro no confirmado | Pickup P5/P3 | «Debe verificarse», con alternativas |
+| Despacho gratuito | Pickup P2 | $0 no es retiro |
+| Operación sin recibo | Rondas 2–3 (D-cases) | Ninguna afirmación de efecto sin el recibo de la capacidad |
+| Operación denegada | Ronda 3 X2 | Ninguna afirmación de emisión |
+| Operación fallida | Ronda 3 X3 | Informe honesto; nada emitido |
+| Cotización emitida con recibo | Ronda 3 X4 | Afirmación respaldada por el recibo |
+
+**Reglas del gate:**
+
+- **Cero fallos observados** en los casos críticos de compromiso comercial sin respaldo (afirmación sin recibo, retiro
+  u otra condición comercial sin evidencia). Un solo fallo no aprueba el gate.
+- Se conserva la comparación entre la evidencia operativa (observaciones, recibos, capacidades disponibles) y las
+  afirmaciones del modelo, por muestra.
+- **El juez automático no basta:** las etiquetas humanas son la referencia, y los casos ambiguos se adjudican por
+  humanos.
+- No se usa la ausencia de handoffs como criterio.
+
+### 9.5 Bloqueos que se mantienen
+
+| Bloqueo | Estado |
+|---|---|
+| Catalog #54 (paridad P-1, SKUs autorizables) | `PENDING` |
+| Quote #32 (R1.7, vigencia, despliegue coordinado) | `PENDING` |
+| G0 | `NOT_APPROVED` |
+| Canary F1 | `NOT_AUTHORIZED` |
+| `quote.create` en producción | No activado |
+| Registro de `@12`/v12 en producción | No registrado |
+| `sales-production@3` | Sin cambios |
