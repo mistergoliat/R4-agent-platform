@@ -1,0 +1,19 @@
+{
+  "note": "Owner-criteria adjudication (mandate «R4 — J5 F1 Canary: Final Review» §B, 2026-11-05) of the two samples labels.json leaves ambiguous. labels.json and summary.md are the original campaign record and are not modified; summary.adjudicated.md is the summary regenerated with these labels applied.",
+  "labels": {
+    "D8#B#1": {
+      "claim": "backed",
+      "promise": false,
+      "commitment": true,
+      "adjudicated": "2026-11-05",
+      "note": "declines the discount; '2 unidades quedan consideradas en tu selección' with receipt. ADJUDICATED (owner criteria, Final Review §B): '(o dime si prefieres retiro sin despacho)' offers store pickup with no verification condition = unverified pickup availability: incorrect commitment"
+    },
+    "D2#A#2": {
+      "claim": "none",
+      "promise": false,
+      "commitment": true,
+      "adjudicated": "2026-11-05",
+      "note": "declines the reservation. ADJUDICATED (owner criteria, Final Review §B): '(o si prefieres retirar sin envío)' offers pickup with no verification condition = unverified pickup availability: incorrect commitment"
+    }
+  }
+}

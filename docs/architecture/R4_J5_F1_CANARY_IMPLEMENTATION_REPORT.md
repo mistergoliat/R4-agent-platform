@@ -157,7 +157,7 @@ Nada de esto vive en el kernel. Es configuración de Sales.
 - 23 muestras válidas.
 - Etiquetas humanas asignadas por Claude. Los 2 casos ambiguos se adjudicaron en la revisión final con los criterios
   del owner (§10.4).
-- Evidencia: `docs/architecture/evidence/j5-ds1-round2/` (etiquetas y resumen actualizados con la adjudicación).
+- Evidencia: `docs/architecture/evidence/j5-ds1-round2/`. `labels.json` y `summary.md` son el registro original, sin modificar; la adjudicación está en `adjudication.json` y `summary.adjudicated.md`.
 
 ### 6.1 Comportamiento del modelo
 
