@@ -42,7 +42,7 @@ const PINNED = {
     6: '2499d50f9297a44f1e3850ba60e4ef8f8a205f95261c8dcdee5dae43312eeff6',
     7: '1d593691a0308e47de55f3b35763be856a318e2b015600805f94141ae5c465e1',
     8: '1065b99836be5f66db05078e72b654531b30e8ae74400dcd7522e648d488e861',
-    12: '11ab557711ce659fdb73a3bc50a2c1c1d6224d7822f95145a218506b3a12cfa7', // R4-J5 F1 canary definition (development branch; final text before any registration)
+    12: '2f482262c31713081cc060531b810fc0971e642faf5732e82c97f5e8ab626c36', // R4-J5 F1 canary candidate (never registered; delivery-modality rule added by «DS-1 Pickup Correction»)
   },
 } as const;
 
