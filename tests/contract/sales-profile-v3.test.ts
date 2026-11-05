@@ -64,7 +64,7 @@ class MemoryAgentStore implements AgentDefinitionStore {
 
 describe('A. Sales definitions: v3 immutable, v4 independent', () => {
   it('v3 is byte-for-byte the deployed definition; v4 has its own version and fingerprint', () => {
-    expect(SALES_AGENT_DEFINITION_FILES).toEqual({ 3: 'sales.agent.json', 4: 'sales.v4.agent.json', 5: 'sales.v5.agent.json', 6: 'sales.v6.agent.json', 7: 'sales.v7.agent.json', 8: 'sales.v8.agent.json', 12: 'sales.v12.agent.json' });
+    expect(SALES_AGENT_DEFINITION_FILES).toEqual({ 3: 'sales.agent.json', 4: 'sales.v4.agent.json', 5: 'sales.v5.agent.json', 6: 'sales.v6.agent.json', 7: 'sales.v7.agent.json', 8: 'sales.v8.agent.json' });
     expect(loadSalesAgentDefinition(3)).toMatchObject({ agentId: 'sales', version: 3 });
     expect(loadSalesAgentDefinition(4)).toMatchObject({ agentId: 'sales', version: 4 });
     expect(definitionContentHash(loadSalesAgentDefinition(3))).toBe(SALES_V3_CONTENT_HASH);
