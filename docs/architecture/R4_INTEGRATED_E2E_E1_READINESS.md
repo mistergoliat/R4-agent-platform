@@ -248,7 +248,7 @@ Requiere todo lo de E2, más:
 | Nivel | Resultado |
 |---|---|
 | L1 | unit 1642 ✓, contract 492 ✓, carril 13/13 ✓, typecheck 0, lint 0 |
-| L2 | §7.1 |
+| L2 | **PASS** (§7.1): regresión completa y las 19 suites de mutación, 242/242 detectadas |
 | L3 | NOT_RUN: se hace en el despliegue, sobre el SHA exacto |
 
 | Gate | Estado |
@@ -264,7 +264,51 @@ Requiere todo lo de E2, más:
 
 ### 7.1 Regresión L2
 
-Se completa al terminar la cadena.
+Árbol de runtime y pruebas de `448cc69`. `e0e6b7d` sólo agrega documentación. Por ser un cambio transversal, se
+corrieron todas las suites de mutación.
+
+**Regresión:**
+
+| Suite | Resultado |
+|---|---|
+| integration | 719 ✓, 12 omitidas |
+| recovery | 19 ✓ |
+| sales | 29 ✓ |
+| shadow | 5 ✓ |
+
+**Mutaciones (19 suites):**
+
+| Suite | Detectadas |
+|---|---|
+| evaluation | 6/6 |
+| shadow | 9/9 |
+| recovery | 14/14 |
+| production | 23/23 |
+| production-control | 13/13 |
+| worker-readiness | 15/15 |
+| identity-verification | 23/23 |
+| identity-verification-state | 16/16 |
+| identity-verification-ingress | 13/13 |
+| identity-verification-dispatch | 11/11 |
+| identity-verification-commercial | 9/9 |
+| rr1 | 5/5 |
+| binding-immutability | 12/12 |
+| profile-v8 | 8/8 |
+| canary-j4 | 13/13 |
+| run-failure-fallback | 6/6 |
+| runtime-contingency | 11/11 |
+| turn-guard | 24/24 |
+| prior-conversation | 11/11 |
+| **Total** | **242/242** |
+
+**Interrupción:** la cadena se pausó por un apagado del equipo y se retomó al día siguiente.
+
+- Las suites que habían terminado conservan su resultado.
+- `identity-verification-dispatch` quedó interrumpida y se repitió completa.
+- La interrupción dejó una mutación aplicada en una fuente local. Se detectó con `git status`, se restauró y se
+  recompiló antes de retomar.
+- Nunca se commiteó.
+- Después de cada suite se verificó que el árbol quedara limpio.
 
 ### 7.2 Revisión focalizada
 
