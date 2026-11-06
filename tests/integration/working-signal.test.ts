@@ -48,4 +48,17 @@ describe('gateway working signal', () => {
     expect(b.gateway.workingSignals).toBeNull();
     expect(b.provider.signals).toEqual([]);
   });
+
+  it('WS4: the turn ends waiting for a human without replying (a consultation): the signal stops, it does not keep "typing" for minutes', async () => {
+    const b = (bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER], autonomy: true, env: ON }));
+    await b.customer(CUSTOMER, 'wamid.ws.5', 'Hola hola');
+    await expect.poll(() => b.provider.signals.length).toBe(1);
+    b.next({ type: 'structured', data: { type: 'request_consultation', question: '¿Cuál es la política de envío gratis?', contextRefs: [] } });
+    await b.runAgent();
+    expect(await b.rows('select status from agent_tasks')).toEqual([{ status: 'waiting' }]);
+    await b.gateway.workingSignals!.tick();
+    expect(b.gateway.workingSignals?.pending).toBe(0);
+    expect(b.provider.signals).toHaveLength(1);
+    expect(b.provider.sends).toEqual([]);
+  });
 });

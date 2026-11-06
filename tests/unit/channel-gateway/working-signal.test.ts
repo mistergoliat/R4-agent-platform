@@ -7,16 +7,31 @@ import { WhatsAppOutboundAdapter, loadWhatsAppCloudConfig, type FetchLike } from
 /** The cosmetic working signal: read receipt + typing indicator while an autonomous turn runs (best effort). */
 const INPUT = { channel: 'whatsapp', accountRef: '1098765432', providerEventId: 'wamid.in.1', taskId: 't1' };
 
-function bed(options: { outbound?: () => Promise<Pick<OutboundRecord, 'createdAt'>[]>; adapter?: Partial<OutboundChannelAdapter> } = {}) {
+function bed(options: { outbound?: () => Promise<Pick<OutboundRecord, 'createdAt'>[]>; adapter?: Partial<OutboundChannelAdapter>; status?: () => string } = {}) {
   let now = 1_000_000;
   const calls: { providerEventId: string }[] = [];
   const adapter = { channel: 'whatsapp', signalWorking: (s: { providerEventId: string }) => (calls.push(s), Promise.resolve(true)), ...options.adapter } as unknown as OutboundChannelAdapter;
-  const store = { outboundForTask: options.outbound ?? (() => Promise.resolve([])) } as never;
+  const status = options.status ?? (() => 'running');
+  const store = { outboundForTask: options.outbound ?? (() => Promise.resolve([])), taskState: () => Promise.resolve({ status: status(), terminalIntent: false, humanOwned: false }) } as never;
   const signals = new WorkingSignals({ adapters: [adapter], store, logger: createSilentLogger(), now: () => now });
   return { signals, calls, advance: (ms: number) => (now += ms), at: () => now };
 }
 
 describe('WorkingSignals', () => {
+  it('stops as soon as the task is no longer executing without having answered (e.g. waiting for a human)', async () => {
+    let status = 'pending';
+    const b = bed({ status: () => status });
+    b.signals.started(INPUT);
+    b.advance(5_000);
+    await b.signals.tick();
+    expect(b.signals.pending).toBe(1);
+    status = 'waiting';
+    b.advance(16_000);
+    await b.signals.tick();
+    expect(b.signals.pending).toBe(0);
+    expect(b.calls).toHaveLength(1);
+  });
+
   it('signals at once, refreshes every 20 s while the turn has not answered, and stops after 3 min', async () => {
     const b = bed();
     b.signals.started(INPUT);
@@ -59,7 +74,7 @@ describe('WorkingSignals', () => {
     const failing = bed({ adapter: { signalWorking: () => Promise.reject(new Error('boom')) } });
     expect(() => failing.signals.started(INPUT)).not.toThrow();
     // An adapter that does not implement the optional signal: nothing is sent, nothing fails.
-    const without = new WorkingSignals({ adapters: [{ channel: 'whatsapp' } as OutboundChannelAdapter], store: { outboundForTask: () => Promise.resolve([]) }, logger: createSilentLogger() });
+    const without = new WorkingSignals({ adapters: [{ channel: 'whatsapp' } as OutboundChannelAdapter], store: { outboundForTask: () => Promise.resolve([]), taskState: () => Promise.resolve(null) }, logger: createSilentLogger() });
     expect(() => without.started(INPUT)).not.toThrow();
     await expect(without.tick()).resolves.toBeUndefined();
     const unreachable = bed({ outbound: () => Promise.reject(new Error('db down')) });
