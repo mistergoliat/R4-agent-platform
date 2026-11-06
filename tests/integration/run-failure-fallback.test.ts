@@ -167,6 +167,6 @@ describe('a malformed model answer never leaves the contact without a reply', { 
       `insert into outbound_messages (outbound_id, origin, task_id, binding_id, channel, idempotency_key, content_sha256, body, status, profile, correlation_id)
        values (gen_random_uuid(), 'platform', $1, $2, 'whatsapp', 'x', repeat('a', 64), 'texto', 'pending', 'p', 'c')`,
       [o!.task_id, o!.binding_id],
-    )).rejects.toThrow(/outbound_messages_platform_fallback/);
+    )).rejects.toThrow(/outbound_messages_platform_origin/);
   });
 });

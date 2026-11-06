@@ -19,6 +19,7 @@ import { loadWorkerConfig, runWorkerProcess } from '@r4/worker';
 import { HttpCatalogAdapter, describeCatalogHttpConfig, loadCatalogHttpConfig, type CatalogFetch } from '@r4-adapters/catalog-http';
 import { ProductionShippingAdapter, loadShippingHttpConfig, type ShippingFetch } from '@r4-adapters/shipping-http';
 import { QuoteV2HttpClient, describeQuoteHttpConfig, loadQuoteHttpConfig, quoteModeOf, type QuoteFetch } from '@r4-adapters/quote-http';
+import { CheckoutHttpClient, loadCheckoutHttpConfig } from '@r4-adapters/checkout-http';
 import { describeWhatsAppConfig, loadWhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
 import { adminDatabaseUrl } from '../harness/database.js';
 import { configuredModelProvider } from '../model.js';
@@ -29,7 +30,7 @@ import { isCustomerIdentityProfile, salesProductionAgentVersion } from '../produ
 import { loadAutonomousQuoteLimits, loadAutonomousQuoteLimitsV6 } from '../capabilities/autonomy-limits.js';
 import { salesShippingPlan } from '../production/shipping-plan.js';
 import { SALES_DOMAINS, SALES_PRODUCTION_PROFILE } from '../production/profile.js';
-import { isQuoteLaneProfile, isSalesLaneProfile, salesCatalogSourceOf } from '../production/profile-v14.js';
+import { isCheckoutLaneProfile, isQuoteLaneProfile, isSalesLaneProfile, salesCatalogSourceOf } from '../production/profile-v15.js';
 import { assertF1CanaryWriteCeiling } from '../production/profile-v12.js';
 import { QUOTE_PARITY_REQUIRED_PROFILES, loadQuoteParityGuard } from '../capabilities/parity-guard.js';
 import { SALES_PRODUCTION_PROCESSES, schedulerConfigurationStatus } from '../production/topology.js';
@@ -138,6 +139,16 @@ function productionQuotes(production: ReturnType<typeof loadProductionConfig>, l
   return new QuoteV2HttpClient({ config, fetch: quoteFetch, ...(logger ? { onCall: (event) => logger.info({ event: 'quote.call', ...event }, 'quote call') } : {}) });
 }
 
+/**
+ * (R4 Checkout, R-1) The Checkout sandbox-purchase binding when the selected profile composes Checkout (@15). No purchase-consent
+ * source is passed: none exists in R4 (contract R-3), so a @15 worker refuses to compose until one is decided.
+ */
+function checkoutOf(production: ReturnType<typeof loadProductionConfig>, logger?: ReturnType<typeof createLogger>) {
+  if (!isCheckoutLaneProfile(workerProfile(production))) return {};
+  const config = loadCheckoutHttpConfig(process.env, { allowNetwork: production.config.allowNetwork });
+  return { checkout: new CheckoutHttpClient({ config, fetch: (url, init) => fetch(url, init), ...(logger ? { onCall: (event) => logger.info({ event: 'checkout.call', ...event }, 'checkout call') } : {}) }) };
+}
+
 /** (R4-J3E) The autonomous issuance limits, read only when the selected profile issues quotes autonomously (v5); fails closed without them. */
 function autonomousLimits(production: ReturnType<typeof loadProductionConfig>) {
   const profile = workerProfile(production);
@@ -155,7 +166,7 @@ function composition() {
   const catalog = productionCatalog(production);
   const shipping = productionShipping(production);
   const quotes = productionQuotes(production);
-  return composeSalesProductionWorker({ pool: { query: () => Promise.reject(new Error('plan only')) } as never, store: noStore, production, modelProvider: { providerId: 'plan', invoke: () => Promise.reject(new Error('plan only')) }, logger: createLogger({ service: 'plan', level: 'silent' }), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production) });
+  return composeSalesProductionWorker({ pool: { query: () => Promise.reject(new Error('plan only')) } as never, store: noStore, production, modelProvider: { providerId: 'plan', invoke: () => Promise.reject(new Error('plan only')) }, logger: createLogger({ service: 'plan', level: 'silent' }), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production) });
 }
 
 /** (ADR-045) The lane profile's Discover binding: the same Catalog V2 adapter (the composition refuses it without the Discover key). */
@@ -271,7 +282,7 @@ async function worker(production: ReturnType<typeof loadProductionConfig>): Prom
   const catalog = productionCatalog(production, logger);
   const shipping = productionShipping(production, logger);
   const quotes = productionQuotes(production, logger);
-  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production) });
+  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production, logger) });
   await assertSalesProductionPrerequisites(workerProfile(production), pool);
   logger.info({ event: 'service.composed', profile: composed.report.profile, profileFingerprint: composed.report.profileFingerprint }, 'production worker composed');
   await runWorkerProcess(config, composed.bindings, { logger });

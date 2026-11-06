@@ -61,9 +61,9 @@ describe('the production composition cannot be switched to Catalog V2 by configu
     for (const options of calls) expect(options, options).toMatch(/^ allowNetwork: production\.config\.allowNetwork, source: salesCatalogSourceOf\((profile|workerProfile\(production\))\) $/);
   });
 
-  it('salesCatalogSourceOf: v1 for every production and canary profile; v2 only for the lane profiles @13 and @14', () => {
+  it('salesCatalogSourceOf: v1 for every production and canary profile; v2 only for the lane profiles @13, @14 and @15', () => {
     for (const p of [...SALES_PRODUCTION_PROFILES, ...SALES_CANARY_ONLY_PROFILES]) expect(salesCatalogSourceOf(p), profileLabel(p)).toBe('v1');
-    expect(SALES_LANE_PROFILES.map(profileLabel)).toEqual(['sales-production@13', 'sales-production@14']);
+    expect(SALES_LANE_PROFILES.map(profileLabel)).toEqual(['sales-production@13', 'sales-production@14', 'sales-production@15']);
     expect(salesCatalogSourceOf(SALES_PRODUCTION_PROFILE_V13)).toBe('v2');
   });
 });

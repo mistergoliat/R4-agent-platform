@@ -25,6 +25,7 @@ export * from './capabilities/confirmation-grammar.js';
 export * from './capabilities/offer-presentation.js';
 export * from './capabilities/quote.js';
 export * from './capabilities/quote-v2.js';
+export * from './capabilities/checkout.js';
 export * from './harness/runtime.js';
 export * from './harness/report.js';
 export * from './harness/invariants.js';

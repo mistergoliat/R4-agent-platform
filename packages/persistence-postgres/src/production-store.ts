@@ -21,6 +21,7 @@ import {
   type NewConversationBinding,
   type NewInboundEvent,
   type NewOperatorOutbound,
+  type NewPlatformNotice,
   type OutboundRecord,
   type OutboundStatus,
   type ProductionAttention,
@@ -70,7 +71,7 @@ function outboundFromRow(r: Row): OutboundRecord {
     contentSha256: r.content_sha256 as string, status: r.status as OutboundStatus, holdReason: (r.hold_reason as string | null) ?? null, cancelReason: (r.cancel_reason as string | null) ?? null,
     duplicateOf: (r.duplicate_of as string | null) ?? null, providerMessageId: (r.provider_message_id as string | null) ?? null, attempts: r.attempts as number,
     nextAttemptAt: isoOrNull(r.next_attempt_at), leaseOwner: (r.lease_owner as string | null) ?? null, leaseGeneration: r.lease_generation as number, leaseExpiresAt: isoOrNull(r.lease_expires_at),
-    errorClass: (r.error_class as string | null) ?? null, errorCode: (r.error_code as string | null) ?? null, humanRequestId: (r.human_request_id as string | null) ?? null,
+    errorClass: (r.error_class as string | null) ?? null, errorCode: (r.error_code as string | null) ?? null, humanRequestId: (r.human_request_id as string | null) ?? null, noticeKey: (r.notice_key as string | null) ?? null,
     humanRef: (r.human_ref as string | null) ?? null, resolvedBy: (r.resolved_by as string | null) ?? null,
     profile: r.profile as string, createdAt: iso(r.created_at), updatedAt: iso(r.updated_at), dispatchedAt: isoOrNull(r.dispatched_at), acceptedAt: isoOrNull(r.accepted_at),
     deliveredAt: isoOrNull(r.delivered_at), readAt: isoOrNull(r.read_at), failedAt: isoOrNull(r.failed_at), correlationId: r.correlation_id as string,
@@ -371,6 +372,24 @@ export class PostgresProductionStore implements ProductionStore {
     return created;
   }
 
+  createPlatformNotice(command: NewPlatformNotice): Promise<{ record: OutboundRecord; replayed: boolean }> {
+    return withTransaction(this.#pool, async (c) => {
+      const binding = (await c.query<Row>('select * from channel_conversation_bindings where task_id = $1', [command.taskId])).rows[0];
+      if (!binding) throw new PlatformError('precondition', 'task_not_channel_bound', 'the task is not bound to a channel conversation');
+      const sha = sha256Hex(command.text);
+      const inserted = (await c.query<Row>(
+        `insert into outbound_messages (outbound_id, origin, notice_key, task_id, binding_id, channel, idempotency_key, content_sha256, body, status, profile, correlation_id)
+         values ($1, 'platform', $2, $3, $4, $5, $6, $7, $8, 'pending', $9, $10)
+         on conflict (task_id, notice_key) where notice_key is not null do nothing returning *`,
+        [randomUUID(), command.noticeKey, command.taskId, binding.binding_id, binding.channel, `r4-notice:${sha256Hex(`${command.taskId}|${command.noticeKey}`).slice(0, 40)}`, sha, command.text, binding.profile, command.correlationId],
+      )).rows[0];
+      if (inserted) return { record: outboundFromRow(inserted), replayed: false };
+      const existing = (await c.query<Row>(`select * from outbound_messages where task_id = $1 and notice_key = $2`, [command.taskId, command.noticeKey])).rows[0]!;
+      if (existing.content_sha256 !== sha) throw new PlatformError('conflict', 'idempotency_key_reused', 'noticeKey was already used for a different notice');
+      return { record: outboundFromRow(existing), replayed: true };
+    });
+  }
+
   createOperatorOutbound(command: NewOperatorOutbound): Promise<{ record: OutboundRecord; replayed: boolean }> {
     return withTransaction(this.#pool, async (c) => {
       const binding = (await c.query<Row>('select * from channel_conversation_bindings where task_id = $1', [command.taskId])).rows[0];
@@ -426,7 +445,9 @@ export class PostgresProductionStore implements ProductionStore {
         text = String(row.body);
       }
       // ADR-041: a platform fallback is sent only while the handoff it announces is still unanswered.
-      const handoffPending = outbound.origin === 'platform'
+      // (R-4) A platform notice announces no handoff: it follows the agent-output gates instead.
+      const notice = outbound.origin === 'platform' && outbound.noticeKey !== null;
+      const handoffPending = outbound.origin === 'platform' && !notice
         ? (await c.query(`select 1 from human_requests where request_id = $1 and status = 'requested'`, [outbound.humanRequestId])).rowCount !== 0
         : undefined;
       const windowMs = command.customerWindowMs(outbound.channel);
@@ -442,6 +463,7 @@ export class PostgresProductionStore implements ProductionStore {
         supersededByNewerInput,
         windowOpen,
         ...(handoffPending === undefined ? {} : { handoffPending }),
+        ...(notice ? { notice } : {}),
       });
       if (decision.kind === 'hold') {
         const held = (await c.query<Row>(
@@ -652,7 +674,11 @@ export class PostgresProductionStore implements ProductionStore {
     for (const r of operator) entries.push(entry(iso(r.created_at), r.outbound_id as string, 'operator', r.body as string, { humanRef: r.human_ref as string }, delivery(r)));
     // ADR-041: the platform fallback is the pack's fixed notice, shown as an event with its delivery state.
     const fallbacks = (await query<Row>(this.#pool, `select * from outbound_messages where task_id = $1 and origin = 'platform'`, [taskId])).rows;
-    for (const r of fallbacks) entries.push(entry(iso(r.created_at), r.outbound_id as string, 'event', null, { type: 'platform.fallback', humanRequestId: r.human_request_id as string }, delivery(r)));
+    for (const r of fallbacks) {
+      // (R-4) A notice is shown by its key, never by its body (it may carry an owner link).
+      const data = r.notice_key ? { type: 'platform.notice', noticeKey: r.notice_key as string } : { type: 'platform.fallback', humanRequestId: r.human_request_id as string };
+      entries.push(entry(iso(r.created_at), r.outbound_id as string, 'event', null, data, delivery(r)));
+    }
     const events = (await query<Row>(
       this.#pool,
       `select event_id, event_type, occurred_at, actor_ref, data from temporal_events where task_id = $1 and event_type in ('handoff.requested', 'handoff.activated', 'handoff.released', 'handoff.cancelled', 'task.cancelled')`,

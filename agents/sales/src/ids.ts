@@ -30,6 +30,24 @@ export const LANE_CAPABILITY_IDS = {
   catalogDiscover: 'catalog.discover',
 } as const;
 
+/**
+ * (R4 Checkout integration, contract R-2) Checkout capabilities, composed only by the checkout lane profile
+ * (sales-production@15). Kept out of CAPABILITY_IDS: no earlier profile or the reference composition registers them.
+ */
+export const CHECKOUT_CAPABILITY_IDS = {
+  /** FINANCIAL: create (or recover) the Checkout session of an issued quote and let Quote prepare the cart. */
+  startPurchase: 'checkout.start_purchase',
+  /** FINANCIAL: read first; a new payment attempt only when allowed; the platform sends the link. */
+  requestPaymentLink: 'checkout.request_payment_link',
+  /** READ: Checkout's status mapped by the contract (§6). */
+  purchaseStatus: 'checkout.purchase_status',
+} as const;
+
+export const CHECKOUT_SCOPES = {
+  purchase: 'checkout.purchase',
+  read: 'checkout.read',
+} as const;
+
 export const SCOPES = {
   customerRead: 'customer.read',
   catalogRead: 'catalog.read',

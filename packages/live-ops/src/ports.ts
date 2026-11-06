@@ -160,6 +160,8 @@ export interface OutboundRecord {
   readonly errorCode: string | null;
   /** Platform origin (ADR-041): the run-failure handoff this fallback announces. */
   readonly humanRequestId: string | null;
+  /** Platform origin, notice (R-4): the pack's identity of this notice within its task (exactly one of humanRequestId / noticeKey). */
+  readonly noticeKey: string | null;
   /** Operator origin: who wrote it; operator resolution: who settled it. */
   readonly humanRef: string | null;
   readonly resolvedBy: string | null;
@@ -236,6 +238,19 @@ export interface NewOperatorOutbound {
   readonly text: string;
   readonly humanRef: string;
   readonly responseKey: string;
+  readonly correlationId: string;
+}
+
+/**
+ * (R-4) A platform notice: a fixed text an agent pack rendered from an owner's validated structured answer, never
+ * from model output. Delivered under the same gates as agent output. Idempotent per (taskId, noticeKey): the same key
+ * with the same text is a replay; with another text it is refused.
+ */
+export interface NewPlatformNotice {
+  readonly taskId: string;
+  /** `^[a-z][a-z0-9._:-]{2,199}$`, e.g. `checkout.link:<attempt id>`. */
+  readonly noticeKey: string;
+  readonly text: string;
   readonly correlationId: string;
 }
 
@@ -356,6 +371,8 @@ export interface ProductionStore {
    */
   materializeRunFailureFallbacks(command: { readonly text: string; readonly limit: number }): Promise<OutboundRecord[]>;
   createOperatorOutbound(command: NewOperatorOutbound): Promise<{ readonly record: OutboundRecord; readonly replayed: boolean }>;
+  /** (R-4) Queues one platform notice for a channel-bound task; see NewPlatformNotice. */
+  createPlatformNotice(command: NewPlatformNotice): Promise<{ readonly record: OutboundRecord; readonly replayed: boolean }>;
   claimNextOutbound(command: ClaimOutboundCommand): Promise<DispatchClaim | null>;
   /** Fenced by the token; a lost lease still records provider acceptance as evidence (unknown → accepted). */
   recordSubmission(token: DispatchToken, result: SubmissionResult, disposition: SubmissionDisposition): Promise<{ readonly applied: boolean; readonly outbound: OutboundRecord }>;

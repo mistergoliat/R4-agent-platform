@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { SALES_AGENT_DIR, SALES_MIGRATIONS_DIR, isSalesCandidateDefinition, loadSalesAgentDefinition } from '../definition.js';
 import { SALES_AGENT_ID } from '../ids.js';
 import { SALES_PRODUCTION_PROFILES, salesProductionAgentVersion, salesProductionProfile } from './profile-v8.js';
-import { SALES_LANE_PROFILES } from './profile-v14.js';
+import { SALES_LANE_PROFILES } from './profile-v15.js';
 
 /**
  * `npm run production:sales:bootstrap` — registers the Sales AgentDefinition

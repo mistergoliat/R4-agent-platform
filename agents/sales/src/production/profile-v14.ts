@@ -1,4 +1,4 @@
-import { profileLabel, type ProductionProfile } from '@r4/live-ops';
+import type { ProductionProfile } from '@r4/live-ops';
 import { LANE_CAPABILITY_IDS } from '../ids.js';
 import { SALES_DOMAINS } from './profile.js';
 import { SALES_PRODUCTION_PROFILE_V12 } from './profile-v12.js';
@@ -30,21 +30,7 @@ export const SALES_PRODUCTION_PROFILE_V14: ProductionProfile = Object.freeze({
 
 export const SALES_QUOTE_LANE_PROFILE_LABEL = 'sales-production@14';
 
-export function isQuoteLaneProfile(profile: ProductionProfile): boolean {
-  return profileLabel(profile) === SALES_QUOTE_LANE_PROFILE_LABEL;
-}
-
-/** Profiles a gateway may serve as its lane and a production worker may select; never a gateway's main profile. */
-export const SALES_LANE_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_PRODUCTION_PROFILE_V13, SALES_PRODUCTION_PROFILE_V14]);
-
-export function isSalesLaneProfile(profile: ProductionProfile): boolean {
-  return SALES_LANE_PROFILES.some((p) => profileLabel(p) === profileLabel(profile));
-}
-
-/** The Catalog source a profile binds: V2 only for the lane profiles (decided by the profile, never by a variable). */
-export function salesCatalogSourceOf(profile: ProductionProfile): 'v1' | 'v2' {
-  return isSalesLaneProfile(profile) ? 'v2' : 'v1';
-}
+// The lane registry (SALES_LANE_PROFILES, isSalesLaneProfile, isQuoteLaneProfile, salesCatalogSourceOf) lives in profile-v15.ts.
 
 /** What must be true before @14 serves its first real conversation (none of it is done by this increment). */
 export const SALES_PRODUCTION_PROFILE_V14_GATE = Object.freeze([
