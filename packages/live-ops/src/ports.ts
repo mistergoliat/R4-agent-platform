@@ -335,6 +335,8 @@ export interface ProductionStore {
   touchBinding(bindingId: string, at: string): Promise<void>;
   bindingByTask(taskId: string): Promise<ConversationBindingRecord | null>;
   taskState(taskId: string): Promise<TaskStateFacts | null>;
+  /** (ADR-045) The task created with this creation idempotency key, if any (a crash may leave it unattached to its binding). */
+  taskByCreationKey(idempotencyKey: string): Promise<string | null>;
 
   // Outbound (the delivery owner's state).
   /**

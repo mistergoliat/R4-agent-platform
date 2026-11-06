@@ -132,6 +132,8 @@ export const SALES_PRODUCTION_AGENT_VERSIONS: Readonly<Record<string, SalesAgent
   'sales-production@8': 8,
   // (R4-J5 F1) Pinned for the isolated canary only: @12 is not in SALES_PRODUCTION_PROFILES, so no production worker selects it.
   'sales-production@12': 12,
+  // (ADR-045) The E1 lane profile: absent from SALES_PRODUCTION_PROFILES, selectable only by a production worker and as a gateway lane.
+  'sales-production@13': 13,
 });
 
 export function salesProductionAgentVersion(profile: ProductionProfile): SalesAgentDefinitionVersion {

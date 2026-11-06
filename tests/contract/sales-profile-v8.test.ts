@@ -183,7 +183,9 @@ describe('C. fail-closed worker composition (each missing dependency refuses)', 
 
   it('the worker composition never composes the gateway inspection; the CLI checks the identity-verification schema before running @8', () => {
     const cli = source('agents/sales/src/cli/production.ts');
-    expect(cli.match(/await assertSalesProductionPrerequisites\(selectedSalesProductionProfile\(production\.config\), pool\);/g)).toHaveLength(2);
+    // Gateway: its main profile (never a lane profile); worker (ADR-045): the profile it runs, possibly the lane profile.
+    expect(cli.match(/await assertSalesProductionPrerequisites\(selectedSalesProductionProfile\(production\.config\), pool\);/g)).toHaveLength(1);
+    expect(cli.match(/await assertSalesProductionPrerequisites\(workerProfile\(production\), pool\);/g)).toHaveLength(1);
     expect(source('agents/sales/src/production/composition.ts')).toMatch(/if \(!\(await identityVerificationSchemaIsCurrent\(pool\)\)\) throw/);
   });
 });

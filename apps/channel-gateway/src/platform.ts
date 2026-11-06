@@ -13,6 +13,7 @@ import {
   assertProductionMode,
   assertProductionProfile,
   profileLabel,
+  type ConversationLane,
   type ConversationTaskFactory,
   type InboundChannelAdapter,
   type OutboundChannelAdapter,
@@ -36,6 +37,8 @@ export interface GatewayBindings {
   readonly inspection?: GatewayInspectionFactory;
   /** ADR-041: the agent pack's fallback notice for a run-failure handoff (absent: none is sent). */
   readonly runFailureFallback?: { readonly text: string };
+  /** ADR-045: one extra profile for an explicit, closed set of allowlisted conversations (absent: exactly R4-I). */
+  readonly lane?: ConversationLane;
 }
 
 export interface GatewayOverrides {
@@ -87,6 +90,13 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
   if (!inbound) problems.push(`no inbound adapter for channel ${profile.channel.id}`);
   if (!outbound) problems.push(`no outbound adapter (delivery owner binding) for channel ${profile.channel.id}`);
   else if (outbound.bindingKind !== (profile.channel.status === 'REAL' ? 'real' : 'sandbox')) problems.push(`outbound adapter of ${outbound.channel} is ${outbound.bindingKind} but the profile declares ${profile.channel.status}`);
+  if (bindings.lane) {
+    try {
+      assertProductionProfile(bindings.lane.profile);
+    } catch (error) {
+      problems.push(`the lane profile is not a valid production profile: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
   if (problems.length > 0) throw new PlatformError('precondition', 'production_composition_refused', `refusing to start the channel gateway:\n- ${problems.join('\n- ')}`);
 
   const logger = overrides.logger ?? createLogger({ service: 'r4-channel-gateway', level: config.logLevel });
@@ -102,6 +112,13 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
     // Kill switch state must be known before anything is accepted.
     await store.readControls();
     const agents = new AgentRegistry({ store: new PostgresAgentDefinitionStore(pool), clock, logger });
+    // ADR-045: a lane whose pinned definition is not registered would fail every one of its messages (FK): refuse to start.
+    if (bindings.lane) {
+      const probe = bindings.lane.taskFactory.request({ bindingId: 'lane-startup-probe', channel: profile.channel.id });
+      if (!(await agents.resolve(probe.agentId, probe.agentVersion))) {
+        throw new PlatformError('precondition', 'lane_definition_not_registered', `refusing to start the channel gateway: the lane definition ${probe.agentId}@${probe.agentVersion ?? 'latest'} is not registered (run the lane bootstrap first)`);
+      }
+    }
     const tasks = new TaskRuntime({ store: new PostgresTaskRuntimeStore(pool), agents, ids, clock, logger });
     const executionStore = new PostgresExecutionStore(pool);
     const execution = new ExecutionRuntime({ store: executionStore, ids, clock, logger, maxRunRecoveries: 0 });
@@ -118,6 +135,7 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
     const ingress = new ChannelIngress({
       store, tasks, temporal, controls, adapters: bindings.inbound, delivery, config: production, secrets: bindings.production.secrets, profile, taskFactory: bindings.taskFactory, ids, logger,
       ...(inspection ? { inspector: inspection.inspector } : {}),
+      ...(bindings.lane ? { lane: bindings.lane } : {}),
     });
     const presence = new PostgresWorkerPresenceStore(pool);
     // A worker counts only if it runs in production and composes this exact execution contract.
@@ -146,6 +164,7 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
           autonomyControls: { ok: controlsReadable },
           channel: { id: profile.channel.id, status: profile.channel.status, inbound: Boolean(inbound), outbound: outbound?.bindingKind ?? null },
           profile: profileLabel(profile),
+          lane: bindings.lane ? { profile: profileLabel(bindings.lane.profile), conversations: bindings.lane.conversationKeys.length } : null,
           dispatcher: config.dispatch,
           inspection: inspection ? { id: inspection.inspector.id, version: inspection.inspector.version, mode: inspection.mode, degradedReason: inspection.degradedReason } : null,
         },

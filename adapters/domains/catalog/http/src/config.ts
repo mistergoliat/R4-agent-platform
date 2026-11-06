@@ -11,6 +11,9 @@
  *   v1  R4_CATALOG_*     the service the production profiles bind today (the default: nothing changes)
  *   v2  R4_CATALOG_V2_*  Catalog V2 (CAT_V2_R4_J45_HANDOFF §2: its own base URL and R4 key)
  *
+ * (ADR-045) Discover is served only by V2 and needs its OWN key (Catalog requires a key listed for Discover; the general
+ * R4 key gets 403): R4_CATALOG_V2_DISCOVER_API_KEY, optional, read only for v2. Without it `discover` is refused locally.
+ *
  * The caller chooses the source explicitly. Only that source's variables are read: a missing V2 variable is a
  * refusal, never a fallback to V1.
  *
@@ -26,6 +29,8 @@ export interface CatalogHttpConfig {
   readonly baseUrl: string;
   readonly apiKey: string;
   readonly timeoutMs: number;
+  /** (v2 only) The key Catalog accepts on /v2/catalog/discover; absent: Discover is not configured. */
+  readonly discoverApiKey?: string;
 }
 
 export class CatalogConfigError extends Error {
@@ -39,8 +44,11 @@ export class CatalogConfigError extends Error {
 }
 
 export const CATALOG_ENV = ['R4_CATALOG_BASE_URL', 'R4_CATALOG_API_KEY', 'R4_CATALOG_TIMEOUT_MS'] as const;
-/** (R4-CATALOG-V2) Catalog V2's variables (handoff §2). The Discover key is not read: R4 does not call Discover. */
+/** (R4-CATALOG-V2) Catalog V2's variables (handoff §2). */
 export const CATALOG_V2_ENV = ['R4_CATALOG_V2_BASE_URL', 'R4_CATALOG_V2_API_KEY', 'R4_CATALOG_V2_TIMEOUT_MS'] as const;
+
+/** (ADR-045) Catalog V2's Discover key (handoff §3), optional and only for v2. */
+export const CATALOG_V2_DISCOVER_KEY_ENV = 'R4_CATALOG_V2_DISCOVER_API_KEY';
 
 /** The variable names of a source: base URL, API key, timeout. */
 export function catalogEnvOf(source: CatalogSource): readonly [string, string, string] {
@@ -69,8 +77,12 @@ export function loadCatalogHttpConfig(env: Readonly<Record<string, string | unde
   const timeoutMs = /^\d{1,6}$/.test(raw) ? Number(raw) : Number.NaN;
   if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 10_000) throw new CatalogConfigError('invalid_catalog_config', `${timeoutVar} must be an integer between 100 and 10000`);
   const config = { baseUrl: base.toString().replace(/\/+$/, ''), apiKey, timeoutMs };
-  // v1 keeps its exact historical shape; v2 says what it is.
-  return source === 'v2' ? { source, ...config } : config;
+  if (source !== 'v2') return config; // v1 keeps its exact historical shape; v2 says what it is.
+  const discoverApiKey = env[CATALOG_V2_DISCOVER_KEY_ENV]?.trim();
+  if (discoverApiKey === undefined || discoverApiKey === '') return { source, ...config };
+  if (discoverApiKey.length < 16) throw new CatalogConfigError('invalid_catalog_config', `${CATALOG_V2_DISCOVER_KEY_ENV} is too short to be a real key`);
+  if (discoverApiKey === apiKey) throw new CatalogConfigError('invalid_catalog_config', `${CATALOG_V2_DISCOVER_KEY_ENV} must be the Discover key, not the general R4 key`);
+  return { source, ...config, discoverApiKey };
 }
 
 /**
@@ -84,6 +96,7 @@ export function describeCatalogHttpConfig(config: CatalogHttpConfig): Record<str
     baseHost: new URL(config.baseUrl).host,
     timeoutMs: config.timeoutMs,
     apiKeyConfigured: config.apiKey.length > 0,
+    ...(config.source === 'v2' ? { discoverKeyConfigured: Boolean(config.discoverApiKey) } : {}),
     authentication: 'declared, not verified',
     connectivity: 'not tested',
   };
