@@ -382,4 +382,61 @@ Luego:
 
 ### 10.1 L2
 
-Ver el comentario de la revisión (se completa al terminar las corridas).
+**Regresión.** La primera corrida completa de integración dio 731 ✓, 6 ✗ y 12 omitidas:
+
+- **Cinco fallas eran pines esperados, ya corregidos en las pruebas.**
+  - `worker-readiness`, ×4: la identidad de compatibilidad de ejecución incluye la cabeza del esquema Core, que pasa de `0013` a `0014`. **Consecuencia de despliegue:** todos los procesos (gateway, workers, scheduler) deben pasar juntos a la nueva cabeza.
+  - `run-failure-fallback`, ×1: el nombre de la restricción cambió a `outbound_messages_platform_origin`.
+- **Una era de carga, no del cambio.** `identity-verification-dispatch` AT-30 depende del tiempo y pasó al repetirla sola.
+- **Los archivos fallidos se repitieron completos:** 32/32 y 40/40.
+- **Otras suites:** recovery 19 ✓ (corrida sola), sales 29 ✓, shadow 5 ✓.
+- **Pendiente:** la regresión completa **no** se volvió a correr después de los ajustes de pines. Las corridas de los archivos afectados están en verde.
+
+**Mutaciones.** Se seleccionaron por diff, más la suite nueva de Checkout:
+
+| Suite | Detectadas | Nota |
+|---|---|---|
+| checkout (**nueva**, CK-M1..M8) | 8/8 | CK-M1 sobrevivió al principio: la prueba se apoyaba en el `ATTEMPT_UNRESOLVED` del stub y no en la propiedad de R4 («no postea»). Se reforzó la prueba |
+| run-failure-fallback (+ RFF-N1/N2 de avisos) | 8/8 | Dos anclas apuntaban a líneas editadas (SKIPPED); se actualizaron |
+| production | 23/23 | Una sobrevivió al principio: el ancla de la ruta del operador quedó duplicada por `createPlatformNotice`. Se corrigió la variable. Hay una ambigüedad previa en `main` («ignore the kill switch», dos ocurrencias en `delivery.ts`), que no introdujo este cambio |
+| production-control | 13/13 | |
+| runtime-contingency | 11/11 | |
+| prior-conversation | 11/11 | |
+| binding-immutability | 12/12 | |
+| identity-verification-ingress | 13/13 | |
+| profile-v8 | 8/8 | |
+| **Total** | **107/107** | El árbol quedó limpio después de cada suite |
+
+**NOT_RUN.** El cambio es transversal (migración Core `0014` y `live-ops`), así que la estrategia 02 pide en L2 **todas** las suites. No se corrieron:
+
+- evaluation;
+- shadow;
+- recovery;
+- worker-readiness;
+- identity-verification (base, state, dispatch y commercial);
+- rr1;
+- canary-j4;
+- turn-guard;
+- run-failure-recovery.
+
+Además:
+
+- L3 no se corrió.
+- El E2E real no se corrió.
+
+## 11. Commits (locales, sin push)
+
+| SHA | Contenido |
+|---|---|
+| `29120bb` | `sales-production@14` |
+| `eefccd0` | Cliente Checkout, capacidades, avisos de plataforma y `@15` |
+| `eeb9221` | Suite de mutaciones de Checkout; avisos y anclas en run-failure-fallback |
+| `0761589` | Prueba read-first reforzada |
+| `57e02fe` | Ancla única de la ruta del operador |
+
+Siguen sin hacerse, a la espera de autorización:
+
+- push y PR;
+- L2 completo con todas las suites;
+- la decisión R-3;
+- el entorno de E3.
