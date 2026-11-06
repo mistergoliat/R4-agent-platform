@@ -376,16 +376,16 @@ export class PostgresProductionStore implements ProductionStore {
     return withTransaction(this.#pool, async (c) => {
       const binding = (await c.query<Row>('select * from channel_conversation_bindings where task_id = $1', [command.taskId])).rows[0];
       if (!binding) throw new PlatformError('precondition', 'task_not_channel_bound', 'the task is not bound to a channel conversation');
-      const sha = sha256Hex(command.text);
+      const textSha = sha256Hex(command.text);
       const inserted = (await c.query<Row>(
         `insert into outbound_messages (outbound_id, origin, notice_key, task_id, binding_id, channel, idempotency_key, content_sha256, body, status, profile, correlation_id)
          values ($1, 'platform', $2, $3, $4, $5, $6, $7, $8, 'pending', $9, $10)
          on conflict (task_id, notice_key) where notice_key is not null do nothing returning *`,
-        [randomUUID(), command.noticeKey, command.taskId, binding.binding_id, binding.channel, `r4-notice:${sha256Hex(`${command.taskId}|${command.noticeKey}`).slice(0, 40)}`, sha, command.text, binding.profile, command.correlationId],
+        [randomUUID(), command.noticeKey, command.taskId, binding.binding_id, binding.channel, `r4-notice:${sha256Hex(`${command.taskId}|${command.noticeKey}`).slice(0, 40)}`, textSha, command.text, binding.profile, command.correlationId],
       )).rows[0];
       if (inserted) return { record: outboundFromRow(inserted), replayed: false };
       const existing = (await c.query<Row>(`select * from outbound_messages where task_id = $1 and notice_key = $2`, [command.taskId, command.noticeKey])).rows[0]!;
-      if (existing.content_sha256 !== sha) throw new PlatformError('conflict', 'idempotency_key_reused', 'noticeKey was already used for a different notice');
+      if (existing.content_sha256 !== textSha) throw new PlatformError('conflict', 'idempotency_key_reused', 'noticeKey was already used for a different notice');
       return { record: outboundFromRow(existing), replayed: true };
     });
   }
