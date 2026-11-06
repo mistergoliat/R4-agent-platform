@@ -52,6 +52,11 @@ export interface ChannelIngressOptions {
   readonly inspector?: InboundInspector;
   /** ADR-045: absent, ingress is exactly R4-I (one profile per gateway). */
   readonly lane?: ConversationLane;
+  /**
+   * Notified (synchronously, after the input is durable) when an inbound starts AUTONOMOUS work, e.g. for the
+   * gateway's cosmetic working signal. Must not throw or block; its failures are ignored. Absent: nothing.
+   */
+  readonly onAutonomousInput?: (input: { readonly channel: string; readonly accountRef: string; readonly providerEventId: string; readonly taskId: string }) => void;
 }
 
 interface ServedProfile {
@@ -313,6 +318,13 @@ export class ChannelIngress {
           await store.touchBinding(binding.bindingId, record.occurredAt);
           await store.settleInbound(record.inboundId, { status: 'ingested', bindingId: binding.bindingId, taskId, inputId, disposition });
           emitTelemetry(logger, 'inbound.ingested', { channel: record.channel, inboundId: record.inboundId, taskId, inputId, taskCreated, disposition, correlationId: record.correlationId });
+          if (disposition === 'autonomous' && this.#o.onAutonomousInput) {
+            try {
+              this.#o.onAutonomousInput({ channel: record.channel, accountRef: record.accountRef, providerEventId: record.providerEventId, taskId });
+            } catch {
+              // Cosmetic hook: it never changes the outcome of an ingested input.
+            }
+          }
           return { kind: 'ingested', inboundId: record.inboundId, taskId, inputId, taskCreated, disposition };
         } catch (error) {
           // The task became terminal between the check and the submission: close the binding and open a new one once.

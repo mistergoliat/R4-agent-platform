@@ -301,7 +301,7 @@ function startGateway(databaseUrl: string, pool: Pool, production: { config: Pro
   const { bindings } = composeSalesGateway({ pool, production, env });
   // (SEC-OTP) The synthetic composition plugs the inspector in, as a deployment would; absent: exactly R4-I.
   const inspected = identityVerification ? { ...bindings, inspection: identityVerificationInspection(identityVerification) } : bindings;
-  return createGatewayPlatform({ databaseUrl, host: '127.0.0.1', port: 0, logLevel: 'silent', dbPoolMax: 4, gatewayId: 'gateway-test', dispatch: false, resumeAfterMs: 1000 }, inspected, { logger: logger ?? createSilentLogger() });
+  return createGatewayPlatform({ databaseUrl, host: '127.0.0.1', port: 0, logLevel: 'silent', dbPoolMax: 4, gatewayId: 'gateway-test', dispatch: false, resumeAfterMs: 1000, workingSignal: env.R4_GATEWAY_WORKING_SIGNAL === 'on' }, inspected, { logger: logger ?? createSilentLogger() });
 }
 
 export interface WorkerOverridesForTest {

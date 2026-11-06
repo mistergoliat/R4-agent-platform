@@ -25,8 +25,16 @@ export interface FakeSend {
   readonly providerMessageId: string | null;
 }
 
+/** A read receipt / typing indicator request ("status": "read"), recorded apart from message sends. */
+export interface FakeWorkingSignal {
+  readonly messageId: string;
+  readonly typing: boolean;
+  readonly authorized: boolean;
+}
+
 export class FakeWhatsAppProvider {
   readonly sends: FakeSend[] = [];
+  readonly signals: FakeWorkingSignal[] = [];
   #script: FakeSendBehaviour[] = [];
   #server: Server | null = null;
   #sockets = new Set<Socket>();
@@ -71,8 +79,13 @@ export class FakeWhatsAppProvider {
       res.writeHead(404).end();
       return;
     }
-    const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { to?: string; text?: { body?: string } };
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { to?: string; text?: { body?: string }; status?: string; message_id?: string; typing_indicator?: { type?: string } };
     const authorized = req.headers.authorization === `Bearer ${this.#accessToken}`;
+    if (body.status === 'read') {
+      this.signals.push({ messageId: body.message_id ?? '', typing: body.typing_indicator?.type === 'text', authorized });
+      res.writeHead(authorized ? 200 : 401, { 'content-type': 'application/json' }).end(JSON.stringify(authorized ? { success: true } : { error: { code: 190 } }));
+      return;
+    }
     const behaviour = this.#script.shift() ?? { kind: 'accept' };
     const processes = behaviour.kind === 'accept' || behaviour.kind === 'hang' || behaviour.kind === 'drop' || behaviour.kind === 'accept_without_id';
     const providerMessageId = authorized && processes ? `wamid.fake.${++this.#counter}` : null;
