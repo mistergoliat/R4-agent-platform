@@ -23,6 +23,7 @@ import {
 } from '@r4/live-ops';
 import { ExecutionRuntime, TaskRuntime, TemporalRuntime, executionReadinessStatus, workerCompatibility, type ExecutionExpectation } from '@r4/task-runtime';
 import type { GatewayConfig } from './config.js';
+import { WorkingSignals } from './working-signal.js';
 import { assertNoOpenProtection, type GatewayInspection, type GatewayInspectionFactory } from './inspection.js';
 
 /** What the deploying composition plugs in (a pack's production composition). */
@@ -56,6 +57,8 @@ export interface GatewayPlatform {
   readonly logger: Logger;
   /** R4-I.1: the composed inbound inspection (null: none, exactly R4-I). */
   readonly inspection: GatewayInspection | null;
+  /** Cosmetic working signal (read receipt + typing) while autonomous turns run; null when R4_GATEWAY_WORKING_SIGNAL is off. */
+  readonly workingSignals: WorkingSignals | null;
   /** Starts the dispatcher (if configured) and the unsettled-inbound resume timer. */
   start(): void;
   /** Graceful: stop claiming, finish the submission in flight, close the server and connections. */
@@ -132,10 +135,12 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
       store, adapters: bindings.outbound, config: production, owner: config.gatewayId, logger,
       ...(bindings.runFailureFallback ? { runFailureFallback: bindings.runFailureFallback } : {}),
     });
+    const workingSignals = config.workingSignal ? new WorkingSignals({ adapters: bindings.outbound, store, logger }) : null;
     const ingress = new ChannelIngress({
       store, tasks, temporal, controls, adapters: bindings.inbound, delivery, config: production, secrets: bindings.production.secrets, profile, taskFactory: bindings.taskFactory, ids, logger,
       ...(inspection ? { inspector: inspection.inspector } : {}),
       ...(bindings.lane ? { lane: bindings.lane } : {}),
+      ...(workingSignals ? { onAutonomousInput: (input: Parameters<WorkingSignals['started']>[0]) => workingSignals.started(input) } : {}),
     });
     const presence = new PostgresWorkerPresenceStore(pool);
     // A worker counts only if it runs in production and composes this exact execution contract.
@@ -166,6 +171,7 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
           profile: profileLabel(profile),
           lane: bindings.lane ? { profile: profileLabel(bindings.lane.profile), conversations: bindings.lane.conversationKeys.length } : null,
           dispatcher: config.dispatch,
+          workingSignal: workingSignals !== null,
           inspection: inspection ? { id: inspection.inspector.id, version: inspection.inspector.version, mode: inspection.mode, degradedReason: inspection.degradedReason } : null,
         },
       };
@@ -206,9 +212,10 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
     await app.ready();
 
     let resumeTimer: NodeJS.Timeout | null = null;
+    let signalTimer: NodeJS.Timeout | null = null;
     let started = false;
     return {
-      app, pool, ingress, delivery, controls, logger, inspection,
+      app, pool, ingress, delivery, controls, logger, inspection, workingSignals,
       start() {
         if (started) return;
         started = true;
@@ -217,9 +224,11 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
         resumeTimer = setInterval(() => {
           void ingress.resumeUnsettled(config.resumeAfterMs).catch((error: unknown) => logger.warn({ err: error instanceof Error ? error.message : String(error) }, 'inbound resume failed'));
         }, Math.max(1000, Math.floor(config.resumeAfterMs / 2)));
+        if (workingSignals) signalTimer = setInterval(() => void workingSignals.tick().catch(() => undefined), 5_000);
       },
       async close() {
         if (resumeTimer) clearInterval(resumeTimer);
+        if (signalTimer) clearInterval(signalTimer);
         if (started && config.dispatch) await dispatcher.stop();
         await inspection?.stop();
         await app.close();

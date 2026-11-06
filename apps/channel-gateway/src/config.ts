@@ -13,6 +13,8 @@ const configSchema = z.object({
   R4_GATEWAY_DISPATCH: z.enum(['true', 'false']).default('true'),
   /** Unsettled inbound (crash between persistence and ingestion) is resumed after this age. */
   R4_GATEWAY_RESUME_AFTER_MS: z.coerce.number().int().min(1000).default(30_000),
+  /** Working signal (read receipt + typing indicator) while an autonomous turn runs. Off unless explicitly on. */
+  R4_GATEWAY_WORKING_SIGNAL: z.enum(['on', 'off']).default('off'),
 });
 
 export interface GatewayConfig {
@@ -24,6 +26,8 @@ export interface GatewayConfig {
   readonly gatewayId: string;
   readonly dispatch: boolean;
   readonly resumeAfterMs: number;
+  /** Working signal while an autonomous turn runs (absent = off). */
+  readonly workingSignal?: boolean;
 }
 
 /** Process configuration (no production decisions here: those come from the proven production config). */
@@ -40,5 +44,6 @@ export function loadGatewayConfig(env: Readonly<Record<string, string | undefine
     gatewayId: c.R4_GATEWAY_ID ?? `gateway:${hostname().replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 48) || 'host'}:${process.pid}:${randomBytes(3).toString('hex')}`,
     dispatch: c.R4_GATEWAY_DISPATCH === 'true',
     resumeAfterMs: c.R4_GATEWAY_RESUME_AFTER_MS,
+    workingSignal: c.R4_GATEWAY_WORKING_SIGNAL === 'on',
   };
 }

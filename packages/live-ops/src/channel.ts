@@ -100,4 +100,10 @@ export interface OutboundChannelAdapter {
    * retry by itself (the delivery owner decides).
    */
   submit(submission: OutboundSubmission, options: { readonly timeoutMs: number }): Promise<SubmissionResult>;
+  /**
+   * Working signal (optional, cosmetic, best effort): tells the contact that the platform is working on this inbound
+   * (for example a read receipt and a typing indicator). It is never a message, never part of delivery state, never retried
+   * by the platform. Resolves false on any failure; must not throw.
+   */
+  signalWorking?(signal: { readonly accountRef: string; readonly providerEventId: string }, options: { readonly timeoutMs: number }): Promise<boolean>;
 }
