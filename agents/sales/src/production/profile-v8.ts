@@ -134,6 +134,8 @@ export const SALES_PRODUCTION_AGENT_VERSIONS: Readonly<Record<string, SalesAgent
   'sales-production@12': 12,
   // (ADR-045) The E1 lane profile: absent from SALES_PRODUCTION_PROFILES, selectable only by a production worker and as a gateway lane.
   'sales-production@13': 13,
+  // (R4 Quote E2E) The E2 quote lane profile: like @13, a lane profile only.
+  'sales-production@14': 14,
 });
 
 export function salesProductionAgentVersion(profile: ProductionProfile): SalesAgentDefinitionVersion {

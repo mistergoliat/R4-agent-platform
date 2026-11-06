@@ -29,7 +29,9 @@ import { isCustomerIdentityProfile, salesProductionAgentVersion } from '../produ
 import { loadAutonomousQuoteLimits, loadAutonomousQuoteLimitsV6 } from '../capabilities/autonomy-limits.js';
 import { salesShippingPlan } from '../production/shipping-plan.js';
 import { SALES_DOMAINS, SALES_PRODUCTION_PROFILE } from '../production/profile.js';
-import { isSalesLaneProfile, salesCatalogSourceOf } from '../production/profile-v13.js';
+import { isQuoteLaneProfile, isSalesLaneProfile, salesCatalogSourceOf } from '../production/profile-v14.js';
+import { assertF1CanaryWriteCeiling } from '../production/profile-v12.js';
+import { QUOTE_PARITY_REQUIRED_PROFILES, loadQuoteParityGuard } from '../capabilities/parity-guard.js';
 import { SALES_PRODUCTION_PROCESSES, schedulerConfigurationStatus } from '../production/topology.js';
 import { flag, loadLocalEnv, option, print } from './common.js';
 import { VALIDATION_SCENARIOS, VALIDATION_SECRETS, validationIdentity, type ScenarioResult } from './production-validation.js';
@@ -141,7 +143,9 @@ function autonomousLimits(production: ReturnType<typeof loadProductionConfig>) {
   const profile = workerProfile(production);
   if (!isAutonomousQuoteProfile(profile)) return {};
   // (R4-J3E-B) @6 also requires the total-units limit and the confirmation window.
-  return { autonomousQuoteLimits: isConfirmedIntentProfile(profile) ? loadAutonomousQuoteLimitsV6(process.env) : loadAutonomousQuoteLimits(process.env) };
+  const autonomousQuoteLimits = isConfirmedIntentProfile(profile) ? loadAutonomousQuoteLimitsV6(process.env) : loadAutonomousQuoteLimits(process.env);
+  // (R4 Quote E2E, P-1) A profile that requires the parity-verified SKU set (@14) gets it from R4_QUOTE_PARITY_*; the composition refuses it absent.
+  return QUOTE_PARITY_REQUIRED_PROFILES.has(profileLabel(profile)) ? { autonomousQuoteLimits, quoteParity: loadQuoteParityGuard(process.env) } : { autonomousQuoteLimits };
 }
 
 function composition() {
@@ -260,6 +264,8 @@ async function worker(production: ReturnType<typeof loadProductionConfig>): Prom
   if (!model) throw new Error('refusing: no model provider configured (R4_MODEL_*)');
   if (!production.config.allowNetwork) throw new Error('refusing: a real model call requires R4_PROD_ALLOW_NETWORK=true');
   const config = loadWorkerConfig(process.env);
+  // (R4 Quote E2E) The quote lane worker issues quotes within the owner-approved write ceiling (1..6; 0 cannot issue).
+  if (isQuoteLaneProfile(workerProfile(production))) assertF1CanaryWriteCeiling(config.execution.maxWriteActions, profileLabel(workerProfile(production)));
   const logger = createLogger({ service: 'r4-worker', level: config.logLevel });
   const pool = createPool({ connectionString: config.databaseUrl, logger, applicationName: 'r4-worker-bindings', max: 2 });
   const catalog = productionCatalog(production, logger);

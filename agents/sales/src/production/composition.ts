@@ -48,7 +48,7 @@ import { workspaceCapabilityV2 } from '../capabilities/workspace-v2.js';
 import type { AutonomousQuoteLimits, AutonomousQuoteLimitsV6 } from '../capabilities/autonomy-limits.js';
 import { assertQuoteParityConfigured, type QuoteParityGuard } from '../capabilities/parity-guard.js';
 import { SALES_CANARY_ONLY_PROFILES, assertF1CanaryLimits, isF1CanaryProfile } from './profile-v12.js';
-import { SALES_LANE_PROFILES, isSalesLaneProfile } from './profile-v13.js';
+import { SALES_LANE_PROFILES, isQuoteLaneProfile, isSalesLaneProfile } from './profile-v14.js';
 import { catalogDiscoverCapability } from '../capabilities/catalog-discover.js';
 import type { CatalogDiscoverPort } from '@r4-adapters/catalog-http';
 
@@ -196,8 +196,8 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
           const quotes = killSwitchGuardedQuotes(options.quotes, controls, options.logger);
           // (R4-J5 F1, P-1) A profile that requires the parity-verified set never composes quote.create without it; the evidence in use is logged.
           assertQuoteParityConfigured(profileLabel(profile), options.quoteParity);
-          // (R4-J5 F1) The F1 canary runs within the owner-approved canary limits, never looser.
-          if (isF1CanaryProfile(profile)) assertF1CanaryLimits(limits);
+          // (R4-J5 F1) The F1 canary, and the quote lane @14, run within the owner-approved canary limits, never looser.
+          if (isF1CanaryProfile(profile) || isQuoteLaneProfile(profile)) assertF1CanaryLimits(limits, profileLabel(profile));
           if (options.quoteParity) options.logger.info({ quoteParity: { profile: profileLabel(profile), fingerprint: options.quoteParity.fingerprint, items: options.quoteParity.items, maxAgeSeconds: options.quoteParity.maxAgeSeconds } }, 'sales quote parity evidence configured');
           if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV3Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now(), parity: options.quoteParity ?? null }));
           if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV5Capability({ store: sales, quotes, catalog, shipping: options.shipping, limits, conversation: options.store, admission: controls, now: () => clock.now(), parity: options.quoteParity ?? null }));
