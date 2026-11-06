@@ -323,8 +323,10 @@ describe('4. repeated link requests reuse a valid attempt', () => {
     for (const status of ['LINK_AVAILABLE', 'PROCESSING'] as const) {
       s.checkout.setLatestAttempt(sessionId, { status, ...(status === 'PROCESSING' ? { checkoutUrl: null } : {}) });
       s.c.customer('mándame el link de pago');
-      await s.link.execute({}, wctx(s.c.taskId));
+      // R4 itself never posts (it does not rely on Checkout's ATTEMPT_UNRESOLVED): the open attempt is reported.
+      expect(await s.link.execute({}, wctx(s.c.taskId))).toMatchObject({ status: 'applied', result: { status: status === 'PROCESSING' ? 'PAYMENT_PENDING' : 'PAYMENT_LINK_AVAILABLE' } });
     }
+    expect(s.checkout.keysSeen.filter((k) => k.startsWith('r4.ck.link.'))).toHaveLength(1);
     expect(s.checkout.counters.attemptCreates).toBe(1);
   });
 
