@@ -36,7 +36,7 @@ export class DeliveryStateContextSource implements ContextSource {
     const outbound = await this.#reader.outboundForTask(task.taskId);
     return outbound
       .filter((o) => (o.origin === 'agent' && o.status in MEANING && o.status !== 'dispatching') || o.origin === 'platform')
-      .map((o) => (o.origin === 'platform' ? fallbackItem(o, task.taskId) : item(o, task.taskId)));
+      .map((o) => (o.origin === 'platform' ? (o.noticeKey !== null ? noticeItem(o, task.taskId) : fallbackItem(o, task.taskId)) : item(o, task.taskId)));
   }
 }
 
@@ -137,6 +137,20 @@ function fallbackItem(o: OutboundRecord, taskId: string): ContextContributionInp
     ...item(o, taskId),
     content: {
       about: 'After this task could not continue autonomously (a run failed or reached a limit), the platform (not you) queued a fixed notice to the contact: a technical problem occurred and a person of the team would continue the conversation. It promised nothing else. Do not repeat it.',
+      status: o.status,
+      meaning: MEANING[o.status] ?? 'the provider accepted it',
+      reason: o.cancelReason ?? o.holdReason ?? o.errorClass,
+    },
+  };
+}
+
+/** (R-4) A platform notice the pack queued from an owner's answer: by key and delivery state, never its body (it may carry an owner link). */
+function noticeItem(o: OutboundRecord, taskId: string): ContextContributionInput {
+  return {
+    ...item(o, taskId),
+    content: {
+      about: 'The platform (not you) queued a fixed notice to the contact, rendered from an owner answer (its key says which). You did not write it and must not rewrite, repeat or complete it; never type its link or amounts yourself.',
+      noticeKey: o.noticeKey,
       status: o.status,
       meaning: MEANING[o.status] ?? 'the provider accepted it',
       reason: o.cancelReason ?? o.holdReason ?? o.errorClass,

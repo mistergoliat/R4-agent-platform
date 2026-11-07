@@ -31,8 +31,11 @@ export const SALES_AGENT_DEFINITION_FILES = Object.freeze({ 3: 'sales.agent.json
  * profile pinned to it (sales-production@12 → v12). Owner decision B: not registered in production.
  * (ADR-045) v13 = v4 + the catalog.discover guidance, for the lane profile sales-production@13 only; registered in
  * production solely by `production:sales:bootstrap --lane`, never by the plain bootstrap.
+ * (R4 Quote E2E) v14 = v12 + the same catalog.discover line, for the quote lane profile sales-production@14 only;
+ * registered like v13 (`--lane`), and only when that profile is the selected one. v15 = v14 + the Checkout lines and
+ * scopes, for the checkout sandbox lane profile sales-production@15 only.
  */
-export const SALES_CANDIDATE_DEFINITION_FILES = Object.freeze({ 12: 'candidates/sales.v12.candidate.json', 13: 'candidates/sales.v13.candidate.json' } as const);
+export const SALES_CANDIDATE_DEFINITION_FILES = Object.freeze({ 12: 'candidates/sales.v12.candidate.json', 13: 'candidates/sales.v13.candidate.json', 14: 'candidates/sales.v14.candidate.json', 15: 'candidates/sales.v15.candidate.json' } as const);
 export type SalesAgentDefinitionVersion = keyof typeof SALES_AGENT_DEFINITION_FILES | keyof typeof SALES_CANDIDATE_DEFINITION_FILES;
 /** The pack's current definition (what non-production compositions, which register every capability, run). */
 export const SALES_AGENT_LATEST_VERSION: SalesAgentDefinitionVersion = 4;

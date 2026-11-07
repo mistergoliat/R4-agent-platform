@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import type { Logger } from 'pino';
-import { DomainError, type CatalogPort, type QuoteV2Service, type ShippingService } from '@r4-adapters/domains';
+import { DomainError, type CatalogPort, type CheckoutConsentSource, type CheckoutService, type QuoteV2Service, type ShippingService } from '@r4-adapters/domains';
 import { identityVerificationSchemaIsCurrent } from '@r4-adapters/identity-verification';
 import { WhatsAppInboundAdapter, WhatsAppOutboundAdapter, describeWhatsAppConfig, loadWhatsAppCloudConfig, type FetchLike, type WhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
 import { CapabilityRegistry } from '@r4/capability-runtime';
@@ -48,9 +48,10 @@ import { workspaceCapabilityV2 } from '../capabilities/workspace-v2.js';
 import type { AutonomousQuoteLimits, AutonomousQuoteLimitsV6 } from '../capabilities/autonomy-limits.js';
 import { assertQuoteParityConfigured, type QuoteParityGuard } from '../capabilities/parity-guard.js';
 import { SALES_CANARY_ONLY_PROFILES, assertF1CanaryLimits, isF1CanaryProfile } from './profile-v12.js';
-import { SALES_LANE_PROFILES, isSalesLaneProfile } from './profile-v13.js';
+import { SALES_LANE_PROFILES, isCheckoutLaneProfile, isQuoteLaneProfile, isSalesLaneProfile } from './profile-v15.js';
 import { catalogDiscoverCapability } from '../capabilities/catalog-discover.js';
 import type { CatalogDiscoverPort } from '@r4-adapters/catalog-http';
+import { checkoutPurchaseStatusCapability, checkoutRequestLinkCapability, checkoutStartPurchaseCapability } from '../capabilities/checkout.js';
 
 /** Who opens production Sales conversations: the channel ingress (a platform service, never the model). */
 export const SALES_CHANNEL_INGRESS: Principal = { kind: 'service', ref: 'sales-channel-ingress' };
@@ -95,6 +96,10 @@ export interface SalesProductionWorkerOptions {
   readonly quoteParity?: QuoteParityGuard | null;
   /** (R4-J5 F1) Set only by the isolated canary runtime: it may also compose canary-only profiles (@12). A production worker never sets it. */
   readonly canary?: boolean;
+  /** (R4 Checkout, R-1) The Checkout sandbox-purchase binding (CheckoutHttpClient); required when the selected profile composes Checkout (@15). */
+  readonly checkout?: CheckoutService & { readonly bindingKind: string };
+  /** (R4 Checkout, R-3) Where the purchase-consent artifact comes from; required by @15. Sandbox only: SandboxConsentDirectory (R4 never signs). */
+  readonly checkoutConsent?: CheckoutConsentSource;
   /** (R4-J4-R4) The R4_CUSTOMER_* configuration of the worker; required when the selected profile composes Customer and identity verification (v8). */
   readonly customer?: {
     readonly env: Readonly<Record<string, string | undefined>>;
@@ -196,8 +201,8 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
           const quotes = killSwitchGuardedQuotes(options.quotes, controls, options.logger);
           // (R4-J5 F1, P-1) A profile that requires the parity-verified set never composes quote.create without it; the evidence in use is logged.
           assertQuoteParityConfigured(profileLabel(profile), options.quoteParity);
-          // (R4-J5 F1) The F1 canary runs within the owner-approved canary limits, never looser.
-          if (isF1CanaryProfile(profile)) assertF1CanaryLimits(limits);
+          // (R4-J5 F1) The F1 canary, and the quote lane @14, run within the owner-approved canary limits, never looser.
+          if (isF1CanaryProfile(profile) || isQuoteLaneProfile(profile)) assertF1CanaryLimits(limits, profileLabel(profile));
           if (options.quoteParity) options.logger.info({ quoteParity: { profile: profileLabel(profile), fingerprint: options.quoteParity.fingerprint, items: options.quoteParity.items, maxAgeSeconds: options.quoteParity.maxAgeSeconds } }, 'sales quote parity evidence configured');
           if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV3Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now(), parity: options.quoteParity ?? null }));
           if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV5Capability({ store: sales, quotes, catalog, shipping: options.shipping, limits, conversation: options.store, admission: controls, now: () => clock.now(), parity: options.quoteParity ?? null }));
@@ -215,6 +220,17 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
   } else if (autonomousQuotes) {
     throw new Error(`refusing production composition: ${profileLabel(profile)} issues quotes autonomously without a REAL Quote domain`);
   }
+  // (R4 Checkout, contract R-2/R-4) @15: Checkout sandbox-purchase; its commands behind the kill switch; the link goes out as a platform notice.
+  const checkoutReal = isCheckoutLaneProfile(profile);
+  if (checkoutReal) {
+    if (!options.checkout || options.checkout.bindingKind !== 'http') throw new Error(`refusing production composition: ${profileLabel(profile)} binds Checkout but no Checkout binding was provided (R4_CHECKOUT_*)`);
+    if (!options.checkoutConsent) throw new Error(`refusing production composition: ${profileLabel(profile)} requires a purchase-consent source (contract R-3: R4_CHECKOUT_SBX_CONSENT_DIR, artifacts from Checkout's test tooling); R4 never signs consent`);
+    if (!quoteReal || !options.quotes) throw new Error(`refusing production composition: ${profileLabel(profile)} binds Checkout without a REAL Quote domain`);
+    const deps = { store: sales, checkout: killSwitchGuardedCheckout(options.checkout, controls, options.logger), quotes: options.quotes, consent: options.checkoutConsent, conversation: options.store, notices: options.store, now: () => clock.now() };
+    capabilities.registerWrite(checkoutStartPurchaseCapability(deps));
+    capabilities.registerWrite(checkoutRequestLinkCapability(deps));
+    capabilities.register(checkoutPurchaseStatusCapability(deps));
+  }
   // (R4-J4-R4) v8: the Customer reads and the identity verification; every other profile leaves Customer UNAVAILABLE.
   const customerIdentity = isCustomerIdentityProfile(profile);
   if (customerIdentity) composeCustomerIdentity(profile, options, capabilities);
@@ -227,6 +243,7 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
       ...(shippingReal ? [{ domain: SALES_DOMAINS.shipping, bindingKind: 'real' as const }] : []),
       ...(quoteReal ? [{ domain: SALES_DOMAINS.quote, bindingKind: 'real' as const }] : []),
       ...(customerIdentity ? [{ domain: SALES_DOMAINS.customer, bindingKind: 'real' as const }, { domain: SALES_DOMAINS.identity, bindingKind: 'real' as const }] : []),
+      ...(checkoutReal ? [{ domain: SALES_DOMAINS.checkout, bindingKind: 'real' as const }] : []),
     ],
     capabilities.list().map((c) => c.capabilityId),
   );
@@ -380,6 +397,19 @@ export function killSwitchGuardedQuotes(quotes: QuoteV2Service, controls: Autono
     getDocument: (...a) => quotes.getDocument(...a),
   };
   return guardProductionWrites(port, { domain: SALES_DOMAINS.quote, writeOperations: ['createAndIssue'], controls, logger, blocked: () => quoteWritesBlockedError() });
+}
+
+/** (R4 Checkout) Checkout with its commands behind the kill switch (re-read before every call; unreadable = engaged); reads stay open. */
+export function killSwitchGuardedCheckout(checkout: CheckoutService, controls: AutonomyControls, logger: Logger): CheckoutService {
+  const port: CheckoutService = {
+    createSession: (...a) => checkout.createSession(...a),
+    getSession: (...a) => checkout.getSession(...a),
+    prepareSession: (...a) => checkout.prepareSession(...a),
+    createPaymentAttempt: (...a) => checkout.createPaymentAttempt(...a),
+    listPaymentAttempts: (...a) => checkout.listPaymentAttempts(...a),
+    getOrders: (...a) => checkout.getOrders(...a),
+  };
+  return guardProductionWrites(port, { domain: SALES_DOMAINS.checkout, writeOperations: ['createSession', 'prepareSession', 'createPaymentAttempt'], controls, logger, blocked: () => new DomainError('conflict', 'OPERATIONAL_GATE_BLOCKED', 'Checkout commands are stopped by the kill switch; nothing was sent') });
 }
 
 function isV6Limits(limits: AutonomousQuoteLimits | AutonomousQuoteLimitsV6): limits is AutonomousQuoteLimitsV6 {

@@ -1,0 +1,22 @@
+{
+  "name": "@r4-adapters/checkout-http",
+  "version": "0.0.0",
+  "private": true,
+  "description": "R4 Checkout HTTP adapter of the Checkout port (R4_CHECKOUT_INTEGRATION_CONTRACT, MS-pesaschile-checkout /v1 1.0.3-proposed, sandbox-purchase API listener): the six routes only, bearer auth, Idempotency-Key, X-Correlation-Id, deadline, response validation, Checkout error codes. Transport only: no payment state, no retry, no cancel. Outside R4 Core.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@r4-adapters/domains": "*",
+    "zod": "^4.6.0"
+  }
+}

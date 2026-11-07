@@ -11,6 +11,7 @@ import { SALES_PRODUCTION_PROFILE_V4 } from './profile-v4.js';
 import { SALES_PRODUCTION_AUTONOMOUS_ACTION_POLICY, SALES_PRODUCTION_PROFILE_V5, salesProductionActionPolicy } from './profile-v5.js';
 import { SALES_PRODUCTION_PROFILE_V6 } from './profile-v6.js';
 import { SALES_PRODUCTION_PROFILE_V7 } from './profile-v7.js';
+import { SALES_PRODUCTION_V15_ACTION_POLICY, isCheckoutLaneProfile } from './profile-v15.js';
 
 export const CUSTOMER_PROFILE_CONTRACT_REF = 'customer-profile:docs/contracts/customer-sales-context-v1-rc2 (sales-context v1-rc2, candidate; owner commit bbd766e; pinned R4-J4-R3)';
 export const CUSTOMER_IDENTITY_CONTRACT_REF = 'customer-identity-authority:contract/cia/v1-d2 (v1-d2-candidate, accepted for synthetic interoperability only; owner commit 7525395)';
@@ -79,8 +80,9 @@ export function isCustomerIdentityProfile(profile: ProductionProfile): boolean {
   return SALES_CUSTOMER_IDENTITY_PROFILES.has(profileLabel(profile));
 }
 
-/** The action policy a profile runs: @8 its own; every earlier profile exactly what it ran before. */
+/** The action policy a profile runs: @8 and (R4 Checkout) @15 their own; every other profile exactly what it ran before. */
 export function salesActionPolicyFor(profile: ProductionProfile): ActionPolicyConfigurationInput {
+  if (isCheckoutLaneProfile(profile)) return SALES_PRODUCTION_V15_ACTION_POLICY;
   return isCustomerIdentityProfile(profile) ? SALES_PRODUCTION_V8_ACTION_POLICY : salesProductionActionPolicy(profile);
 }
 
@@ -134,6 +136,10 @@ export const SALES_PRODUCTION_AGENT_VERSIONS: Readonly<Record<string, SalesAgent
   'sales-production@12': 12,
   // (ADR-045) The E1 lane profile: absent from SALES_PRODUCTION_PROFILES, selectable only by a production worker and as a gateway lane.
   'sales-production@13': 13,
+  // (R4 Quote E2E) The E2 quote lane profile: like @13, a lane profile only.
+  'sales-production@14': 14,
+  // (R4 Checkout integration) The E3 checkout sandbox lane profile: a lane profile only.
+  'sales-production@15': 15,
 });
 
 export function salesProductionAgentVersion(profile: ProductionProfile): SalesAgentDefinitionVersion {

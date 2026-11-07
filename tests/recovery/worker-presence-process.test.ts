@@ -60,10 +60,10 @@ describe('worker process SIGKILL', () => {
     await until(async () => (await r4()).execution.workers.ready === 2);
     expect((await r4()).code).toBe(200);
     // R4_BUILD_REF from the process environment lands verbatim; blank ⇒ NULL; the contract is the same for both.
-    // R4-J4-R7-4 R-9: 0013_conversation_binding_history (index) is the Core head, after ADR-041 0012.
+    // R4-J4-R7-4 R-9, then R4 Checkout R-4: 0014_platform_notice_outbound is the Core head, after 0013.
     expect(await bed.rows(`select worker_id, build_ref, compatibility from worker_presence order by worker_id`)).toEqual([
-      { worker_id: 'proc-a', build_ref: '0337a34b712b1bf9e758b8335ee532d6cf29ab05', compatibility: '0013_conversation_binding_history:sales-production@1' },
-      { worker_id: 'proc-b', build_ref: null, compatibility: '0013_conversation_binding_history:sales-production@1' },
+      { worker_id: 'proc-a', build_ref: '0337a34b712b1bf9e758b8335ee532d6cf29ab05', compatibility: '0014_platform_notice_outbound:sales-production@1' },
+      { worker_id: 'proc-b', build_ref: null, compatibility: '0014_platform_notice_outbound:sales-production@1' },
     ]);
 
     a.kill('SIGKILL');

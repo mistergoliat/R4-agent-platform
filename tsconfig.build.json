@@ -23,6 +23,7 @@
     { "path": "adapters/domains/catalog/http" },
     { "path": "adapters/domains/shipping/http" },
     { "path": "adapters/domains/quote/http" },
+    { "path": "adapters/domains/checkout/http" },
     { "path": "adapters/domains/customer/http" },
     { "path": "adapters/domains/identity/http" },
     { "path": "adapters/domains/identity/verification" },

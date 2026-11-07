@@ -88,6 +88,29 @@ describe('delivery gate of the platform fallback (ADR-041)', () => {
   });
 });
 
+describe('delivery gate of a platform notice (R-4: a pack-rendered owner answer, e.g. a payment link)', () => {
+  const notice = (over: Partial<DispatchFacts> = {}) => facts({ origin: 'platform', notice: true, ...over });
+
+  it('is sent on an automated (not human-owned) task without any handoff', () => {
+    expect(decideDispatch(notice(), policy)).toEqual({ kind: 'dispatch' });
+  });
+
+  it('obeys the kill switch, deny and rollout (hold), and is cancelled once a human owns the task', () => {
+    expect(decideDispatch(notice({ controls: { globalEnabled: false, channels: {}, version: 'v' } }), policy)).toEqual({ kind: 'hold', reason: DISPATCH_HOLD_REASONS.killSwitch });
+    expect(decideDispatch(notice({ binding: { status: 'open', autonomous: true, deniedNow: true } }), policy)).toEqual({ kind: 'hold', reason: DISPATCH_HOLD_REASONS.denied });
+    expect(decideDispatch(notice({ binding: { status: 'open', autonomous: false, deniedNow: false } }), policy)).toEqual({ kind: 'hold', reason: DISPATCH_HOLD_REASONS.rolloutExcluded });
+    expect(decideDispatch(notice({ task: { status: 'blocked', humanOwned: true } }), policy)).toEqual({ kind: 'cancel', reason: CANCEL_REASONS.supersededByOperator });
+  });
+
+  it('terminal task, closed conversation, age and window cancel; a newer input does not supersede it', () => {
+    expect(decideDispatch(notice({ task: { status: 'failed', humanOwned: false } }), policy)).toEqual({ kind: 'cancel', reason: CANCEL_REASONS.taskTerminal });
+    expect(decideDispatch(notice({ binding: { status: 'closed', autonomous: true, deniedNow: false } }), policy)).toEqual({ kind: 'cancel', reason: CANCEL_REASONS.conversationClosed });
+    expect(decideDispatch(notice({ createdAt: '2026-09-24T10:00:00.000Z' }), policy)).toEqual({ kind: 'cancel', reason: CANCEL_REASONS.expired });
+    expect(decideDispatch(notice({ windowOpen: false }), policy)).toEqual({ kind: 'cancel', reason: CANCEL_REASONS.windowClosed });
+    expect(decideDispatch(notice({ supersededByNewerInput: true }), policy)).toEqual({ kind: 'dispatch' });
+  });
+});
+
 describe('after a submission', () => {
   it('unknown is never retried; only definitely-not-sent is, within a bounded budget', () => {
     expect(dispositionAfterSubmission(result({}), 1, { maxAttempts: 3 })).toEqual({ status: 'accepted' });

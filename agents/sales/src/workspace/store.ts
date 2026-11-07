@@ -57,6 +57,25 @@ export interface QuoteV2RequestRecord {
   readonly recordedAt: string;
 }
 
+/** (0010) The frozen create-session body of one checkout.start_purchase execution. The consent token never leaves the pack's tables except to Checkout. */
+export interface CheckoutPurchaseRequestRecord {
+  readonly executionKey: string;
+  readonly taskId: string;
+  readonly quoteId: string;
+  readonly quoteVersion: number;
+  readonly consent: { readonly format: string; readonly token: string };
+  readonly recordedAt: string;
+}
+
+/** (0010) A Checkout session of the conversation, with the quote it buys. */
+export interface CheckoutSessionRecord {
+  readonly executionKey: string;
+  readonly sessionId: string;
+  readonly quoteId: string;
+  readonly quoteVersion: number;
+  readonly recordedAt: string;
+}
+
 /** A formally issued Quote V2 quote as the owner reported it, with R4's document verification. */
 export interface QuoteV2IssuedRecord {
   readonly executionKey: string;
@@ -317,6 +336,76 @@ export class PostgresSalesStore {
       [issued.executionKey, issued.taskId, issued.quoteId, issued.quoteNumber, issued.issuedAt, issued.validThroughLocalDate, issued.validUntilExclusive, issued.pdfSha256, issued.byteLength, issued.documentVerification],
     );
     return (await this.quoteV2Issued(issued.taskId)).find((q) => q.executionKey === issued.executionKey)!;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Checkout (0010, contract R-2): what R4 sent and the identifiers Checkout answered; frozen, never updated.
+  // ---------------------------------------------------------------------------
+
+  /** Freezes the create-session body of this execution key, once: a later call returns the first record unchanged. */
+  async recordCheckoutPurchaseRequest(request: Omit<CheckoutPurchaseRequestRecord, 'recordedAt'>): Promise<CheckoutPurchaseRequestRecord> {
+    await this.#pool.query(
+      `insert into sales.checkout_purchase_requests (execution_key, task_id, quote_id, quote_version, consent_format, consent_token) values ($1, $2, $3, $4, $5, $6)
+       on conflict (execution_key) do nothing`,
+      [request.executionKey, request.taskId, request.quoteId, request.quoteVersion, request.consent.format, request.consent.token],
+    );
+    const stored = await this.checkoutPurchaseRequest(request.executionKey);
+    if (!stored) throw new Error(`checkout purchase request ${request.executionKey} was not recorded`);
+    return stored;
+  }
+
+  async checkoutPurchaseRequest(executionKey: string): Promise<CheckoutPurchaseRequestRecord | null> {
+    const r = await this.#pool.query<{ execution_key: string; task_id: string; quote_id: string; quote_version: number; consent_format: string; consent_token: string; recorded_at: Date }>('select * from sales.checkout_purchase_requests where execution_key = $1', [executionKey]);
+    const row = r.rows[0];
+    return row ? { executionKey: row.execution_key, taskId: row.task_id, quoteId: row.quote_id, quoteVersion: row.quote_version, consent: { format: row.consent_format, token: row.consent_token }, recordedAt: row.recorded_at.toISOString() } : null;
+  }
+
+  /**
+   * (D7-6) The Checkout financial operations the task's OTHER executions obtained: distinct sessions plus distinct payment
+   * attempts Checkout answered. The current execution is excluded, so replaying it (same key) is never counted twice;
+   * a second start that Checkout answers with the same live session is one operation.
+   */
+  async checkoutFinancialOperations(taskId: string, exceptExecutionKey: string): Promise<number> {
+    const r = await this.#pool.query<{ n: number }>(
+      `select (select count(distinct session_id) from sales.checkout_sessions where task_id = $1 and execution_key <> $2)
+            + (select count(distinct payment_attempt_id) from sales.checkout_link_attempts where task_id = $1 and execution_key <> $2) as n`,
+      [taskId, exceptExecutionKey],
+    );
+    return Number(r.rows[0]!.n);
+  }
+
+  /** Records the session Checkout answered for a purchase (first answer kept: a replay returns the same session). */
+  async recordCheckoutSession(record: { readonly executionKey: string; readonly taskId: string; readonly sessionId: string }): Promise<void> {
+    await this.#pool.query('insert into sales.checkout_sessions (execution_key, task_id, session_id) values ($1, $2, $3) on conflict (execution_key) do nothing', [record.executionKey, record.taskId, record.sessionId]);
+  }
+
+  /** The conversation's latest Checkout session (the purchase in course), or null. */
+  async latestCheckoutSession(taskId: string): Promise<CheckoutSessionRecord | null> {
+    const r = await this.#pool.query<{ execution_key: string; session_id: string; quote_id: string; quote_version: number; recorded_at: Date }>(
+      `select s.execution_key, s.session_id, p.quote_id, p.quote_version, s.recorded_at
+         from sales.checkout_sessions s join sales.checkout_purchase_requests p using (execution_key)
+        where s.task_id = $1 order by s.recorded_at desc, s.execution_key desc limit 1`,
+      [taskId],
+    );
+    const row = r.rows[0];
+    return row ? { executionKey: row.execution_key, sessionId: row.session_id, quoteId: row.quote_id, quoteVersion: row.quote_version, recordedAt: row.recorded_at.toISOString() } : null;
+  }
+
+  /** Freezes which session a link request is for, once. */
+  async recordCheckoutLinkRequest(request: { readonly executionKey: string; readonly taskId: string; readonly sessionId: string }): Promise<{ readonly sessionId: string }> {
+    await this.#pool.query('insert into sales.checkout_link_requests (execution_key, task_id, session_id) values ($1, $2, $3) on conflict (execution_key) do nothing', [request.executionKey, request.taskId, request.sessionId]);
+    const stored = await this.checkoutLinkRequest(request.executionKey);
+    if (!stored) throw new Error(`checkout link request ${request.executionKey} was not recorded`);
+    return stored;
+  }
+
+  async checkoutLinkRequest(executionKey: string): Promise<{ readonly sessionId: string } | null> {
+    const r = await this.#pool.query<{ session_id: string }>('select session_id from sales.checkout_link_requests where execution_key = $1', [executionKey]);
+    return r.rows[0] ? { sessionId: r.rows[0].session_id } : null;
+  }
+
+  async recordCheckoutLinkAttempt(record: { readonly executionKey: string; readonly taskId: string; readonly paymentAttemptId: string }): Promise<void> {
+    await this.#pool.query('insert into sales.checkout_link_attempts (execution_key, task_id, payment_attempt_id) values ($1, $2, $3) on conflict (execution_key) do nothing', [record.executionKey, record.taskId, record.paymentAttemptId]);
   }
 
   async quoteV2Issued(taskId: string): Promise<QuoteV2IssuedRecord[]> {
