@@ -11,8 +11,9 @@ export const CHECKOUT_CONTRACT_REF = 'checkout: docs/reviews/R4_CHECKOUT_INTEGRA
 
 /**
  * Sales production profile, version 15 (R4 Quote V2 + Checkout integration, 2026-11-06). The E3 CHECKOUT SANDBOX LANE
- * profile. NOT deployed and NOT composable in production today: it requires a purchase-consent source, and none exists
- * (contract R-3: CIA has no purchase grant; the only issuer is Checkout's test-only operator tooling).
+ * profile. NOT deployed and NOT activated. It composes only with a purchase-consent source: the sandbox one reads the
+ * artifacts an operator obtained with Checkout's test-only tooling (R4_CHECKOUT_SBX_CONSENT_DIR); CIA has no purchase
+ * grant (contract R-3) and R4 never signs consent.
  *
  * = sales-production@14 (Catalog V2 + Discover, Shipping, Quote V2 autonomous issuance of the confirmed Sales-rendered
  * offer, P-1, F1 ceilings, kill switch) plus Checkout, sandbox-purchase only:
@@ -47,9 +48,14 @@ export function isCheckoutLaneProfile(profile: ProductionProfile): boolean {
 }
 
 /**
- * The @15 action policy (R-5, owner decision D7-6 pending): the autonomous quote policy plus exactly the two Checkout
- * commands as autonomous FINANCIAL writes with provisional identity and cited evidence. The FINANCIAL class rule stays
- * the platform default (approval + verified identity): no other financial write becomes autonomous.
+ * The @15 action policy (R-5; owner decision D7-6, 2026-11-06: SANDBOX ONLY): the autonomous quote policy plus exactly
+ * the two Checkout commands as autonomous FINANCIAL writes with provisional identity and cited evidence. The FINANCIAL
+ * class rule stays the platform default (approval + verified identity): no other financial write becomes autonomous.
+ * The rest of D7-6 is enforced where the facts are, without kernel changes:
+ *   - at most CHECKOUT_FINANCIAL_OPERATIONS_PER_TASK (2) Checkout operations per task, replays not counted (pack);
+ *   - every Checkout command first proves sandbox isolation from Checkout's readiness, or nothing is sent (adapter);
+ *   - R4 cannot change prices (Checkout charges Quote's frozen amount), issue consent, create orders or mark a payment:
+ *     no capability exists for any of them, and "paid" comes only from checkout.purchase_status (§6).
  */
 export const SALES_PRODUCTION_V15_ACTION_POLICY: ActionPolicyConfigurationInput = Object.freeze({
   policyId: 'sales-production-checkout-sandbox-policy',
@@ -83,10 +89,10 @@ export function salesCatalogSourceOf(profile: ProductionProfile): 'v1' | 'v2' {
 export const SALES_PRODUCTION_PROFILE_V15_GATE = Object.freeze([
   { id: 'v14-gate', blocking: true, requirement: 'every blocking item of SALES_PRODUCTION_PROFILE_V14_GATE (@15 issues quotes as @14)' },
   { id: 'contract-accepted', blocking: true, requirement: 'R4_CHECKOUT_INTEGRATION_CONTRACT accepted by the R4 owner (and Quote/CIA owners for H3)' },
-  { id: 'consent-source', blocking: true, requirement: 'R-3: a purchase-consent source for the allowlisted buyer (CIA purpose purchase, or an explicitly test-only issuer service the owner authorizes); R4 never signs consent' },
+  { id: 'consent-source', blocking: true, requirement: 'R-3: the sandbox consent directory (R4_CHECKOUT_SBX_CONSENT_DIR) fed by an operator with Checkout sign-test-consent for the test buyer, after issuance and within the artifact TTL; R4 never signs consent. Production: the CIA purpose purchase grant' },
   { id: 'same-quote-instance', blocking: true, requirement: 'the Quote instance R4 issues against is the one Checkout sandbox-purchase reads and prepares carts from (SBX-2 used an isolated Quote runner)' },
   { id: 'checkout-runtime', blocking: true, requirement: 'Checkout sandbox-purchase runtime running at the API listener with R4\'s service token and scopes, readiness profile sandbox-purchase / MERCADOPAGO_SANDBOX_TEST_ONLY, a financial grant in force, test credential within its authorization' },
-  { id: 'financial-policy', blocking: true, requirement: 'D7-6: owner approval of the @15 action policy (two autonomous FINANCIAL writes, provisional identity, allowlisted lane only)' },
+  { id: 'financial-policy', blocking: true, requirement: 'D7-6 (decided 2026-11-06, sandbox only): policy sales-production-checkout-sandbox-policy@1, at most 2 Checkout financial operations per task, sandbox isolation proven by Checkout readiness before every command; any non-sandbox use needs a new decision' },
   { id: 'migrations', blocking: true, requirement: 'Sales migration 0010 and platform migration 0014 (platform notices) applied before any process runs the new code' },
   { id: 'definition-v15-registered', blocking: true, requirement: 'identifiers v15 and @15 verified free, then registered with production:sales:bootstrap --lane' },
   { id: 'payment-claims-evaluated', blocking: true, requirement: 'definition v15 evaluated with the real model: no URL, amount or accreditation written by the model (R4-CK-05, R4-CK-11)' },

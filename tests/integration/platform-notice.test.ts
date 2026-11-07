@@ -8,7 +8,7 @@ import { LiveOpsTestbed, say } from '../support/live-ops.js';
  * single delivery owner sends through the existing WhatsApp path, under the agent-output gates, once per
  * (task, noticeKey). The real production composition over PostgreSQL with the local WhatsApp provider; no Checkout.
  */
-const CUSTOMER = '56955556666';
+const CUSTOMER = '56911112222';
 const TEXT = 'Este es tu link de pago de Mercado Pago (ambiente de prueba) por $2.500:\nhttps://www.mercadopago.cl/checkout/v1/redirect?pref_id=1\nVence a las 16:41 (hora de Chile).';
 let bed: LiveOpsTestbed | null = null;
 afterEach(async () => {

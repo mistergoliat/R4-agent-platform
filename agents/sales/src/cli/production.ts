@@ -19,7 +19,7 @@ import { loadWorkerConfig, runWorkerProcess } from '@r4/worker';
 import { HttpCatalogAdapter, describeCatalogHttpConfig, loadCatalogHttpConfig, type CatalogFetch } from '@r4-adapters/catalog-http';
 import { ProductionShippingAdapter, loadShippingHttpConfig, type ShippingFetch } from '@r4-adapters/shipping-http';
 import { QuoteV2HttpClient, describeQuoteHttpConfig, loadQuoteHttpConfig, quoteModeOf, type QuoteFetch } from '@r4-adapters/quote-http';
-import { CheckoutHttpClient, loadCheckoutHttpConfig } from '@r4-adapters/checkout-http';
+import { CheckoutHttpClient, SandboxConsentDirectory, loadCheckoutHttpConfig, sandboxConsentDirOf } from '@r4-adapters/checkout-http';
 import { describeWhatsAppConfig, loadWhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
 import { adminDatabaseUrl } from '../harness/database.js';
 import { configuredModelProvider } from '../model.js';
@@ -140,13 +140,18 @@ function productionQuotes(production: ReturnType<typeof loadProductionConfig>, l
 }
 
 /**
- * (R4 Checkout, R-1) The Checkout sandbox-purchase binding when the selected profile composes Checkout (@15). No purchase-consent
- * source is passed: none exists in R4 (contract R-3), so a @15 worker refuses to compose until one is decided.
+ * (R4 Checkout, R-1/R-3) The Checkout sandbox-purchase binding when the selected profile composes Checkout (@15), and the
+ * sandbox consent source when R4_CHECKOUT_SBX_CONSENT_DIR is set: the artifacts an operator obtained with Checkout's own
+ * test tooling (R4 never signs consent). Without it a @15 worker refuses to compose.
  */
 function checkoutOf(production: ReturnType<typeof loadProductionConfig>, logger?: ReturnType<typeof createLogger>) {
   if (!isCheckoutLaneProfile(workerProfile(production))) return {};
   const config = loadCheckoutHttpConfig(process.env, { allowNetwork: production.config.allowNetwork });
-  return { checkout: new CheckoutHttpClient({ config, fetch: (url, init) => fetch(url, init), ...(logger ? { onCall: (event) => logger.info({ event: 'checkout.call', ...event }, 'checkout call') } : {}) }) };
+  const consentDir = sandboxConsentDirOf(process.env);
+  return {
+    checkout: new CheckoutHttpClient({ config, fetch: (url, init) => fetch(url, init), ...(logger ? { onCall: (event) => logger.info({ event: 'checkout.call', ...event }, 'checkout call') } : {}) }),
+    ...(consentDir ? { checkoutConsent: new SandboxConsentDirectory({ dir: consentDir }) } : {}),
+  };
 }
 
 /** (R4-J3E) The autonomous issuance limits, read only when the selected profile issues quotes autonomously (v5); fails closed without them. */

@@ -19,7 +19,7 @@ export type CheckoutFetch = (
   init: { method: 'GET' | 'POST'; headers: Record<string, string>; body?: string; signal: AbortSignal },
 ) => Promise<{ status: number; headers: { get(name: string): string | null }; text(): Promise<string> }>;
 
-export type CheckoutOperationName = 'createSession' | 'getSession' | 'prepareSession' | 'createPaymentAttempt' | 'listPaymentAttempts' | 'getOrders';
+export type CheckoutOperationName = 'createSession' | 'getSession' | 'prepareSession' | 'createPaymentAttempt' | 'listPaymentAttempts' | 'getOrders' | 'sandboxReadiness';
 
 /** One owner call for telemetry. Carries no token, key, consent, URL or body. */
 export interface CheckoutCallTelemetry {
@@ -74,6 +74,10 @@ const ordersSchema = z.object({
   orderSyncStatus: z.string().min(1).max(64),
   orders: z.array(z.object({ psOrderId: z.int().min(1), reference: z.string().min(1).max(64), totalPaid: money })),
 });
+// What /health/ready of the sandbox-purchase runtime must say (Checkout src/sandboxPurchase/runtime.ts readiness()).
+const readinessSchema = z.object({ status: z.string(), profile: z.string(), environment: z.string(), orderDestination: z.object({ isolatedTest: z.boolean() }) });
+export const CHECKOUT_SANDBOX_PROFILE = 'sandbox-purchase';
+export const CHECKOUT_SANDBOX_ENVIRONMENT = 'MERCADOPAGO_SANDBOX_TEST_ONLY';
 const errorSchema = z.object({ error: z.object({ code: z.string().min(1).max(80), message: z.string().max(2000), retryable: z.boolean() }) });
 
 /**
@@ -89,6 +93,11 @@ const errorSchema = z.object({ error: z.object({ code: z.string().min(1).max(80)
  *   other 5xx, lost connection after send → unknown_outcome on a command; temporarily_unavailable on a read
  *   connection never opened → temporarily_unavailable; deadline → timeout
  *   anything outside the contract → contract_violation
+ *
+ * Sandbox isolation (D7-6, contract §11.4.6): before EVERY command the client reads the same Checkout's
+ * `GET /health/ready` (no credential sent) and sends the command only when it reports status `ready`, profile
+ * `sandbox-purchase`, environment `MERCADOPAGO_SANDBOX_TEST_ONLY` and an isolated-test order destination. Otherwise
+ * nothing is sent: unreadable → temporarily_unavailable, anything else → conflict SANDBOX_ISOLATION_UNVERIFIED.
  */
 export class CheckoutHttpClient implements CheckoutService {
   readonly bindingKind = 'http' as const;
@@ -132,12 +141,43 @@ export class CheckoutHttpClient implements CheckoutService {
   async #command<S extends z.ZodType>(operation: CheckoutOperationName, path: string, key: string, body: string | undefined, accepted: readonly number[], schema: S, options: CallOptions | undefined): Promise<CheckoutCommandResult<z.output<S>>> {
     const started = performance.now();
     if (!KEY.test(key)) throw new DomainError('validation', 'invalid_idempotency_key', 'a Checkout Idempotency-Key is 8–128 characters of [A-Za-z0-9._:-]');
+    await this.#assertSandboxIsolation(options);
     const response = await this.#call(started, operation, 'POST', path, options, { 'idempotency-key': key, ...(body !== undefined ? { 'content-type': 'application/json' } : {}) }, body);
     if (!accepted.includes(response.status)) throw this.#violation(started, operation, `Checkout answered HTTP ${response.status}, outside its contract`, response.status, options);
     const replayed = response.headers.get('idempotent-replay') === 'true';
     const view = this.#parse(started, operation, schema, await this.#json(started, operation, response, true, options), response.status, options);
     this.#emit({ kind: 'owner_call', operation, outcome: 'ok', httpStatus: response.status, durationMs: elapsed(started), replayed, errorCategory: null, errorCode: null, correlationId: options?.correlationId ?? null });
     return { httpStatus: response.status, replayed, view };
+  }
+
+  /** Fail closed: a command leaves only after this Checkout proved, just now, that it is the isolated sandbox. */
+  async #assertSandboxIsolation(options: CallOptions | undefined): Promise<void> {
+    const started = performance.now();
+    const unverified = (category: 'temporarily_unavailable' | 'conflict', why: string, httpStatus: number | null): DomainError =>
+      this.#failed(started, 'sandboxReadiness', new DomainError(category, 'SANDBOX_ISOLATION_UNVERIFIED', `Checkout sandbox isolation not proven (${why}); nothing was sent`), httpStatus, options);
+    if (options?.signal?.aborted) throw unverified('temporarily_unavailable', 'caller deadline passed', null);
+    const deadline = AbortSignal.timeout(this.#config.timeoutMs);
+    const signal = options?.signal ? AbortSignal.any([options.signal, deadline]) : deadline;
+    let status: number;
+    let text: string;
+    try {
+      const response = await this.#fetch(`${this.#config.readinessUrl}/health/ready`, { method: 'GET', headers: { accept: 'application/json' }, signal });
+      status = response.status;
+      text = await response.text();
+    } catch (error) {
+      throw unverified('temporarily_unavailable', `readiness unreachable: ${signal.aborted ? 'timeout' : transportCode(error)}`, null);
+    }
+    let body: z.output<typeof readinessSchema>;
+    try {
+      const parsed = readinessSchema.safeParse(JSON.parse(text.slice(0, MAX_JSON_CHARS)));
+      if (!parsed.success) throw new Error('shape');
+      body = parsed.data;
+    } catch {
+      throw unverified('temporarily_unavailable', `readiness unreadable (HTTP ${status})`, status);
+    }
+    const ok = status === 200 && body.status === 'ready' && body.profile === CHECKOUT_SANDBOX_PROFILE && body.environment === CHECKOUT_SANDBOX_ENVIRONMENT && body.orderDestination.isolatedTest;
+    if (!ok) throw unverified('conflict', `HTTP ${status}, status ${body.status.slice(0, 20)}, profile ${body.profile.slice(0, 40)}, environment ${body.environment.slice(0, 40)}, isolatedTest ${body.orderDestination.isolatedTest}`, status);
+    this.#emit({ kind: 'owner_call', operation: 'sandboxReadiness', outcome: 'ok', httpStatus: status, durationMs: elapsed(started), replayed: null, errorCategory: null, errorCode: null, correlationId: options?.correlationId ?? null });
   }
 
   async #read<S extends z.ZodType>(operation: CheckoutOperationName, path: string, schema: S, options: CallOptions | undefined): Promise<z.output<S>> {

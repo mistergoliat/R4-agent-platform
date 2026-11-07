@@ -360,6 +360,20 @@ export class PostgresSalesStore {
     return row ? { executionKey: row.execution_key, taskId: row.task_id, quoteId: row.quote_id, quoteVersion: row.quote_version, consent: { format: row.consent_format, token: row.consent_token }, recordedAt: row.recorded_at.toISOString() } : null;
   }
 
+  /**
+   * (D7-6) The Checkout financial operations the task's OTHER executions obtained: distinct sessions plus distinct payment
+   * attempts Checkout answered. The current execution is excluded, so replaying it (same key) is never counted twice;
+   * a second start that Checkout answers with the same live session is one operation.
+   */
+  async checkoutFinancialOperations(taskId: string, exceptExecutionKey: string): Promise<number> {
+    const r = await this.#pool.query<{ n: number }>(
+      `select (select count(distinct session_id) from sales.checkout_sessions where task_id = $1 and execution_key <> $2)
+            + (select count(distinct payment_attempt_id) from sales.checkout_link_attempts where task_id = $1 and execution_key <> $2) as n`,
+      [taskId, exceptExecutionKey],
+    );
+    return Number(r.rows[0]!.n);
+  }
+
   /** Records the session Checkout answered for a purchase (first answer kept: a replay returns the same session). */
   async recordCheckoutSession(record: { readonly executionKey: string; readonly taskId: string; readonly sessionId: string }): Promise<void> {
     await this.#pool.query('insert into sales.checkout_sessions (execution_key, task_id, session_id) values ($1, $2, $3) on conflict (execution_key) do nothing', [record.executionKey, record.taskId, record.sessionId]);

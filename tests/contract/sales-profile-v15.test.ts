@@ -95,9 +95,9 @@ describe('B. composition', () => {
     expect(compose().bindings.servedAgents).toEqual([{ agentId: 'sales', version: 15 }]);
   });
 
-  it('refuses without a Checkout binding, and without a purchase-consent source (what the production CLI provides today)', () => {
+  it('refuses without a Checkout binding, and without a purchase-consent source (R4_CHECKOUT_SBX_CONSENT_DIR unset)', () => {
     expect(() => compose({ checkout: false })).toThrow(/no Checkout binding/);
-    expect(() => compose({ consent: false })).toThrow(/requires a purchase-consent source \(contract R-3\)/);
+    expect(() => compose({ consent: false })).toThrow(/requires a purchase-consent source \(contract R-3: R4_CHECKOUT_SBX_CONSENT_DIR/);
   });
 });
 

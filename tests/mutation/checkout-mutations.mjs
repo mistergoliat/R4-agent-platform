@@ -1,8 +1,10 @@
 // R4 Checkout integration (contract R-2/R-4) mutation checks: each mutation removes one guarantee of the Checkout
 // capabilities (read before posting, explicit purchase request, explicit request for a new link, no payment operation
 // on a purchase that needs a person, Checkout commands behind the kill switch, the same key after a lost answer, the
-// R4 link margin, accreditation only from Checkout's COMPLETED) and EVERY test listed for it must FAIL (each test run
-// alone, by name). Sources are restored byte for byte. The tests use the local PostgreSQL and a Checkout stub.
+// R4 link margin, accreditation only from Checkout's COMPLETED; D7-6: the per-task financial limit and the sandbox
+// isolation proof before every command; R-3: consent handed over only for its own quote) and EVERY test listed for it
+// must FAIL (each test run alone, by name). Sources are restored byte for byte. The tests use the local PostgreSQL and
+// a Checkout stub.
 //
 //   npm run test:mutation:checkout
 import { spawnSync } from 'node:child_process';
@@ -13,6 +15,10 @@ const PORT_UNIT = { project: 'unit', file: 'tests/unit/checkout/checkout-port.te
 const CAP = 'agents/sales/src/capabilities/checkout.ts';
 const PORT = 'adapters/domains/src/checkout/port.ts';
 const SALES = 'agents/sales/src/production/composition.ts';
+const STORE = 'agents/sales/src/workspace/store.ts';
+const HTTP_UNIT = { project: 'unit', file: 'tests/unit/checkout/checkout-http.test.ts' };
+const CLIENT = 'adapters/domains/checkout/http/src/client.ts';
+const CONSENT = 'adapters/domains/checkout/http/src/sandbox-consent.ts';
 
 const MUTATIONS = [
   {
@@ -54,6 +60,37 @@ const MUTATIONS = [
     name: 'CK-M8 the order is confirmed before Checkout reports COMPLETED',
     edits: [{ file: PORT, from: "if (session.status === 'PAYMENT_CONFIRMED_ORDER_PENDING' || a?.status === 'CAPTURED' || a?.status === 'SETTLED') return 'PAYMENT_ACCREDITED_ORDER_PROCESSING';", to: "if (session.status === 'PAYMENT_CONFIRMED_ORDER_PENDING' || a?.status === 'CAPTURED' || a?.status === 'SETTLED') return 'ORDER_COMPLETED';" }],
     tests: [[IT, 'orders listed while SYNCING'], [PORT_UNIT, '3 confirmed, order pending']],
+  },
+  // D7-6 (sandbox financial policy) and R-3 (sandbox consent source).
+  {
+    name: 'CK-M9 a purchase start ignores the per-task financial limit',
+    edits: [{ file: CAP, from: 'const limited = await financialLimitReached(deps, taskId, context.executionKey);\n        if (limited) return limited;\n        const issued', to: 'const issued' }],
+    tests: [[IT, 'D7-6: at most two']],
+  },
+  {
+    name: 'CK-M10 a new payment attempt ignores the per-task financial limit',
+    edits: [{ file: CAP, from: 'if (limited) return limited;\n          const created', to: 'const created' }],
+    tests: [[IT, 'under D7-6 it is a third operation']],
+  },
+  {
+    name: 'CK-M11 a repeated acceptance (same live session) counts as a second operation',
+    edits: [{ file: STORE, from: 'select (select count(distinct session_id) from sales.checkout_sessions', to: 'select (select count(*) from sales.checkout_sessions' }],
+    tests: [[IT, 'a second execution']],
+  },
+  {
+    name: 'CK-M12 a Checkout command is sent without proving sandbox isolation',
+    edits: [{ file: CLIENT, from: '    await this.#assertSandboxIsolation(options);\n', to: '' }],
+    tests: [[HTTP_UNIT, 'refuses with nothing sent'], [HTTP_UNIT, 'each command reads the readiness first']],
+  },
+  {
+    name: 'CK-M13 the readiness of another environment is accepted',
+    edits: [{ file: CLIENT, from: 'body.environment === CHECKOUT_SANDBOX_ENVIRONMENT && ', to: '' }],
+    tests: [[HTTP_UNIT, 'another environment']],
+  },
+  {
+    name: 'CK-M14 a consent artifact for another quote or version is handed to Checkout',
+    edits: [{ file: CONSENT, from: 'claims.quoteId !== request.quoteId || claims.quoteVersion !== request.quoteVersion || ', to: '' }],
+    tests: [[HTTP_UNIT, 'nothing for another quote']],
   },
 ];
 

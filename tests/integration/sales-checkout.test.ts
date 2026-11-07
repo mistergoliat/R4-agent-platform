@@ -19,6 +19,7 @@ import { createSilentLogger } from '@r4/observability';
 import { PostgresProductionStore, type Pool } from '@r4/persistence-postgres';
 import {
   PostgresSalesStore,
+  CHECKOUT_FINANCIAL_OPERATIONS_PER_TASK,
   checkoutLinkNoticeKey,
   checkoutPurchaseStatusCapability,
   checkoutRequestLinkCapability,
@@ -354,7 +355,7 @@ describe('5. expired links are not presented as payable', () => {
     expect(s.notices.queued.size).toBe(0);
   });
 
-  it('after Checkout resolves the attempt EXPIRED, a new link needs the customer to ask again (R4-CK-04): then ordinal 2', async () => {
+  it('after Checkout resolves the attempt EXPIRED, a new link needs the customer to ask again (R4-CK-04), and under D7-6 it is a third operation: refused, nothing posted', async () => {
     const s = await readyToPay();
     await s.link.execute({}, wctx(s.c.taskId));
     const sessionId = [...s.checkout.sessions.keys()][0]!;
@@ -362,8 +363,31 @@ describe('5. expired links are not presented as payable', () => {
     s.checkout.set(sessionId, { status: 'READY' });
     expect(await s.link.execute({}, wctx(s.c.taskId))).toMatchObject({ status: 'rejected', code: 'new_link_not_requested' });
     s.c.customer('quiero un link nuevo', new Date(NOW.getTime() + 60_000).toISOString());
-    expect(await s.link.execute({}, wctx(s.c.taskId))).toMatchObject({ status: 'applied', result: { status: 'PAYMENT_LINK_AVAILABLE', linkNotice: 'queued' } });
-    expect(s.checkout.attempts.get(sessionId)!.map((a) => a.ordinal)).toEqual([1, 2]);
+    expect(await s.link.execute({}, wctx(s.c.taskId))).toMatchObject({ status: 'rejected', code: 'financial_write_limit', details: { used: 2, limit: CHECKOUT_FINANCIAL_OPERATIONS_PER_TASK } });
+    expect(s.checkout.attempts.get(sessionId)!.map((a) => a.ordinal)).toEqual([1]);
+    expect(s.checkout.counters.attemptCreates).toBe(1);
+  });
+});
+
+describe('D7-6: at most two autonomous Checkout financial operations per task, replays never counted', () => {
+  it('one session + one attempt; replaying either execution (same key) still works; a new purchase start is refused before anything is sent', async () => {
+    const s = setup();
+    await issueQuote(s.c, s.c.tick());
+    s.c.customer('quiero pagar');
+    const startKey = `r4x_${randomBytes(16).toString('hex')}`;
+    const linkKey = `r4x_${randomBytes(16).toString('hex')}`;
+    expect(await s.start.execute({ quoteId: s.c.quoteId }, wctx(s.c.taskId, startKey))).toMatchObject({ status: 'applied' });
+    expect(await s.link.execute({}, wctx(s.c.taskId, linkKey))).toMatchObject({ status: 'applied', result: { linkNotice: 'queued' } });
+    expect(await store.checkoutFinancialOperations(s.c.taskId, 'none')).toBe(2);
+    // Legitimate idempotent replays of the same executions (a lost answer, a restart) are not new operations.
+    expect(await s.start.execute({ quoteId: s.c.quoteId }, wctx(s.c.taskId, startKey, 2))).toMatchObject({ status: 'applied', replayed: true });
+    expect(await s.link.execute({}, wctx(s.c.taskId, linkKey, 2))).toMatchObject({ status: 'applied' });
+    // Another start (new execution) for this conversation: refused with nothing sent.
+    const keysBefore = s.checkout.keysSeen.length;
+    s.c.customer('quiero pagar');
+    expect(await s.start.execute({ quoteId: s.c.quoteId }, wctx(s.c.taskId))).toMatchObject({ status: 'rejected', code: 'financial_write_limit' });
+    expect(s.checkout.keysSeen.length).toBe(keysBefore);
+    expect(s.checkout.counters).toEqual({ sessionCreates: 1, prepares: 1, attemptCreates: 1 });
   });
 });
 
@@ -397,12 +421,12 @@ describe('8. order completion is confirmed only after Checkout reports COMPLETED
     await s.link.execute({}, wctx(s.c.taskId));
     const sessionId = [...s.checkout.sessions.keys()][0]!;
     s.checkout.setLatestAttempt(sessionId, { status: 'CAPTURED', checkoutUrl: null });
-    s.checkout.orders.set(sessionId, { sessionId, orderSyncStatus: 'SYNCING', orders: [{ psOrderId: 106, reference: 'DICHJYQED', totalPaid: { amountMinor: '2500', currency: 'CLP' } }] });
+    s.checkout.orders.set(sessionId, { sessionId, orderSyncStatus: 'SYNCING', orders: [{ psOrderId: 9001, reference: 'PSREF0001', totalPaid: { amountMinor: '2500', currency: 'CLP' } }] });
     s.checkout.set(sessionId, { status: 'PAYMENT_CONFIRMED_ORDER_PENDING', orderSyncStatus: 'SYNCING' });
     expect(await s.status.handler({}, rctx(s.c.taskId))).toMatchObject({ status: 'PAYMENT_ACCREDITED_ORDER_PROCESSING', orderReference: null });
     s.checkout.set(sessionId, { status: 'COMPLETED', orderSyncStatus: 'SYNCED' });
     const done = await s.status.handler({}, rctx(s.c.taskId));
-    expect(done).toMatchObject({ status: 'ORDER_COMPLETED', paymentAccredited: true, orderReference: 'DICHJYQED' });
+    expect(done).toMatchObject({ status: 'ORDER_COMPLETED', paymentAccredited: true, orderReference: 'PSREF0001' });
     expect(JSON.stringify(done)).not.toContain('106');
   });
 });

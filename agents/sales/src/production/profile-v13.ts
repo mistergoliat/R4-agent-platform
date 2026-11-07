@@ -32,7 +32,7 @@ export const SALES_PRODUCTION_PROFILE_V13: ProductionProfile = Object.freeze({
 
 export const SALES_LANE_PROFILE_LABEL = 'sales-production@13';
 
-// The lane registry (SALES_LANE_PROFILES, isSalesLaneProfile, salesCatalogSourceOf) lives in profile-v14.ts.
+// The lane registry (SALES_LANE_PROFILES, isSalesLaneProfile, salesCatalogSourceOf) lives in profile-v15.ts.
 
 /** What must be true before @13 serves its first real conversation. */
 export const SALES_PRODUCTION_PROFILE_V13_GATE = Object.freeze([

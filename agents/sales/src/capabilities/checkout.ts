@@ -56,6 +56,19 @@ export interface CheckoutCapabilityDeps {
 }
 
 const DEFAULT_POLL = { intervalMs: 1_500, prepareMaxMs: 20_000, linkMaxMs: 30_000 };
+
+/**
+ * (D7-6, sandbox) At most this many autonomous Checkout financial operations per task: one session (start) and one
+ * payment attempt (link). Replays of the same execution never count again (store.checkoutFinancialOperations); a new
+ * link after an expired one would be a third operation and is refused (a person continues).
+ */
+export const CHECKOUT_FINANCIAL_OPERATIONS_PER_TASK = 2;
+
+async function financialLimitReached(deps: CheckoutCapabilityDeps, taskId: string, executionKey: string): Promise<Rejected | null> {
+  const used = await deps.store.checkoutFinancialOperations(taskId, executionKey);
+  if (used < CHECKOUT_FINANCIAL_OPERATIONS_PER_TASK) return null;
+  return rejected('financial_write_limit', `this conversation already used its ${CHECKOUT_FINANCIAL_OPERATIONS_PER_TASK} autonomous payment operations; a person continues`, { used, limit: CHECKOUT_FINANCIAL_OPERATIONS_PER_TASK });
+}
 export const CHECKOUT_WRITE_TIMEOUT_MS = 75_000;
 
 // ---------------------------------------------------------------------------------------------- purchase grammar
@@ -219,6 +232,8 @@ export function checkoutStartPurchaseCapability(deps: CheckoutCapabilityDeps): W
       const taskId = context.execution.taskId;
       let record = await deps.store.checkoutPurchaseRequest(context.executionKey);
       if (!record) {
+        const limited = await financialLimitReached(deps, taskId, context.executionKey);
+        if (limited) return limited;
         const issued = (await deps.store.quoteV2Issued(taskId)).find((q) => q.quoteId === input.quoteId);
         if (!issued) return rejected('quote_not_in_conversation', 'only a quote issued in this conversation can be bought');
         let quoteVersion: number;
@@ -285,7 +300,7 @@ export function checkoutRequestLinkCapability(deps: CheckoutCapabilityDeps): Wri
   return {
     definition: writeDefinition(
       CHECKOUT_CAPABILITY_IDS.requestPaymentLink,
-      'Gets the Mercado Pago payment link of the purchase in course (checkout.start_purchase first). Reads Checkout first: an open link is re-sent, never duplicated; a new link only after the previous one expired, was cancelled or failed AND the customer asked again in their latest message. The platform sends the link message itself: you never see, write or repeat the URL, the amount or the expiry yourself; say only that the link was sent (linkNotice) and that payment is confirmed only when checkout.purchase_status says so.',
+      'Gets the Mercado Pago payment link of the purchase in course (checkout.start_purchase first). Reads Checkout first: an open link is re-sent, never duplicated; a new link only after the previous one expired, was cancelled or failed AND the customer asked again in their latest message. The platform sends the link message itself: you never see, write or repeat the URL, the amount or the expiry yourself; say only that the link was sent (linkNotice) and that payment is confirmed only when checkout.purchase_status says so. Refused with financial_write_limit when this conversation already used its payment operations: then say a person of the team will continue.',
     ),
     recovery: 'idempotent_replay',
     input: checkoutRequestLinkInput,
@@ -316,6 +331,8 @@ export function checkoutRequestLinkCapability(deps: CheckoutCapabilityDeps): Wri
           if (latest !== null && !explicitRequestSince(await deps.conversation.thread(taskId), latest.createdAt)) {
             return rejected('new_link_not_requested', 'a new link needs the customer to ask again after the previous one ended', { status, grammar: PURCHASE_GRAMMAR_VERSION });
           }
+          const limited = await financialLimitReached(deps, taskId, context.executionKey);
+          if (limited) return limited;
           const created = await deps.checkout.createPaymentAttempt(sessionId, checkoutIdempotencyKey(context.executionKey, 'link'), options);
           await deps.store.recordCheckoutLinkAttempt({ executionKey: context.executionKey, taskId, paymentAttemptId: created.view.paymentAttemptId });
           attempts = await deps.checkout.listPaymentAttempts(sessionId, options);

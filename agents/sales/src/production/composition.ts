@@ -98,7 +98,7 @@ export interface SalesProductionWorkerOptions {
   readonly canary?: boolean;
   /** (R4 Checkout, R-1) The Checkout sandbox-purchase binding (CheckoutHttpClient); required when the selected profile composes Checkout (@15). */
   readonly checkout?: CheckoutService & { readonly bindingKind: string };
-  /** (R4 Checkout, R-3) Where the purchase-consent artifact comes from; required by @15. No implementation exists in R4. */
+  /** (R4 Checkout, R-3) Where the purchase-consent artifact comes from; required by @15. Sandbox only: SandboxConsentDirectory (R4 never signs). */
   readonly checkoutConsent?: CheckoutConsentSource;
   /** (R4-J4-R4) The R4_CUSTOMER_* configuration of the worker; required when the selected profile composes Customer and identity verification (v8). */
   readonly customer?: {
@@ -224,7 +224,7 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
   const checkoutReal = isCheckoutLaneProfile(profile);
   if (checkoutReal) {
     if (!options.checkout || options.checkout.bindingKind !== 'http') throw new Error(`refusing production composition: ${profileLabel(profile)} binds Checkout but no Checkout binding was provided (R4_CHECKOUT_*)`);
-    if (!options.checkoutConsent) throw new Error(`refusing production composition: ${profileLabel(profile)} requires a purchase-consent source (contract R-3); R4 has none and never signs consent`);
+    if (!options.checkoutConsent) throw new Error(`refusing production composition: ${profileLabel(profile)} requires a purchase-consent source (contract R-3: R4_CHECKOUT_SBX_CONSENT_DIR, artifacts from Checkout's test tooling); R4 never signs consent`);
     if (!quoteReal || !options.quotes) throw new Error(`refusing production composition: ${profileLabel(profile)} binds Checkout without a REAL Quote domain`);
     const deps = { store: sales, checkout: killSwitchGuardedCheckout(options.checkout, controls, options.logger), quotes: options.quotes, consent: options.checkoutConsent, conversation: options.store, notices: options.store, now: () => clock.now() };
     capabilities.registerWrite(checkoutStartPurchaseCapability(deps));
