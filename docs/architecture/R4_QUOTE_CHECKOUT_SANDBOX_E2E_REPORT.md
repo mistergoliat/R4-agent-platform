@@ -1,6 +1,6 @@
 ---
 title: R4 — Quote V2 + Checkout: PR e integración sandbox
-status: R4_QUOTE_CHECKOUT_SANDBOX_E2E_BLOCKED
+status: R4_QUOTE_CHECKOUT_SANDBOX_E2E_AUTHORIZATION_PENDING (antes _BLOCKED y _NO_GO; §10)
 mandate: «R4 — Quote V2 + Checkout: PR and Sandbox Integration» (owner, 2026-11-06)
 date: 2026-11-07
 base: main 7008048
@@ -311,3 +311,99 @@ Commits sobre `2a6ec2a`, publicados en el PR #55:
 | (este) | `docs/architecture/R4_QUOTE_CHECKOUT_SANDBOX_E2E_REPORT.md` | Este informe |
 
 Sin cambios en Quote, Checkout, CIA, Catalog, la EC2 ni el kernel. Las pruebas de §4.3 y §6 viven fuera de ambos repositorios.
+
+## 10. Campaña sandbox real (2026-11-07): estado `R4_QUOTE_CHECKOUT_SANDBOX_E2E_AUTHORIZATION_PENDING`
+
+Secuencia del día:
+
+1. **«Real Sandbox E2E» → `_NO_GO` en el preflight.** La E-S1 vigente para la credencial de prueba era la de SBX-2. Tenía alcance sólo SBX-2 y vencía al cierre de esa campaña, que cerró el 2026-11-06. No se usó el token, ni siquiera para el preflight del proveedor.
+2. **«Sandbox E2E Unblock».** Se preparó todo lo que no requiere una llamada autenticada al proveedor (§10.1–§10.5).
+
+La evidencia de la EC2 y lo relativo a credenciales se conservan **fuera de este repositorio**.
+
+### 10.1 Decisión sobre la prueba parcial
+
+El owner autorizó usar un producto de la PrestaShop aislada:
+
+- La cotización **se origina con el adaptador real Quote V2 de R4** (`QuoteV2HttpClient.createAndIssue`, la misma llamada que `quote.create@5`), contra el Quote candidato `a79d33f`. Se persiste en Quote y en `sales.quote_v2_*` de R4.
+- Esa instancia de Quote es la que lee Checkout (túnel de SBX-2).
+- Después corren las capacidades reales de R4, en este orden:
+  - `checkout.start_purchase`: consentimiento por `SandboxConsentDirectory`;
+  - `checkout.request_payment_link`: el aviso de plataforma queda en un archivo privado para el pagador;
+  - `checkout.purchase_status`.
+  Usan `CheckoutHttpClient` con la prueba de aislamiento y el kill switch.
+
+**No cubre:**
+
+- Catalog V2, Discover, la vista previa desde Catalog ni la confirmación de la oferta;
+- WhatsApp y el dueño de entrega;
+- el modelo;
+- el Task Runtime, el Policy Engine y el ActionExecutor: un driver local invoca directamente las capacidades registradas. Ya los cubren las pruebas de integración y de mutación.
+
+El driver queda fuera del PR (no versionado).
+
+### 10.2 E-S1
+
+| Ítem | Estado |
+|---|---|
+| E-S1 de SBX-2 | Cerrada, no reutilizable |
+| Nueva solicitud (alcance `R4_QUOTE_CHECKOUT_E2E_SANDBOX`: una operación de CLP 2.500, máximo 1 intento, ventana de 1 h, comprador de prueba de Checkout, sólo Mercado Pago sandbox y PrestaShop aislada) | **Preparada, sin firmar.** E4 cambia respecto del texto original (1.000 → 2.500) y requiere aceptación expresa. No se creó ni simuló ninguna firma |
+| Verificación de la credencial (huella, vendedor, aplicación, entorno) | **Pendiente.** Sólo puede hacerse con el procedimiento autorizado (ensamblado con huella, runtime `VERIFIED`, preflight `/users/me`) **después** de la firma |
+| Copia del token de la campaña SBX-2 en la EC2 | **Retirada** (`shred -u`, 2026-11-07 05:15Z) tras comprobar que la E-S1 terminó, que ningún proceso la usaba y que S0 no depende de ella. El archivo original del operador se conserva (es la fuente autorizada para ensamblar la nueva campaña) |
+
+### 10.3 AD-5 (en Checkout, no en R4)
+
+Corrección implementada en el repositorio Checkout: rama local `pay-02c-ad5-late-capture`, commit `3d7b23d`, **sin revisión independiente todavía**.
+
+**Investigación del contrato del proveedor.** La API de órdenes de Mercado Pago no expone la hora de inicio del pago (la orden documentada sólo trae `created_date`, `last_updated_date` y `expiration_time`). Por eso, la evidencia es la hora del proveedor en la primera vista de la orden en proceso. Se guarda una sola vez (`payment_started_at`, migración `0018`) y nunca se usa la hora de observación de Checkout.
+
+**Tres momentos separados:**
+
+- inicio: hora del proveedor;
+- primera observación: reloj de Checkout, en la auditoría;
+- acreditación: hora del proveedor en la vista de la captura.
+
+**Reglas:**
+
+| Inicio | Resultado |
+|---|---|
+| Verificable antes del vencimiento | Sigue con los demás controles |
+| Posterior al vencimiento | `ACTION_REQUIRED`, caso `LATE_CAPTURE`, sin orden |
+| Desconocido | `ACTION_REQUIRED`, caso `LATE_CAPTURE`, sin orden |
+
+En todos los casos la captura queda registrada, sin pérdida ni duplicado.
+
+**Pruebas:**
+
+- 7/7 de aceptación: LATE-A retenido, CT-11 completa, inicio posterior, inicio desconocido, pago normal, captura tras vencimiento, inmutabilidad.
+- 3/3 mutaciones detectadas: sin comparación de tiempo, hora de observación como inicio, estado abierto como evidencia.
+- Regresión de Checkout: 1559 pruebas aprobadas, con 2 fallas que **ya existían** en `d11e3c7`. Son guardias estáticas que marcan `scripts/sbx2/localStack.ts`, de SBX-2, y no están relacionadas con este cambio.
+
+**Cambio de comportamiento:** una prueba previa de Checkout ("orden oculta por el retraso de búsqueda y pagada entretanto") completaba la orden. Ahora queda retenida, porque el pago llega en el vencimiento sin evidencia de inicio anterior; el pago sigue registrado.
+
+**Para la campaña:** la imagen ya revisada en la EC2 es `14335cb`, sin AD-5. Usar `3d7b23d` exige revisarlo y construir la imagen; lo decide el owner. Con un único intento pagado dentro de la ventana, AD-5 no se ejercita contra el proveedor real (OD-06 sigue abierto).
+
+### 10.4 Readiness del entorno integrado
+
+| Componente | Estado (2026-11-07) |
+|---|---|
+| R4 candidato | PR #55 (`91b11bb`), sin cambios. El driver usa el build local |
+| Quote V2 candidato `a79d33f` | Recreado localmente. **Ensayo:** R4 emitió una cotización real por su adaptador (CLP 2.101 + 399 = 2.500, PDF verificado por sha256), persistida en Quote y en R4. Detenido después |
+| Consentimiento | **Ensayo:** la herramienta `sign-test-consent` de Checkout firmó para esa cotización; `SandboxConsentDirectory` lo entregó; el verificador de Checkout, con la clave pública y el comprador que fija la configuración del runtime de la EC2, respondió `VALID` (`SYNTHETIC`, ligado al documento) |
+| PrestaShop aislada | Responde localmente; el centinela se verifica en el runtime al ejecutar |
+| Checkout `sandbox-purchase` (EC2) | Imagen, configuración y base presentes. **Detenido.** Sin `app.env`: se reensambla con la huella aprobada después de la E-S1 |
+| S0 | En ejecución. **Sin operaciones financieras pendientes:** 0 sesiones, 0 intentos, sin workers. 8 trabajos de eventos de proveedor inertes del 2026-10-26, nunca ejecutados; detener S0 no los afecta |
+| Bases de datos | Checkout: contenedor y volumen propios en loopback. Quote y R4: locales. Ninguna productiva |
+| Rollback | El de SBX-2 (detener `checkout-sbx2`, revocar grants, arrancar S0, cerrar el túnel). El respaldo de la base `checkout-sbx2` se toma al abrir la ventana |
+| Recursos de la EC2 | Suficientes (1,7 GiB de RAM y 6,8 GB de disco libres) |
+
+### 10.5 Condiciones pendientes para ejecutar
+
+1. **E-S1 firmada** por el responsable de la credencial, incluida la aceptación de E4 = 2.500, E7 y E8.
+2. **Verificación de la credencial**, sólo después de la firma: ensamblado con huella, runtime `VERIFIED`, preflight PASS.
+3. **Autorización financiera** (grant: CLP 2.500, 1 intento, 1 h), en el momento de ejecutar.
+4. **Pagador disponible**, con la tarjeta de prueba, en incógnito y sin sesión de Mercado Pago.
+5. **Imagen de Checkout para la campaña:** `14335cb` (revisada) o `3d7b23d` (AD-5, sin revisar).
+6. **Ventana aprobada:** dentro de ella se detiene S0, se toma el respaldo de la base, se arranca `sandbox-purchase` y se abre el túnel.
+
+Con 1–4 y 6 cumplidos y el preflight completo, el estado pasa a `R4_QUOTE_CHECKOUT_SANDBOX_E2E_READY_TO_EXECUTE`.
