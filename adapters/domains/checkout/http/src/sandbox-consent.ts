@@ -28,7 +28,7 @@ export class SandboxConsentDirectory implements CheckoutConsentSource {
     this.#now = options.now ?? (() => new Date());
   }
 
-  async obtain(request: { readonly quoteId: string; readonly quoteVersion: number }): Promise<CheckoutConsentEvidence | null> {
+  async obtain(request: Parameters<CheckoutConsentSource['obtain']>[0]): Promise<CheckoutConsentEvidence | null> {
     if (!UUID.test(request.quoteId)) return null;
     let raw: string;
     try {
