@@ -35,10 +35,10 @@ function slowOwner(ms: number) {
       state.inFlight -= 1;
       return { httpStatus: 201 } as never;
     },
-    getQuote: async () => ({ status: 'issued' }) as never,
-    getOperation: async () => ({}) as never,
-    lookupIdempotency: async () => null,
-    getDocument: async () => ({}) as never,
+    getQuote: () => Promise.resolve({ status: 'issued' } as never),
+    getOperation: () => Promise.resolve({} as never),
+    lookupIdempotency: () => Promise.resolve(null),
+    getDocument: () => Promise.resolve({} as never),
   } satisfies QuoteV2Service;
   return { quotes, state };
 }
