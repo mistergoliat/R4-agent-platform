@@ -60,7 +60,7 @@ En consecuencia, el código `ae0bedf` funciona sobre un esquema en `0014`. Esto 
    - pm2 `online` y 0 reinicios;
    - `worker.started` en los dos workers;
    - salud del gateway;
-   - `production:sales:validate`.
+   - `production:sales:plan` (no envía ni escribe nada; `validate` crea una base desechable en el servidor y no se usa contra producción).
 9. **Regresión:** un mensaje de la allowlist actual sigue respondido por `@13` (carril) y uno fuera de la allowlist sigue en `@3`.
 10. **Kill switch:** `autonomy on --reason "<aprobación>"`. `@3` y `@13` no escriben en Quote.
 
@@ -81,7 +81,7 @@ En consecuencia, el código `ae0bedf` funciona sobre un esquema en `0014`. Esto 
 4. **`run-worker-lane.sh`:** agregar `source /home/ec2-user/.config/r4/quote-v2-retail.env` (Quote real, `r4-sales-retail-session`, timeout 20 s). **Sin P-1.** Shipping (`R4_SHIPPING_*`) y Catalog V2 ya están configurados.
 5. **`production.env`:** `R4_PROD_LANE_PROFILE=sales-production@17`. La allowlist no cambia.
 6. **Bootstrap**, con el entorno del carril: `npm run production:sales:bootstrap -- --lane`. Registra la definición v16.
-7. **Validación sin efectos:** `production:sales:validate`. Rechaza Quote sin Shipping, límites F1 más laxos y un presupuesto fuera de 1..6.
+7. **Validación sin efectos:** `production:sales:plan` con el entorno del carril, que no envía ni escribe nada. La composición rechaza al arrancar Quote sin Shipping, límites F1 más laxos y un presupuesto fuera de 1..6.
 8. **Reiniciar** el worker del carril y el gateway. Verificar que el worker del carril sirve `sales@16`.
 9. **Prueba de humo con el kill switch puesto:** un mensaje de la allowlist llega a `@17` y Quote no se llama.
 
