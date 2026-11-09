@@ -11,9 +11,9 @@ export const destinationSchema = z.strictObject({ commune: z.string().trim().min
 type ReadDefinition = Omit<CapabilityDefinition, 'inputSchema' | 'outputSchema'>;
 
 /** Common metadata of the pack's READ capabilities (each states its own owner, scope and freshness). */
-export function readDefinition(fields: Pick<ReadDefinition, 'capabilityId' | 'description' | 'owner' | 'requiredScopes' | 'freshnessTtlMs'> & { timeoutMs?: number }): ReadDefinition {
+export function readDefinition(fields: Pick<ReadDefinition, 'capabilityId' | 'description' | 'owner' | 'requiredScopes' | 'freshnessTtlMs'> & { timeoutMs?: number; version?: number }): ReadDefinition {
   return {
-    version: 1,
+    version: fields.version ?? 1,
     riskClass: 'READ',
     identityRequirement: 'none',
     confirmationPolicy: 'none',

@@ -49,6 +49,7 @@ import type { AutonomousQuoteLimits, AutonomousQuoteLimitsV6 } from '../capabili
 import { assertQuoteParityConfigured, type QuoteParityGuard } from '../capabilities/parity-guard.js';
 import { SALES_CANARY_ONLY_PROFILES, assertF1CanaryLimits, isF1CanaryProfile } from './profile-v12.js';
 import { SALES_LANE_PROFILES, isCheckoutLaneProfile, isQuoteLaneProfile, isSalesLaneProfile } from './profile-v15.js';
+import { SALES_VARIANT_AVAILABILITY_PROFILES } from './profile-v17.js';
 import { catalogDiscoverCapability } from '../capabilities/catalog-discover.js';
 import type { CatalogDiscoverPort } from '@r4-adapters/catalog-http';
 import { checkoutPurchaseStatusCapability, checkoutRequestLinkCapability, checkoutStartPurchaseCapability } from '../capabilities/checkout.js';
@@ -160,7 +161,7 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
   }
   if (catalogReal) {
     // READ capabilities offered to the model; they execute through the CapabilityInvoker only.
-    const [catalogSearch, productContext] = catalogCapabilities(catalog);
+    const [catalogSearch, productContext] = catalogCapabilities(catalog, { variantAvailability: SALES_VARIANT_AVAILABILITY_PROFILES.has(profileLabel(profile)) });
     capabilities.register(catalogSearch);
     capabilities.register(productContext);
   }
