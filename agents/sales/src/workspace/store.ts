@@ -365,13 +365,13 @@ export class PostgresSalesStore {
    * attempts Checkout answered. The current execution is excluded, so replaying it (same key) is never counted twice;
    * a second start that Checkout answers with the same live session is one operation.
    */
-  async checkoutFinancialOperations(taskId: string, exceptExecutionKey: string): Promise<number> {
-    const r = await this.#pool.query<{ n: number }>(
-      `select (select count(distinct session_id) from sales.checkout_sessions where task_id = $1 and execution_key <> $2)
-            + (select count(distinct payment_attempt_id) from sales.checkout_link_attempts where task_id = $1 and execution_key <> $2) as n`,
+  async checkoutFinancialOperations(taskId: string, exceptExecutionKey: string): Promise<{ readonly sessions: number; readonly attempts: number }> {
+    const r = await this.#pool.query<{ sessions: number; attempts: number }>(
+      `select (select count(distinct session_id) from sales.checkout_sessions where task_id = $1 and execution_key <> $2) as sessions,
+              (select count(distinct payment_attempt_id) from sales.checkout_link_attempts where task_id = $1 and execution_key <> $2) as attempts`,
       [taskId, exceptExecutionKey],
     );
-    return Number(r.rows[0]!.n);
+    return { sessions: Number(r.rows[0]!.sessions), attempts: Number(r.rows[0]!.attempts) };
   }
 
   /** Records the session Checkout answered for a purchase (first answer kept: a replay returns the same session). */

@@ -1,6 +1,6 @@
 ---
 title: R4 — Quote V2 + CIA + Checkout, E2E integrado
-status: R4_QUOTE_CHECKOUT_SANDBOX_E2E_AUTHORIZATION_PENDING
+status: R4_QUOTE_CHECKOUT_SANDBOX_E2E_VALIDATED (E3-A, §8); E3-B blocked
 mandate: «R4 — Quote V2 + CIA + Checkout: Integrated E2E» (owner, 2026-11-08)
 date: 2026-11-08
 r4: PR #55 (feat/r4-quote-checkout-e2e), sin merge
@@ -14,8 +14,8 @@ previous: R4_QUOTE_CHECKOUT_SANDBOX_E2E_REPORT.md §10
 | # | Entregable | Estado |
 |---|---|---|
 | 1 | Revisión independiente de AD-5 | **`CHECKOUT_AD5_REVIEW_PASS`**, con tres observaciones para el owner (§1) |
-| 2 | E-S1 | Preparada y **sin firmar**. Credencial verificada por huella, **sin** llamadas al proveedor (§2) |
-| 3 | E3-A real | **NOT_RUN**: espera la E-S1 firmada, el grant, el pagador y la ventana (§3) |
+| 2 | E-S1 | **Firmada** por el owner para esta campaña; credencial verificada (huella y luego `/users/me` en el preflight) (§2, §8) |
+| 3 | E3-A real | **Ejecutado y PASS** contra Mercado Pago sandbox real (§8). Dos defectos de R4 encontrados y corregidos |
 | 4 | Matriz de identidad CIA | §4 |
 | 5 | Preparación de E3-B desde WhatsApp | **BLOQUEADA por topología** (§5): Catalog V2 productivo y la PrestaShop aislada no comparten identificadores |
 | 6 | Bloqueos restantes | §6 |
@@ -195,3 +195,81 @@ El número, la allowlist y `@13` no cambian. `@14`/`@15` siguen inactivos.
 4. Producción financiera sólo tras CIA `purchase`, H3, AD-5 con C1, F-1..F-7 y autorización explícita por SHA.
 
 **Nada se activa sin autorización específica.**
+
+## 8. E3-A ejecutado (2026-11-09): `R4_QUOTE_CHECKOUT_SANDBOX_E2E_VALIDATED`
+
+**Autorizaciones del owner:**
+
+- E-S1 `R4_QUOTE_CHECKOUT_E2E_SANDBOX` firmada en la sesión, con E4 = 2.500 CLP aceptado expresamente.
+- Imagen de Checkout `3d7b23d` (AD-5 revisado).
+- Grant: 2.500 CLP, 1 intento, 1 h.
+- El owner pagó con la tarjeta de prueba.
+
+La ventana duró unos 21 minutos: S0 se detuvo y se restauró. Los identificadores, la credencial y la evidencia de la EC2 se conservan **fuera de este repositorio**.
+
+**Topología:**
+
+- R4 candidato (build del PR) en el PC del operador, con un driver local que invoca los **adaptadores y capacidades reales** de R4.
+- Quote V2 `a79d33f` en el mismo PC. Checkout leyó **esa misma instancia** por el túnel.
+- Checkout `sandbox-purchase` `3d7b23d` en la EC2, con su propia base y loopback.
+- Mercado Pago de prueba.
+- PrestaShop aislada detrás de un proxy contador.
+
+**Preflight:**
+
+- Runtime `ready`, credencial `VERIFIED`.
+- Preflight de Checkout PASS: vendedor, huella y entorno de prueba **demostrados** con `/users/me`; destino aislado demostrado con el centinela.
+- R4 leyó la misma readiness a través del túnel.
+- Respaldo de la base antes de la migración `0018`.
+
+| # | Punto del mandato | Resultado (proveedor sandbox **real**) |
+|---|---|---|
+| 1 | R4 emite la cotización | PASS: `QuoteV2HttpClient.createAndIssue`; 2.101 + 399 = 2.500; PDF verificado por sha256 |
+| 2 | Quote persiste la cotización | PASS: en Quote y en `sales.quote_v2_*` |
+| 3 | Quote prepara el carrito | PASS: un único `POST /api/carts` en la tienda aislada, más la fijación de precio |
+| 4 | Checkout reconoce el carrito | PASS: `PREPARING → READY` (paridad) |
+| 5 | Consentimiento válido | PASS: `sign-test-consent` de Checkout → `SandboxConsentDirectory` → verificado por Checkout al crear la sesión |
+| 6 | Sesión creada | PASS, previa prueba de aislamiento sandbox |
+| 7 | Enlace generado | PASS: un único create al proveedor; aviso de plataforma con la URL de `www.mercadopago.cl`; el modelo nunca la ve |
+| 8 | Pago de prueba | PASS: el owner pagó con la tarjeta oficial de prueba |
+| 9 | Webhook autenticado | PASS: firma verificada |
+| 10 | Conciliación | PASS: `CAPTURED` por relectura al proveedor; AD-5 registró `START_IN_TIME` (acreditación anterior al vencimiento); `late_capture = false` |
+| 11 | Orden creada exactamente una vez | PASS: **una** orden para el carrito; el proxy contó un solo `POST /api/orders`; estado de la orden 11 → 2; sesión `COMPLETED`; `checkout.purchase_status` → `ORDER_COMPLETED` |
+| 12 | Recuperación e idempotencia | PASS (ver detalle abajo) |
+| — | Vencimiento sobre el intento pagado | PASS: `EXPIRE_ATTEMPT` corrió al vencer y no cambió nada (sin cancelación, sin caso) |
+
+**Detalle del punto 12:**
+
+- Se mató el proceso de R4 justo después de que Checkout respondiera `createSession`, y otra vez después de `createPaymentAttempt`. Los reinicios con la misma clave obtuvieron la misma sesión (`Idempotent-Replay`) y **no** crearon un segundo intento.
+- Los replays posteriores a la orden no enviaron comandos nuevos.
+- Con la base nueva, el kill switch de R4 estaba enganchado (estado por defecto) y bloqueó todo comando antes de cualquier llamada.
+
+**No cubierto por E3-A** (§10.1 del informe anterior):
+
+- Catalog V2, Discover, la vista previa y la confirmación de la oferta;
+- WhatsApp y el dueño de entrega;
+- el modelo;
+- Task Runtime, Policy Engine y ActionExecutor (las capacidades se invocaron directamente);
+- pagos rechazados o pendientes;
+- el vencimiento del lado del proveedor (OD-06);
+- AD-5 con un pago tardío real.
+
+**Hallazgos y correcciones en R4** (en este PR, después de la campaña):
+
+- **F-E3A-1 (alta).** El contador D7-6 no contaba un intento que Checkout creó pero que R4 no alcanzó a registrar: el proceso murió entre la respuesta y el registro, y el reinicio lo leyó sin publicar nada. Tras el vencimiento, el tope habría permitido un segundo intento. **Corregido:** antes de un intento nuevo, el límite cuenta también los intentos que Checkout lista para la sesión. Prueba de regresión y mutación CK-M15 detectada (15/15).
+- **F-E3A-2 (baja).** El aviso decía «Si vence, puedes pedir uno nuevo», que contradice D7-6. **Corregido:** ahora dice que una persona del equipo ayudará.
+- **F-E3A-3 (información).** La base nueva arranca con el kill switch enganchado; el operador debe habilitar la autonomía explícitamente. Es el diseño.
+- **F-E3A-4 (información).** La vigencia de la cotización vino del principal de Quote usado (5 días). La decisión sobre el principal de R4 sigue pendiente en E2.
+
+**Cierre:**
+
+- S0 restaurado.
+- `sandbox-purchase` detenido.
+- Grants: 0 vigentes.
+- Copia del token retirada.
+- Túnel cerrado: puertos cerrados en la EC2 y ningún proceso `ssh` en el PC.
+- Quote y PrestaShop locales detenidos.
+
+**Validación de las correcciones de R4:** lint; 91 pruebas focalizadas (unitarias de Checkout, integración de Checkout y de avisos, contrato v15); mutaciones de checkout 15/15. Las otras 19 suites conservan su evidencia: el cambio se limita a `checkout.ts` (dos líneas de lógica y el texto del aviso) y a `store.ts` (la forma del contador), ambos cubiertos sólo por la suite `checkout`.
+
+**Estado:** `R4_QUOTE_CHECKOUT_SANDBOX_E2E_VALIDATED`, para el alcance de E3-A. El siguiente estado, `R4_WHATSAPP_QUOTE_CHECKOUT_CANARY_READY_FOR_REVIEW`, **no** se alcanza: E3-B sigue bloqueado por topología (§5) y CIA no está en `@15` (§4).

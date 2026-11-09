@@ -378,7 +378,7 @@ describe('D7-6: at most two autonomous Checkout financial operations per task, r
     const linkKey = `r4x_${randomBytes(16).toString('hex')}`;
     expect(await s.start.execute({ quoteId: s.c.quoteId }, wctx(s.c.taskId, startKey))).toMatchObject({ status: 'applied' });
     expect(await s.link.execute({}, wctx(s.c.taskId, linkKey))).toMatchObject({ status: 'applied', result: { linkNotice: 'queued' } });
-    expect(await store.checkoutFinancialOperations(s.c.taskId, 'none')).toBe(2);
+    expect(await store.checkoutFinancialOperations(s.c.taskId, 'none')).toEqual({ sessions: 1, attempts: 1 });
     // Legitimate idempotent replays of the same executions (a lost answer, a restart) are not new operations.
     expect(await s.start.execute({ quoteId: s.c.quoteId }, wctx(s.c.taskId, startKey, 2))).toMatchObject({ status: 'applied', replayed: true });
     expect(await s.link.execute({}, wctx(s.c.taskId, linkKey, 2))).toMatchObject({ status: 'applied' });
@@ -388,6 +388,21 @@ describe('D7-6: at most two autonomous Checkout financial operations per task, r
     expect(await s.start.execute({ quoteId: s.c.quoteId }, wctx(s.c.taskId))).toMatchObject({ status: 'rejected', code: 'financial_write_limit' });
     expect(s.checkout.keysSeen.length).toBe(keysBefore);
     expect(s.checkout.counters).toEqual({ sessionCreates: 1, prepares: 1, attemptCreates: 1 });
+  });
+
+  it('F-E3A-1 (E3-A real run): the attempt Checkout created but R4 never recorded (answer lost, restart read it) still counts: no second attempt after it expires', async () => {
+    const s = await readyToPay();
+    const linkKey = `r4x_${randomBytes(16).toString('hex')}`;
+    s.checkout.loseNextAnswer = true;
+    expect(await s.link.execute({}, wctx(s.c.taskId, linkKey, 1))).toMatchObject({ status: 'unknown' });
+    expect(await s.link.execute({}, wctx(s.c.taskId, linkKey, 2))).toMatchObject({ status: 'applied' }); // read first: nothing posted, nothing recorded
+    expect(await store.checkoutFinancialOperations(s.c.taskId, 'none')).toEqual({ sessions: 1, attempts: 0 });
+    const sessionId = [...s.checkout.sessions.keys()][0]!;
+    s.checkout.setLatestAttempt(sessionId, { status: 'EXPIRED', checkoutUrl: null, linkExpired: true });
+    s.checkout.set(sessionId, { status: 'READY' });
+    s.c.customer('quiero un link nuevo', new Date(NOW.getTime() + 60_000).toISOString());
+    expect(await s.link.execute({}, wctx(s.c.taskId))).toMatchObject({ status: 'rejected', code: 'financial_write_limit', details: { used: 2 } });
+    expect(s.checkout.counters.attemptCreates).toBe(1);
   });
 });
 

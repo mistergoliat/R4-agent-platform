@@ -64,8 +64,14 @@ const DEFAULT_POLL = { intervalMs: 1_500, prepareMaxMs: 20_000, linkMaxMs: 30_00
  */
 export const CHECKOUT_FINANCIAL_OPERATIONS_PER_TASK = 2;
 
-async function financialLimitReached(deps: CheckoutCapabilityDeps, taskId: string, executionKey: string): Promise<Rejected | null> {
-  const used = await deps.store.checkoutFinancialOperations(taskId, executionKey);
+/**
+ * `attemptsAtCheckout`: before a new payment attempt, the attempts Checkout itself lists for the session in course. They
+ * count even when R4 never recorded them (E3-A F-E3A-1: the process died after Checkout created the attempt and before R4
+ * recorded it; the restart read the open attempt and posted nothing, so R4's own records alone undercount).
+ */
+async function financialLimitReached(deps: CheckoutCapabilityDeps, taskId: string, executionKey: string, attemptsAtCheckout = 0): Promise<Rejected | null> {
+  const recorded = await deps.store.checkoutFinancialOperations(taskId, executionKey);
+  const used = recorded.sessions + Math.max(recorded.attempts, attemptsAtCheckout);
   if (used < CHECKOUT_FINANCIAL_OPERATIONS_PER_TASK) return null;
   return rejected('financial_write_limit', `this conversation already used its ${CHECKOUT_FINANCIAL_OPERATIONS_PER_TASK} autonomous payment operations; a person continues`, { used, limit: CHECKOUT_FINANCIAL_OPERATIONS_PER_TASK });
 }
@@ -190,7 +196,7 @@ export function checkoutLinkNoticeText(attempt: CheckoutAttemptView): string {
   return [
     `Este es tu link de pago de Mercado Pago (ambiente de prueba) por ${CLP.format(Number(attempt.amount.amountMinor))}:`,
     attempt.checkoutUrl!,
-    `Vence a las ${SANTIAGO_TIME.format(new Date(attempt.expiresAt))} (hora de Chile). Si vence, puedes pedir uno nuevo.`,
+    `Vence a las ${SANTIAGO_TIME.format(new Date(attempt.expiresAt))} (hora de Chile). Si vence antes de que pagues, avísanos y una persona del equipo te ayudará.`,
   ].join('\n');
 }
 
@@ -331,7 +337,7 @@ export function checkoutRequestLinkCapability(deps: CheckoutCapabilityDeps): Wri
           if (latest !== null && !explicitRequestSince(await deps.conversation.thread(taskId), latest.createdAt)) {
             return rejected('new_link_not_requested', 'a new link needs the customer to ask again after the previous one ended', { status, grammar: PURCHASE_GRAMMAR_VERSION });
           }
-          const limited = await financialLimitReached(deps, taskId, context.executionKey);
+          const limited = await financialLimitReached(deps, taskId, context.executionKey, attempts.length);
           if (limited) return limited;
           const created = await deps.checkout.createPaymentAttempt(sessionId, checkoutIdempotencyKey(context.executionKey, 'link'), options);
           await deps.store.recordCheckoutLinkAttempt({ executionKey: context.executionKey, taskId, paymentAttemptId: created.view.paymentAttemptId });

@@ -92,6 +92,11 @@ const MUTATIONS = [
     edits: [{ file: CONSENT, from: 'claims.quoteId !== request.quoteId || claims.quoteVersion !== request.quoteVersion || ', to: '' }],
     tests: [[HTTP_UNIT, 'nothing for another quote']],
   },
+  {
+    name: 'CK-M15 the per-task limit ignores attempts Checkout lists but R4 never recorded (F-E3A-1)',
+    edits: [{ file: CAP, from: 'financialLimitReached(deps, taskId, context.executionKey, attempts.length)', to: 'financialLimitReached(deps, taskId, context.executionKey)' }],
+    tests: [[IT, 'F-E3A-1']],
+  },
 ];
 
 function vitest({ project, file }, pattern) {
