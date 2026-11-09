@@ -13,6 +13,8 @@ const OUTBOUND = 'packages/live-ops/src/outbound.ts';
 const GATE = 'packages/live-ops/src/delivery.ts';
 const STORE = 'packages/persistence-postgres/src/production-store.ts';
 const SALES = 'agents/sales/src/production/composition.ts';
+// (R4 Checkout, R-4) Platform notices share the platform gate and the store claim.
+const NOTICE_IT = { project: 'integration', file: 'tests/integration/platform-notice.test.ts' };
 
 const MUTATIONS = [
   {
@@ -27,7 +29,7 @@ const MUTATIONS = [
   },
   {
     name: 'RFF-M3 the gate ignores whether the handoff is still pending',
-    edits: [{ file: GATE, from: '  if (f.handoffPending !== true) return', to: '  if (false) return' }],
+    edits: [{ file: GATE, from: 'f.notice === true ? f.task.humanOwned : f.handoffPending !== true) return', to: 'f.notice === true ? f.task.humanOwned : false) return' }],
     tests: [[UNIT, 'is cancelled once a human took the task'], [IT, 'an operator who takes the conversation before the dispatch']],
   },
   {
@@ -37,8 +39,18 @@ const MUTATIONS = [
   },
   {
     name: 'RFF-M5 the fallback bypasses the kill switch',
-    edits: [{ file: GATE, from: '  if (!autonomyEnabledFor(f.controls, f.channel).enabled) return { kind: \'hold\', reason: DISPATCH_HOLD_REASONS.killSwitch };\n  if (f.binding.deniedNow) return { kind: \'hold\', reason: DISPATCH_HOLD_REASONS.denied };\n  if (!f.binding.autonomous) return { kind: \'hold\', reason: DISPATCH_HOLD_REASONS.rolloutExcluded };\n  if (f.handoffPending', to: "  if (f.binding.deniedNow) return { kind: 'hold', reason: DISPATCH_HOLD_REASONS.denied };\n  if (!f.binding.autonomous) return { kind: 'hold', reason: DISPATCH_HOLD_REASONS.rolloutExcluded };\n  if (f.handoffPending" }],
+    edits: [{ file: GATE, from: '  if (!autonomyEnabledFor(f.controls, f.channel).enabled) return { kind: \'hold\', reason: DISPATCH_HOLD_REASONS.killSwitch };\n  if (f.binding.deniedNow) return { kind: \'hold\', reason: DISPATCH_HOLD_REASONS.denied };\n  if (!f.binding.autonomous) return { kind: \'hold\', reason: DISPATCH_HOLD_REASONS.rolloutExcluded };\n  if (f.notice', to: "  if (f.binding.deniedNow) return { kind: 'hold', reason: DISPATCH_HOLD_REASONS.denied };\n  if (!f.binding.autonomous) return { kind: 'hold', reason: DISPATCH_HOLD_REASONS.rolloutExcluded };\n  if (f.notice" }],
     tests: [[UNIT, 'obeys the kill switch, deny and rollout'], [IT, 'the kill switch holds the fallback']],
+  },
+  {
+    name: 'RFF-N1 (R-4) a platform notice ignores human ownership',
+    edits: [{ file: GATE, from: 'f.notice === true ? f.task.humanOwned :', to: 'f.notice === true ? false :' }],
+    tests: [[UNIT, 'is cancelled once a human owns the task']],
+  },
+  {
+    name: 'RFF-N2 (R-4) the store claims a notice as a fallback (no handoff: never sent)',
+    edits: [{ file: STORE, from: "const notice = outbound.origin === 'platform' && outbound.noticeKey !== null;", to: 'const notice = false;' }],
+    tests: [[NOTICE_IT, 'is delivered once through the existing path'], [NOTICE_IT, 'is held by the kill switch like agent output']],
   },
   {
     name: 'RFF-M6 the Sales gateway composes no fallback text',

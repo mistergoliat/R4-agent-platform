@@ -3,7 +3,8 @@ import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { profileLabel } from '@r4/live-ops';
-import { SALES_CANARY_ONLY_PROFILES, SALES_LANE_PROFILES, SALES_PRODUCTION_PROFILES, SALES_PRODUCTION_PROFILE_V7, SALES_PRODUCTION_PROFILE_V12, SALES_PRODUCTION_PROFILE_V13, salesCatalogSourceOf } from '@r4-sales/agent/production';
+import { SALES_CANARY_ONLY_PROFILES, SALES_LANE_PROFILES, SALES_PRODUCTION_PROFILES, SALES_PRODUCTION_PROFILE_V7, SALES_PRODUCTION_PROFILE_V12, SALES_PRODUCTION_PROFILE_V13, SALES_PRODUCTION_PROFILE_V14, salesCatalogSourceOf } from '@r4-sales/agent/production';
+import { CANARY_PROFILES } from '@r4-sales/agent/canary';
 import { canaryCatalogConfig, canaryCatalogSource } from '../../../agents/sales/src/cli/canary/command.js';
 
 /**
@@ -29,6 +30,14 @@ describe('the canary chooses its Catalog explicitly (R4_CANARY_CATALOG_SOURCE)',
     expect(() => canaryCatalogSource({}, SALES_PRODUCTION_PROFILE_V12)).toThrow(/binds Catalog V2 only/);
     expect(() => canaryCatalogSource({ R4_CANARY_CATALOG_SOURCE: 'v1' }, SALES_PRODUCTION_PROFILE_V12)).toThrow(/binds Catalog V2 only/);
     expect(canaryCatalogConfig({ ...V1_ENV, ...V2_ENV, R4_CANARY_CATALOG_SOURCE: 'v2' }, canaryOf(SALES_PRODUCTION_PROFILE_V12))).toEqual({ source: 'v2', baseUrl: 'http://127.0.0.1:4011', apiKey: V2_ENV.R4_CATALOG_V2_API_KEY, timeoutMs: 5000 });
+  });
+
+  it('(Quote V2 lane canary) the isolated canary runs the quote lane @14, on Catalog V2 only (never @13 or @15)', () => {
+    expect(CANARY_PROFILES.map(profileLabel)).toContain('sales-production@14');
+    expect(CANARY_PROFILES.map(profileLabel)).not.toEqual(expect.arrayContaining(['sales-production@13']));
+    expect(CANARY_PROFILES.map(profileLabel)).not.toContain('sales-production@15');
+    expect(() => canaryCatalogSource({}, SALES_PRODUCTION_PROFILE_V14)).toThrow(/binds Catalog V2 only/);
+    expect(canaryCatalogSource({ R4_CANARY_CATALOG_SOURCE: 'v2' }, SALES_PRODUCTION_PROFILE_V14)).toBe('v2');
   });
 
   it('a chosen V2 with incomplete V2 variables is refused even when V1 is fully configured (no silent fallback)', () => {
@@ -61,9 +70,9 @@ describe('the production composition cannot be switched to Catalog V2 by configu
     for (const options of calls) expect(options, options).toMatch(/^ allowNetwork: production\.config\.allowNetwork, source: salesCatalogSourceOf\((profile|workerProfile\(production\))\) $/);
   });
 
-  it('salesCatalogSourceOf: v1 for every production and canary profile; v2 only for the lane profile @13', () => {
+  it('salesCatalogSourceOf: v1 for every production and canary profile; v2 only for the lane profiles @13, @14 and @15', () => {
     for (const p of [...SALES_PRODUCTION_PROFILES, ...SALES_CANARY_ONLY_PROFILES]) expect(salesCatalogSourceOf(p), profileLabel(p)).toBe('v1');
-    expect(SALES_LANE_PROFILES.map(profileLabel)).toEqual(['sales-production@13']);
+    expect(SALES_LANE_PROFILES.map(profileLabel)).toEqual(['sales-production@13', 'sales-production@14', 'sales-production@15']);
     expect(salesCatalogSourceOf(SALES_PRODUCTION_PROFILE_V13)).toBe('v2');
   });
 });

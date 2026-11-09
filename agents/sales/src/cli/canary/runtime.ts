@@ -41,6 +41,9 @@ import { loadAutonomousQuoteLimits, loadAutonomousQuoteLimitsV6, type Autonomous
 import { loadQuoteParityGuard, type QuoteParityGuard } from '../../capabilities/parity-guard.js';
 import type { ApprovalInspection } from '../../production/approvals.js';
 import { SALES_PRODUCTION_PROFILE_V12, assertF1CanaryWriteCeiling, isF1CanaryProfile } from '../../production/profile-v12.js';
+import { SALES_PRODUCTION_PROFILE_V14 } from '../../production/profile-v14.js';
+import { isQuoteLaneProfile, isSalesLaneProfile } from '../../production/profile-v15.js';
+import type { CatalogDiscoverPort } from '@r4-adapters/catalog-http';
 import { openApprovalInspection } from '../approval-inspection.js';
 import { CaptureOutboundAdapter, SYNTHETIC_ACCOUNT, SYNTHETIC_INBOUND_ADAPTER, syntheticConversationRef, syntheticInbound } from './channel.js';
 import { assertCanaryGatewayLive, assertUninspectedCanaryAllowed, parseCanaryTestHosts } from './identity.js';
@@ -53,7 +56,7 @@ export const CANARY_PROFILE: ProductionProfile = SALES_PRODUCTION_PROFILE_V4;
  * v7 (deterministic offer, R4-J3E-C1) and v8 (Customer and identity verification, R4-J4-R4; prepared for J4-R5, not run).
  * Never one a production worker runs today.
  */
-export const CANARY_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_PRODUCTION_PROFILE_V4, SALES_PRODUCTION_PROFILE_V5, SALES_PRODUCTION_PROFILE_V6, SALES_PRODUCTION_PROFILE_V7, SALES_PRODUCTION_PROFILE_V8, SALES_PRODUCTION_PROFILE_V12]);
+export const CANARY_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_PRODUCTION_PROFILE_V4, SALES_PRODUCTION_PROFILE_V5, SALES_PRODUCTION_PROFILE_V6, SALES_PRODUCTION_PROFILE_V7, SALES_PRODUCTION_PROFILE_V8, SALES_PRODUCTION_PROFILE_V12, SALES_PRODUCTION_PROFILE_V14]);
 
 const DATABASE_URL = /^postgres(ql)?:\/\//;
 
@@ -253,6 +256,8 @@ export async function sendSynthetic(
 export interface CanaryRuntimeOptions {
   readonly modelProvider: ModelProvider;
   readonly catalog: CatalogPort & { readonly bindingKind: string };
+  /** (Quote V2 lane canary) The Catalog V2 Discover binding of a lane profile (@14): the same Catalog V2 adapter. */
+  readonly catalogDiscover?: CatalogDiscoverPort;
   readonly shipping: ShippingService & { readonly bindingKind: string };
   readonly quotes: QuoteV2Service & { readonly bindingKind: string };
   readonly worker: WorkerConfig;
@@ -294,7 +299,7 @@ export async function startCanaryRuntime(canary: CanaryEnvironment, options: Can
   }
   const { logger } = options;
   // (R4-J5 F1) The F1 canary worker runs with the owner-approved write ceiling (1..6), never 0 and never looser.
-  if (isF1CanaryProfile(canary.profile)) assertF1CanaryWriteCeiling(options.worker.execution.maxWriteActions);
+  if (isF1CanaryProfile(canary.profile) || isQuoteLaneProfile(canary.profile)) assertF1CanaryWriteCeiling(options.worker.execution.maxWriteActions, profileLabel(canary.profile));
   const pool = canaryPool(canary, logger, 'composition');
   let worker: WorkerPlatform | null = null;
   let scheduler: SchedulerPlatform | null = null;
@@ -312,7 +317,7 @@ export async function startCanaryRuntime(canary: CanaryEnvironment, options: Can
       await assertUninspectedCanaryAllowed(pool);
     }
     const store = new PostgresProductionStore(pool);
-    const composed = composeSalesProductionWorker({ canary: true, pool, store, production: canary.production, modelProvider: options.modelProvider, logger, catalog: options.catalog, shipping: options.shipping, quotes: options.quotes, ...(canary.autonomousQuoteLimits ? { autonomousQuoteLimits: canary.autonomousQuoteLimits } : {}), ...(canary.quoteParity ? { quoteParity: canary.quoteParity } : {}), ...(options.customer ? { customer: { ...options.customer, allowedHosts: canary.testHosts } } : {}) });
+    const composed = composeSalesProductionWorker({ canary: true, pool, store, production: canary.production, modelProvider: options.modelProvider, logger, catalog: options.catalog, ...(isSalesLaneProfile(canary.profile) && options.catalogDiscover ? { catalogDiscover: options.catalogDiscover } : {}), shipping: options.shipping, quotes: options.quotes, ...(canary.autonomousQuoteLimits ? { autonomousQuoteLimits: canary.autonomousQuoteLimits } : {}), ...(canary.quoteParity ? { quoteParity: canary.quoteParity } : {}), ...(options.customer ? { customer: { ...options.customer, allowedHosts: canary.testHosts } } : {}) });
     worker = await createWorkerPlatform(options.worker, { ...composed.bindings, admission: new CanaryAdmission(pool, composed.controls) }, { logger });
     scheduler = options.scheduler ? await createSchedulerPlatform(options.scheduler, { logger }) : null;
     const capture = new CaptureOutboundAdapter(typeof options.captureFile === 'string' ? options.captureFile : options.captureFile(canaryId));

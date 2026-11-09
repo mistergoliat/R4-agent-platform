@@ -12,6 +12,7 @@ import { createPool } from '@r4/persistence-postgres';
 import { assertCanaryReady, canaryRollbackStatus, canaryStatus, initCanary, loadCanaryEnvironment, openCanaryApprovals, purgeCanary, sendSynthetic, startCanaryGateway, startCanaryRuntime, syntheticConversationKey, type CanaryEnvironment } from './index.js';
 import { isCustomerIdentityProfile } from '../../production/profile-v8.js';
 import { isF1CanaryProfile } from '../../production/profile-v12.js';
+import { isSalesLaneProfile } from '../../production/profile-v15.js';
 import { configuredModelProvider } from '../../model.js';
 import { loadOperatorAuthConfig } from '../../operator-auth/index.js';
 import { decideApproval } from '../operator-approval.js';
@@ -129,7 +130,7 @@ const fetchText = async (url: string, init: Parameters<typeof fetch>[1]) => {
 export function canaryCatalogSource(env: Readonly<Record<string, string | undefined>>, profile: ProductionProfile): CatalogSource {
   const raw = env.R4_CANARY_CATALOG_SOURCE?.trim() || undefined;
   if (raw !== undefined && raw !== 'v1' && raw !== 'v2') throw new ProductionConfigError('invalid_production_config', 'R4_CANARY_CATALOG_SOURCE must be "v1" or "v2"');
-  if (isF1CanaryProfile(profile) && raw !== 'v2') throw new ProductionConfigError('invalid_production_config', `${profileLabel(profile)} binds Catalog V2 only: set R4_CANARY_CATALOG_SOURCE=v2 and R4_CATALOG_V2_*`);
+  if ((isF1CanaryProfile(profile) || isSalesLaneProfile(profile)) && raw !== 'v2') throw new ProductionConfigError('invalid_production_config', `${profileLabel(profile)} binds Catalog V2 only: set R4_CANARY_CATALOG_SOURCE=v2 and R4_CATALOG_V2_*`);
   return raw ?? 'v1';
 }
 
@@ -147,7 +148,7 @@ function realBindings(env: NodeJS.ProcessEnv, canary: CanaryEnvironment, logger:
   const catalog = new HttpCatalogAdapter({ config: catalogConfig, fetch: fetchText, onCall: (event) => logger.info({ event: 'catalog.call', ...event }, 'catalog call') });
   const shipping = new ProductionShippingAdapter({ config: loadShippingHttpConfig(env, { allowNetwork }), fetch: fetchText, onEvent: (event) => logger.info({ event: `shipping.${event.kind}`, ...event }, 'shipping call') });
   const quotes = new QuoteV2HttpClient({ config: loadQuoteHttpConfig(env, { allowNetwork }), fetch: (url, init) => fetch(url, init), onCall: (event) => logger.info({ event: 'quote.call', ...event }, 'quote call') });
-  return { catalog, shipping, quotes };
+  return { catalog, ...(isSalesLaneProfile(canary.profile) ? { catalogDiscover: catalog } : {}), shipping, quotes };
 }
 
 /** Returns the exit code: 0 done, 2 invalid command, 1 refused or failed. `run` resolves only when it stops. */

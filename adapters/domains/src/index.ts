@@ -16,3 +16,4 @@ export * from './quote/shadow.js';
 export * from './fixtures.js';
 export * from './quote/v2.js';
 export * from './quote/fixture-v2.js';
+export * from './checkout/port.js';

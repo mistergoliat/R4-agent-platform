@@ -50,17 +50,17 @@ export const SALES_F1_CANARY_LIMITS: Readonly<AutonomousQuoteLimitsV6> = Object.
 export const SALES_F1_CANARY_MAX_WRITE_ACTIONS = 6;
 
 /** Throws when a configured autonomous limit is looser than the approved canary ceiling. */
-export function assertF1CanaryLimits(limits: AutonomousQuoteLimitsV6): void {
+export function assertF1CanaryLimits(limits: AutonomousQuoteLimitsV6, label: string = SALES_F1_CANARY_PROFILE_LABEL): void {
   const looser = (Object.keys(SALES_F1_CANARY_LIMITS) as (keyof AutonomousQuoteLimitsV6)[]).filter((k) => limits[k] > SALES_F1_CANARY_LIMITS[k]);
   if (looser.length > 0) {
-    throw new Error(`refusing production composition: ${SALES_F1_CANARY_PROFILE_LABEL} runs within the owner-approved canary limits; looser: ${looser.map((k) => `${k}=${limits[k]} > ${SALES_F1_CANARY_LIMITS[k]}`).join(', ')}`);
+    throw new Error(`refusing production composition: ${label} runs within the owner-approved canary limits; looser: ${looser.map((k) => `${k}=${limits[k]} > ${SALES_F1_CANARY_LIMITS[k]}`).join(', ')}`);
   }
 }
 
 /** Throws when the worker's write ceiling is outside 1..the approved canary ceiling (0 cannot issue a quote). */
-export function assertF1CanaryWriteCeiling(maxWriteActions: number): void {
+export function assertF1CanaryWriteCeiling(maxWriteActions: number, label: string = SALES_F1_CANARY_PROFILE_LABEL): void {
   if (!Number.isSafeInteger(maxWriteActions) || maxWriteActions < 1 || maxWriteActions > SALES_F1_CANARY_MAX_WRITE_ACTIONS) {
-    throw new Error(`refusing the canary worker: ${SALES_F1_CANARY_PROFILE_LABEL} runs with maxWriteActions between 1 and ${SALES_F1_CANARY_MAX_WRITE_ACTIONS} (configured ${maxWriteActions})`);
+    throw new Error(`refusing the worker: ${label} runs with maxWriteActions between 1 and ${SALES_F1_CANARY_MAX_WRITE_ACTIONS} (configured ${maxWriteActions})`);
   }
 }
 

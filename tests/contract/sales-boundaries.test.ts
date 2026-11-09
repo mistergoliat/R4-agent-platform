@@ -55,7 +55,7 @@ describe('Core stays Sales-free', () => {
     const core = files(join(ROOT, 'packages/persistence-postgres/migrations'), '.sql').map((f) => readFileSync(f, 'utf8')).join('\n');
     expect(core).not.toMatch(/\bsales\b/i);
     const pack = files(join(ROOT, 'agents/sales/migrations'), '.sql');
-    expect(pack.map(rel)).toEqual(['agents/sales/migrations/0006_sales_reference_application.sql', 'agents/sales/migrations/0007_sales_quote_v2_issuance.sql', 'agents/sales/migrations/0008_sales_autonomous_quote_decisions.sql', 'agents/sales/migrations/0009_sales_quote_intent_evidence.sql']);
+    expect(pack.map(rel)).toEqual(['agents/sales/migrations/0006_sales_reference_application.sql', 'agents/sales/migrations/0007_sales_quote_v2_issuance.sql', 'agents/sales/migrations/0008_sales_autonomous_quote_decisions.sql', 'agents/sales/migrations/0009_sales_quote_intent_evidence.sql', 'agents/sales/migrations/0010_sales_checkout_requests.sql']);
     const sql = readFileSync(pack[0]!, 'utf8');
     // Sales tables are in their own schema and never reference an R4 runtime table.
     expect(sql).not.toMatch(/references\s+(public\.)?(agent_tasks|agent_runs|observations|action_\w+|goals|memory_entries)/i);
@@ -184,7 +184,7 @@ describe('domain adapters and the provider adapter stay behind their seams', () 
     // R4-I: the channel adapter depends only on the channel-neutral contracts.
     expect(manifest('adapters/channels/whatsapp-cloud')).toEqual(['@r4/live-ops']);
     const salesDeps = manifest('agents/sales');
-    expect(salesDeps.filter((d) => !/^(@r4\/(contracts|observability|model-gateway|capability-runtime|context-compiler|policy-engine|persistence-postgres|agent-kernel|api|worker|evaluation|evaluator|scheduler|shadow|live-ops|channel-gateway)|@r4-adapters\/(domains|catalog-http|shipping-http|quote-http|customer-http|identity-http|identity-verification|openai-compatible|whatsapp-cloud)|pg|pino|zod)$/.test(d))).toEqual([]);
+    expect(salesDeps.filter((d) => !/^(@r4\/(contracts|observability|model-gateway|capability-runtime|context-compiler|policy-engine|persistence-postgres|agent-kernel|api|worker|evaluation|evaluator|scheduler|shadow|live-ops|channel-gateway)|@r4-adapters\/(domains|catalog-http|shipping-http|quote-http|checkout-http|customer-http|identity-http|identity-verification|openai-compatible|whatsapp-cloud)|pg|pino|zod)$/.test(d))).toEqual([]);
     // SEC-S5: the pack reaches identity-verification only for its expectation records (synthetic composition);
     // never the decryption, the dispatcher or the confirm credential (identity-verification-boundaries, AT-19).
     // R4-J1B: the Catalog HTTP adapter depends only on the domain ports and zod — nothing from R4 Core.

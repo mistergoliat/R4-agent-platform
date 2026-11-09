@@ -70,6 +70,8 @@ export interface DispatchFacts {
   readonly windowOpen: boolean | null;
   /** Platform output only: the handoff it announces is still `requested` (no human has taken the task yet). */
   readonly handoffPending?: boolean;
+  /** Platform output only (R-4): a notice (noticeKey), not an ADR-041 fallback. */
+  readonly notice?: boolean;
 }
 
 export interface DispatchPolicy {
@@ -113,11 +115,15 @@ export function decideDispatch(f: DispatchFacts, policy: DispatchPolicy): Dispat
   return { kind: 'dispatch' };
 }
 
+/**
+ * (R-4) A platform notice follows the agent-output gates (it speaks for the automated conversation), except that a
+ * newer contact input never supersedes it: it carries an owner's answer, not a reply to a frontier.
+ */
 function decidePlatformDispatch(f: DispatchFacts, policy: DispatchPolicy): DispatchDecision {
   if (!autonomyEnabledFor(f.controls, f.channel).enabled) return { kind: 'hold', reason: DISPATCH_HOLD_REASONS.killSwitch };
   if (f.binding.deniedNow) return { kind: 'hold', reason: DISPATCH_HOLD_REASONS.denied };
   if (!f.binding.autonomous) return { kind: 'hold', reason: DISPATCH_HOLD_REASONS.rolloutExcluded };
-  if (f.handoffPending !== true) return { kind: 'cancel', reason: CANCEL_REASONS.supersededByOperator };
+  if (f.notice === true ? f.task.humanOwned : f.handoffPending !== true) return { kind: 'cancel', reason: CANCEL_REASONS.supersededByOperator };
   if (f.task.status === 'cancelled' || f.task.status === 'failed') return { kind: 'cancel', reason: CANCEL_REASONS.taskTerminal };
   if (f.binding.status === 'closed') return { kind: 'cancel', reason: CANCEL_REASONS.conversationClosed };
   if (Date.parse(f.now) - Date.parse(f.createdAt) > policy.maxAgeMs) return { kind: 'cancel', reason: CANCEL_REASONS.expired };

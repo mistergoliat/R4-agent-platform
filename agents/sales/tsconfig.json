@@ -64,6 +64,9 @@
       "path": "../../adapters/domains/quote/http"
     },
     {
+      "path": "../../adapters/domains/checkout/http"
+    },
+    {
       "path": "../../adapters/domains/customer/http"
     },
     {

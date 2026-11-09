@@ -69,12 +69,12 @@ afterAll(async () => {
 describe('upgrade from the R4-B schema', () => {
   it('reports exactly the post-R4-B migrations as pending on an R4-B database', async () => {
     // R4-J4-R7-4 R-9: 0013_conversation_binding_history (index) is the Core head, after ADR-041 0012.
-    expect((await migrationStatus(pool)).pending).toEqual(['0002_execution_kernel', '0003_context_and_memory', '0004_governed_execution', '0005_temporal_human_runtime', '0007_governed_production', '0008_worker_presence', '0009_run_step_origin', '0010_platform_step_decisions', '0011_binding_identity_immutability', '0012_platform_fallback_outbound', '0013_conversation_binding_history']);
+    expect((await migrationStatus(pool)).pending).toEqual(['0002_execution_kernel', '0003_context_and_memory', '0004_governed_execution', '0005_temporal_human_runtime', '0007_governed_production', '0008_worker_presence', '0009_run_step_origin', '0010_platform_step_decisions', '0011_binding_identity_immutability', '0012_platform_fallback_outbound', '0013_conversation_binding_history', '0014_platform_notice_outbound']);
     expect((await checkDatabaseReadiness(pool)).ok).toBe(false);
   });
 
   it('applies 0002 (and 0003) over existing data and backfills structured terminations', async () => {
-    expect(await migrate(pool)).toEqual({ applied: ['0002_execution_kernel', '0003_context_and_memory', '0004_governed_execution', '0005_temporal_human_runtime', '0007_governed_production', '0008_worker_presence', '0009_run_step_origin', '0010_platform_step_decisions', '0011_binding_identity_immutability', '0012_platform_fallback_outbound', '0013_conversation_binding_history'] });
+    expect(await migrate(pool)).toEqual({ applied: ['0002_execution_kernel', '0003_context_and_memory', '0004_governed_execution', '0005_temporal_human_runtime', '0007_governed_production', '0008_worker_presence', '0009_run_step_origin', '0010_platform_step_decisions', '0011_binding_identity_immutability', '0012_platform_fallback_outbound', '0013_conversation_binding_history', '0014_platform_notice_outbound'] });
     expect((await checkDatabaseReadiness(pool)).ok).toBe(true);
 
     const store = new PostgresTaskRuntimeStore(pool);
