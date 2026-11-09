@@ -49,7 +49,7 @@ import type { AutonomousQuoteLimits, AutonomousQuoteLimitsV6 } from '../capabili
 import { assertQuoteParityConfigured, type QuoteParityGuard } from '../capabilities/parity-guard.js';
 import { SALES_CANARY_ONLY_PROFILES, assertF1CanaryLimits, isF1CanaryProfile } from './profile-v12.js';
 import { SALES_LANE_PROFILES, isCheckoutLaneProfile, isQuoteLaneProfile, isSalesLaneProfile } from './profile-v15.js';
-import { SALES_VARIANT_AVAILABILITY_PROFILES } from './profile-v17.js';
+import { SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_VARIANT_AVAILABILITY_PROFILES } from './profile-v17.js';
 import { catalogDiscoverCapability } from '../capabilities/catalog-discover.js';
 import type { CatalogDiscoverPort } from '@r4-adapters/catalog-http';
 import { checkoutPurchaseStatusCapability, checkoutRequestLinkCapability, checkoutStartPurchaseCapability } from '../capabilities/checkout.js';
@@ -335,6 +335,17 @@ export interface SalesGatewayOptions {
 export const SALES_RUN_FAILURE_FALLBACK_TEXT =
   'Disculpa, tuve un problema técnico y no pude responder tu último mensaje. Ya avisé a una persona del equipo de PesasChile, que seguirá la conversación por este mismo chat. No hace falta que repitas lo que escribiste.';
 
+/**
+ * (F-ADV-2, ADR-041 extension) The notice the delivery owner sends once when the agent opens a human request (a
+ * consultation or a handoff) without replying in that run, so the contact never waits in silence. Fixed text, never
+ * model output; it claims no commercial effect: the answer, and any commercial resolution, stay with the person.
+ */
+export const SALES_HUMAN_REQUEST_NOTICE_TEXT =
+  'Gracias por tu mensaje. Tu consulta quedó pendiente de revisión por una persona del equipo de PesasChile. La respuesta llegará por este mismo chat; no hace falta que repitas lo que escribiste.';
+
+/** The profiles whose conversations get that notice: only the F1 quote lane candidate (@13 and the others unchanged). */
+export const SALES_HUMAN_REQUEST_NOTICE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V17_PROFILE_LABEL]);
+
 /** Gateway bindings of the Sales canary: the WhatsApp Cloud adapter (canary number), the profile and the task factory. */
 export function composeSalesGateway(options: SalesGatewayOptions): { bindings: GatewayBindings; whatsapp: WhatsAppCloudConfig; describe: Record<string, string | boolean> } {
   const config = assertProductionMode(options.production.config);
@@ -350,6 +361,7 @@ export function composeSalesGateway(options: SalesGatewayOptions): { bindings: G
       outbound: [new WhatsAppOutboundAdapter(whatsapp, options.fetch ? { fetch: options.fetch } : {})],
       taskFactory: salesConversationTaskFactory(options.pool, salesProductionAgentVersion(profile)),
       runFailureFallback: { text: SALES_RUN_FAILURE_FALLBACK_TEXT },
+      humanRequestNotice: { text: SALES_HUMAN_REQUEST_NOTICE_TEXT, profiles: SALES_HUMAN_REQUEST_NOTICE_PROFILES },
       ...laneOf(salesGatewayLane(options.env, options.pool)),
       // (R4-J4-R4) v8 never runs without the inbound inspector, requested in full (ADR-040).
       ...(isCustomerIdentityProfile(profile) ? { inspection: salesGatewayInspection(profile, options.env, { transport: options.identityFetch, allowedHosts: options.allowedHosts }) } : {}),

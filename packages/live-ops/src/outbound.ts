@@ -17,6 +17,12 @@ export interface OutboundDeliveryOptions {
    * a human in silence).
    */
   readonly runFailureFallback?: { readonly text: string };
+  /**
+   * (ADR-041 extension, F-ADV-2) The agent pack's notice for a human request the agent opened (consultation or
+   * handoff) without replying in that run, for conversations of `profiles` only. Absent: such a request sends
+   * nothing (the contact waits in silence, as before).
+   */
+  readonly humanRequestNotice?: { readonly text: string; readonly profiles: readonly string[] };
 }
 
 /** Bounds the pack's fallback text: one short, plain message. */
@@ -68,6 +74,10 @@ export class OutboundDeliveryRuntime {
     if (fallback !== undefined && (fallback.trim().length === 0 || fallback.length > MAX_FALLBACK_CHARS)) {
       throw new Error(`runFailureFallback.text must be 1..${MAX_FALLBACK_CHARS} characters`);
     }
+    const notice = options.humanRequestNotice?.text;
+    if (notice !== undefined && (notice.trim().length === 0 || notice.length > MAX_FALLBACK_CHARS)) {
+      throw new Error(`humanRequestNotice.text must be 1..${MAX_FALLBACK_CHARS} characters`);
+    }
     this.#o = options;
     this.#adapters = new Map(options.adapters.map((a) => [a.channel, a]));
   }
@@ -80,6 +90,8 @@ export class OutboundDeliveryRuntime {
     const created = await this.#o.store.materializeResponses({ limit });
     const fallback = this.#o.runFailureFallback;
     if (fallback) created.push(...(await this.#o.store.materializeRunFailureFallbacks({ text: fallback.text, limit })));
+    const notice = this.#o.humanRequestNotice;
+    if (notice) created.push(...(await this.#o.store.materializeHumanRequestNotices({ text: notice.text, profiles: notice.profiles, limit })));
     for (const o of created) {
       emitTelemetry(this.#o.logger, 'outbound.created', { outboundId: o.outboundId, taskId: o.taskId, runId: o.runId, responseStepId: o.responseStepId, channel: o.channel, origin: o.origin, status: o.status, correlationId: o.correlationId });
       if (o.status === 'cancelled') emitTelemetry(this.#o.logger, 'outbound.cancelled', { outboundId: o.outboundId, taskId: o.taskId, reason: o.cancelReason, duplicateOf: o.duplicateOf });

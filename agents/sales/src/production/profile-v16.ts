@@ -2,7 +2,7 @@ import type { ProductionProfile } from '@r4/live-ops';
 import { SALES_PRODUCTION_PROFILE_V14 } from './profile-v14.js';
 
 /**
- * Sales production profile, version 16 (F-WA-1, 2026-11-09). The successor CANDIDATE of the quote lane @14, NOT
+ * Sales production profile, version 16 (F-WA-1, 2026-11-09). SUPERSEDED by @17 as the quote lane candidate (2026-11-09). NOT
  * deployed and NOT active. @14 is not changed retroactively: @16 is exactly @14 (Catalog V2 + Discover, Shipping,
  * Quote V2 autonomous issuance of the Sales-rendered offer the customer explicitly confirmed, P-1, F1 ceilings,
  * kill switch; no customer, cart, Checkout or payment) running definition v16 = v14 plus one rule:

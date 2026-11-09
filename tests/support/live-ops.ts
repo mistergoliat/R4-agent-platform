@@ -53,6 +53,8 @@ export interface TestbedOptions {
   readonly gatewayLogger?: Logger;
   /** (ADR-045) wa_ids served by the lane profile sales-production@13 (each must also be allowlisted). Absent: no lane. */
   readonly lane?: readonly string[];
+  /** (F-ADV-2) Profiles whose agent-opened human requests get the pack notice (default: the composition's own scope). */
+  readonly humanRequestNoticeProfiles?: readonly string[];
 }
 
 /** (ADR-045) The gateway environment of a lane (or its absence). */
@@ -131,7 +133,7 @@ export class LiveOpsTestbed {
     const api = await createPlatform({ databaseUrl: db.url, host: '127.0.0.1', port: 0, logLevel: 'silent', agentDefinitionsDir: options.agentDefinitionsDir ?? SALES_AGENT_DIR, dbPoolMax: 4 }, { logger, humanContext: () => OPERATOR });
     // (ADR-045) As a deployment: the lane definition is registered before a gateway with a lane starts.
     if (options.lane) await registerLaneDefinition({ ...env, R4_DATABASE_URL: db.url });
-    const gateway = await startGateway(db.url, pool, production, env, options.identityVerification, options.gatewayLogger);
+    const gateway = await startGateway(db.url, pool, production, env, options.identityVerification, options.gatewayLogger, options.humanRequestNoticeProfiles);
     const queue: QueuedStep[] = [];
     const model = new FakeModelProvider((request, index) => {
       const next = queue.shift();
@@ -297,8 +299,9 @@ export class LiveOpsTestbed {
   }
 }
 
-function startGateway(databaseUrl: string, pool: Pool, production: { config: ProductionConfig; secrets: ProductionSecrets }, env: Readonly<Record<string, string | undefined>>, identityVerification?: IdentityVerificationInspectionOptions, logger?: Logger): Promise<GatewayPlatform> {
-  const { bindings } = composeSalesGateway({ pool, production, env });
+function startGateway(databaseUrl: string, pool: Pool, production: { config: ProductionConfig; secrets: ProductionSecrets }, env: Readonly<Record<string, string | undefined>>, identityVerification?: IdentityVerificationInspectionOptions, logger?: Logger, noticeProfiles?: readonly string[]): Promise<GatewayPlatform> {
+  const composed = composeSalesGateway({ pool, production, env }).bindings;
+  const bindings = noticeProfiles && composed.humanRequestNotice ? { ...composed, humanRequestNotice: { ...composed.humanRequestNotice, profiles: noticeProfiles } } : composed;
   // (SEC-OTP) The synthetic composition plugs the inspector in, as a deployment would; absent: exactly R4-I.
   const inspected = identityVerification ? { ...bindings, inspection: identityVerificationInspection(identityVerification) } : bindings;
   return createGatewayPlatform({ databaseUrl, host: '127.0.0.1', port: 0, logLevel: 'silent', dbPoolMax: 4, gatewayId: 'gateway-test', dispatch: false, resumeAfterMs: 1000, workingSignal: env.R4_GATEWAY_WORKING_SIGNAL === 'on' }, inspected, { logger: logger ?? createSilentLogger() });

@@ -370,6 +370,13 @@ export interface ProductionStore {
    * At most one per handoff, by unique constraint.
    */
   materializeRunFailureFallbacks(command: { readonly text: string; readonly limit: number }): Promise<OutboundRecord[]>;
+  /**
+   * (ADR-041 extension, F-ADV-2) Creates the one platform notice outbound (`text`) of every still-requested human
+   * request the AGENT opened (a consultation, or a handoff with initiatedBy=agent) in a conversation bound to one of
+   * `profiles` (a run that replies ends its turn, so such a request never had a reply in its run). The request itself is
+   * untouched. At most one per request, by the same unique constraint as the run-failure fallback.
+   */
+  materializeHumanRequestNotices(command: { readonly text: string; readonly profiles: readonly string[]; readonly limit: number }): Promise<OutboundRecord[]>;
   createOperatorOutbound(command: NewOperatorOutbound): Promise<{ readonly record: OutboundRecord; readonly replayed: boolean }>;
   /** (R-4) Queues one platform notice for a channel-bound task; see NewPlatformNotice. */
   createPlatformNotice(command: NewPlatformNotice): Promise<{ readonly record: OutboundRecord; readonly replayed: boolean }>;
