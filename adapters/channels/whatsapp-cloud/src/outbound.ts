@@ -87,6 +87,23 @@ export class WhatsAppOutboundAdapter implements OutboundChannelAdapter {
     }
     return result({ outcome: 'unknown', providerMessageId: null, httpStatus: status, errorClass: status >= 500 ? 'provider_5xx' : 'unexpected_status', errorCode, retryAfterMs: null });
   }
+
+  /**
+   * Marks the contact's message as read and shows the typing indicator (Cloud API "typing indicators": dismissed when
+   * the business replies or after 25 s). Best effort: true only on a 2xx `{"success": true}`; anything else is false.
+   */
+  async signalWorking(signal: { readonly accountRef: string; readonly providerEventId: string }, options: { readonly timeoutMs: number }): Promise<boolean> {
+    if (signal.accountRef !== this.#config.phoneNumberId) return false;
+    const url = `${this.#config.graphBaseUrl}/${this.#config.graphVersion}/${encodeURIComponent(this.#config.phoneNumberId)}/messages`;
+    const body = JSON.stringify({ messaging_product: 'whatsapp', status: 'read', message_id: signal.providerEventId, typing_indicator: { type: 'text' } });
+    try {
+      const response = await this.#fetch(url, { method: 'POST', headers: { authorization: `Bearer ${this.#config.accessToken}`, 'content-type': 'application/json' }, body, signal: AbortSignal.timeout(options.timeoutMs) });
+      const raw = await response.text();
+      return response.status >= 200 && response.status < 300 && /"success"\s*:\s*true/.test(raw);
+    } catch {
+      return false;
+    }
+  }
 }
 
 function causeCode(error: unknown): string | null {
