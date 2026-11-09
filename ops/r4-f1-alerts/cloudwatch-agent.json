@@ -1,0 +1,25 @@
+{
+  "agent": { "metrics_collection_interval": 60, "run_as_user": "root" },
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          { "file_path": "/home/ec2-user/.pm2/logs/r4-channel-gateway-out.log", "log_group_name": "/r4/production", "log_stream_name": "r4-channel-gateway", "retention_in_days": 30 },
+          { "file_path": "/home/ec2-user/.pm2/logs/r4-sales-worker-out.log", "log_group_name": "/r4/production", "log_stream_name": "r4-sales-worker", "retention_in_days": 30 },
+          { "file_path": "/home/ec2-user/.pm2/logs/r4-sales-worker-lane-out.log", "log_group_name": "/r4/production", "log_stream_name": "r4-sales-worker-lane", "retention_in_days": 30 },
+          { "file_path": "/home/ec2-user/.pm2/logs/r4-scheduler-out.log", "log_group_name": "/r4/production", "log_stream_name": "r4-scheduler", "retention_in_days": 30 }
+        ]
+      }
+    }
+  },
+  "metrics": {
+    "namespace": "R4/F1",
+    "metrics_collected": {
+      "procstat": [
+        { "pattern": "production.js --gateway", "measurement": ["pid_count"] },
+        { "pattern": "production.js --worker", "measurement": ["pid_count"] },
+        { "pattern": "start:scheduler", "measurement": ["pid_count"] }
+      ]
+    }
+  }
+}
