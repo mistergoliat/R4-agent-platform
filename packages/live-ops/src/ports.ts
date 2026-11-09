@@ -248,7 +248,7 @@ export interface NewOperatorOutbound {
  */
 export interface NewPlatformNotice {
   readonly taskId: string;
-  /** `^[a-z][a-z0-9._:-]{2,199}$`, e.g. `checkout.link:<attempt id>`. */
+  /** `^[a-z][a-z0-9._:-]{2,199}$`, e.g. `<pack>.<kind>:<reference>`. */
   readonly noticeKey: string;
   readonly text: string;
   readonly correlationId: string;

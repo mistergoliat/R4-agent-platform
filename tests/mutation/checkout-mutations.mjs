@@ -64,7 +64,7 @@ const MUTATIONS = [
   // D7-6 (sandbox financial policy) and R-3 (sandbox consent source).
   {
     name: 'CK-M9 a purchase start ignores the per-task financial limit',
-    edits: [{ file: CAP, from: 'const limited = await financialLimitReached(deps, taskId, context.executionKey);\n        if (limited) return limited;\n        const issued', to: 'const issued' }],
+    edits: [{ file: CAP, from: 'const limited = await financialLimitReached(deps, taskId, context.executionKey, callOptions(context));\n        if (limited) return limited;\n        const issued', to: 'const issued' }],
     tests: [[IT, 'D7-6: at most two']],
   },
   {
@@ -93,9 +93,9 @@ const MUTATIONS = [
     tests: [[HTTP_UNIT, 'nothing for another quote']],
   },
   {
-    name: 'CK-M15 the per-task limit ignores attempts Checkout lists but R4 never recorded (F-E3A-1)',
-    edits: [{ file: CAP, from: 'financialLimitReached(deps, taskId, context.executionKey, attempts.length)', to: 'financialLimitReached(deps, taskId, context.executionKey)' }],
-    tests: [[IT, 'F-E3A-1']],
+    name: 'CK-M15 the per-task limit ignores attempts Checkout lists but R4 never recorded (F-E3A-1, link and start paths)',
+    edits: [{ file: CAP, from: 'for (const sessionId of recorded.sessionIds) listed += (await deps.checkout.listPaymentAttempts(sessionId, options)).length;', to: 'void recorded.sessionIds;' }],
+    tests: [[IT, 'F-E3A-1 .E3-A real run'], [IT, 'F-E3A-1 start path']],
   },
 ];
 

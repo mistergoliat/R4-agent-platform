@@ -378,7 +378,7 @@ describe('D7-6: at most two autonomous Checkout financial operations per task, r
     const linkKey = `r4x_${randomBytes(16).toString('hex')}`;
     expect(await s.start.execute({ quoteId: s.c.quoteId }, wctx(s.c.taskId, startKey))).toMatchObject({ status: 'applied' });
     expect(await s.link.execute({}, wctx(s.c.taskId, linkKey))).toMatchObject({ status: 'applied', result: { linkNotice: 'queued' } });
-    expect(await store.checkoutFinancialOperations(s.c.taskId, 'none')).toEqual({ sessions: 1, attempts: 1 });
+    expect(await store.checkoutFinancialOperations(s.c.taskId, 'none')).toMatchObject({ sessions: 1, attempts: 1 });
     // Legitimate idempotent replays of the same executions (a lost answer, a restart) are not new operations.
     expect(await s.start.execute({ quoteId: s.c.quoteId }, wctx(s.c.taskId, startKey, 2))).toMatchObject({ status: 'applied', replayed: true });
     expect(await s.link.execute({}, wctx(s.c.taskId, linkKey, 2))).toMatchObject({ status: 'applied' });
@@ -396,13 +396,30 @@ describe('D7-6: at most two autonomous Checkout financial operations per task, r
     s.checkout.loseNextAnswer = true;
     expect(await s.link.execute({}, wctx(s.c.taskId, linkKey, 1))).toMatchObject({ status: 'unknown' });
     expect(await s.link.execute({}, wctx(s.c.taskId, linkKey, 2))).toMatchObject({ status: 'applied' }); // read first: nothing posted, nothing recorded
-    expect(await store.checkoutFinancialOperations(s.c.taskId, 'none')).toEqual({ sessions: 1, attempts: 0 });
+    expect(await store.checkoutFinancialOperations(s.c.taskId, 'none')).toMatchObject({ sessions: 1, attempts: 0 });
     const sessionId = [...s.checkout.sessions.keys()][0]!;
     s.checkout.setLatestAttempt(sessionId, { status: 'EXPIRED', checkoutUrl: null, linkExpired: true });
     s.checkout.set(sessionId, { status: 'READY' });
     s.c.customer('quiero un link nuevo', new Date(NOW.getTime() + 60_000).toISOString());
     expect(await s.link.execute({}, wctx(s.c.taskId))).toMatchObject({ status: 'rejected', code: 'financial_write_limit', details: { used: 2 } });
     expect(s.checkout.counters.attemptCreates).toBe(1);
+  });
+
+  it('F-E3A-1 start path (PR #55 review D-1): after the unrecorded attempt, a second quote of the conversation cannot open a second session', async () => {
+    const s = await readyToPay();
+    const linkKey = `r4x_${randomBytes(16).toString('hex')}`;
+    s.checkout.loseNextAnswer = true;
+    expect(await s.link.execute({}, wctx(s.c.taskId, linkKey, 1))).toMatchObject({ status: 'unknown' });
+    expect(await s.link.execute({}, wctx(s.c.taskId, linkKey, 2))).toMatchObject({ status: 'applied' });
+    const second = randomUUID();
+    const key = `r4x_${randomBytes(16).toString('hex')}`;
+    await store.recordQuoteV2Request({ executionKey: key, taskId: s.c.taskId, workspaceVersion: 2, request: {} as never, requestSha256: '1'.repeat(64) });
+    await store.recordQuoteV2Issued({ executionKey: key, taskId: s.c.taskId, quoteId: second, quoteNumber: 'PC-000002', issuedAt: new Date(NOW.getTime() + 60_000).toISOString(), validThroughLocalDate: '2026-11-06', validUntilExclusive: new Date(NOW.getTime() + 3600_000).toISOString(), pdfSha256: 'b'.repeat(64), byteLength: 1, documentVerification: 'verified' });
+    s.c.customer('quiero pagar', new Date(NOW.getTime() + 120_000).toISOString());
+    const keysBefore = s.checkout.keysSeen.length;
+    expect(await s.start.execute({ quoteId: second }, wctx(s.c.taskId))).toMatchObject({ status: 'rejected', code: 'financial_write_limit', details: { used: 2 } });
+    expect(s.checkout.keysSeen.length).toBe(keysBefore);
+    expect(s.checkout.counters.sessionCreates).toBe(1);
   });
 });
 
