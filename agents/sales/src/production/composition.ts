@@ -199,7 +199,9 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
         if (!isV6Limits(limits)) throw new Error(`refusing production composition: ${profileLabel(profile)} needs the total-units limit and the confirmation window (R4_AUTONOMOUS_QUOTE_MAX_TOTAL_UNITS, R4_AUTONOMOUS_QUOTE_CONFIRMATION_WINDOW_SECONDS)`);
         if (isDeterministicOfferProfile(profile)) {
           // (R4-J3E-C1) v7: the offer message is rendered by Sales and must be presented exactly; Quote V2 writes stop with the kill switch.
-          const quotes = killSwitchGuardedQuotes(options.quotes, controls, options.logger);
+          // (F1 concurrency) At most ONE Quote V2 issuance in flight across every worker of the deployment: the shared
+          // PostgreSQL advisory lock wraps the kill-switch guard, so the switch is re-read after the wait.
+          const quotes = salesQuotePort(profile, options.quotes, controls, options.pool, options.logger);
           // (R4-J5 F1, P-1) A profile that requires the parity-verified set never composes quote.create without it; the evidence in use is logged.
           assertQuoteParityConfigured(profileLabel(profile), options.quoteParity);
           // (R4-J5 F1) The F1 canary, and the quote lane @14, run within the owner-approved canary limits, never looser.
@@ -410,6 +412,55 @@ export function killSwitchGuardedQuotes(quotes: QuoteV2Service, controls: Autono
     getDocument: (...a) => quotes.getDocument(...a),
   };
   return guardProductionWrites(port, { domain: SALES_DOMAINS.quote, writeOperations: ['createAndIssue'], controls, logger, blocked: () => quoteWritesBlockedError() });
+}
+
+/** The Quote V2 port quote.create@5 uses: behind the kill switch; for the F1 profiles also single-flight (see below). */
+export function salesQuotePort(profile: ProductionProfile, quotes: QuoteV2Service, controls: AutonomyControls, pool: pg.Pool, logger: Logger): QuoteV2Service {
+  const guarded = killSwitchGuardedQuotes(quotes, controls, logger);
+  return isF1CanaryProfile(profile) || isQuoteLaneProfile(profile) ? singleFlightQuoteIssuance(guarded, pool) : guarded;
+}
+
+/** (F1 concurrency) The advisory-lock key of Quote V2 issuance (database-wide, like the autonomous-decision lock). */
+export const QUOTE_ISSUANCE_LOCK = 'sales.quote_v2_issuance';
+/** How long an issuance waits for the one in flight before it is held (definitely not sent) on its own key. */
+export const QUOTE_ISSUANCE_LOCK_WAIT_MS = 20_000;
+
+/**
+ * (F1 concurrency) Quote V2 with at most ONE createAndIssue in flight across every worker and process that shares the
+ * production database: a session advisory lock (the existing coordination mechanism of this database, as for the
+ * autonomous decisions) is held on a dedicated connection for the duration of the owner call. A worker that dies
+ * releases it with its connection. A wait longer than `waitMs` fails BEFORE calling the owner as
+ * temporarily_unavailable: quote.create holds the command on its key (reconcile, then the same key and body again),
+ * so a wait never duplicates nor strands an issuance. Reads are never serialized.
+ */
+export function singleFlightQuoteIssuance(quotes: QuoteV2Service, pool: pg.Pool, waitMs = QUOTE_ISSUANCE_LOCK_WAIT_MS): QuoteV2Service {
+  return {
+    getQuote: (...a) => quotes.getQuote(...a),
+    getOperation: (...a) => quotes.getOperation(...a),
+    lookupIdempotency: (...a) => quotes.lookupIdempotency(...a),
+    getDocument: (...a) => quotes.getDocument(...a),
+    createAndIssue: async (...a) => {
+      const client = await pool.connect();
+      let locked = false;
+      let broken = false;
+      try {
+        await client.query("select set_config('lock_timeout', $1, false)", [`${waitMs}ms`]);
+        try {
+          await client.query('select pg_advisory_lock(hashtextextended($1, 8))', [QUOTE_ISSUANCE_LOCK]);
+          locked = true;
+        } catch (error) {
+          if ((error as { code?: string }).code === '55P03') throw new DomainError('temporarily_unavailable', 'quote_issuance_busy', `another Quote V2 issuance is in flight (waited ${waitMs} ms); nothing was sent`);
+          throw error;
+        }
+        return await quotes.createAndIssue(...a);
+      } finally {
+        if (locked) await client.query('select pg_advisory_unlock(hashtextextended($1, 8))', [QUOTE_ISSUANCE_LOCK]).catch(() => (broken = true));
+        await client.query('reset lock_timeout').catch(() => (broken = true));
+        // A connection that could not release the lock is destroyed, which releases it.
+        client.release(broken);
+      }
+    },
+  };
 }
 
 /** (R4 Checkout) Checkout with its commands behind the kill switch (re-read before every call; unreadable = engaged); reads stay open. */
