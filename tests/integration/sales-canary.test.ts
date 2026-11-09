@@ -179,7 +179,7 @@ afterAll(async () => {
 
 describe('canary environment and database guards (nothing is changed on a refused database)', () => {
   it('runs sales-production@4 to @7 only, needs its own database URL, and never the production one', () => {
-    expect(() => loadCanaryEnvironment({ ...canaryEnv(canaryDb), R4_PROD_POLICY_PROFILE: 'sales-production@3' })).toThrow(/runs sales-production@4 or sales-production@5 or sales-production@6 or sales-production@7 or sales-production@8 or sales-production@12 or sales-production@14 only/); // R4-J4-R5 preparation: @8 joins the canary profiles; R4-J5 F1: the canary-only @12; WhatsApp Quote V2 canary: the lane @14
+    expect(() => loadCanaryEnvironment({ ...canaryEnv(canaryDb), R4_PROD_POLICY_PROFILE: 'sales-production@3' })).toThrow(/runs sales-production@4 or sales-production@5 or sales-production@6 or sales-production@7 or sales-production@8 or sales-production@12 or sales-production@14 or sales-production@16 only/); // R4-J4-R5 preparation: @8 joins the canary profiles; R4-J5 F1: the canary-only @12; WhatsApp Quote V2 canary: the lane @14
     expect(() => loadCanaryEnvironment({ ...canaryEnv(canaryDb), R4_CANARY_DATABASE_URL: '' })).toThrow(/R4_CANARY_DATABASE_URL/);
     expect(() => loadCanaryEnvironment({ ...canaryEnv(canaryDb), R4_DATABASE_URL: canaryDb.url })).toThrow(expect.objectContaining({ code: 'canary_shares_production_database' }));
     expect(() => loadCanaryEnvironment({ ...canaryEnv(canaryDb), R4_EXECUTION_MODE: '' })).toThrow(expect.objectContaining({ code: 'production_mode_not_declared' }));

@@ -138,6 +138,7 @@ export const SALES_PRODUCTION_AGENT_VERSIONS: Readonly<Record<string, SalesAgent
   'sales-production@13': 13,
   // (R4 Quote E2E) The E2 quote lane profile: like @13, a lane profile only.
   'sales-production@14': 14,
+  'sales-production@16': 16,
   // (R4 Checkout integration) The E3 checkout sandbox lane profile: a lane profile only.
   'sales-production@15': 15,
 });
