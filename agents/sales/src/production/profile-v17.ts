@@ -20,10 +20,16 @@ export const SALES_QUOTE_LANE_V17_PROFILE_LABEL = 'sales-production@17';
 /** Profiles that bind catalog.get_product_context@2 (per-variant sellability); every other profile keeps @1. */
 export const SALES_VARIANT_AVAILABILITY_PROFILES: ReadonlySet<string> = new Set([SALES_QUOTE_LANE_V17_PROFILE_LABEL]);
 
-/** What must be true before @17 replaces @16 as the quote lane candidate (none of it is done by this increment). */
+/**
+ * (owner mandate «F1 WhatsApp quote canary release gates», 2026-11-09) @17 is the ONLY Sales F1 quote lane candidate; it
+ * supersedes @16 (whose F-ADV-1 variant claim it removes). What must be true before @17 is activated on the lane.
+ */
 export const SALES_PRODUCTION_PROFILE_V17_GATE = Object.freeze([
   { id: 'v16-gate', blocking: true, requirement: 'every blocking item of SALES_PRODUCTION_PROFILE_V16_GATE (@17 issues quotes exactly as @16)' },
   { id: 'o2-evaluation', blocking: true, requirement: 'catalog.get_product_context@2 evaluated with the real model and real Catalog V2 on the variant scenarios (O-1, O-2): no availability claim beyond what the owner reported' },
+  { id: 'write-budget', blocking: true, requirement: 'F-WA-2 (owner decision, 2026-11-09): the @17 lane worker runs R4_EXEC_MAX_WRITE_ACTIONS=6; F1 commercial limits unchanged and independent of it' },
+  { id: 'human-request-notice', blocking: true, requirement: 'F-ADV-2: an agent-opened consultation or handoff sends the fixed platform notice (SALES_HUMAN_REQUEST_NOTICE_TEXT) in @17 conversations; the request stays with the person' },
+  { id: 'principal-60-minutes', blocking: true, requirement: 'owner decision (2026-11-09): Quote principal r4-sales-integration on the 60-minute validity profile in production, configured and authorized by the Quote owner; never the five-day profile, never an R4-side expiry' },
   { id: 'profile-17-registered', blocking: true, requirement: 'identifier @17 verified free, then registered with production:sales:bootstrap --lane (definition v16 is reused)' },
   { id: 'explicit-authorization', blocking: true, requirement: 'explicit owner authorization to switch the lane to @17, by SHA' },
 ] as const);

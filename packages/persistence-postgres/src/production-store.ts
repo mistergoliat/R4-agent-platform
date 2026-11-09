@@ -358,14 +358,37 @@ export class PostgresProductionStore implements ProductionStore {
         order by h.created_at, h.request_id limit $2`,
       [[...RUN_FAILURE_HANDOFF_REASONS], command.limit],
     )).rows;
+    return this.#humanRequestOutbounds(handoffs, 'r4-fallback', command.text);
+  }
+
+  async materializeHumanRequestNotices(command: { text: string; profiles: readonly string[]; limit: number }): Promise<OutboundRecord[]> {
+    if (command.profiles.length === 0) return [];
+    const requests = (await query<Row>(
+      this.#pool,
+      `select h.request_id, h.task_id, h.run_id, b.binding_id, b.channel, b.profile, t.correlation_id
+         from human_requests h
+         join channel_conversation_bindings b on b.task_id = h.task_id
+         join agent_tasks t on t.task_id = h.task_id
+        where h.status = 'requested'
+          and (h.kind = 'consultation' or (h.kind = 'handoff' and h.payload->>'initiatedBy' = 'agent'))
+          and b.profile = any($1::text[])
+          and not exists (select 1 from outbound_messages o where o.human_request_id = h.request_id)
+        order by h.created_at, h.request_id limit $2`,
+      [[...command.profiles], command.limit],
+    )).rows;
+    return this.#humanRequestOutbounds(requests, 'r4-human-notice', command.text);
+  }
+
+  /** One platform outbound per human request (unique `human_request_id`): the ADR-041 fallback or the F-ADV-2 notice. */
+  async #humanRequestOutbounds(requests: readonly Row[], keyPrefix: string, text: string): Promise<OutboundRecord[]> {
     const created: OutboundRecord[] = [];
-    for (const h of handoffs) {
+    for (const h of requests) {
       const row = (await query<Row>(
         this.#pool,
         `insert into outbound_messages (outbound_id, origin, human_request_id, task_id, run_id, binding_id, channel, idempotency_key, content_sha256, body, status, profile, correlation_id)
          values ($1, 'platform', $2, $3, $4, $5, $6, $7, $8, $9, 'pending', $10, $11)
          on conflict (human_request_id) do nothing returning *`,
-        [randomUUID(), h.request_id, h.task_id, h.run_id, h.binding_id, h.channel, `r4-fallback:${h.request_id as string}`, sha256Hex(command.text), command.text, h.profile, h.correlation_id],
+        [randomUUID(), h.request_id, h.task_id, h.run_id, h.binding_id, h.channel, `${keyPrefix}:${h.request_id as string}`, sha256Hex(text), text, h.profile, h.correlation_id],
       )).rows[0];
       if (row) created.push(outboundFromRow(row));
     }

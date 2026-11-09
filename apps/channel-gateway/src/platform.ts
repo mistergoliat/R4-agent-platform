@@ -38,6 +38,8 @@ export interface GatewayBindings {
   readonly inspection?: GatewayInspectionFactory;
   /** ADR-041: the agent pack's fallback notice for a run-failure handoff (absent: none is sent). */
   readonly runFailureFallback?: { readonly text: string };
+  /** (ADR-041 extension, F-ADV-2) The pack's notice for a human request the agent opened without replying (absent: none). */
+  readonly humanRequestNotice?: { readonly text: string; readonly profiles: readonly string[] };
   /** ADR-045: one extra profile for an explicit, closed set of allowlisted conversations (absent: exactly R4-I). */
   readonly lane?: ConversationLane;
 }
@@ -134,6 +136,7 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
     const delivery = new OutboundDeliveryRuntime({
       store, adapters: bindings.outbound, config: production, owner: config.gatewayId, logger,
       ...(bindings.runFailureFallback ? { runFailureFallback: bindings.runFailureFallback } : {}),
+      ...(bindings.humanRequestNotice ? { humanRequestNotice: bindings.humanRequestNotice } : {}),
     });
     const workingSignals = config.workingSignal ? new WorkingSignals({ adapters: bindings.outbound, store, logger }) : null;
     const ingress = new ChannelIngress({

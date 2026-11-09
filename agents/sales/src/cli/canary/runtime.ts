@@ -29,7 +29,7 @@ import { createWorkerPlatform, type WorkerConfig, type WorkerPlatform } from '@r
 import { SALES_AGENT_DIR, SALES_MIGRATIONS_DIR, isSalesCandidateDefinition, loadSalesAgentDefinition } from '../../definition.js';
 import { SALES_AGENT_ID } from '../../ids.js';
 import { migrateSales } from '../../migrate.js';
-import { SALES_RUN_FAILURE_FALLBACK_TEXT, composeSalesProductionWorker, salesConversationTaskFactory, type SalesProductionWorkerOptions } from '../../production/composition.js';
+import { SALES_HUMAN_REQUEST_NOTICE_PROFILES, SALES_HUMAN_REQUEST_NOTICE_TEXT, SALES_RUN_FAILURE_FALLBACK_TEXT, composeSalesProductionWorker, salesConversationTaskFactory, type SalesProductionWorkerOptions } from '../../production/composition.js';
 import { SALES_PRODUCTION_PROFILE_V4 } from '../../production/profile-v4.js';
 import { SALES_PRODUCTION_PROFILE_V5, isAutonomousQuoteProfile } from '../../production/profile-v5.js';
 import { SALES_PRODUCTION_PROFILE_V6, isConfirmedIntentProfile } from '../../production/profile-v6.js';
@@ -323,7 +323,7 @@ export async function startCanaryRuntime(canary: CanaryEnvironment, options: Can
     worker = await createWorkerPlatform(options.worker, { ...composed.bindings, admission: new CanaryAdmission(pool, composed.controls) }, { logger });
     scheduler = options.scheduler ? await createSchedulerPlatform(options.scheduler, { logger }) : null;
     const capture = new CaptureOutboundAdapter(typeof options.captureFile === 'string' ? options.captureFile : options.captureFile(canaryId));
-    const delivery = new OutboundDeliveryRuntime({ store, adapters: [capture], config: canary.production.config, owner: `sales-canary:${canaryId}:${hostname().slice(0, 32)}:${process.pid}`, logger, runFailureFallback: { text: SALES_RUN_FAILURE_FALLBACK_TEXT } });
+    const delivery = new OutboundDeliveryRuntime({ store, adapters: [capture], config: canary.production.config, owner: `sales-canary:${canaryId}:${hostname().slice(0, 32)}:${process.pid}`, logger, runFailureFallback: { text: SALES_RUN_FAILURE_FALLBACK_TEXT }, humanRequestNotice: { text: SALES_HUMAN_REQUEST_NOTICE_TEXT, profiles: SALES_HUMAN_REQUEST_NOTICE_PROFILES } });
     const dispatcher = new DeliveryDispatcher({ runtime: delivery, pollIntervalMs: canary.production.config.outbound.pollIntervalMs, logger });
     let started = false;
     let closed = false;
