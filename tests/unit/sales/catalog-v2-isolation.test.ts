@@ -32,7 +32,7 @@ describe('the canary chooses its Catalog explicitly (R4_CANARY_CATALOG_SOURCE)',
     expect(canaryCatalogConfig({ ...V1_ENV, ...V2_ENV, R4_CANARY_CATALOG_SOURCE: 'v2' }, canaryOf(SALES_PRODUCTION_PROFILE_V12))).toEqual({ source: 'v2', baseUrl: 'http://127.0.0.1:4011', apiKey: V2_ENV.R4_CATALOG_V2_API_KEY, timeoutMs: 5000 });
   });
 
-  it('(WhatsApp Quote V2 canary) the isolated canary runs the quote lane @14, on Catalog V2 only (never @13 or @15)', () => {
+  it('(Quote V2 lane canary) the isolated canary runs the quote lane @14, on Catalog V2 only (never @13 or @15)', () => {
     expect(CANARY_PROFILES.map(profileLabel)).toContain('sales-production@14');
     expect(CANARY_PROFILES.map(profileLabel)).not.toEqual(expect.arrayContaining(['sales-production@13']));
     expect(CANARY_PROFILES.map(profileLabel)).not.toContain('sales-production@15');

@@ -256,7 +256,7 @@ export async function sendSynthetic(
 export interface CanaryRuntimeOptions {
   readonly modelProvider: ModelProvider;
   readonly catalog: CatalogPort & { readonly bindingKind: string };
-  /** (WhatsApp Quote V2 canary) The Catalog V2 Discover binding of a lane profile (@14): the same Catalog V2 adapter. */
+  /** (Quote V2 lane canary) The Catalog V2 Discover binding of a lane profile (@14): the same Catalog V2 adapter. */
   readonly catalogDiscover?: CatalogDiscoverPort;
   readonly shipping: ShippingService & { readonly bindingKind: string };
   readonly quotes: QuoteV2Service & { readonly bindingKind: string };
