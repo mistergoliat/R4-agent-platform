@@ -58,7 +58,9 @@ export interface QuoteParityGuard {
  * Profiles that may compose quote.create only with the parity guard (R4-J5 F1, P-1): their composition refuses
  * without it. Sales configuration, by profile label; the F1 canary profile is added with its definition.
  */
-export const QUOTE_PARITY_REQUIRED_PROFILES: ReadonlySet<string> = new Set<string>(['sales-production@12', 'sales-production@14', 'sales-production@15', 'sales-production@16', 'sales-production@17']);
+export const QUOTE_PARITY_REQUIRED_PROFILES: ReadonlySet<string> = new Set<string>(['sales-production@12', 'sales-production@14', 'sales-production@15', 'sales-production@16']);
+// (owner decision 2026-11-09, «F1 simplified commercial canary») @17 needs no static P-1 file: Catalog V2 is the commercial
+// authority; its snapshot checks (provenance, bounded validity, price, stock) stand at preview and issuance.
 
 /** Throws when the profile requires the parity guard and none is configured (no silent fallback to unverified data). */
 export function assertQuoteParityConfigured(profileLabel: string, guard: QuoteParityGuard | null | undefined, required: ReadonlySet<string> = QUOTE_PARITY_REQUIRED_PROFILES): void {
