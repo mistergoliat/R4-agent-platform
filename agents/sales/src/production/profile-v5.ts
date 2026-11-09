@@ -62,7 +62,7 @@ export const SALES_PRODUCTION_AUTONOMOUS_ACTION_POLICY: ActionPolicyConfiguratio
  * autonomous action policy): @5 (quote.create@3, model-attested request), @6 (R4-J3E-B: quote.create@4,
  * customer confirmation read from the conversation) and @7 (R4-J3E-C1: quote.create@5, the exact Sales-rendered offer).
  */
-export const SALES_AUTONOMOUS_QUOTE_PROFILES: ReadonlySet<string> = new Set(['sales-production@5', 'sales-production@6', 'sales-production@7', 'sales-production@8', 'sales-production@12', 'sales-production@14', 'sales-production@15']);
+export const SALES_AUTONOMOUS_QUOTE_PROFILES: ReadonlySet<string> = new Set(['sales-production@5', 'sales-production@6', 'sales-production@7', 'sales-production@8', 'sales-production@12', 'sales-production@14', 'sales-production@15', 'sales-production@16']);
 
 export function isAutonomousQuoteProfile(profile: ProductionProfile): boolean {
   return SALES_AUTONOMOUS_QUOTE_PROFILES.has(profileLabel(profile));
