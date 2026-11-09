@@ -25,13 +25,14 @@ export const SALES_VARIANT_AVAILABILITY_PROFILES: ReadonlySet<string> = new Set(
  * supersedes @16 (whose F-ADV-1 variant claim it removes). What must be true before @17 is activated on the lane.
  */
 export const SALES_PRODUCTION_PROFILE_V17_GATE = Object.freeze([
-  { id: 'v16-gate', blocking: true, requirement: 'every blocking item of SALES_PRODUCTION_PROFILE_V16_GATE (@17 issues quotes exactly as @16)' },
-  { id: 'o2-evaluation', blocking: true, requirement: 'catalog.get_product_context@2 evaluated with the real model and real Catalog V2 on the variant scenarios (O-1, O-2): no availability claim beyond what the owner reported' },
-  { id: 'write-budget', blocking: true, requirement: 'F-WA-2 (owner decision, 2026-11-09): the @17 lane worker runs R4_EXEC_MAX_WRITE_ACTIONS=6; F1 commercial limits unchanged and independent of it' },
-  { id: 'human-request-notice', blocking: true, requirement: 'F-ADV-2: an agent-opened consultation or handoff sends the fixed platform notice (SALES_HUMAN_REQUEST_NOTICE_TEXT) in @17 conversations; the request stays with the person' },
-  { id: 'principal-60-minutes', blocking: true, requirement: 'owner decision (2026-11-09): Quote principal r4-sales-retail-session (retail-session, cl-retail-session-60m-v1), provisioned on the deployed Quote V2 and authorized for real F1 traffic by the Quote owner (V6); never the five-day r4-sales-integration as a fallback, never an R4-side expiry' },
-  { id: 'retail-session-eligibility', blocking: true, requirement: 'Quote promotion-eligibility handoff V1-V5: Catalog price classification (regular/promotional/unknown + next scheduled change), approved E3 commercial policy, shipping-free quotes only until pc-carrier rate validity, and the R4 eligibility gate refusing any unproven line (no fallback)' },
-  { id: 'single-flight-issuance', blocking: true, requirement: 'at most one Quote V2 issuance in flight across every worker (shared PostgreSQL advisory lock, singleFlightQuoteIssuance)' },
+  { id: 'quote-release', blocking: true, requirement: 'Quote V2 a79d33f deployed with 000010, a verified restore and a rehearsed rollback; joint A10 with R4 (the @14 gate items that concern Quote)' },
+  { id: 'f1-commercial-policy', blocking: true, requirement: 'F1-COMMERCIAL-POLICY-v1 approved: Catalog V2 is the commercial authority (no static P-1 file); provenance, bounded validity, price and stock for the quantity, no promotional price until its owners authorize honoring it for 60 minutes, no shipping, the F1 limits' },
+  { id: 'principal-60-minutes', blocking: true, requirement: 'Quote principal r4-sales-retail-session (cl-retail-session-60m-v1) authorized by the Quote owner for real F1 traffic; never the five-day r4-sales-integration, never an R4-side expiry' },
+  { id: 'write-budget', blocking: true, requirement: 'the @17 lane worker runs R4_EXEC_MAX_WRITE_ACTIONS=6 (F-WA-2)' },
+  { id: 'single-flight-issuance', blocking: true, requirement: 'at most one Quote V2 issuance in flight across every worker (shared PostgreSQL advisory lock)' },
+  { id: 'human-request-notice', blocking: true, requirement: 'F-ADV-2: an agent-opened consultation or handoff sends the fixed platform notice in @17 conversations' },
+  { id: 'l3', blocking: true, requirement: 'L3 on the fixed R4, Quote and Catalog SHAs: no incorrect, duplicated, unauthorized or insufficiently backed quote' },
+  { id: 'alerts', blocking: true, requirement: 'operational alerts for the lane (worker, Quote calls, handoffs) verified before the first real write' },
   { id: 'profile-17-registered', blocking: true, requirement: 'identifier @17 verified free, then registered with production:sales:bootstrap --lane (definition v16 is reused)' },
-  { id: 'explicit-authorization', blocking: true, requirement: 'explicit owner authorization to switch the lane to @17, by SHA' },
+  { id: 'explicit-authorization', blocking: true, requirement: 'explicit owner authorization to switch the lane to @17, by exact SHA, allowlist only; @13 kept as rollback' },
 ] as const);

@@ -112,7 +112,22 @@ export function previewIdOf(snapshot: CommercialSnapshot): string {
  * commercial reason: those are blockers. Throws `DomainError` only when an
  * owner could not answer (outage, timeout): nothing can be concluded then.
  */
-export async function buildCommercialSnapshot(deps: { readonly catalog: CatalogPort; readonly shipping: ShippingService; readonly parity?: QuoteParityGuard | null }, workspace: Workspace, options: CallOptions, now: Date): Promise<CommercialSnapshotResult> {
+/**
+ * (F1 commercial policy) Catalog V2 is the commercial authority (product, variant, price, stock), Quote V2 the issuance
+ * authority, R4 the orchestrator. On top of the deterministic snapshot checks every profile has (exact item, sellable,
+ * stock for the quantity, owner price for the quantity tier, current owner answer), the F1 candidate requires: the
+ * owner's pricing provenance and a bounded owner validity on every line (degraded or unbounded answers are refused),
+ * no promotional price until the commercial and Quote owners authorize honoring it for the 60-minute validity (read from
+ * Catalog's own `pricing.promotion`, never a heuristic), and no shipping (F1 quotes are issued without delivery).
+ * No price, stock or eligibility source of R4's own. Checked at quote.preview and again at quote.create.
+ */
+export interface CommercialEligibility {
+  /** The commercial policy version every decision relies on (recorded on each refusal). */
+  readonly policyVersion: string;
+}
+export const F1_COMMERCIAL_POLICY_VERSION = 'F1-COMMERCIAL-POLICY-v1';
+
+export async function buildCommercialSnapshot(deps: { readonly catalog: CatalogPort; readonly shipping: ShippingService; readonly parity?: QuoteParityGuard | null; readonly eligibility?: CommercialEligibility | null }, workspace: Workspace, options: CallOptions, now: Date): Promise<CommercialSnapshotResult> {
   const blockers: CommercialBlocker[] = [];
   const block = (code: string, message: string, details: Record<string, string | number | boolean | null> = {}) => blockers.push({ code, message, details });
   const state = workspace.state;
@@ -153,6 +168,21 @@ export async function buildCommercialSnapshot(deps: { readonly catalog: CatalogP
       block('item_price_tier_mismatch', 'the catalog priced a different quantity tier', { ...at, pricedQuantity: item.pricing.quantity });
       continue;
     }
+    if (deps.eligibility) {
+      const policy = deps.eligibility.policyVersion;
+      if (item.pricing.promotion !== null) {
+        block('price_promotional_excluded', `${item.parentProduct.name} has a promotional price: promotional prices are not quoted autonomously until their owners authorize it`, { ...at, policy });
+        continue;
+      }
+      if (!OPAQUE_REFERENCE.test(item.pricing.engineVersion)) {
+        block('catalog_provenance_missing', `the catalog answer for ${item.parentProduct.name} carries no pricing provenance`, { ...at, policy });
+        continue;
+      }
+      if (item.freshness.validUntil === null) {
+        block('catalog_evidence_unbounded', `the catalog answer for ${item.parentProduct.name} declares no validity: it cannot be relied on for a quote`, { ...at, policy });
+        continue;
+      }
+    }
     const taxRate = canonicalTaxRate(item.pricing.tax.rate);
     if (taxRate === null) {
       block('item_tax_unrepresentable', 'the catalog tax rate cannot be stated on a quote', at);
@@ -191,7 +221,10 @@ export async function buildCommercialSnapshot(deps: { readonly catalog: CatalogP
   let shippingEvidence: CommercialEvidence['shipping'] = null;
   const choice = state.shipping ?? null;
   const delivery = state.delivery;
-  if (delivery && choice?.kind !== 'selected') {
+  if (deps.eligibility && delivery) {
+    // F1 quotes are issued without shipping; such a quote is never presented as free delivery or pickup.
+    block('shipping_not_in_f1', 'quotes are issued without delivery for now: clear the destination and exclude delivery, or hand the delivery question to a person', { commune: delivery.commune, policy: deps.eligibility.policyVersion });
+  } else if (delivery && choice?.kind !== 'selected') {
     block('shipping_not_selected', 'a delivery destination is recorded: the customer must choose one shipping offer (or the destination must be cleared and delivery excluded)', { commune: delivery.commune });
   } else if (!delivery && choice?.kind !== 'excluded') {
     block('shipping_not_decided', 'no delivery destination is recorded and delivery was not explicitly excluded');

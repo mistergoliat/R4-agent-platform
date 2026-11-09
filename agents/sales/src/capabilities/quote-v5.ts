@@ -6,6 +6,7 @@ import { snapshotLimitBreaches } from './autonomy-limits.js';
 import { buildCommercialSnapshot, quoteRequestOf, type CommercialBlocker } from './commercial-snapshot.js';
 import { OFFER_MESSAGE_MAX_CHARS, OFFER_TEMPLATE_VERSION, offerReference, renderOfferMessage } from './offer-presentation.js';
 import type { QuoteParityGuard } from './parity-guard.js';
+import type { CommercialEligibility } from './commercial-snapshot.js';
 import { QUOTE_V2_CORRELATION, QUOTE_V2_TIMEOUT_MS, classifySend, quoteCreateV2Output, reconcileQuoteV2Command, settle, type QuoteCreateV2Output } from './quote-v2.js';
 import { quoteCreateV3Input, type QuoteCreateV3Input } from './quote-v3.js';
 import { confirmedQuoteRefusalMessage, judgeConfirmedQuote, locateConfirmation, type QuoteV4CapabilityDeps } from './quote-v4.js';
@@ -23,6 +24,8 @@ export interface QuoteV5CapabilityDeps extends QuoteV4CapabilityDeps {
   readonly admission: QuoteWriteAdmission;
   /** (R4-J5 F1, P-1) When configured, the snapshot recomputed at issuance blocks every line outside the current parity-verified set. */
   readonly parity?: QuoteParityGuard | null;
+  /** (F1 commercial eligibility) When configured, every line and the shipping must satisfy the F1 commercial policy. */
+  readonly eligibility?: CommercialEligibility | null;
 }
 
 /** Failure code of an issuance stopped by the kill switch before anything reached the Quote owner. */
