@@ -111,7 +111,8 @@ describe('B. per-variant availability: the owner\'s sellability for one unit, ne
   });
 
   it('a product without variants and an unknown key are exactly the @1 view; the answer expires with its earliest read', async () => {
-    const catalog = new FixtureCatalog();
+    const fixed = new Date('2026-11-09T12:00:00.000Z');
+    const catalog = new FixtureCatalog({ now: () => fixed });
     expect(await productContextWithVariantAvailability(catalog, 'BAR-OLY20', call)).toEqual(productContextView(await catalog.getProductContext('BAR-OLY20')));
     expect(await productContextWithVariantAvailability(catalog, 'NOPE', call)).toEqual({ status: 'not_found', productKey: 'NOPE' });
     const early = '2026-01-01T00:00:00.000Z';
