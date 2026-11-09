@@ -1,39 +1,45 @@
 ---
 title: Política comercial F1 de cotizaciones autónomas por WhatsApp (F1-COMMERCIAL-POLICY-v1)
-status: DRAFT — PENDIENTE DE APROBACIÓN (owner comercial, owner de Quote, owner de Catalog)
+status: Definida por el owner (mandato «R4 — F1 simplified commercial canary», 2026-11-09). Las promociones quedan pendientes de autorización
 date: 2026-11-09
 ---
 
 # Política comercial F1 — `F1-COMMERCIAL-POLICY-v1`
 
-**Estado: borrador, no activa.** R4 la aplica en el perfil candidato `sales-production@17`, que está inactivo. Cada rechazo registra la versión de la política. No se activa sin la aprobación de los tres responsables (§3).
+**Roles:**
 
-## 1. Reglas
+- **Catalog V2** es la autoridad de la información comercial: producto, variante, precio y stock.
+- **Quote V2** es la autoridad de emisión.
+- **R4** orquesta.
 
-Una cotización se emite automáticamente solo si cumple **todas** estas reglas:
+No hay motores de precio, catálogos, políticas de stock ni sistemas de elegibilidad paralelos. R4 aplica la política en `sales-production@17`, en `quote.preview` y otra vez en `quote.create`, y registra en cada rechazo la versión de la política.
 
-| # | Regla | Quién lo prueba | Control en R4 |
-|---|---|---|---|
-| 1 | El producto y la variante están en el **conjunto autorizado por P-1**, con la evidencia vigente | Catalog (+ owner comercial) | Guard P-1 (existente) |
-| 2 | **Precio regular confirmado.** Catalog declara el precio como `regular` y no hay un cambio programado antes de `issuedAt + 60 min + margen` | Catalog (#57) | Validación de elegibilidad: si no está probado, `price_class_unknown` |
-| 3 | **Promociones excluidas** temporalmente | Catalog (`pricing.promotion`) | `price_promotional_excluded` |
-| 4 | **Stock confirmado para la cantidad** | Catalog (contexto de ítem) | `quote.preview` y la revalidación al emitir (existentes) |
-| 5 | **Sin despacho** mientras pc-carrier no entregue vigencia de tarifa | Shipping | `shipping_validity_unverified` |
-| 6 | **Vigencia máxima de 60 minutos** | Quote (principal `r4-sales-retail-session`, `cl-retail-session-60m-v1`) | Configuración del principal; R4 no calcula vigencias |
-| 7 | **Límites J3E/F1:** ≤ 250.000 CLP, 3 líneas, 5 unidades por línea y en total, 1 cotización por conversación, 2 por hora, ventana de confirmación de 900 s | R4 | Existentes |
-| 8 | **Confirmación explícita de la oferta exacta**, idempotencia y una sola emisión en vuelo | R4 | Existentes (`quote.create@5`, #60) |
+## 1. Reglas del primer canary
+
+| # | Regla | Control |
+|---|---|---|
+| 1 | El producto y la variante son exactos y se pueden vender (`itemKey` de Catalog V2) | Snapshot comercial (existente) |
+| 2 | El precio vigente es el del owner para el tramo de cantidad | Snapshot (existente) |
+| 3 | Hay stock confirmado para la cantidad pedida | Snapshot y `quote.preview` (existente) |
+| 4 | La información está vigente y no degradada: tiene procedencia de Catalog, una validez acotada y no vencida, y el owner respondió | Snapshot (`catalog_evidence_stale`, existente). Para F1 se agregan `catalog_provenance_missing` y `catalog_evidence_unbounded`. Si Catalog no responde, nada se emite |
+| 5 | La oferta confirmada es exactamente la renderizada, sin cambios, y cualquier cambio comercial entre la vista previa y la emisión la invalida | `quote.create@5` (existente: el `previewId` se recalcula al emitir) |
+| 6 | Límites: ≤ 250.000 CLP, ≤ 3 líneas, ≤ 5 unidades por línea, ≤ 5 unidades en total, 1 cotización por conversación, 2 por hora | Existentes (`SALES_F1_CANARY_LIMITS`) |
+| 7 | Cotizaciones **sin despacho** | `shipping_not_in_f1` |
+| 8 | Vigencia de 60 minutos, fijada por Quote | Principal `r4-sales-retail-session` (`cl-retail-session-60m-v1`). Nunca el de 5 días |
+| 9 | Sin carrito ni Checkout | El carrito está apagado en Quote; `@17` no tiene capacidades de Checkout |
+| 10 | Una sola emisión en vuelo; idempotencia; kill switch | Existentes (#60) |
+
+**Promociones:** solo se cotizarán después de que el owner comercial y el owner de Quote autoricen explícitamente honrar el monto emitido durante los 60 minutos. Hasta entonces, una línea con `pricing.promotion` de Catalog se rechaza (`price_promotional_excluded`). Ese es un campo del propio owner; no se usa ninguna clasificación heurística.
+
+**Sin dependencias adicionales de Catalog:** no se requiere un archivo P-1 estático por SKU ni una clasificación de precio regular, promocional o desconocido (#54 y #57 dejan de bloquear F1).
 
 ## 2. Presentación al cliente
 
-- Una cotización sin despacho dice «Despacho: no incluido». **Nunca** se presenta como entrega gratuita ni como retiro disponible (regla de modalidad de entrega de la definición v16).
-- Un rechazo no ofrece ningún camino alternativo con otra vigencia: no se usa el principal de 5 días ni se reintenta. El cliente puede pedir una persona del equipo.
+- Una cotización sin despacho dice «Despacho: no incluido». **Nunca** se presenta como entrega gratuita ni como retiro disponible.
+- Si el cliente pide despacho, se le explica que la cotización se emite sin despacho, o se deriva a una persona.
+- Un rechazo nunca se reintenta con otra vigencia ni con otro principal.
 
-## 3. Aprobaciones
+## 3. Pendiente antes de la primera escritura real
 
-| Responsable | Qué aprueba | Estado |
-|---|---|---|
-| Owner comercial (e-commerce) | Política E3: un precio cotizado se honra durante 60 minutos. Además, las reglas 2, 3 y 5 | **Pendiente** |
-| Owner de Quote | V6: usar `r4-sales-retail-session` con tráfico real F1, y esta política como evidencia E1–E3 | **Pendiente** (Quote #33) |
-| Owner de Catalog | El contrato de clasificación de precio (#57) y P-1 (#54) | **Pendiente** |
-
-Mientras falte el contrato de Catalog #57, R4 trata **todas** las líneas no promocionales como `unknown` y no emite ninguna cotización.
+- La autorización del owner de Quote para usar `r4-sales-retail-session` con tráfico real (Quote #33).
+- La aprobación final del owner sobre el SHA exacto.

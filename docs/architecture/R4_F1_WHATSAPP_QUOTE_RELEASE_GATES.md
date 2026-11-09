@@ -55,7 +55,7 @@ El registro en código está en `profile-v17.ts` (`SALES_PRODUCTION_PROFILE_V17_
 | G1 | Candidato `@17` registrado | R4 | Inicio | **Hecho** |
 | G2 | F-ADV-2: aviso ante una consulta o derivación del agente | R4 | Inicio | **Hecho** (PR #59, `05139bb`) |
 | G22 | Una sola emisión de Quote en vuelo entre todos los workers | R4 | Inicio | **Hecho** (PR #60, `cc8dde7`) |
-| G23 | Validación de elegibilidad comercial en `quote.preview` y `quote.create` (`@17`) | R4 · owner (revisión) | Inicio | **Implementada, pendiente de revisión** (PR de este documento) |
+| G23 | Política comercial F1 aplicada en `quote.preview` y `quote.create` (`@17`) | R4 | Inicio | **Simplificada** (PR #61): Catalog V2 es la autoridad; se exigen procedencia, validez acotada, precio y stock; sin promociones ni despacho |
 | G3 | SHA final de R4 | Owner | Inicio | Pendiente: el merge de G23; el contrato de Catalog #57 puede pedir un ajuste |
 | G4 | SHA de Quote | Owner de Quote | Inicio | **Hecho**: `a79d33f`, desplegado en EC2 |
 | G5 | Migración `000010` | Owner de Quote / ops | Inicio | **Hecho**: aplicada (aditiva, 890 ms ensayada) |
@@ -65,9 +65,9 @@ El registro en código está en `profile-v17.ts` (`SALES_PRODUCTION_PROFILE_V17_
 | G9 | Procedimiento de actualización | Ops | Inicio | **Hecho**: ejecutado en el lugar, con respaldos en `~/backups/quote-v2-integration/` |
 | G10 | A10 conjunto (R4 + Quote) | R4 + Quote | Inicio | **Hecho** en el ensayo (91.395 / 17.365 / 108.760) y en el runtime de R4; en producción se verifica con la primera emisión autorizada |
 | G11 | Principal de 60 minutos | Owner de Quote | Inicio | Provisionado (`r4-sales-retail-session`); conectividad de solo lectura validada; **falta la autorización V6** (Quote #33) |
-| G24 | Política comercial `F1-COMMERCIAL-POLICY-v1` (E3) | Owner comercial · owner de Quote | Inicio | **Pendiente de aprobación** (`R4_F1_COMMERCIAL_POLICY.md`) |
-| G25 | Clasificación de precio (regular / promocional / desconocido) | Owner de Catalog | Inicio | **Pendiente** (Catalog #57, sin respuesta) |
-| G13 | P-1: artefacto por SKU y variante | Owner de Catalog + owner comercial | Inicio | **Pendiente** (Catalog #54, sin respuesta) |
+| G24 | Política comercial `F1-COMMERCIAL-POLICY-v1` | Owner | Inicio | **Definida por el owner** (mandato «F1 simplified commercial canary»); las promociones esperan autorización del owner comercial y del owner de Quote |
+| G25 | Clasificación de precio (Catalog #57) | Owner de Catalog | — | **Fuera de F1** (decisión del owner); solo sería necesaria para habilitar promociones |
+| G13 | P-1: archivo estático por SKU | Owner de Catalog | — | **Fuera de F1** (decisión del owner: Catalog V2 es la autoridad comercial) |
 | G12 | Autorización de escrituras de Quote en producción (etapas 2–4) | Owner | Inicio | Pendiente (las escrituras se validaron solo en el ensayo) |
 | G14 | L3 sobre los SHAs fijos | R4 + owners | Inicio | Preparado (§6); no ejecutado |
 | G15 | Alertas del carril | R4 / ops | Inicio | Pendiente |

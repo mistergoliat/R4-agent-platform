@@ -8,7 +8,6 @@ import {
   quoteV2ChargeAmounts,
   quoteV2Totals,
   type CallOptions,
-  type CatalogItemContext,
   type CatalogPort,
   type QuoteV2Amounts,
   type QuoteV2CreateRequest,
@@ -114,29 +113,19 @@ export function previewIdOf(snapshot: CommercialSnapshot): string {
  * owner could not answer (outage, timeout): nothing can be concluded then.
  */
 /**
- * (F1 commercial eligibility) The F1 commercial policy a quote line must satisfy before a 60-minute retail-session
- * quote (Quote handoff HANDOFF_RETAIL_PROMOTION_ELIGIBILITY, E1–E3): only a price the Catalog owner declares REGULAR,
- * promotions excluded for now, and no shipping charge while pc-carrier gives no rate validity. R4 never infers a
- * price class (no free text, no price comparison) and adds no price source: it reads the owner's fields only.
- * Fails safe: a line whose class is not proven is refused. Checked at quote.preview and again at quote.create.
+ * (F1 commercial policy) Catalog V2 is the commercial authority (product, variant, price, stock), Quote V2 the issuance
+ * authority, R4 the orchestrator. On top of the deterministic snapshot checks every profile has (exact item, sellable,
+ * stock for the quantity, owner price for the quantity tier, current owner answer), the F1 candidate requires: the
+ * owner's pricing provenance and a bounded owner validity on every line (degraded or unbounded answers are refused),
+ * no promotional price until the commercial and Quote owners authorize honoring it for the 60-minute validity (read from
+ * Catalog's own `pricing.promotion`, never a heuristic), and no shipping (F1 quotes are issued without delivery).
+ * No price, stock or eligibility source of R4's own. Checked at quote.preview and again at quote.create.
  */
 export interface CommercialEligibility {
   /** The commercial policy version every decision relies on (recorded on each refusal). */
   readonly policyVersion: string;
 }
 export const F1_COMMERCIAL_POLICY_VERSION = 'F1-COMMERCIAL-POLICY-v1';
-
-/**
- * The Catalog owner's price class of one priced item. Catalog V2 exposes a promotion (`pricing.promotion`) but does
- * not yet declare a regular, non-promotional price with its next scheduled change (requested: Catalog #57), and
- * `promotion = null` alone is not that evidence (handoff rule E2).
- * ponytail: every non-promotional line is 'unknown' (refused) until the Catalog #57 contract is published; then map
- * its declared class here, and nowhere else.
- */
-export function catalogPriceClass(pricing: Extract<CatalogItemContext, { status: 'found' }>['pricing']): 'regular' | 'promotional' | 'unknown' {
-  if (pricing.status === 'available' && pricing.promotion !== null) return 'promotional';
-  return 'unknown';
-}
 
 export async function buildCommercialSnapshot(deps: { readonly catalog: CatalogPort; readonly shipping: ShippingService; readonly parity?: QuoteParityGuard | null; readonly eligibility?: CommercialEligibility | null }, workspace: Workspace, options: CallOptions, now: Date): Promise<CommercialSnapshotResult> {
   const blockers: CommercialBlocker[] = [];
@@ -180,13 +169,17 @@ export async function buildCommercialSnapshot(deps: { readonly catalog: CatalogP
       continue;
     }
     if (deps.eligibility) {
-      const priceClass = catalogPriceClass(item.pricing);
-      if (priceClass === 'promotional') {
-        block('price_promotional_excluded', `${item.parentProduct.name} has a promotional price: promotions are excluded from autonomous quotes for now`, { ...at, policy: deps.eligibility.policyVersion });
+      const policy = deps.eligibility.policyVersion;
+      if (item.pricing.promotion !== null) {
+        block('price_promotional_excluded', `${item.parentProduct.name} has a promotional price: promotional prices are not quoted autonomously until their owners authorize it`, { ...at, policy });
         continue;
       }
-      if (priceClass !== 'regular') {
-        block('price_class_unknown', `the catalog does not declare the price of ${item.parentProduct.name} as regular: it cannot be quoted autonomously`, { ...at, policy: deps.eligibility.policyVersion });
+      if (!OPAQUE_REFERENCE.test(item.pricing.engineVersion)) {
+        block('catalog_provenance_missing', `the catalog answer for ${item.parentProduct.name} carries no pricing provenance`, { ...at, policy });
+        continue;
+      }
+      if (item.freshness.validUntil === null) {
+        block('catalog_evidence_unbounded', `the catalog answer for ${item.parentProduct.name} declares no validity: it cannot be relied on for a quote`, { ...at, policy });
         continue;
       }
     }
@@ -229,8 +222,8 @@ export async function buildCommercialSnapshot(deps: { readonly catalog: CatalogP
   const choice = state.shipping ?? null;
   const delivery = state.delivery;
   if (deps.eligibility && delivery) {
-    // No pc-carrier rate validity yet: only a quote without shipping is eligible. It is never presented as free delivery or pickup.
-    block('shipping_validity_unverified', 'the delivery price has no owner validity: only a quote without shipping can be issued autonomously', { commune: delivery.commune, policy: deps.eligibility.policyVersion });
+    // F1 quotes are issued without shipping; such a quote is never presented as free delivery or pickup.
+    block('shipping_not_in_f1', 'quotes are issued without delivery for now: clear the destination and exclude delivery, or hand the delivery question to a person', { commune: delivery.commune, policy: deps.eligibility.policyVersion });
   } else if (delivery && choice?.kind !== 'selected') {
     block('shipping_not_selected', 'a delivery destination is recorded: the customer must choose one shipping offer (or the destination must be cleared and delivery excluded)', { commune: delivery.commune });
   } else if (!delivery && choice?.kind !== 'excluded') {
