@@ -27,6 +27,7 @@ export const SALES_QUOTE_LANE_V16_PROFILE_LABEL = 'sales-production@16';
 export const SALES_PRODUCTION_PROFILE_V16_GATE = Object.freeze([
   { id: 'v14-gate', blocking: true, requirement: 'every blocking item of SALES_PRODUCTION_PROFILE_V14_GATE (@16 issues quotes exactly as @14: R1.7, Quote SHA, A10 lockstep, R4 principal, P-1, F-E1-1, L3, authorization)' },
   { id: 'fwa1-evaluation', blocking: true, requirement: 'definition v16 evaluated with the real model on the availability scenarios: no incorrect availability claim and no quote above confirmed stock' },
+  { id: 'write-budget', blocking: true, requirement: 'F-WA-2 (owner decision, 2026-11-09): the @16 lane and canary worker runs R4_EXEC_MAX_WRITE_ACTIONS=6 (the F1 ceiling), so a product or quantity change still reaches quote.create; the commercial limits, the confirmation and the quote.create authorization stay independent of it. Not applied to the financial profile @15, which keeps its own D7-6 policy' },
   { id: 'definition-v16-registered', blocking: true, requirement: 'identifiers v16 and @16 verified free, then registered with production:sales:bootstrap --lane' },
   { id: 'explicit-authorization', blocking: true, requirement: 'explicit owner authorization to switch the lane to @16, by SHA' },
 ] as const);
