@@ -38,6 +38,7 @@ import { SALES_PRODUCTION_PROFILES, isCustomerIdentityProfile, salesActionPolicy
 import { composeSyntheticCustomerCapabilities, composeSyntheticIdentityVerificationCapabilities } from '../capabilities/customer-synthetic.js';
 import { GATEWAY_ONLY_ENV, salesGatewayInspection } from './gateway-identity.js';
 import { catalogCapabilities } from '../capabilities/catalog.js';
+import { F1_COMMERCIAL_POLICY_VERSION, type CommercialEligibility } from '../capabilities/commercial-snapshot.js';
 import { shippingCapability } from '../capabilities/shipping.js';
 import { quoteCreateV2Capability } from '../capabilities/quote-v2.js';
 import { quoteCreateV3Capability } from '../capabilities/quote-v3.js';
@@ -207,8 +208,8 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
           // (R4-J5 F1) The F1 canary, and the quote lane @14, run within the owner-approved canary limits, never looser.
           if (isF1CanaryProfile(profile) || isQuoteLaneProfile(profile)) assertF1CanaryLimits(limits, profileLabel(profile));
           if (options.quoteParity) options.logger.info({ quoteParity: { profile: profileLabel(profile), fingerprint: options.quoteParity.fingerprint, items: options.quoteParity.items, maxAgeSeconds: options.quoteParity.maxAgeSeconds } }, 'sales quote parity evidence configured');
-          if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV3Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now(), parity: options.quoteParity ?? null }));
-          if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV5Capability({ store: sales, quotes, catalog, shipping: options.shipping, limits, conversation: options.store, admission: controls, now: () => clock.now(), parity: options.quoteParity ?? null }));
+          if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV3Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now(), parity: options.quoteParity ?? null, eligibility: salesCommercialEligibility(profile) }));
+          if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV5Capability({ store: sales, quotes, catalog, shipping: options.shipping, limits, conversation: options.store, admission: controls, now: () => clock.now(), parity: options.quoteParity ?? null, eligibility: salesCommercialEligibility(profile) }));
         } else {
           if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV2Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now() }));
           if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV4Capability({ store: sales, quotes: options.quotes, catalog, shipping: options.shipping, limits, conversation: options.store, now: () => clock.now() }));
@@ -412,6 +413,11 @@ export function killSwitchGuardedQuotes(quotes: QuoteV2Service, controls: Autono
     getDocument: (...a) => quotes.getDocument(...a),
   };
   return guardProductionWrites(port, { domain: SALES_DOMAINS.quote, writeOperations: ['createAndIssue'], controls, logger, blocked: () => quoteWritesBlockedError() });
+}
+
+/** (F1 commercial eligibility) The policy the F1 candidate @17 enforces at quote.preview and quote.create; null elsewhere. */
+export function salesCommercialEligibility(profile: ProductionProfile): CommercialEligibility | null {
+  return SALES_VARIANT_AVAILABILITY_PROFILES.has(profileLabel(profile)) ? { policyVersion: F1_COMMERCIAL_POLICY_VERSION } : null;
 }
 
 /** The Quote V2 port quote.create@5 uses: behind the kill switch; for the F1 profiles also single-flight (see below). */

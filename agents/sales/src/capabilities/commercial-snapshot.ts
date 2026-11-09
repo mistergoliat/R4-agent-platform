@@ -8,6 +8,7 @@ import {
   quoteV2ChargeAmounts,
   quoteV2Totals,
   type CallOptions,
+  type CatalogItemContext,
   type CatalogPort,
   type QuoteV2Amounts,
   type QuoteV2CreateRequest,
@@ -112,7 +113,32 @@ export function previewIdOf(snapshot: CommercialSnapshot): string {
  * commercial reason: those are blockers. Throws `DomainError` only when an
  * owner could not answer (outage, timeout): nothing can be concluded then.
  */
-export async function buildCommercialSnapshot(deps: { readonly catalog: CatalogPort; readonly shipping: ShippingService; readonly parity?: QuoteParityGuard | null }, workspace: Workspace, options: CallOptions, now: Date): Promise<CommercialSnapshotResult> {
+/**
+ * (F1 commercial eligibility) The F1 commercial policy a quote line must satisfy before a 60-minute retail-session
+ * quote (Quote handoff HANDOFF_RETAIL_PROMOTION_ELIGIBILITY, E1–E3): only a price the Catalog owner declares REGULAR,
+ * promotions excluded for now, and no shipping charge while pc-carrier gives no rate validity. R4 never infers a
+ * price class (no free text, no price comparison) and adds no price source: it reads the owner's fields only.
+ * Fails safe: a line whose class is not proven is refused. Checked at quote.preview and again at quote.create.
+ */
+export interface CommercialEligibility {
+  /** The commercial policy version every decision relies on (recorded on each refusal). */
+  readonly policyVersion: string;
+}
+export const F1_COMMERCIAL_POLICY_VERSION = 'F1-COMMERCIAL-POLICY-v1';
+
+/**
+ * The Catalog owner's price class of one priced item. Catalog V2 exposes a promotion (`pricing.promotion`) but does
+ * not yet declare a regular, non-promotional price with its next scheduled change (requested: Catalog #57), and
+ * `promotion = null` alone is not that evidence (handoff rule E2).
+ * ponytail: every non-promotional line is 'unknown' (refused) until the Catalog #57 contract is published; then map
+ * its declared class here, and nowhere else.
+ */
+export function catalogPriceClass(pricing: Extract<CatalogItemContext, { status: 'found' }>['pricing']): 'regular' | 'promotional' | 'unknown' {
+  if (pricing.status === 'available' && pricing.promotion !== null) return 'promotional';
+  return 'unknown';
+}
+
+export async function buildCommercialSnapshot(deps: { readonly catalog: CatalogPort; readonly shipping: ShippingService; readonly parity?: QuoteParityGuard | null; readonly eligibility?: CommercialEligibility | null }, workspace: Workspace, options: CallOptions, now: Date): Promise<CommercialSnapshotResult> {
   const blockers: CommercialBlocker[] = [];
   const block = (code: string, message: string, details: Record<string, string | number | boolean | null> = {}) => blockers.push({ code, message, details });
   const state = workspace.state;
@@ -153,6 +179,17 @@ export async function buildCommercialSnapshot(deps: { readonly catalog: CatalogP
       block('item_price_tier_mismatch', 'the catalog priced a different quantity tier', { ...at, pricedQuantity: item.pricing.quantity });
       continue;
     }
+    if (deps.eligibility) {
+      const priceClass = catalogPriceClass(item.pricing);
+      if (priceClass === 'promotional') {
+        block('price_promotional_excluded', `${item.parentProduct.name} has a promotional price: promotions are excluded from autonomous quotes for now`, { ...at, policy: deps.eligibility.policyVersion });
+        continue;
+      }
+      if (priceClass !== 'regular') {
+        block('price_class_unknown', `the catalog does not declare the price of ${item.parentProduct.name} as regular: it cannot be quoted autonomously`, { ...at, policy: deps.eligibility.policyVersion });
+        continue;
+      }
+    }
     const taxRate = canonicalTaxRate(item.pricing.tax.rate);
     if (taxRate === null) {
       block('item_tax_unrepresentable', 'the catalog tax rate cannot be stated on a quote', at);
@@ -191,7 +228,10 @@ export async function buildCommercialSnapshot(deps: { readonly catalog: CatalogP
   let shippingEvidence: CommercialEvidence['shipping'] = null;
   const choice = state.shipping ?? null;
   const delivery = state.delivery;
-  if (delivery && choice?.kind !== 'selected') {
+  if (deps.eligibility && delivery) {
+    // No pc-carrier rate validity yet: only a quote without shipping is eligible. It is never presented as free delivery or pickup.
+    block('shipping_validity_unverified', 'the delivery price has no owner validity: only a quote without shipping can be issued autonomously', { commune: delivery.commune, policy: deps.eligibility.policyVersion });
+  } else if (delivery && choice?.kind !== 'selected') {
     block('shipping_not_selected', 'a delivery destination is recorded: the customer must choose one shipping offer (or the destination must be cleared and delivery excluded)', { commune: delivery.commune });
   } else if (!delivery && choice?.kind !== 'excluded') {
     block('shipping_not_decided', 'no delivery destination is recorded and delivery was not explicitly excluded');

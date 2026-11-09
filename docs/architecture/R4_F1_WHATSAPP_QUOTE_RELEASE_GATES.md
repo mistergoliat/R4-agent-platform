@@ -46,33 +46,33 @@ El registro en código está en `profile-v17.ts` (`SALES_PRODUCTION_PROFILE_V17_
 | Quote V2 | **No designado.** Opciones: `a79d33f` (main; exige `000010`) o `ca66a2e` / `d419640` (en `000009`, con A10) | Decisión del owner de Quote (§2) |
 | Catalog V2 | Desplegado `8a72c38` (`RELEASE.json`); `origin/main` `5f2c086` | Lo confirma el owner de Catalog junto con P-1 (§4) |
 
-## 1.1 Matriz de gates
+## 1.1 Matriz de gates (actualizada 2026-11-09, mandato «F1 commercial eligibility and release preparation»)
 
-**Inicio** = indispensable para iniciar el canary. **Release** = necesario para declarar terminado el release completo.
+**Inicio** = indispensable para iniciar el canary. **Release** = necesario para declarar terminado el release completo. **Hecho** = verificado con evidencia.
 
 | # | Gate | Responsable | Para | Estado |
 |---|---|---|---|---|
-| G1 | Candidato `@17` registrado (A) | R4 | Inicio | **Listo en este PR** |
-| G2 | F-ADV-2: aviso ante una consulta o derivación del agente (E) | R4 (implementación) · owner (revisión y merge) | Inicio | **Implementado, pendiente de revisión** |
-| G3 | SHA de R4 fijo (el merge de G2) | Owner | Inicio | Pendiente |
-| G4 | SHA candidato de Quote designado | Owner de Quote | Inicio | **Pendiente** (ninguno designado; solicitado en Quote #33) |
-| G5 | Migración `000010` aplicada con plan del owner, o un SHA en `000009` | Owner de Quote / ops | Inicio | **Pendiente** (no aplicada en ningún entorno) |
-| G6 | Restore verificado (PostgreSQL + documentos) | Ops de Quote | Inicio (F14; §R paso 2) | **Pendiente** (G2-D02 abierto) |
-| G7 | Simulacro de rollback / roll-forward (F21) | Ops de Quote | Inicio («STOP deploy until demonstrated») | **Pendiente** |
-| G8 | Host: holgura de disco ≥ 3 GB para la carga de la imagen; volumen persistente (F11) | Ops de Quote | Inicio | **Pendiente** (último dato: 1,06 GB libres) |
-| G9 | Procedimiento de actualización a un SHA nuevo | Ops de Quote | Inicio | **Pendiente** (el README de despliegue está fijado a `6735352`; el bootstrap de producción es DRAFT) |
-| G10 | Despliegue conjunto A10 (Quote + R4) y su chequeo posterior | Owner de Quote + R4 | Inicio | Pendiente (A10 está en R4 `main` y en los tres SHAs candidatos de Quote) |
-| G11 | Principal `r4-sales-integration` con vigencia de 60 minutos en producción (C) | Owner de Quote | Inicio | **Pendiente** (solicitado en Quote #33) |
-| G12 | Autorización de mutaciones de las etapas 2–4 de Quote | Owner | Inicio | Pendiente |
-| G13 | P-1: SKU autorizados, archivo por SKU, procedencia, frescura y restricciones (D) | Owner de Catalog + owner comercial | Inicio | **Pendiente** (#54 abierto, sin respuesta) |
-| G14 | L3 sobre los SHAs fijos (F) | R4 + owners de Quote y Catalog | Inicio | Preparado; **no ejecutado** (los SHAs aún varían) |
+| G1 | Candidato `@17` registrado | R4 | Inicio | **Hecho** |
+| G2 | F-ADV-2: aviso ante una consulta o derivación del agente | R4 | Inicio | **Hecho** (PR #59, `05139bb`) |
+| G22 | Una sola emisión de Quote en vuelo entre todos los workers | R4 | Inicio | **Hecho** (PR #60, `cc8dde7`) |
+| G23 | Validación de elegibilidad comercial en `quote.preview` y `quote.create` (`@17`) | R4 · owner (revisión) | Inicio | **Implementada, pendiente de revisión** (PR de este documento) |
+| G3 | SHA final de R4 | Owner | Inicio | Pendiente: el merge de G23; el contrato de Catalog #57 puede pedir un ajuste |
+| G4 | SHA de Quote | Owner de Quote | Inicio | **Hecho**: `a79d33f`, desplegado en EC2 |
+| G5 | Migración `000010` | Owner de Quote / ops | Inicio | **Hecho**: aplicada (aditiva, 890 ms ensayada) |
+| G6 | Restore verificado | Ops | Inicio | **Hecho**: base, documentos y configuración, en un entorno aislado |
+| G7 | Simulacro de rollback (F21) | Ops | Inicio | **Hecho**: unos 40 s; requiere revertir también `principals.json` |
+| G8 | Espacio en el host | Ops | Inicio | **Hecho**: 6,2 GB libres; sin swap (recomendado agregarlo) |
+| G9 | Procedimiento de actualización | Ops | Inicio | **Hecho**: ejecutado en el lugar, con respaldos en `~/backups/quote-v2-integration/` |
+| G10 | A10 conjunto (R4 + Quote) | R4 + Quote | Inicio | **Hecho** en el ensayo (91.395 / 17.365 / 108.760) y en el runtime de R4; en producción se verifica con la primera emisión autorizada |
+| G11 | Principal de 60 minutos | Owner de Quote | Inicio | Provisionado (`r4-sales-retail-session`); conectividad de solo lectura validada; **falta la autorización V6** (Quote #33) |
+| G24 | Política comercial `F1-COMMERCIAL-POLICY-v1` (E3) | Owner comercial · owner de Quote | Inicio | **Pendiente de aprobación** (`R4_F1_COMMERCIAL_POLICY.md`) |
+| G25 | Clasificación de precio (regular / promocional / desconocido) | Owner de Catalog | Inicio | **Pendiente** (Catalog #57, sin respuesta) |
+| G13 | P-1: artefacto por SKU y variante | Owner de Catalog + owner comercial | Inicio | **Pendiente** (Catalog #54, sin respuesta) |
+| G12 | Autorización de escrituras de Quote en producción (etapas 2–4) | Owner | Inicio | Pendiente (las escrituras se validaron solo en el ensayo) |
+| G14 | L3 sobre los SHAs fijos | R4 + owners | Inicio | Preparado (§6); no ejecutado |
 | G15 | Alertas del carril | R4 / ops | Inicio | Pendiente |
-| G16 | Autorización explícita de despliegue y activación por SHA | Owner | Inicio | Pendiente |
-| G17 | Etapas 0–4 de Quote sobre el candidato | Owner de Quote | Release (la etapa 6 de Quote, integración con R4, es posterior) | Sin evidencia |
-| G18 | Ensayo de migración con datos reales (C, F12) | Owner de Quote | Release | Sin evidencia |
-| G19 | Siete días estables; cutover de V1 | Owner de Quote | Release | Sin evidencia |
-| G20 | W10 (correo) o el modo sin correo aceptado formalmente | Owner de Quote | Release | Pendiente |
-| G21 | Aceptación del owner (§Z de Quote; U2/U3/W8; RPO/RTO) | Owner | Release | Pendiente |
+| G16 | Autorización de activación por SHA (allowlist; `@13` como rollback) | Owner | Inicio | Pendiente |
+| G17–G21 | Etapas de Quote, ensayo con datos reales, 7 días, W10 y aceptación §Z | Owner de Quote | Release | Pendientes |
 
 ## 2. Estado de Quote R1.7 (B)
 
