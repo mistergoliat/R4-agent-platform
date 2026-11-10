@@ -68,7 +68,7 @@ describe('WhatsApp document submission', () => {
   it('one deadline covers upload and message: an upload that used it up leaves the message unsent (retryable)', async () => {
     const slow = new WhatsAppOutboundAdapter(config, { fetch: async (url, init) => {
       if (url.endsWith('/media')) await new Promise((r) => setTimeout(r, 450));
-      const r = await fetch(url, init as RequestInit);
+      const r = await fetch(url, init);
       return { status: r.status, headers: r.headers, text: () => r.text() };
     } });
     const result = await slow.submit({ outboundId: 'o2', idempotencyKey: 'k2', accountRef: PHONE, recipientRef: CONTACT, text: 'x', attempt: 1, document }, { timeoutMs: 1200 });
