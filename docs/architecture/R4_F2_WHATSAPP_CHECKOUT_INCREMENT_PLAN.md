@@ -192,10 +192,10 @@ son sólo los de este plan.
 | Id | Decisión (texto original, `7b696f6` §8) | Dueño (original) | Estado al 2026-11-10 |
 |---|---|---|---|
 | O-1 | Nombre del incremento (evitar la colisión con F2 de J5) | Owner R4 | Abierta |
-| O-2 | Autorizar R4-L (o la parte sandbox de Checkout) para este incremento | Owner | El mandato del 2026-11-10 dice «Se autoriza comenzar R4-L como trabajo de integración.» y «No activar Checkout productivo.» (§8.2) |
-| O-3 | Confirmar que «C1» es la observación C1 de AD-5 (§1) | Owner | El mandato nombra «Riesgo C1 de AD-5» (§1, §8.3) |
+| O-2 | Autorizar R4-L (o la parte sandbox de Checkout) para este incremento | Owner | **Resuelta** (mandato «R4 — ACTIVACIÓN @18, CIERRE @19 Y DECISIONES R4-L» (2026-11-10)): «Iniciar R4-L exclusivamente como integración sandbox.» (§11) |
+| O-3 | Confirmar que «C1» es la observación C1 de AD-5 (§1) | Owner | **Resuelta** (mandato «R4 — ACTIVACIÓN @18, CIERRE @19 Y DECISIONES R4-L» (2026-11-10)): «5. Corrección de AD-5/C1.» (§11) |
 | O-4 | Topología de E3-B: (a), (b) o (c) | Owner + e-commerce | Abierta |
-| O-5 | Emisor del consentimiento productivo (Checkout, CIA u otro); R4 sólo captura | Owner + Checkout + CIA | Abierta. El mandato agrega: «No crear nuevas autoridades de identidad ni consentimiento.» |
+| O-5 | Emisor del consentimiento productivo (Checkout, CIA u otro); R4 sólo captura | Owner + Checkout + CIA | **Abierta en cuanto al emisor.** El mandato «R4 — ACTIVACIÓN @18, CIERRE @19 Y DECISIONES R4-L» (2026-11-10) fija la dirección («2. Separación de identidad y consentimiento en Checkout.», «3. Captura determinista de aceptación.») sin nombrar el emisor (§11) |
 | O-6 | Entrega del primer escenario: retiro (contradice la política F1) u otra | Owner comercial | Abierta |
 | O-7 | C1: ¿un reintento o un pago offline cuentan como «iniciado»? | Owner + Checkout | Abierta |
 | O-8 | D-10 (número de perfil y definición) y D7-6/D-06 para uso no sandbox | Owner R4 | Abierta |
@@ -366,3 +366,48 @@ código cuando se indica) sin encontrar una definición; nunca se completa por i
 | D7, D-7, D-07, D7-n | ADR-039 (datos reales), registro F0 §8 (techo de escrituras), readiness §4 (TTL del enlace), decisión D-7 (D7-1..D7-8) |
 
 Las decisiones nuevas de la auditoría usan el prefijo **R4L-D**, que no aparece en ningún otro documento.
+
+## 11. Decisiones del owner registradas (mandato «R4 — ACTIVACIÓN @18, CIERRE @19 Y DECISIONES R4-L» (2026-11-10))
+
+**Texto del mandato (sección C), verbatim:**
+
+> «Registrar como decisiones del owner las resoluciones O-1 a O-8 y R4L-D1 a D4 indicadas en este mandato.
+> Iniciar R4-L exclusivamente como integración sandbox.
+> Priorizar: 1. CIA `purchase` y su contrato real. 2. Separación de identidad y consentimiento en Checkout. 3. Captura determinista de aceptación. 4. Compatibilidad de carrito Quote y comprador identificado. 5. Corrección de AD-5/C1. 6. E2E sandbox desde WhatsApp cuando la topología lo permita.
+> No habilitar pagos, órdenes ni carritos productivos.
+> No sustituir las pruebas productivas de identidad por identidades sintéticas.»
+
+**Registro.** Solo se anota como resuelto lo que el texto resuelve explícitamente; lo demás sigue abierto. Nada se infiere.
+
+| Id | Estado | Fundamento (texto del mandato) |
+|---|---|---|
+| O-1 | Abierta | El mandato no nombra el incremento |
+| O-2 | **Resuelta: R4-L iniciado, solo como integración sandbox** | «Iniciar R4-L exclusivamente como integración sandbox.» |
+| O-3 | **Resuelta: «C1» es la observación C1 de AD-5, y debe corregirse** | «5. Corrección de AD-5/C1.» |
+| O-4 | Abierta | «6. E2E sandbox desde WhatsApp cuando la topología lo permita.» condiciona el E2E sin elegir (a), (b) o (c) |
+| O-5 | Abierta en cuanto al emisor | Dirección fijada: «2. Separación de identidad y consentimiento en Checkout.» y «3. Captura determinista de aceptación.» No se nombra quién emite el consentimiento |
+| O-6 | Abierta | El mandato no se pronuncia sobre retiro frente a la política F1 |
+| O-7 | Abierta | «Corrección de AD-5/C1» ordena corregir, pero no decide si un reintento o un pago offline cuentan como «iniciado» |
+| O-8 | Abierta | El mandato no fija D-10 ni D7-6/D-06 |
+| R4L-D1 | Abierta | El mandato no fija el tope de operaciones financieras en sandbox |
+| R4L-D2 | Abierta | El mandato no decide entre consentimiento por sesión o por intento |
+| R4L-D3 | **Resuelta: identidad y consentimiento separados en Checkout; el comprador sale de la identidad, el consentimiento prueba solo la aceptación** | «2. Separación de identidad y consentimiento en Checkout.» y «4. … comprador identificado.» Coincide con la opción de la fuente citada en la auditoría §9 («comprador = `sub` del grant; el consentimiento prueba sólo el acto») |
+| R4L-D4 | **Resuelta: la fila R4-L del roadmap pasa a «Iniciado: solo integración sandbox (2026-11-10)»** | «Iniciar R4-L exclusivamente como integración sandbox.» |
+
+**Restricciones registradas:**
+
+- «No habilitar pagos, órdenes ni carritos productivos.»
+- «No sustituir las pruebas productivas de identidad por identidades sintéticas.» Las pruebas sintéticas pueden servir en desarrollo, pero no cuentan como evidencia de identidad productiva.
+
+### 11.1 Inicio de R4-L (solo sandbox): orden y dependencias externas
+
+| # | Prioridad del mandato | Primer paso de R4 | Dependencia externa concreta (dueño) |
+|---|---|---|---|
+| 1 | CIA `purchase` y su contrato real | Cliente CIA con el propósito `purchase` y `resolve` determinista dentro de `checkout.start_purchase`, contra el contrato **publicado** | CIA publica el contrato `purchase` (H3) y lo pone en un entorno no productivo (owner CIA). Sin ese contrato, R4 no implementa contra supuestos |
+| 2 | Separación de identidad y consentimiento en Checkout (R4L-D3) | El puerto de Checkout de R4 envía el grant de identidad aparte del artefacto de consentimiento | Checkout toma el comprador del grant y no del sujeto del consentimiento (owner Checkout; C-3 de Checkout) |
+| 3 | Captura determinista de aceptación | Capturar el acto de compra desde el inbound registrado por la plataforma (patrón ADR-035), sin directorio sandbox de consentimientos; R4 no firma | Formato y verificador del artefacto que aceptará Checkout (owner Checkout; O-5 para el emisor) |
+| 4 | Carrito Quote y comprador identificado | Contrato de puerto y prueba de frontera: R4 no crea carritos | Quote acepta A7 y verifica el grant H3; la tienda aislada entrega E-3..E-9 (owner Quote, owner e-commerce) |
+| 5 | Corrección de AD-5/C1 | Mitigación vigente en R4: no ofrecer un enlace a menos de 60 s de su vencimiento | Checkout corrige C1. Para elegir la corrección se necesita O-7 (owner + owner Checkout) |
+| 6 | E2E sandbox desde WhatsApp | Perfil de carril sandbox nuevo sobre el carril vigente (D-10, O-8) | Topología (O-4) y los pasos 1–5 |
+
+Nada de esto activa pagos, órdenes ni carritos productivos.
