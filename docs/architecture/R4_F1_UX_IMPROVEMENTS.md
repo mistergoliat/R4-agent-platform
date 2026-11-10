@@ -146,6 +146,8 @@ Una definición nueva no se valida sin el modelo.
 
 No se propone ninguna optimización: la causa sigue siendo el número de llamadas secuenciales y la longitud de la salida del modelo (§3).
 
+**Versión evaluada:** la definición v18 previa a la revisión de #63. Después de esa revisión v17 cambió una sola frase (el agente anuncia el PDF solo si `document.delivery = queued`), y v18 se regeneró desde ella. Esa frase solo actúa después de una emisión real, y en esta evaluación no hubo ninguna, así que los resultados de arriba no cambian.
+
 **No cubierto aquí:**
 
 - la frase de vigencia después de una emisión real, porque la trampa impide emitir. Se valida en el L3 de `@18`/`@19` con Quote real;
