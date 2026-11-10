@@ -16,9 +16,9 @@ const SALES = 'agents/sales/src/production/composition.ts';
 
 const MUTATIONS = [
   {
-    name: 'IA-M1 the guard takes a question as acceptance',
-    edits: [{ file: GRAMMAR, from: "  if (text.length > INTENT_MAX_LENGTH) return { confirmed: false, reason: 'too_long' };\n  if (/[?¿]/.test(text)) return { confirmed: false, reason: 'disqualified' };", to: "  if (text.length > INTENT_MAX_LENGTH) return { confirmed: false, reason: 'too_long' };" }],
-    tests: [[UNIT, 'never takes'], [IT, '@19 never issues when the reply is a question']],
+    name: 'IA-M1 the guard ignores question marks and negative emojis',
+    edits: [{ file: GRAMMAR, from: "  if (/[?¿？]/u.test(text) || NEGATIVE_EMOJI.test(text)) return { confirmed: false, reason: 'disqualified' };", to: '' }],
+    tests: [[UNIT, 'never takes']],
   },
   {
     name: 'IA-M2 the guard ignores negations, hesitations and change requests',
@@ -36,8 +36,8 @@ const MUTATIONS = [
     tests: [[IT, '@18 keeps the closed grammar']],
   },
   {
-    name: 'IA-M5 @19 still offers the literal phrase to copy (offer template v1)',
-    edits: [{ file: PREVIEW, from: '  const template = deps.offerTemplate ?? OFFER_TEMPLATE_VERSION;', to: '  const template = OFFER_TEMPLATE_VERSION;' }],
+    name: 'IA-M5 @19 previews with template v1 while issuance expects v2 (the offer is never accepted)',
+    edits: [{ file: PREVIEW, from: '  const v4 = deps.naturalAcceptance === true;', to: '  const v4 = false;' }],
     tests: [[IT, '@19 issues exactly one quote']],
   },
 ];

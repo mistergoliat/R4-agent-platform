@@ -200,25 +200,28 @@ export function quotePreviewV2Capability(deps: { readonly store: Pick<PostgresSa
   };
 }
 
-export const quotePreviewV3Output = quotePreviewV2Output.extend({
-  /**
-   * (R4-J3E-C1) The offer exactly as the customer must receive it: Sales
-   * renders the whole message (template `r4-sales-offer-es-v1`) from the
-   * snapshot; the agent replies with `offerMessage` verbatim. Null unless ready and issuable.
-   */
-  presentation: z
+/**
+ * (R4-J3E-C1) The offer exactly as the customer must receive it: Sales renders the whole message from the snapshot with
+ * `template`; the agent replies with `offerMessage` verbatim. Null unless ready and issuable.
+ */
+const offerPresentation = <T extends OfferTemplate>(template: T) =>
+  z
     .strictObject({
       reference: z.string(),
       commercialVersion: z.int().nonnegative(),
       grossClp: z.int().nonnegative(),
       totalText: z.string(),
-      offerTemplate: z.enum([OFFER_TEMPLATE_VERSION, OFFER_TEMPLATE_V2]),
+      offerTemplate: z.literal(template),
       offerMessage: z.string(),
       offerMessageSha256: z.string().regex(/^[0-9a-f]{64}$/),
     })
-    .nullable(),
-});
-export type QuotePreviewV3Output = z.infer<typeof quotePreviewV3Output>;
+    .nullable();
+
+/** quote.preview@3: template `r4-sales-offer-es-v1`. */
+export const quotePreviewV3Output = quotePreviewV2Output.extend({ presentation: offerPresentation(OFFER_TEMPLATE_VERSION) });
+/** quote.preview@4 (@19): the same output with template `r4-sales-offer-es-v2` (a natural closing question). */
+export const quotePreviewV4Output = quotePreviewV2Output.extend({ presentation: offerPresentation(OFFER_TEMPLATE_V2) });
+export type QuotePreviewV3Output = z.infer<typeof quotePreviewV3Output> | z.infer<typeof quotePreviewV4Output>;
 
 /**
  * quote.preview@3 (R4-J3E-C1, sales-production@7 only). quote.preview@2 plus
@@ -227,11 +230,12 @@ export type QuotePreviewV3Output = z.infer<typeof quotePreviewV3Output>;
  * message, and issues only if the message the customer answered is
  * byte-identical to it.
  */
-export function quotePreviewV3Capability(deps: { readonly store: Pick<PostgresSalesStore, 'workspace' | 'commercialVersion'>; readonly catalog: CatalogPort; readonly shipping: ShippingService; readonly limits: AutonomousQuoteLimitsV6; readonly now?: () => Date; readonly parity?: QuoteParityGuard | null; readonly eligibility?: CommercialEligibility | null; readonly offerTemplate?: OfferTemplate }): CapabilityRegistration<QuotePreviewInput, QuotePreviewV3Output> {
+export function quotePreviewV3Capability(deps: { readonly store: Pick<PostgresSalesStore, 'workspace' | 'commercialVersion'>; readonly catalog: CatalogPort; readonly shipping: ShippingService; readonly limits: AutonomousQuoteLimitsV6; readonly now?: () => Date; readonly parity?: QuoteParityGuard | null; readonly eligibility?: CommercialEligibility | null; readonly naturalAcceptance?: boolean }): CapabilityRegistration<QuotePreviewInput, QuotePreviewV3Output> {
   const v2 = quotePreviewV2Capability(deps);
   // (@19) quote.preview@4: the same preview with offer template v2 (a natural closing question, no phrase to copy).
-  const template = deps.offerTemplate ?? OFFER_TEMPLATE_VERSION;
-  const v4 = template === OFFER_TEMPLATE_V2;
+  // The SAME flag selects quote.create@6, so the template rendered here and the one checked at issuance never diverge.
+  const v4 = deps.naturalAcceptance === true;
+  const template: OfferTemplate = v4 ? OFFER_TEMPLATE_V2 : OFFER_TEMPLATE_VERSION;
   return {
     definition: {
       ...v2.definition,
@@ -241,7 +245,7 @@ export function quotePreviewV3Capability(deps: { readonly store: Pick<PostgresSa
       version: v4 ? 4 : 3,
     },
     input: quotePreviewInput,
-    output: quotePreviewV3Output,
+    output: v4 ? quotePreviewV4Output : quotePreviewV3Output,
     ownerValidUntil: (output) => output.evidence.validUntil,
     handler: async (input, context) => {
       const preview = await v2.handler(input, context);
@@ -254,7 +258,8 @@ export function quotePreviewV3Capability(deps: { readonly store: Pick<PostgresSa
           blockers: [{ code: 'offer_message_too_long', message: `the offer message would exceed ${OFFER_MESSAGE_MAX_CHARS} characters: reduce the number of lines`, details: { characters: offerMessage.length, limit: OFFER_MESSAGE_MAX_CHARS } }],
         };
       }
-      return { ...preview, presentation: { ...preview.presentation, offerTemplate: template, offerMessage, offerMessageSha256: createHash('sha256').update(offerMessage).digest('hex') } };
+      // The output schema of this version (v3 or v4) pins the literal template; the registry validates it.
+      return { ...preview, presentation: { ...preview.presentation, offerTemplate: template, offerMessage, offerMessageSha256: createHash('sha256').update(offerMessage).digest('hex') } } as QuotePreviewV3Output;
     },
   };
 }

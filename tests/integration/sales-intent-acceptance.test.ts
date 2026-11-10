@@ -115,7 +115,7 @@ async function issueOnce(profile: string, quotes: FixtureQuoteV2Service, reply =
 }
 
 describe('acceptance interpreted in natural language (@19)', { timeout: 150_000 }, () => {
-  it.each(['si dale', 'oka, me parece', 'sí, emítelas'])('@19 issues exactly one quote when the customer answers the offer with %j', async (reply) => {
+  it.each(['si dale', 'oka, me parece', 'sí, emítelas', '👍'])('@19 issues exactly one quote when the customer answers the offer with %j', async (reply) => {
     const r = await issueOnce('sales-production@19', new FixtureQuoteV2Service(), reply);
     expect(r.ownerCalls).toBe(1);
     expect(r.issued).toHaveLength(1);
@@ -127,6 +127,13 @@ describe('acceptance interpreted in natural language (@19)', { timeout: 150_000 
 
   it('@19 never issues when the reply is a question, even if the agent proposes it', async () => {
     const r = await issueOnce('sales-production@19', new FixtureQuoteV2Service(), '¿incluye despacho?');
+    expect(r.ownerCalls).toBe(0);
+    expect(r.issued).toEqual([]);
+    expect(r.refusals).toEqual([{ error_code: 'customer_confirmation_not_explicit', reason: 'disqualified' }]);
+  });
+
+  it('@19 never issues the presented quote when an acceptance word comes with a change ("sí, la de 16 kg")', async () => {
+    const r = await issueOnce('sales-production@19', new FixtureQuoteV2Service(), 'sí, la de 16 kg');
     expect(r.ownerCalls).toBe(0);
     expect(r.issued).toEqual([]);
     expect(r.refusals).toEqual([{ error_code: 'customer_confirmation_not_explicit', reason: 'disqualified' }]);

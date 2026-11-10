@@ -37,10 +37,15 @@ export interface QuoteV5CapabilityDeps extends QuoteV4CapabilityDeps {
 }
 
 /** (@19) The judge of the customer's reply: the agent interprets; the platform refuses questions, negations, hesitations and changes. */
-export const INTENT_GUARD_JUDGE: ReplyJudge = Object.freeze({
+export const INTENT_GUARD_JUDGE: ReplyJudge = Object.freeze<ReplyJudge>({
   version: INTENT_GUARD_VERSION,
   parse: guardIntentReply,
-  refusal: 'the customer\'s reply to the offer is a question, a negation, a hesitation or a change request, not an acceptance: answer it or adjust the selection (then preview again and present the new offer); never present the same offer again without answering',
+  refusal: (reason) =>
+    reason === 'empty'
+      ? 'the customer\'s reply to the offer has no words you can rely on (for example only punctuation): nothing was issued; ask briefly whether they want this quote issued, without presenting the offer again'
+      : reason === 'too_long'
+        ? 'the customer\'s reply to the offer is long: nothing was issued; answer what they wrote and, if they still want this quote, ask briefly whether to issue it'
+        : 'the customer\'s reply to the offer is a question, a negation, a hesitation, a condition or a change request, not an acceptance: nothing was issued; answer it or adjust the selection first, and present a new offer only in a later reply when the quote changes; never present the same offer again without answering',
 });
 
 /** Failure code of an issuance stopped by the kill switch before anything reached the Quote owner. */

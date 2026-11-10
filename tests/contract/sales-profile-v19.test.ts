@@ -102,8 +102,9 @@ describe('definition v18 = v17 with the F1 delivery, offer and validity rules', 
   it('interprets acceptance in natural language: no literal phrase; never a question, rejection, hesitation or change', () => {
     const create = lines18.find((l) => l.startsWith('- quote.create: '))!;
     expect(create).toMatch(/shows that they want that quote, in any natural wording .*no literal phrase is needed/);
-    expect(create).toMatch(/Never propose it when the reply asks something, rejects, hesitates or asks for a change/);
+    expect(create).toMatch(/Never propose it when the reply asks something, rejects, hesitates, sets a condition or asks for a change/);
     expect(create).toMatch(/never repeat the same offer without answering/);
+    expect(create).toMatch(/never ask the customer to write a specific phrase or word: any natural answer works/);
     expect(v18.instructions).not.toContain('explicitly confirms it');
     expect(v18.instructions).not.toContain('it already asks for an explicit confirmation');
   });

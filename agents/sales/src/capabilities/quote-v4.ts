@@ -181,23 +181,23 @@ type Located =
   | { readonly status: 'confirmed'; readonly evidence: (commercialVersion: number, reference: string, gross: number) => Evidence }
   | { readonly status: 'refused'; readonly blocker: CommercialBlocker; readonly trace: Record<string, string | null> };
 
-/**
- * Finds the customer's confirmation of the offer that presented `reference`
- * and `gross`. Deterministic over the recorded thread; never consults the model.
- */
 /** How the customer's reply to the offer is judged: the closed grammar (default) or, for @19, the intent guard. */
 export interface ReplyJudge {
   readonly version: string;
   parse(text: string | null): ConfirmationVerdict;
-  /** The refusal message the agent receives when the reply is not an acceptance. */
-  readonly refusal: string;
+  /** The refusal message the agent receives when the reply is not an acceptance, by reason. */
+  refusal(reason: Extract<ConfirmationVerdict, { confirmed: false }>['reason']): string;
 }
 export const CLOSED_GRAMMAR_JUDGE: ReplyJudge = Object.freeze({
   version: CONFIRMATION_GRAMMAR_VERSION,
   parse: parseConfirmation,
-  refusal: 'the customer\'s last message is not an explicit, unconditional confirmation of the quote: ask them to confirm it explicitly (for example "CONFIRMO")',
+  refusal: () => 'the customer\'s last message is not an explicit, unconditional confirmation of the quote: ask them to confirm it explicitly (for example "CONFIRMO")',
 });
 
+/**
+ * Finds the customer's confirmation of the offer that presented `reference`
+ * and `gross`. Deterministic over the recorded thread; never consults the model.
+ */
 export function locateConfirmation(thread: readonly ConversationThreadEntry[], reference: string, gross: number, windowSeconds: number, judge: ReplyJudge = CLOSED_GRAMMAR_JUDGE): Located {
   const entries = [...thread].sort((a, b) => (a.cursor < b.cursor ? -1 : a.cursor > b.cursor ? 1 : 0));
   const refuse = (code: string, message: string, trace: Record<string, string | null> = {}, details: Record<string, string | number | boolean | null> = {}): Located => ({ status: 'refused', blocker: { code, message, details }, trace });
@@ -213,7 +213,7 @@ export function locateConfirmation(thread: readonly ConversationThreadEntry[], r
   }
   const verdict = judge.parse(confirmation.text);
   if (!verdict.confirmed) {
-    return refuse('customer_confirmation_not_explicit', judge.refusal, trace, { reason: verdict.reason });
+    return refuse('customer_confirmation_not_explicit', judge.refusal(verdict.reason), trace, { reason: verdict.reason });
   }
   const offer = entries.filter((e) => (e.kind === 'agent' || e.kind === 'operator') && e.cursor < confirmation.cursor).at(-1);
   if (!offer || offer.kind !== 'agent') return refuse('customer_confirmation_without_offer', 'no agent offer precedes the customer\'s confirmation', trace);
