@@ -1,6 +1,6 @@
 ---
 title: R4 — Despliegue de a704319 y activación del carril F1 (sales-production@17), con rollback a @13
-status: PREPARADO y revisado (mandato «F1 final release gate», 2026-11-09). No ejecutado
+status: Etapa 1 EJECUTADA (2026-11-09); etapas 2 y 3 autorizadas (mandato «F1 canary activation without CloudWatch»)
 date: 2026-11-09
 ---
 
@@ -10,7 +10,7 @@ date: 2026-11-09
 
 | Componente | SHA | Estado |
 |---|---|---|
-| R4 | `a704319` | Despliegue pendiente; hoy corre `ae0bedf` |
+| R4 | `a704319` | Desplegado (etapa 1, 2026-11-09); antes corría `ae0bedf` |
 | Quote V2 | `a79d33f` | Desplegado |
 | Catalog V2 | `8a72c38` | Desplegado |
 
@@ -122,7 +122,24 @@ La base **puede quedar en `0014`/`0010`** (§1), con una condición: **no debe h
 
 **Quote:** sus cotizaciones emitidas siguen vigentes 60 minutos. El rollback de Quote (`6735352`) es independiente; ver `~/backups/quote-v2-integration/`.
 
-## 6. Alertas operativas (`ops/r4-f1-alerts/`)
+## 6. Observabilidad
+
+**Decisión del owner (mandato «F1 canary activation without CloudWatch», 2026-11-09): `CLOUDWATCH = DEFERRED_FOR_GENERAL_ROLLOUT`.** Su ausencia no es un fallo del canary. Para F1 no se instala el agente de CloudWatch, ni roles IAM, ni SNS.
+
+**Lo que F1 exige en su lugar:**
+
+| Requisito | Cómo se cumple |
+|---|---|
+| PM2 y logs | `pm2 ls`; `~/.pm2/logs/r4-*-out.log` (JSON, sin secretos ni datos personales) |
+| Readiness | gateway `/health`; `worker.started` y `worker.admission.*`; readiness de Quote en `127.0.0.1:4020` |
+| Monitoreo manual de la primera emisión | `quote.call`, `action.*`, `outbound.*` y `budget.*` en vivo en los logs del worker del carril y del gateway |
+| Kill switch | `production:sales:control -- autonomy off\|on`; el guardia de Quote relee el estado antes de cada `createAndIssue` |
+| Rollback | §5 |
+| Conciliación contra Quote | cada `quote.create` de R4 (ejecución, recibo) se compara con la cotización y la operación en Quote: número, total, perfil `cl-retail-session-60m-v1`, documento, sin despacho, sin carrito y sin duplicados por clave de idempotencia |
+
+**El kill switch es uno solo (global).** Con él puesto, los workers no admiten tareas: no hay conversación de lectura posible. La prueba de humo de la etapa 2 se hace con el kill switch puesto (el mensaje queda retenido como tarea `@17` y Quote no se llama). La conversación de lectura se hace después con la autonomía encendida: la emisión sigue exigiendo la vista previa, la confirmación explícita dentro de la ventana de 900 s, los límites F1 y una sola emisión a la vez.
+
+### 6.1 CloudWatch para el rollout general (`ops/r4-f1-alerts/`, diferido)
 
 **Diseño:** CloudWatch con el **agente oficial** (`amazon-cloudwatch-agent`, ya disponible en AL2023), más SNS por correo. No hay ningún servicio de alertas propio de R4. Las alertas son filtros de métricas sobre los eventos que R4 ya registra:
 
@@ -135,7 +152,7 @@ La base **puede quedar en `0014`/`0010`** (§1), con una condición: **no debe h
 | 5 | Falla de entrega por WhatsApp | `outbound.failed`, `outbound.unknown` | ≥ 1 |
 | 6 | Presupuesto de escrituras | `budget.exhausted` | ≥ 1 |
 
-**Bloqueo hoy: la EC2 no tiene un rol IAM y no hay credenciales de AWS.** Hace falta, del owner:
+**Requisitos para cuando se active (rollout general):** la EC2 no tiene un rol IAM y no hay credenciales de AWS. Hará falta, del owner:
 
 1. Un rol de instancia con la política administrada `CloudWatchAgentServerPolicy`, asociado a la EC2.
 2. Un operador con permisos de `logs`, `cloudwatch` y `sns` que ejecute `REGION=us-east-1 ALERT_EMAIL=<correo autorizado> ops/r4-f1-alerts/setup-alarms.sh`.
