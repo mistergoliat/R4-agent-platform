@@ -124,8 +124,17 @@ export function previewIdOf(snapshot: CommercialSnapshot): string {
 export interface CommercialEligibility {
   /** The commercial policy version every decision relies on (recorded on each refusal). */
   readonly policyVersion: string;
+  /**
+   * (F1-COMMERCIAL-POLICY-v2, owner decision 2026-11-10) Delivery is allowed at the price the Shipping owner
+   * (pc-carrier) returns for the products and the commune: that price is always current and is the one honored. It is
+   * still re-quoted at issuance like every other fact (a changed offer refuses the issuance; nothing is honored from
+   * memory). Absent/false: v1, quotes without delivery (`shipping_not_in_f1`).
+   */
+  readonly shippingAllowed?: boolean;
 }
 export const F1_COMMERCIAL_POLICY_VERSION = 'F1-COMMERCIAL-POLICY-v1';
+/** (sales-production@19) v1 with delivery allowed at the Shipping owner's price. */
+export const F1_COMMERCIAL_POLICY_V2_VERSION = 'F1-COMMERCIAL-POLICY-v2';
 
 export async function buildCommercialSnapshot(deps: { readonly catalog: CatalogPort; readonly shipping: ShippingService; readonly parity?: QuoteParityGuard | null; readonly eligibility?: CommercialEligibility | null }, workspace: Workspace, options: CallOptions, now: Date): Promise<CommercialSnapshotResult> {
   const blockers: CommercialBlocker[] = [];
@@ -221,8 +230,8 @@ export async function buildCommercialSnapshot(deps: { readonly catalog: CatalogP
   let shippingEvidence: CommercialEvidence['shipping'] = null;
   const choice = state.shipping ?? null;
   const delivery = state.delivery;
-  if (deps.eligibility && delivery) {
-    // F1 quotes are issued without shipping; such a quote is never presented as free delivery or pickup.
+  if (deps.eligibility && delivery && deps.eligibility.shippingAllowed !== true) {
+    // F1 (v1) quotes are issued without shipping; such a quote is never presented as free delivery or pickup.
     block('shipping_not_in_f1', 'quotes are issued without delivery for now: clear the destination and exclude delivery, or hand the delivery question to a person', { commune: delivery.commune, policy: deps.eligibility.policyVersion });
   } else if (delivery && choice?.kind !== 'selected') {
     block('shipping_not_selected', 'a delivery destination is recorded: the customer must choose one shipping offer (or the destination must be cleared and delivery excluded)', { commune: delivery.commune });

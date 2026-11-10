@@ -26,8 +26,9 @@ import {
 } from '@r4-sales/agent/production';
 
 /**
- * (F1 UX, mandate §D) sales-production@19 is exactly @18 except: shipping.quote is not bound (F1 quotes carry no
- * delivery) and it runs definition v18 = v17 with the F1 delivery, offer and validity rules. @18 and @17 are unchanged.
+ * sales-production@19 is @18 except: the acceptance of the offer interpreted in natural language (quote.preview@4,
+ * quote.create@6), F1-COMMERCIAL-POLICY-v2 (delivery at the Shipping owner price) and definition v19 (v17 with its
+ * delivery rules plus the offer, acceptance and validity rules). Definition v18 stays as registered, pinned by no profile.
  */
 const noStore = { readControls: () => Promise.reject(new Error('unused')), thread: () => Promise.reject(new Error('unused')) } as unknown as ProductionStore;
 const env = (profile: string) => loadProductionConfig({ R4_EXECUTION_MODE: 'production', R4_PROD_POLICY_PROFILE: profile, R4_PROD_ROLLOUT_PERCENT: '0', R4_PROD_IDENTITY_HASH_KEY: 'x'.repeat(40), R4_PROD_ALLOW_NETWORK: 'false' });
@@ -48,24 +49,25 @@ const composed = (profile: string) =>
   });
 const ids = (profile: string) => composed(profile).bindings.capabilities.list().map((c) => `${c.capabilityId}@${c.version}`).sort();
 
-describe('@19 is @18 without shipping.quote and with definition v18, a lane (and isolated canary) profile only', () => {
+describe('@19 is @18 with natural acceptance, delivery at the owner price and definition v19, a lane (and isolated canary) profile only', () => {
   const v19 = SALES_PRODUCTION_PROFILE_V19;
-  it('same domains and channel as @18 (Shipping stays REAL for the snapshot); every capability of @18 except shipping.quote', () => {
+  it('same domains, channel and capabilities as @18 (shipping.quote included); quote.preview@4 and quote.create@6', () => {
     expect(v19.version).toBe(19);
     expect(v19.domains).toEqual(SALES_PRODUCTION_PROFILE_V18.domains);
     expect(v19.channel).toEqual(SALES_PRODUCTION_PROFILE_V18.channel);
-    expect(v19.capabilities).toEqual(SALES_PRODUCTION_PROFILE_V18.capabilities.filter((c) => c.capabilityId !== 'shipping.quote'));
+    expect(v19.capabilities).toEqual(SALES_PRODUCTION_PROFILE_V18.capabilities);
     // (owner decision 2026-11-10) quote.preview@4 (offer template v2) and quote.create@6 (intent) replace @3/@5 in @19 only.
-    expect(ids('sales-production@19')).toEqual(ids('sales-production@18').filter((id) => !id.startsWith('shipping.quote@')).map((id) => (id === 'quote.preview@3' ? 'quote.preview@4' : id === 'quote.create@5' ? 'quote.create@6' : id)).sort());
+    expect(ids('sales-production@19')).toEqual(ids('sales-production@18').map((id) => (id === 'quote.preview@3' ? 'quote.preview@4' : id === 'quote.create@5' ? 'quote.create@6' : id)).sort());
     expect(ids('sales-production@18')).toEqual(expect.arrayContaining(['quote.preview@3', 'quote.create@5']));
-    expect(ids('sales-production@19').some((id) => id.startsWith('shipping.quote@'))).toBe(false);
+    expect(ids('sales-production@19').some((id) => id.startsWith('shipping.quote@'))).toBe(true);
     expect(profileFingerprint(v19)).not.toBe(profileFingerprint(SALES_PRODUCTION_PROFILE_V18));
-    expect(salesProductionAgentVersion(v19)).toBe(18);
-    expect(composed('sales-production@19').bindings.servedAgents).toEqual([{ agentId: 'sales', version: 18 }]);
+    expect(salesProductionAgentVersion(v19)).toBe(19);
+    expect(composed('sales-production@19').bindings.servedAgents).toEqual([{ agentId: 'sales', version: 19 }]);
   });
 
-  it('keeps the F1 commercial policy, the PDF delivery and the F-ADV-2 notice; lane and canary only; every gate item blocking', () => {
-    expect(salesCommercialEligibility(v19)).toEqual(salesCommercialEligibility(SALES_PRODUCTION_PROFILE_V18));
+  it('F1 policy v2 (delivery at the owner price), the PDF delivery and the F-ADV-2 notice; lane and canary only; every gate item blocking', () => {
+    expect(salesCommercialEligibility(v19)).toEqual({ policyVersion: 'F1-COMMERCIAL-POLICY-v2', shippingAllowed: true });
+    expect(salesCommercialEligibility(SALES_PRODUCTION_PROFILE_V18)).toEqual({ policyVersion: 'F1-COMMERCIAL-POLICY-v1' });
     expect(SALES_QUOTE_DOCUMENT_PROFILES.has('sales-production@19')).toBe(true);
     expect(SALES_HUMAN_REQUEST_NOTICE_PROFILES).toContain('sales-production@19');
     expect(SALES_LANE_PROFILES.map(profileLabel)).toContain('sales-production@19');
@@ -80,7 +82,7 @@ describe('@19 is @18 without shipping.quote and with definition v18, a lane (and
   });
 });
 
-describe('definition v18 = v17 with the F1 delivery, offer and validity rules', () => {
+describe('definition v18 (registered in production on 2026-11-10, pinned by no profile, never changed) = v17 with the no-delivery, offer and validity rules', () => {
   const v17 = loadSalesAgentDefinition(17);
   const v18 = loadSalesAgentDefinition(18);
   const lines17 = v17.instructions.split('\n');
@@ -131,5 +133,40 @@ describe('definition v18 = v17 with the F1 delivery, offer and validity rules', 
   it('is a candidate file: the plain bootstrap never registers it', async () => {
     const loaded = await loadAgentDefinitionsFromDirectory(SALES_AGENT_DIR);
     expect(loaded.map((e) => `${e.definition.agentId}@${e.definition.version}`)).not.toContain('sales@18');
+  });
+});
+
+describe('definition v19 = v17 (delivery rules kept) with the offer, acceptance and validity rules of v18', () => {
+  const v17 = loadSalesAgentDefinition(17);
+  const v18 = loadSalesAgentDefinition(18);
+  const v19 = loadSalesAgentDefinition(19);
+  const lines17 = v17.instructions.split('\n');
+  const lines19 = v19.instructions.split('\n');
+  const line = (lines: string[], prefix: string) => lines.find((l) => l.startsWith(prefix))!;
+  it('keeps every v17 delivery rule (shipping.quote offers, the Despacho Directo promotion as returned, no pickup unless returned)', () => {
+    for (const prefix of ['- Delivery modality: ', '- shipping.quote: ', '- Despacho Directo promotion: ', '- When the customer chooses one of the shipping.quote', '- Record with sales.workspace.update']) {
+      expect(line(lines19, prefix)).toBe(line(lines17, prefix));
+    }
+  });
+
+  it('changes only the quote.preview and quote.create rules; the rest of v17 and every other field are unchanged', () => {
+    const changed = lines19.filter((l) => !lines17.includes(l));
+    expect(changed.map((l) => l.split(':')[0])).toEqual(['- quote.preview', '- quote.create']);
+    expect(lines19.length).toBe(lines17.length);
+    const { instructions: _a, version: _b, description: _c, ...rest19 } = v19;
+    const { instructions: _d, version: _e, description: _f, ...rest17 } = v17;
+    expect(rest19).toEqual(rest17);
+  });
+
+  it('quote.preview: in the same turn once delivery is chosen or excluded; quote.create: the v18 rule verbatim (natural acceptance, validity, PDF)', () => {
+    const preview = line(lines19, '- quote.preview: ');
+    expect(preview).toContain('the shipping choice is recorded (or delivery excluded) and the customer asks for a quote, read quote.preview in that same turn: never ask first whether to prepare or present it');
+    // The v18 rule, with delivery, destination and carrier named as changes (an offer may now include delivery).
+    expect(line(lines19, '- quote.create: ')).toBe(line(v18.instructions.split('\n'), '- quote.create: ').replace('asks for a change (another product, variant, colour or quantity)', 'asks for a change (another product, variant, colour, quantity, delivery, destination or carrier)'));
+  });
+
+  it('is a candidate file: the plain bootstrap never registers it', async () => {
+    const loaded = await loadAgentDefinitionsFromDirectory(SALES_AGENT_DIR);
+    expect(loaded.map((e) => `${e.definition.agentId}@${e.definition.version}`)).not.toContain('sales@19');
   });
 });

@@ -4,7 +4,7 @@ import type { WriteCapabilityRegistration, WriteExecutionResult, WriteHandlerCon
 import { CAPABILITY_IDS, SCOPES } from '../ids.js';
 import { snapshotLimitBreaches } from './autonomy-limits.js';
 import { buildCommercialSnapshot, quoteRequestOf, type CommercialBlocker } from './commercial-snapshot.js';
-import { INTENT_GUARD_VERSION, guardIntentReply } from './confirmation-grammar.js';
+import { INTENT_GUARD_VERSION, guardIntentReply, type OfferDelivery } from './confirmation-grammar.js';
 import { OFFER_MESSAGE_MAX_CHARS, OFFER_TEMPLATE_V2, OFFER_TEMPLATE_VERSION, offerReference, renderOfferMessage } from './offer-presentation.js';
 import type { QuoteParityGuard } from './parity-guard.js';
 import type { CommercialEligibility } from './commercial-snapshot.js';
@@ -36,10 +36,13 @@ export interface QuoteV5CapabilityDeps extends QuoteV4CapabilityDeps {
   readonly naturalAcceptance?: boolean;
 }
 
-/** (@19) The judge of the customer's reply: the agent interprets; the platform refuses questions, negations, hesitations and changes. */
-export const INTENT_GUARD_JUDGE: ReplyJudge = Object.freeze<ReplyJudge>({
+/**
+ * (@19) The judge of the customer's reply: the agent interprets; the platform refuses questions, negations, hesitations
+ * and changes, reading delivery words against the offer the customer answers (delivery excluded or included).
+ */
+export const intentGuardJudge = (delivery: OfferDelivery): ReplyJudge => Object.freeze<ReplyJudge>({
   version: INTENT_GUARD_VERSION,
-  parse: guardIntentReply,
+  parse: (text) => guardIntentReply(text, delivery),
   refusal: (reason) =>
     reason === 'empty'
       ? 'the customer\'s reply to the offer has no words you can rely on (for example only punctuation): nothing was issued; ask briefly whether they want this quote issued, without presenting the offer again'
@@ -214,7 +217,7 @@ async function decide(deps: QuoteV5CapabilityDeps, input: QuoteCreateV3Input, co
   }
 
   // 3. The conversation the platform recorded: the offer message, its delivery and the customer's confirmation (quote.create@4 rules).
-  const judge = deps.naturalAcceptance === true ? INTENT_GUARD_JUDGE : CLOSED_GRAMMAR_JUDGE;
+  const judge = deps.naturalAcceptance === true ? intentGuardJudge(built.snapshot.shipping.kind === 'selected' ? 'selected' : 'excluded') : CLOSED_GRAMMAR_JUDGE;
   const found = locateConfirmation(await deps.conversation.thread(taskId), reference, gross, limits.confirmationWindowSeconds, judge);
   if (found.status !== 'confirmed') return refuse(found.blocker, { snapshot: built.snapshot, confirmation: { ...offer, ...found.trace } });
   const evidence = found.evidence(commercialVersion, reference, gross);

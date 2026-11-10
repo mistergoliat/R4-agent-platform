@@ -38,7 +38,7 @@ import { SALES_PRODUCTION_PROFILES, isCustomerIdentityProfile, salesActionPolicy
 import { composeSyntheticCustomerCapabilities, composeSyntheticIdentityVerificationCapabilities } from '../capabilities/customer-synthetic.js';
 import { GATEWAY_ONLY_ENV, salesGatewayInspection } from './gateway-identity.js';
 import { catalogCapabilities } from '../capabilities/catalog.js';
-import { F1_COMMERCIAL_POLICY_VERSION, type CommercialEligibility } from '../capabilities/commercial-snapshot.js';
+import { F1_COMMERCIAL_POLICY_V2_VERSION, F1_COMMERCIAL_POLICY_VERSION, type CommercialEligibility } from '../capabilities/commercial-snapshot.js';
 import { shippingCapability } from '../capabilities/shipping.js';
 import { quoteCreateV2Capability } from '../capabilities/quote-v2.js';
 import { quoteCreateV3Capability } from '../capabilities/quote-v3.js';
@@ -52,7 +52,7 @@ import { SALES_CANARY_ONLY_PROFILES, assertF1CanaryLimits, isF1CanaryProfile } f
 import { SALES_LANE_PROFILES, isCheckoutLaneProfile, isQuoteLaneProfile, isSalesLaneProfile } from './profile-v15.js';
 import { SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_VARIANT_AVAILABILITY_PROFILES } from './profile-v17.js';
 import { SALES_QUOTE_DOCUMENT_PROFILES, SALES_QUOTE_LANE_V18_PROFILE_LABEL } from './profile-v18.js';
-import { SALES_INTENT_ACCEPTANCE_PROFILES } from './profile-v19.js';
+import { SALES_F1_SHIPPING_PROFILES, SALES_INTENT_ACCEPTANCE_PROFILES } from './profile-v19.js';
 import { quoteDocumentDelivery } from '../capabilities/quote-document.js';
 import { catalogDiscoverCapability } from '../capabilities/catalog-discover.js';
 import type { CatalogDiscoverPort } from '@r4-adapters/catalog-http';
@@ -420,7 +420,9 @@ export function killSwitchGuardedQuotes(quotes: QuoteV2Service, controls: Autono
 
 /** (F1 commercial eligibility) The policy the F1 candidate @17 enforces at quote.preview and quote.create; null elsewhere. */
 export function salesCommercialEligibility(profile: ProductionProfile): CommercialEligibility | null {
-  return SALES_VARIANT_AVAILABILITY_PROFILES.has(profileLabel(profile)) ? { policyVersion: F1_COMMERCIAL_POLICY_VERSION } : null;
+  if (!SALES_VARIANT_AVAILABILITY_PROFILES.has(profileLabel(profile))) return null;
+  // (owner decision 2026-11-10) @19: F1 policy v2, delivery at the Shipping owner price; @17/@18 keep v1 (no delivery).
+  return SALES_F1_SHIPPING_PROFILES.has(profileLabel(profile)) ? { policyVersion: F1_COMMERCIAL_POLICY_V2_VERSION, shippingAllowed: true } : { policyVersion: F1_COMMERCIAL_POLICY_VERSION };
 }
 
 /** The Quote V2 port quote.create@5 uses: behind the kill switch; for the F1 profiles also single-flight (see below). */
