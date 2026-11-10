@@ -6,6 +6,10 @@ date: 2026-11-09
 r4: main 8e75b5e + PR de este documento (F-ADV-2 y registro del candidato)
 ---
 
+> **Estado vigente (2026-11-10).** El resumen inicial, §2 (auditoría de Quote) y §7 (bloqueos) describen el estado **previo** al despliegue del 2026-11-09 y quedan superados por la matriz de §1.1. En particular:
+> - Quote V2 `a79d33f` está desplegado en producción, con la migración `000010` **aplicada**. Se ensayó (890 ms) y se verificaron el restore y el rollback (G4–G9).
+> - El canary F1 se activó en la allowlist: `@17`, y después `@18` (R4 `2b3b5a2`).
+
 # R4 — Gates de release del canary F1 de cotizaciones por WhatsApp
 
 ## 0. Estado
@@ -43,7 +47,7 @@ El registro en código está en `profile-v17.ts` (`SALES_PRODUCTION_PROFILE_V17_
 | Repositorio | SHA | Estado |
 |---|---|---|
 | R4 | `8e75b5e` + el merge de este PR | **Se define al mergear el PR**, que trae F-ADV-2, un gate de `@17`. Pendiente de revisión |
-| Quote V2 | **No designado.** Opciones: `a79d33f` (main; exige `000010`) o `ca66a2e` / `d419640` (en `000009`, con A10) | Decisión del owner de Quote (§2) |
+| Quote V2 | **`a79d33f`, desplegado** el 2026-11-09 con `000010` aplicada (G4, G5). *Antes del despliegue: no designado; opciones `a79d33f`, `ca66a2e` o `d419640`* | Owner de Quote (§2) |
 | Catalog V2 | Desplegado `8a72c38` (`RELEASE.json`); `origin/main` `5f2c086` | Lo confirma el owner de Catalog junto con P-1 (§4) |
 
 ## 1.1 Matriz de gates (actualizada 2026-11-09, mandato «F1 commercial eligibility and release preparation»)
@@ -80,8 +84,8 @@ Auditoría de `origin/main` de Quote, solo lectura. No hay documentos de R1.7 po
 
 | # | Punto | Estado | Evidencia |
 |---|---|---|---|
-| 1 | SHA candidato definitivo | **No designado.** `main` = `a79d33f`, 36 commits adelante del desplegado `6735352`. En `000009` y con A10: `ca66a2e` (+22) y `d419640` (+29) | §S del pre-flight exige un SHA aprobado y fijo |
-| 2 | Migración `000010` | **No aplicada en ningún entorno.** `a79d33f` la exige (`readiness-gate` responde `schema_not_ready` sin ella, aun con el carrito apagado). Es reversible en código, pero el pre-flight prohíbe `down` en producción | El plan de despliegue está abierto (owner) |
+| 1 | SHA candidato definitivo | **Superado (2026-11-09): `a79d33f` designado y desplegado.** *Auditoría previa:* no designado. `main` = `a79d33f`, 36 commits adelante del desplegado `6735352`. En `000009` y con A10: `ca66a2e` (+22) y `d419640` (+29) | §S del pre-flight exige un SHA aprobado y fijo |
+| 2 | Migración `000010` | **Superado: aplicada en producción el 2026-11-09** (aditiva, 890 ms en el ensayo; restore y rollback verificados). *Auditoría previa:* no aplicada en ningún entorno. `a79d33f` la exige (`readiness-gate` responde `schema_not_ready` sin ella, aun con el carrito apagado). Es reversible en código, pero el pre-flight prohíbe `down` en producción | El plan de despliegue está abierto (owner) |
 | 3 | Restore verificado | **No** (G2-D02 abierto; F14) | |
 | 4 | Preparación del host | Reinicio: **no** (G2-D03 abierto; solo un workaround manual). Inventario B-S2: solo hay plan, no informe | |
 | 5 | Espacio | **No cumple.** 1.064 MB libres frente a un pico de carga de 1.213 MB y un requisito de ≥ 3.000 MB. Dato del 2026-10-08, sin medición posterior | |
@@ -227,7 +231,7 @@ La holgura de disco es una inferencia de R4, a partir del gate de 3 GB del READM
 
 **Resultado:** `L3_PASS` solo si no hay ningún `NOT_RUN` en un punto obligatorio.
 
-## 7. Bloqueos restantes
+## 7. Bloqueos restantes (al 2026-11-09, antes del despliegue; superados, ver la nota inicial y §1.1)
 
 1. **Quote R1.7** (G4–G10, G12): falta designar un SHA, decidir `000010`, verificar el restore, hacer el simulacro de rollback, liberar disco y escribir el procedimiento de actualización. Responsable: owner de Quote / ops.
 2. **Principal de 60 minutos** (G11): no está autorizado en producción. Además depende del SHA nuevo y de la condición O-1 de promociones. Responsable: owner de Quote.
