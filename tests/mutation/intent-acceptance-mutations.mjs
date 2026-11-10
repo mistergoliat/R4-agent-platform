@@ -13,6 +13,8 @@ const GRAMMAR = 'agents/sales/src/capabilities/confirmation-grammar.ts';
 const CREATE = 'agents/sales/src/capabilities/quote-v5.ts';
 const PREVIEW = 'agents/sales/src/capabilities/quote-preview.ts';
 const SALES = 'agents/sales/src/production/composition.ts';
+const SNAPSHOT = 'agents/sales/src/capabilities/commercial-snapshot.ts';
+const ELIGIBILITY = { project: 'unit', file: 'tests/unit/sales/commercial-eligibility.test.ts' };
 
 const MUTATIONS = [
   {
@@ -39,6 +41,16 @@ const MUTATIONS = [
     name: 'IA-M5 @19 previews with template v1 while issuance expects v2 (the offer is never accepted)',
     edits: [{ file: PREVIEW, from: '  const v4 = deps.naturalAcceptance === true;', to: '  const v4 = false;' }],
     tests: [[IT, '@19 issues exactly one quote']],
+  },
+  {
+    name: 'IA-M6 @19 keeps the v1 policy (delivery blocked although the owner allowed it)',
+    edits: [{ file: SALES, from: '  return SALES_F1_SHIPPING_PROFILES.has(profileLabel(profile)) ? { policyVersion: F1_COMMERCIAL_POLICY_V2_VERSION, shippingAllowed: true } : { policyVersion: F1_COMMERCIAL_POLICY_VERSION };', to: '  return { policyVersion: F1_COMMERCIAL_POLICY_VERSION };' }],
+    tests: [[IT, 'issues a quote with the delivery offer the customer chose'], [ELIGIBILITY, 'F1-COMMERCIAL-POLICY-v2']],
+  },
+  {
+    name: 'IA-M7 the v1 policy (@17, @18) lets a delivery through',
+    edits: [{ file: SNAPSHOT, from: '  if (deps.eligibility && delivery && deps.eligibility.shippingAllowed !== true) {', to: '  if (deps.eligibility && delivery && false) {' }],
+    tests: [[ELIGIBILITY, 'a delivery destination is refused before pricing any shipping']],
   },
 ];
 

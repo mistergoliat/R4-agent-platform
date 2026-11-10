@@ -59,9 +59,21 @@ const latest = (v: ContextView, id: string) => v.observations(id).filter((o) => 
 const preview = (v: ContextView) => latest(v, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).payload as { previewId: string; presentation: { offerMessage: string } };
 const propose: ScriptedStep = (v) => ({ type: 'propose_action', capabilityId: CAPABILITY_IDS.quoteCreate, arguments: { previewId: preview(v).previewId }, evidenceRefs: [latest(v, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).observationId] });
 const STEPS = [ws([{ op: 'add_item', productId: 'BAR-EZ', quantity: 2 }]), ws([{ op: 'exclude_shipping' }]), read(AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview, {}), respond((v) => preview(v).presentation.offerMessage), propose, respond('ok')];
+/** (F1 policy v2, @19) The customer chooses a delivery offer the Shipping owner returns; it is quoted at that price. */
+const ITEMS = [{ productId: 'BAR-EZ', quantity: 2 }];
+const courier = (v: ContextView) => (latest(v, CAPABILITY_IDS.shippingQuote).payload as { offers: { carrierName: string; serviceType: string; price: { ownerNet: { amount: number } } }[] }).offers.find((o) => o.carrierName === 'Fixture Courier')!;
+const SHIPPING_STEPS = [
+  ws([{ op: 'add_item', productId: 'BAR-EZ', quantity: 2 }, { op: 'set_delivery_destination', commune: 'Ñuñoa' }]),
+  read(CAPABILITY_IDS.shippingQuote, { destination: { commune: 'Ñuñoa' }, basis: 'order', items: ITEMS }),
+  (v: ContextView) => ({ type: 'propose_action', capabilityId: CAPABILITY_IDS.workspaceUpdate, arguments: { operations: [{ op: 'select_shipping_offer', carrierName: courier(v).carrierName, serviceType: courier(v).serviceType, ownerNetClp: courier(v).price.ownerNet.amount }] } }),
+  read(AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview, {}),
+  respond((v) => preview(v).presentation.offerMessage),
+  propose,
+  respond('ok'),
+] as ScriptedStep[];
 
 /** One confirmed issuance under `profile`; what the owner issued, the R4 rows and what the delivery owner captured. */
-async function issueOnce(profile: string, quotes: FixtureQuoteV2Service, reply = 'Sí, emítela.') {
+async function issueOnce(profile: string, quotes: FixtureQuoteV2Service, reply = 'Sí, emítela.', steps: readonly ScriptedStep[] = STEPS) {
   db = await createTestDatabase('r4_it_intent_canary');
   const dir = mkdtempSync(join(tmpdir(), 'r4-intent-'));
   const capture = join(dir, 'capture.jsonl');
@@ -91,7 +103,7 @@ async function issueOnce(profile: string, quotes: FixtureQuoteV2Service, reply =
   };
   try {
     const first = (await sendSynthetic(canary, { conversation: 'intent', text: 'Quiero 2 barras Z, sin despacho' }, logger)) as { taskId: string };
-    router.route(first.taskId, STEPS);
+    router.route(first.taskId, steps);
     await drain();
     await sendSynthetic(canary, { conversation: 'intent', text: reply }, logger);
     await drain();
@@ -122,6 +134,16 @@ describe('acceptance interpreted in natural language (@19)', { timeout: 150_000 
     expect(r.grammar).toEqual(['r4-sales-intent-guard-es-v1']);
     // Offer template v2: a natural closing question, no phrase to copy.
     expect(r.offers).toEqual(['¿Te emito esta cotización? Si quieres cambiar algo, dímelo.']);
+    expect(r.captured.filter((c) => c.document)).toHaveLength(1);
+  });
+
+  it('@19 (F1 policy v2) issues a quote with the delivery offer the customer chose, at the Shipping owner price', async () => {
+    const r = await issueOnce('sales-production@19', new FixtureQuoteV2Service(), 'dale', SHIPPING_STEPS);
+    expect(r.ownerCalls).toBe(1);
+    expect(r.issued).toHaveLength(1);
+    const offer = r.captured.find((c) => c.text.startsWith('Cotización lista para emitir'))!.text;
+    expect(offer).toMatch(/^Despacho: Fixture Courier, NORMAL, a Ñuñoa.*: \$[\d.]+$/m);
+    expect(offer).not.toMatch(/Despacho: no incluido/);
     expect(r.captured.filter((c) => c.document)).toHaveLength(1);
   });
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FixtureCatalog, FixtureShipping, type CatalogItemContext, type CatalogPort, type ShippingService } from '@r4-adapters/domains';
-import { F1_COMMERCIAL_POLICY_VERSION, QUOTE_PARITY_REQUIRED_PROFILES, buildCommercialSnapshot, type Workspace } from '@r4-sales/agent';
-import { SALES_PRODUCTION_PROFILE_V13, SALES_PRODUCTION_PROFILE_V14, SALES_PRODUCTION_PROFILE_V16, SALES_PRODUCTION_PROFILE_V17, SALES_PRODUCTION_PROFILE_V8, salesCommercialEligibility } from '@r4-sales/agent/production';
+import { F1_COMMERCIAL_POLICY_V2_VERSION, F1_COMMERCIAL_POLICY_VERSION, QUOTE_PARITY_REQUIRED_PROFILES, buildCommercialSnapshot, type Workspace } from '@r4-sales/agent';
+import { SALES_PRODUCTION_PROFILE_V13, SALES_PRODUCTION_PROFILE_V14, SALES_PRODUCTION_PROFILE_V16, SALES_PRODUCTION_PROFILE_V17, SALES_PRODUCTION_PROFILE_V18, SALES_PRODUCTION_PROFILE_V19, SALES_PRODUCTION_PROFILE_V8, salesCommercialEligibility } from '@r4-sales/agent/production';
 
 /**
  * F1 commercial policy (owner decision «F1 simplified commercial canary», 2026-11-09): Catalog V2 is the commercial
@@ -60,6 +60,16 @@ describe('F1 commercial policy F1-COMMERCIAL-POLICY-v1 (Catalog V2 is the commer
     shippingCalls = 0;
     expect(codes(await build(catalog(), workspace({ commune: 'Ñuñoa' }), policy))).toContain('shipping_not_in_f1');
     expect(shippingCalls).toBe(0);
+  });
+
+  it('F1-COMMERCIAL-POLICY-v2 (@19): a delivery destination is priced by the Shipping owner, never blocked by the policy', async () => {
+    shippingCalls = 0;
+    const v2 = { policyVersion: F1_COMMERCIAL_POLICY_V2_VERSION, shippingAllowed: true };
+    const result = codes(await build(catalog(), workspace({ commune: 'Ñuñoa' }), v2));
+    expect(result).not.toContain('shipping_not_in_f1');
+    expect(result).toContain('shipping_not_selected');
+    expect(salesCommercialEligibility(SALES_PRODUCTION_PROFILE_V19)).toEqual(v2);
+    expect(salesCommercialEligibility(SALES_PRODUCTION_PROFILE_V18)).toEqual(policy);
   });
 
   it('only the F1 candidate @17 applies the policy; every other profile is unchanged', async () => {
