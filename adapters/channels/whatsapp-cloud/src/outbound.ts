@@ -1,4 +1,4 @@
-import type { OutboundChannelAdapter, OutboundSubmission, SubmissionResult } from '@r4/live-ops';
+import type { OutboundChannelAdapter, OutboundDocument, OutboundSubmission, SubmissionResult } from '@r4/live-ops';
 import { WHATSAPP_CHANNEL_ID, WHATSAPP_CLOUD_CONTRACT_REF, WHATSAPP_CUSTOMER_WINDOW_MS, type WhatsAppCloudConfig } from './config.js';
 
 type Json = Record<string, unknown>;
@@ -9,7 +9,7 @@ const BEFORE_SEND = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ENETUNRE
 /** Meta error code for free-form text outside the 24 h customer-service window. */
 const WINDOW_CLOSED_CODES = new Set(['131047']);
 
-export type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; body: string; signal: AbortSignal }) => Promise<{ status: number; headers: { get(name: string): string | null }; text(): Promise<string> }>;
+export type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; body: string | FormData; signal: AbortSignal }) => Promise<{ status: number; headers: { get(name: string): string | null }; text(): Promise<string> }>;
 
 /**
  * Outbound side of the WhatsApp Cloud API: ONE submission per call, classified
@@ -27,12 +27,18 @@ export type FetchLike = (url: string, init: { method: string; headers: Record<st
  * (including timeouts) and 5xx, which can duplicate a message Meta already
  * accepted: Meta documents no idempotency key, so exactly-once is never
  * claimed. Never logs or returns the token, the recipient or the body.
+ *
+ * (Platform notice document) A submission with a document first uploads the file to the business number's media
+ * ("upload media"), then sends ONE document message with the text as caption. The upload creates nothing the contact
+ * sees, so every upload failure is `not_sent` (or `rejected` when the provider refuses the file); only the message
+ * call is classified as above. The file, its media id and the caption are never logged or returned.
  */
 export class WhatsAppOutboundAdapter implements OutboundChannelAdapter {
   readonly channel = WHATSAPP_CHANNEL_ID;
   readonly bindingKind = 'real' as const;
   readonly contractRef = WHATSAPP_CLOUD_CONTRACT_REF;
   readonly customerWindowMs = WHATSAPP_CUSTOMER_WINDOW_MS;
+  readonly supportsDocuments = true;
   readonly #config: WhatsAppCloudConfig;
   readonly #fetch: FetchLike;
 
@@ -47,8 +53,14 @@ export class WhatsAppOutboundAdapter implements OutboundChannelAdapter {
     if (submission.accountRef !== this.#config.phoneNumberId) {
       return result({ outcome: 'rejected', providerMessageId: null, httpStatus: null, errorClass: 'foreign_business_number', errorCode: null, retryAfterMs: null });
     }
+    let message: Json = { type: 'text', text: { preview_url: false, body: submission.text } };
+    if (submission.document) {
+      const media = await this.#upload(submission.document, options.timeoutMs);
+      if (typeof media !== 'string') return result(media);
+      message = { type: 'document', document: { id: media, filename: submission.document.filename, caption: submission.text } };
+    }
     const url = `${this.#config.graphBaseUrl}/${this.#config.graphVersion}/${encodeURIComponent(this.#config.phoneNumberId)}/messages`;
-    const body = JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: submission.recipientRef, type: 'text', text: { preview_url: false, body: submission.text } });
+    const body = JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: submission.recipientRef, ...message });
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), options.timeoutMs);
     let response: Awaited<ReturnType<FetchLike>>;
@@ -86,6 +98,39 @@ export class WhatsAppOutboundAdapter implements OutboundChannelAdapter {
       return result({ outcome: 'rejected', providerMessageId: null, httpStatus: status, errorClass, errorCode, retryAfterMs: null });
     }
     return result({ outcome: 'unknown', providerMessageId: null, httpStatus: status, errorClass: status >= 500 ? 'provider_5xx' : 'unexpected_status', errorCode, retryAfterMs: null });
+  }
+
+  /** Uploads the document to the business number's media: its media id, or why nothing was sent. */
+  async #upload(document: OutboundDocument, timeoutMs: number): Promise<string | Omit<SubmissionResult, 'latencyMs'>> {
+    const url = `${this.#config.graphBaseUrl}/${this.#config.graphVersion}/${encodeURIComponent(this.#config.phoneNumberId)}/media`;
+    const form = new FormData();
+    form.set('messaging_product', 'whatsapp');
+    form.set('type', document.contentType);
+    form.set('file', new Blob([new Uint8Array(document.bytes)], { type: document.contentType }), document.filename);
+    const notSent = (errorClass: string, httpStatus: number | null, errorCode: string | null, retryAfterMs: number | null = null) => ({ outcome: 'not_sent' as const, providerMessageId: null, httpStatus, errorClass, errorCode, retryAfterMs });
+    let response: Awaited<ReturnType<FetchLike>>;
+    let raw: string;
+    try {
+      response = await this.#fetch(url, { method: 'POST', headers: { authorization: `Bearer ${this.#config.accessToken}` }, body: form, signal: AbortSignal.timeout(timeoutMs) });
+      raw = await response.text();
+    } catch (error) {
+      return notSent('media_upload_failed', null, causeCode(error));
+    }
+    let parsed: unknown;
+    try {
+      parsed = raw.length > 0 ? JSON.parse(raw) : null;
+    } catch {
+      parsed = null;
+    }
+    const error = isObject(parsed) && isObject(parsed.error) ? parsed.error : null;
+    const errorCode = error && (typeof error.code === 'number' || typeof error.code === 'string') ? String(error.code).slice(0, 32) : null;
+    const status = response.status;
+    if (status >= 200 && status < 300 && isObject(parsed) && typeof parsed.id === 'string' && parsed.id.length > 0) return parsed.id;
+    if (status === 429) return notSent('rate_limited', status, errorCode, retryAfter(response.headers.get('retry-after')));
+    if (status === 400 || status === 401 || status === 403 || status === 404) {
+      return { outcome: 'rejected', providerMessageId: null, httpStatus: status, errorClass: status === 401 ? 'auth' : status === 403 ? 'permission' : 'media_rejected', errorCode, retryAfterMs: null };
+    }
+    return notSent('media_upload_failed', status, errorCode);
   }
 
   /**

@@ -64,7 +64,7 @@ describe('A. @14 is @12 with the lane Catalog (V2 + Discover), and a lane profil
   });
 
   it('is selectable only by a worker (lane), never as a production, canary or gateway main profile; pinned to v14; autonomous policy; Catalog V2', () => {
-    expect(SALES_LANE_PROFILES.map(profileLabel)).toEqual(['sales-production@13', 'sales-production@14', 'sales-production@15', 'sales-production@16', 'sales-production@17']);
+    expect(SALES_LANE_PROFILES.map(profileLabel)).toEqual(['sales-production@13', 'sales-production@14', 'sales-production@15', 'sales-production@16', 'sales-production@17', 'sales-production@18']);
     expect([...SALES_PRODUCTION_PROFILES, ...SALES_CANARY_ONLY_PROFILES].map(profileLabel)).not.toContain('sales-production@14');
     expect(() => selectedSalesProductionProfile(env('sales-production@14').config)).toThrow(/not a Sales production profile/);
     expect(() => selectedSalesProductionProfile(env('sales-production@14').config, { canary: true })).toThrow(/not a Sales production profile/);

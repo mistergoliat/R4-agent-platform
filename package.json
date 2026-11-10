@@ -74,6 +74,7 @@
     "test:mutation:runtime-contingency": "node tests/mutation/runtime-contingency-mutations.mjs",
     "test:mutation:turn-guard": "node tests/mutation/turn-guard-mutations.mjs",
     "test:mutation:prior-conversation": "node tests/mutation/prior-conversation-mutations.mjs",
+    "test:mutation:quote-document": "node tests/mutation/quote-document-mutations.mjs",
     "production:sales:plan": "node agents/sales/dist/cli/production.js --plan",
     "production:sales:validate": "node agents/sales/dist/cli/production.js --validate",
     "production:sales:smoke": "node agents/sales/dist/cli/production.js --smoke",

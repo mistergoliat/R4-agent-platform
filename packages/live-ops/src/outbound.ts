@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { emitTelemetry, type StructuredLogger } from '@r4/observability';
 import { providerStatusEventSchema, type OutboundChannelAdapter, type ProviderStatusEvent } from './channel.js';
 import { decideDispatch, dispositionAfterSubmission, type SubmissionResult } from './delivery.js';
@@ -124,13 +125,20 @@ export class OutboundDeliveryRuntime {
     emitTelemetry(logger, 'outbound.dispatch.attempted', { ...base, attempt: claim.token.attempt, generation: claim.token.generation });
     let result: SubmissionResult;
     const started = Date.now();
+    const document = claim.document;
+    const refused = (errorClass: string): SubmissionResult => ({ outcome: 'rejected', providerMessageId: null, httpStatus: null, errorClass, errorCode: null, retryAfterMs: null, latencyMs: 0 });
     if (!adapter) {
       // Nothing left the process: definitely not sent.
-      result = { outcome: 'rejected', providerMessageId: null, httpStatus: null, errorClass: 'no_channel_adapter', errorCode: null, retryAfterMs: null, latencyMs: 0 };
+      result = refused('no_channel_adapter');
+    } else if (document && !adapter.supportsDocuments) {
+      result = refused('document_unsupported');
+    } else if (document && createHash('sha256').update(document.bytes).digest('hex') !== document.sha256) {
+      // The staged bytes are not the owner's verified file: never sent.
+      result = refused('document_integrity');
     } else {
       try {
         result = await adapter.submit(
-          { outboundId: claim.outbound.outboundId, idempotencyKey: claim.outbound.idempotencyKey, accountRef: claim.accountRef, recipientRef: claim.recipientRef, text: claim.text, attempt: claim.token.attempt },
+          { outboundId: claim.outbound.outboundId, idempotencyKey: claim.outbound.idempotencyKey, accountRef: claim.accountRef, recipientRef: claim.recipientRef, text: claim.text, attempt: claim.token.attempt, ...(document ? { document } : {}) },
           { timeoutMs: config.outbound.providerTimeoutMs },
         );
       } catch {
@@ -175,6 +183,8 @@ export class OutboundDeliveryRuntime {
       if (cycle.kind === 'idle') break;
       cycles.push(cycle);
     }
+    // A document's bytes live only while its outbound may still be submitted.
+    await this.#o.store.purgeSettledDocuments(50);
     return { swept: swept.length, materialized: materialized.length, cycles };
   }
 }
