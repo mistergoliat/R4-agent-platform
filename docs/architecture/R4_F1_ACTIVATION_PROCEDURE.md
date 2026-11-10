@@ -135,7 +135,7 @@ La base **puede quedar en `0014`/`0010`** (§1), con una condición: **no debe h
 | Monitoreo manual de la primera emisión | `quote.call`, `action.*`, `outbound.*` y `budget.*` en vivo en los logs del worker del carril y del gateway |
 | Kill switch | `production:sales:control -- autonomy off\|on`; el guardia de Quote relee el estado antes de cada `createAndIssue` |
 | Rollback | §5 |
-| Conciliación contra Quote | cada `quote.create` de R4 (ejecución, recibo) se compara con la cotización y la operación en Quote: número, total, perfil `cl-retail-session-60m-v1`, documento, sin despacho, sin carrito y sin duplicados por clave de idempotencia |
+| Conciliación contra Quote | `ops/r4-f1-canary/observe.sh [intervalo]` (solo lectura; sale con 1 ante una condición crítica): cada `quote.create` de R4 (ejecución, recibo) se compara con la cotización y la operación en Quote: número, total, perfil `cl-retail-session-60m-v1`, documento, sin despacho, sin carrito y sin duplicados por clave de idempotencia |
 
 **El kill switch es uno solo (global).** Con él puesto, los workers no admiten tareas: no hay conversación de lectura posible. La prueba de humo de la etapa 2 se hace con el kill switch puesto (el mensaje queda retenido como tarea `@17` y Quote no se llama). La conversación de lectura se hace después con la autonomía encendida: la emisión sigue exigiendo la vista previa, la confirmación explícita dentro de la ventana de 900 s, los límites F1 y una sola emisión a la vez.
 
