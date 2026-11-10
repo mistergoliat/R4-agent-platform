@@ -63,7 +63,7 @@ describe('@18 is @17 plus the issued quote\'s PDF, a lane (and isolated canary) 
     expect(SALES_VARIANT_AVAILABILITY_PROFILES.has('sales-production@18')).toBe(true);
     expect(salesCommercialEligibility(v18)).toEqual(salesCommercialEligibility(SALES_PRODUCTION_PROFILE_V17));
     expect(SALES_HUMAN_REQUEST_NOTICE_PROFILES).toContain('sales-production@18');
-    expect([...SALES_QUOTE_DOCUMENT_PROFILES]).toEqual(['sales-production@18']);
+    expect([...SALES_QUOTE_DOCUMENT_PROFILES]).toEqual(['sales-production@18', 'sales-production@19']);
   });
 
   it('lane and canary only; autonomous policy; Catalog V2; quote-lane ceilings; every gate item blocking', () => {

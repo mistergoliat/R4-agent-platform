@@ -349,7 +349,7 @@ export const SALES_HUMAN_REQUEST_NOTICE_TEXT =
   'Gracias por tu mensaje. Tu consulta quedó pendiente de revisión por una persona del equipo de PesasChile. La respuesta llegará por este mismo chat; no hace falta que repitas lo que escribiste.';
 
 /** The profiles whose conversations get that notice: only the F1 quote lane candidate (@13 and the others unchanged). */
-export const SALES_HUMAN_REQUEST_NOTICE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_QUOTE_LANE_V18_PROFILE_LABEL]);
+export const SALES_HUMAN_REQUEST_NOTICE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_QUOTE_LANE_V18_PROFILE_LABEL, 'sales-production@19']);
 
 /** Gateway bindings of the Sales canary: the WhatsApp Cloud adapter (canary number), the profile and the task factory. */
 export function composeSalesGateway(options: SalesGatewayOptions): { bindings: GatewayBindings; whatsapp: WhatsAppCloudConfig; describe: Record<string, string | boolean> } {

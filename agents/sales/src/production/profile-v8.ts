@@ -143,6 +143,8 @@ export const SALES_PRODUCTION_AGENT_VERSIONS: Readonly<Record<string, SalesAgent
   'sales-production@17': 16,
   // (Quote PDF delivery) @18 = @17 plus the issued quote's PDF to the conversation; definition v17 = v16 except the document sentence.
   'sales-production@18': 17,
+  // (F1 UX) @19 = @18 without shipping.quote, with definition v18 (v17 with the F1 delivery, offer and validity rules).
+  'sales-production@19': 18,
   // (R4 Checkout integration) The E3 checkout sandbox lane profile: a lane profile only.
   'sales-production@15': 15,
 });

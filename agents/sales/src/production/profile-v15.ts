@@ -8,6 +8,7 @@ import { SALES_PRODUCTION_PROFILE_V14, SALES_QUOTE_LANE_PROFILE_LABEL } from './
 import { SALES_PRODUCTION_PROFILE_V16, SALES_QUOTE_LANE_V16_PROFILE_LABEL } from './profile-v16.js';
 import { SALES_PRODUCTION_PROFILE_V17, SALES_QUOTE_LANE_V17_PROFILE_LABEL } from './profile-v17.js';
 import { SALES_PRODUCTION_PROFILE_V18, SALES_QUOTE_LANE_V18_PROFILE_LABEL } from './profile-v18.js';
+import { SALES_PRODUCTION_PROFILE_V19, SALES_QUOTE_LANE_V19_PROFILE_LABEL } from './profile-v19.js';
 
 /** The Checkout contract R4 consumes (Checkout side final as of SBX-2; still PROPOSED for R4, Quote and CIA). */
 export const CHECKOUT_CONTRACT_REF = 'checkout: docs/reviews/R4_CHECKOUT_INTEGRATION_CONTRACT.md (owner commit d11e3c7, OpenAPI /v1 1.0.3-proposed, sandbox-purchase API listener only)';
@@ -72,15 +73,15 @@ export const SALES_PRODUCTION_V15_ACTION_POLICY: ActionPolicyConfigurationInput 
 } satisfies ActionPolicyConfigurationInput);
 
 /** Profiles a gateway may serve as its lane and a production worker may select; never a gateway's main profile. */
-export const SALES_LANE_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_PRODUCTION_PROFILE_V13, SALES_PRODUCTION_PROFILE_V14, SALES_PRODUCTION_PROFILE_V15, SALES_PRODUCTION_PROFILE_V16, SALES_PRODUCTION_PROFILE_V17, SALES_PRODUCTION_PROFILE_V18]);
+export const SALES_LANE_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_PRODUCTION_PROFILE_V13, SALES_PRODUCTION_PROFILE_V14, SALES_PRODUCTION_PROFILE_V15, SALES_PRODUCTION_PROFILE_V16, SALES_PRODUCTION_PROFILE_V17, SALES_PRODUCTION_PROFILE_V18, SALES_PRODUCTION_PROFILE_V19]);
 
 export function isSalesLaneProfile(profile: ProductionProfile): boolean {
   return SALES_LANE_PROFILES.some((p) => profileLabel(p) === profileLabel(profile));
 }
 
-/** Lane profiles that issue quotes (@14, @15, @16, @17, @18): F1 ceilings, parity, write ceiling 1..6. */
+/** Lane profiles that issue quotes (@14, @15, @16, @17, @18, @19): F1 ceilings, parity, write ceiling 1..6. */
 export function isQuoteLaneProfile(profile: ProductionProfile): boolean {
-  return [SALES_QUOTE_LANE_PROFILE_LABEL, SALES_CHECKOUT_LANE_PROFILE_LABEL, SALES_QUOTE_LANE_V16_PROFILE_LABEL, SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_QUOTE_LANE_V18_PROFILE_LABEL].includes(profileLabel(profile));
+  return [SALES_QUOTE_LANE_PROFILE_LABEL, SALES_CHECKOUT_LANE_PROFILE_LABEL, SALES_QUOTE_LANE_V16_PROFILE_LABEL, SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_QUOTE_LANE_V18_PROFILE_LABEL, SALES_QUOTE_LANE_V19_PROFILE_LABEL].includes(profileLabel(profile));
 }
 
 /** The Catalog source a profile binds: V2 only for the lane profiles (decided by the profile, never by a variable). */

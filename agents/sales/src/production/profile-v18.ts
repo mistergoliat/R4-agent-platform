@@ -20,7 +20,7 @@ export const SALES_PRODUCTION_PROFILE_V18: ProductionProfile = Object.freeze({
 export const SALES_QUOTE_LANE_V18_PROFILE_LABEL = 'sales-production@18';
 
 /** Profiles whose issued quotes send their PDF to the conversation; every other profile sends none. */
-export const SALES_QUOTE_DOCUMENT_PROFILES: ReadonlySet<string> = new Set([SALES_QUOTE_LANE_V18_PROFILE_LABEL]);
+export const SALES_QUOTE_DOCUMENT_PROFILES: ReadonlySet<string> = new Set([SALES_QUOTE_LANE_V18_PROFILE_LABEL, 'sales-production@19']);
 
 /** What must be true before @18 is activated on the lane: everything @17 required, plus the document delivery items. */
 export const SALES_PRODUCTION_PROFILE_V18_GATE = Object.freeze([

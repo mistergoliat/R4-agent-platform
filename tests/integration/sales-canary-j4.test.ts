@@ -224,7 +224,9 @@ describe('the single canary gateway of sales-production@8', () => {
       const g = await gateway(canary, confirmStub(() => json(503, {})).transport);
 
       // The server side of a crash (or a network loss): the lock connection dies. The gateway stops itself.
-      await pool.query(`select pg_terminate_backend(pid) from pg_locks where locktype = 'advisory' and classid = $1::oid and objid = $2::oid`, [...CANARY_GATEWAY_LOCK]);
+      // Only THIS database: the lock keys are the same in every canary database on the server, and test files run in
+      // parallel (an unfiltered kill stopped the canary gateway of another test file: sales-profile-v8 under full-suite load).
+      await pool.query(`select pg_terminate_backend(pid) from pg_locks where locktype = 'advisory' and classid = $1::oid and objid = $2::oid and database = (select oid from pg_database where datname = current_database())`, [...CANARY_GATEWAY_LOCK]);
       await expect(g.lost).resolves.toBe('canary_gateway_lock_lost');
       expect(await canaryRollbackStatus(pool)).toMatchObject({ liveGateways: 0 });
       await expect(runtime(canary, new Router(), 'after-lost')).rejects.toMatchObject({ code: 'canary_gateway_not_running' });
