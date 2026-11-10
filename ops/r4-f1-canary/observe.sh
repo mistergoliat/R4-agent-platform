@@ -53,6 +53,15 @@ u=$(r4 "select count(*) from outbound_messages where created_at > now() - interv
 st=$(r4 "select count(*) from outbound_messages where status in ('pending','dispatching') and created_at < now() - interval '2 minutes'")
 [ "$st" = "0" ] || flag "$st outbound stuck for more than 2 minutes"
 
+echo "== quote PDF documents (@18+)"
+r4 "select o.status, count(*), count(*) filter (where d.bytes is null) from outbound_documents d join outbound_messages o using (outbound_id) where d.created_at > now() - interval '$SINCE' group by 1 order by 1" | sed 's/^/documents status|count|purged: /'
+sd=$(r4 "select count(*) from outbound_documents d join outbound_messages o using (outbound_id) where o.status in ('pending','dispatching') and o.created_at < now() - interval '2 minutes'")
+[ "$sd" = "0" ] || flag "$sd quote documents pending for more than 2 minutes"
+nq=$(r4 "select count(*) from action_receipts where capability_id = 'quote.create' and recorded_at > now() - interval '$SINCE' and result->'document'->>'delivery' = 'not_queued'")
+[ "$nq" = "0" ] || flag "$nq issued quotes whose PDF was not queued (quote.document.not_queued)"
+fd=$(r4 "select count(*) from outbound_documents d join outbound_messages o using (outbound_id) where d.created_at > now() - interval '$SINCE' and o.status in ('failed','unknown','cancelled')")
+[ "$fd" = "0" ] || flag "$fd quote documents failed/unknown/cancelled (the PDF did not reach the contact; a person sends it from Quote)"
+
 echo "== logs (warn/error, Quote failures, timeouts, budget, reconciliation)"
 cutoff=$(date -u -d "-$SINCE" +%FT%T)
 awk -v c="$cutoff" -F'"time":"' '{split($2,a,"\""); if (a[1] >= c) print}' ~/.pm2/logs/r4-*-out.log > "$T/log"
