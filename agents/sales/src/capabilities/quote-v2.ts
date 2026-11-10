@@ -94,7 +94,8 @@ export const quoteCreateV2Output = z.strictObject({
   issuedAt: z.string(),
   validity: z.strictObject({ policyId: z.string().nullable(), issueLocalDate: z.string(), validThroughLocalDate: z.string(), validUntilExclusive: z.string() }),
   /** The owner's immutable document, by hash only (never a URL: the owner is private). */
-  document: z.strictObject({ pdfSha256: z.string(), byteLength: z.int().positive(), verification: z.enum(['verified', 'unavailable', 'mismatch']) }),
+  // (@18) delivery: present only where the PDF is delivered to the conversation; 'queued' only when it was queued.
+  document: z.strictObject({ pdfSha256: z.string(), byteLength: z.int().positive(), verification: z.enum(['verified', 'unavailable', 'mismatch']), delivery: z.enum(['queued', 'not_queued']).optional() }),
   basedOnWorkspaceVersion: z.int().positive(),
 });
 export type QuoteCreateV2Output = z.infer<typeof quoteCreateV2Output>;
@@ -321,6 +322,18 @@ async function prepareRequest(deps: QuoteV2CapabilityDeps, input: QuoteCreateV2I
  */
 export interface SettleOptions {
   readonly strict?: boolean;
+  /** (Quote PDF delivery, @18) Where a verified document of an issued quote is queued for its conversation; absent: none. */
+  readonly documents?: QuoteDocumentDelivery | null;
+}
+
+/**
+ * (Quote PDF delivery) Sends an issued quote's own PDF to its conversation, once per quote: the bytes this settlement
+ * just read from the Quote owner and verified against the owner's SHA-256 (never regenerated). Never throws: true when
+ * the document is queued (or was already), false otherwise — the quote stays issued (it is never issued again) and the
+ * failure is reported by the composition.
+ */
+export interface QuoteDocumentDelivery {
+  queue(document: { readonly taskId: string; readonly quoteId: string; readonly quoteNumber: string; readonly validUntilExclusive: string; readonly sha256: string; readonly bytes: Uint8Array; readonly correlationId: string }): Promise<boolean>;
 }
 
 export async function settle(deps: Pick<QuoteV2CapabilityDeps, 'store' | 'quotes'>, record: QuoteV2RequestRecord, quote: QuoteV2Quote, operation: QuoteV2Operation | null, replayed: boolean, context: WriteHandlerContext, options: SettleOptions = {}): Promise<WriteExecutionResult<QuoteCreateV2Output>> {
@@ -355,10 +368,12 @@ export async function settle(deps: Pick<QuoteV2CapabilityDeps, 'store' | 'quotes
   const pdfSha256 = quote.document.pdfSha256!;
   const byteLength = quote.document.byteLength!;
   let verification: 'verified' | 'unavailable' | 'mismatch';
+  let verifiedBytes: Uint8Array | null = null;
   try {
     const document = await quotes.getDocument(quote.quoteId, { signal: context.signal });
     const actual = sha256(document.bytes);
     verification = actual === pdfSha256 && document.bytes.byteLength === byteLength && (document.declaredSha256 === null || document.declaredSha256 === pdfSha256) ? 'verified' : 'mismatch';
+    if (verification === 'verified') verifiedBytes = document.bytes;
   } catch (error) {
     if (!(error instanceof DomainError)) throw error;
     // The quote stays issued; document access is classified on its own (no duplicate quote, no failure).
@@ -367,6 +382,11 @@ export async function settle(deps: Pick<QuoteV2CapabilityDeps, 'store' | 'quotes
   const issuedAt = quote.issuance!.issuedAt;
   const validity = quote.validity!;
   await store.recordQuoteV2Issued({ executionKey: record.executionKey, taskId: record.taskId, quoteId: quote.quoteId, quoteNumber: quote.quoteNumber!, issuedAt, validThroughLocalDate: validity.validThroughLocalDate, validUntilExclusive: validity.validUntilExclusive, pdfSha256, byteLength, documentVerification: verification });
+  // (@18) Only the owner's verified file, and only after the issuance is recorded; an unverified document is never sent.
+  let delivery: 'queued' | 'not_queued' | null = options.documents ? 'not_queued' : null;
+  if (verifiedBytes && options.documents) {
+    delivery = (await options.documents.queue({ taskId: record.taskId, quoteId: quote.quoteId, quoteNumber: quote.quoteNumber!, validUntilExclusive: validity.validUntilExclusive, sha256: pdfSha256, bytes: verifiedBytes, correlationId: context.execution.correlationId })) ? 'queued' : 'not_queued';
+  }
   const shipping = record.request.shipping;
   return {
     status: 'applied',
@@ -380,7 +400,7 @@ export async function settle(deps: Pick<QuoteV2CapabilityDeps, 'store' | 'quotes
       shipping: shipping && quote.shipping ? { carrierName: shipping.carrier.name, serviceType: shipping.serviceType?.name ?? null, commune: shipping.destination.commune, amounts: { ...quote.shipping.amounts } } : null,
       issuedAt,
       validity: { policyId: validity.policyId, issueLocalDate: validity.issueLocalDate, validThroughLocalDate: validity.validThroughLocalDate, validUntilExclusive: validity.validUntilExclusive },
-      document: { pdfSha256, byteLength, verification },
+      document: { pdfSha256, byteLength, verification, ...(delivery ? { delivery } : {}) },
       basedOnWorkspaceVersion: record.workspaceVersion,
     },
     resourceRef: `quote:${quote.quoteId}`,

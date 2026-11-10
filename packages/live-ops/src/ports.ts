@@ -1,5 +1,5 @@
 import type { AutonomyControlsState } from './autonomy.js';
-import type { ProviderStatusEvent } from './channel.js';
+import type { OutboundDocument, ProviderStatusEvent } from './channel.js';
 import type { DispatchDecision, DispatchFacts, OutboundOrigin, OutboundStatus, SubmissionDisposition, SubmissionResult } from './delivery.js';
 import type { InboundInspector } from './inspection.js';
 
@@ -217,7 +217,7 @@ export interface DispatchToken {
 }
 
 export type DispatchClaim =
-  | { readonly kind: 'dispatch'; readonly outbound: OutboundRecord; readonly token: DispatchToken; readonly accountRef: string; readonly recipientRef: string; readonly text: string }
+  | { readonly kind: 'dispatch'; readonly outbound: OutboundRecord; readonly token: DispatchToken; readonly accountRef: string; readonly recipientRef: string; readonly text: string; readonly document: OutboundDocument | null }
   | { readonly kind: 'held'; readonly outbound: OutboundRecord; readonly reason: string }
   | { readonly kind: 'cancelled'; readonly outbound: OutboundRecord; readonly reason: string };
 
@@ -250,8 +250,14 @@ export interface NewPlatformNotice {
   readonly taskId: string;
   /** `^[a-z][a-z0-9._:-]{2,199}$`, e.g. `<pack>.<kind>:<reference>`. */
   readonly noticeKey: string;
+  /** The notice text; with a document, its caption. */
   readonly text: string;
   readonly correlationId: string;
+  /**
+   * (Platform notice document) The owner's file sent with the notice, verified by the pack against the owner's SHA-256.
+   * The store checks the bytes against `sha256`; a replay must carry the same text and the same document.
+   */
+  readonly document?: OutboundDocument;
 }
 
 export interface ThreadEntry {
@@ -385,6 +391,8 @@ export interface ProductionStore {
   recordSubmission(token: DispatchToken, result: SubmissionResult, disposition: SubmissionDisposition): Promise<{ readonly applied: boolean; readonly outbound: OutboundRecord }>;
   /** `dispatching` rows whose lease expired (the dispatcher died mid-call) become `unknown`. */
   expireDispatchLeases(limit: number): Promise<OutboundRecord[]>;
+  /** (Platform notice document) Drops the staged bytes of every document whose outbound can no longer be submitted; returns how many. */
+  purgeSettledDocuments(limit: number): Promise<number>;
   applyProviderStatus(event: ProviderStatusEvent): Promise<{ readonly duplicate: boolean; readonly effect: 'applied' | 'ignored' | 'unmatched'; readonly outbound: OutboundRecord | null; readonly from: OutboundStatus | null; readonly to: OutboundStatus | null }>;
   resolveOutbound(command: { readonly outboundId: string; readonly outcome: 'delivered' | 'failed'; readonly humanRef: string; readonly note: string; readonly correlationId: string }): Promise<OutboundRecord>;
   cancelOutbound(command: { readonly outboundId: string; readonly humanRef: string; readonly reason: string; readonly correlationId: string }): Promise<OutboundRecord>;

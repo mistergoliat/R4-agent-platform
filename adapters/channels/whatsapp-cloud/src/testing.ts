@@ -19,7 +19,10 @@ export type FakeSendBehaviour =
 export interface FakeSend {
   readonly phoneNumberId: string;
   readonly to: string;
+  /** The text body, or a document's caption. */
   readonly text: string;
+  /** A document message: the uploaded media it names and the file name shown. */
+  readonly document: { readonly mediaId: string; readonly filename: string } | null;
   readonly authorized: boolean;
   /** The wamid returned, when the fake accepted it (also for hang/drop: the fake "processed" it). */
   readonly providerMessageId: string | null;
@@ -32,10 +35,22 @@ export interface FakeWorkingSignal {
   readonly authorized: boolean;
 }
 
+/** One "upload media" call. */
+export interface FakeUpload {
+  readonly authorized: boolean;
+  readonly type: string;
+  readonly filename: string;
+  readonly bytes: Buffer;
+  /** The media id returned, when the fake accepted it. */
+  readonly mediaId: string | null;
+}
+
 export class FakeWhatsAppProvider {
   readonly sends: FakeSend[] = [];
   readonly signals: FakeWorkingSignal[] = [];
+  readonly uploads: FakeUpload[] = [];
   #script: FakeSendBehaviour[] = [];
+  #mediaScript: FakeSendBehaviour[] = [];
   #server: Server | null = null;
   #sockets = new Set<Socket>();
   #counter = 0;
@@ -48,6 +63,16 @@ export class FakeWhatsAppProvider {
   /** Behaviour of the next send calls, in order; afterwards: accept. */
   script(...behaviours: FakeSendBehaviour[]): void {
     this.#script.push(...behaviours);
+  }
+
+  /** Behaviour of the next "upload media" calls, in order; afterwards: accept. */
+  scriptMedia(...behaviours: FakeSendBehaviour[]): void {
+    this.#mediaScript.push(...behaviours);
+  }
+
+  /** The bytes uploaded under a media id (what the contact receives). */
+  media(mediaId: string): Buffer | null {
+    return this.uploads.find((u) => u.mediaId === mediaId)?.bytes ?? null;
   }
 
   get baseUrl(): string {
@@ -74,13 +99,17 @@ export class FakeWhatsAppProvider {
   async #handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(chunk as Buffer);
+    const authorized = req.headers.authorization === `Bearer ${this.#accessToken}`;
+    if (req.method === 'POST' && /^\/v\d+\.\d+\/(\d+)\/media$/.test(req.url ?? '')) {
+      await this.#upload(req, res, Buffer.concat(chunks), authorized);
+      return;
+    }
     const match = /^\/v\d+\.\d+\/(\d+)\/messages$/.exec(req.url ?? '');
     if (req.method !== 'POST' || !match) {
       res.writeHead(404).end();
       return;
     }
-    const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { to?: string; text?: { body?: string }; status?: string; message_id?: string; typing_indicator?: { type?: string } };
-    const authorized = req.headers.authorization === `Bearer ${this.#accessToken}`;
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { to?: string; text?: { body?: string }; document?: { id?: string; filename?: string; caption?: string }; status?: string; message_id?: string; typing_indicator?: { type?: string } };
     if (body.status === 'read') {
       this.signals.push({ messageId: body.message_id ?? '', typing: body.typing_indicator?.type === 'text', authorized });
       res.writeHead(authorized ? 200 : 401, { 'content-type': 'application/json' }).end(JSON.stringify(authorized ? { success: true } : { error: { code: 190 } }));
@@ -89,7 +118,8 @@ export class FakeWhatsAppProvider {
     const behaviour = this.#script.shift() ?? { kind: 'accept' };
     const processes = behaviour.kind === 'accept' || behaviour.kind === 'hang' || behaviour.kind === 'drop' || behaviour.kind === 'accept_without_id';
     const providerMessageId = authorized && processes ? `wamid.fake.${++this.#counter}` : null;
-    this.sends.push({ phoneNumberId: match[1]!, to: body.to ?? '', text: body.text?.body ?? '', authorized, providerMessageId });
+    const document = body.document ? { mediaId: body.document.id ?? '', filename: body.document.filename ?? '' } : null;
+    this.sends.push({ phoneNumberId: match[1]!, to: body.to ?? '', text: body.text?.body ?? body.document?.caption ?? '', document, authorized, providerMessageId });
     if (!authorized) {
       res.writeHead(401, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { code: 190, message: 'invalid token' } }));
       return;
@@ -107,6 +137,34 @@ export class FakeWhatsAppProvider {
       case 'hang':
         setTimeout(() => {
           if (!res.writableEnded && !res.destroyed) res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ messages: [{ id: providerMessageId }] }));
+        }, behaviour.ms);
+        return;
+      case 'drop':
+        req.socket.destroy();
+        return;
+    }
+  }
+
+  async #upload(req: IncomingMessage, res: ServerResponse, raw: Buffer, authorized: boolean): Promise<void> {
+    const form = await new Request('http://fake.local/media', { method: 'POST', headers: { 'content-type': req.headers['content-type'] ?? '' }, body: raw }).formData();
+    const file = form.get('file');
+    const bytes = file instanceof Blob ? Buffer.from(await file.arrayBuffer()) : Buffer.alloc(0);
+    const behaviour = authorized ? (this.#mediaScript.shift() ?? { kind: 'accept' }) : { kind: 'status' as const, status: 401, body: { error: { code: 190 } } };
+    const mediaId = behaviour.kind === 'accept' ? `media.fake.${++this.#counter}` : null;
+    this.uploads.push({ authorized, type: typeof form.get('type') === 'string' ? (form.get('type') as string) : '', filename: file instanceof File ? file.name : '', bytes, mediaId });
+    switch (behaviour.kind) {
+      case 'accept':
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ id: mediaId }));
+        return;
+      case 'accept_without_id':
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({}));
+        return;
+      case 'status':
+        res.writeHead(behaviour.status, { 'content-type': 'application/json', ...('retryAfter' in behaviour && behaviour.retryAfter ? { 'retry-after': behaviour.retryAfter } : {}) }).end(JSON.stringify(behaviour.body ?? { error: { code: behaviour.status } }));
+        return;
+      case 'hang':
+        setTimeout(() => {
+          if (!res.writableEnded && !res.destroyed) res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ id: 'media.fake.late' }));
         }, behaviour.ms);
         return;
       case 'drop':

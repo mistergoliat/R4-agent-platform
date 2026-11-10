@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { PlatformError, RUN_FAILURE_HANDOFF_REASONS, sha256Hex } from '@r4/contracts';
 import {
   conversationLockKey,
@@ -395,7 +395,14 @@ export class PostgresProductionStore implements ProductionStore {
     return created;
   }
 
-  createPlatformNotice(command: NewPlatformNotice): Promise<{ record: OutboundRecord; replayed: boolean }> {
+  async createPlatformNotice(command: NewPlatformNotice): Promise<{ record: OutboundRecord; replayed: boolean }> {
+    const document = command.document;
+    if (document) {
+      if (createHash('sha256').update(document.bytes).digest('hex') !== document.sha256) throw new PlatformError('validation', 'document_sha256_mismatch', 'the notice document does not match its SHA-256');
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/.test(document.filename) || document.contentType !== 'application/pdf' || document.bytes.byteLength < 1 || document.bytes.byteLength > 5_242_880) {
+        throw new PlatformError('validation', 'invalid_document', 'the notice document must be one PDF of 1 byte to 5 MiB with a plain file name');
+      }
+    }
     return withTransaction(this.#pool, async (c) => {
       const binding = (await c.query<Row>('select * from channel_conversation_bindings where task_id = $1', [command.taskId])).rows[0];
       if (!binding) throw new PlatformError('precondition', 'task_not_channel_bound', 'the task is not bound to a channel conversation');
@@ -406,9 +413,15 @@ export class PostgresProductionStore implements ProductionStore {
          on conflict (task_id, notice_key) where notice_key is not null do nothing returning *`,
         [randomUUID(), command.noticeKey, command.taskId, binding.binding_id, binding.channel, `r4-notice:${sha256Hex(`${command.taskId}|${command.noticeKey}`).slice(0, 40)}`, textSha, command.text, binding.profile, command.correlationId],
       )).rows[0];
-      if (inserted) return { record: outboundFromRow(inserted), replayed: false };
+      if (inserted) {
+        if (document) {
+          await c.query('insert into outbound_documents (outbound_id, content_type, filename, sha256, byte_length, bytes) values ($1, $2, $3, $4, $5, $6)', [inserted.outbound_id, document.contentType, document.filename, document.sha256, document.bytes.byteLength, Buffer.from(document.bytes)]);
+        }
+        return { record: outboundFromRow(inserted), replayed: false };
+      }
       const existing = (await c.query<Row>(`select * from outbound_messages where task_id = $1 and notice_key = $2`, [command.taskId, command.noticeKey])).rows[0]!;
-      if (existing.content_sha256 !== textSha) throw new PlatformError('conflict', 'idempotency_key_reused', 'noticeKey was already used for a different notice');
+      const existingDocument = (await c.query<Row>('select sha256 from outbound_documents where outbound_id = $1', [existing.outbound_id])).rows[0];
+      if (existing.content_sha256 !== textSha || (existingDocument?.sha256 ?? null) !== (document?.sha256 ?? null)) throw new PlatformError('conflict', 'idempotency_key_reused', 'noticeKey was already used for a different notice');
       return { record: outboundFromRow(existing), replayed: true };
     });
   }
@@ -502,6 +515,16 @@ export class PostgresProductionStore implements ProductionStore {
         )).rows[0]!;
         return { kind: 'cancelled', outbound: outboundFromRow(cancelled), reason: decision.reason };
       }
+      const staged = (await c.query<Row>('select content_type, filename, sha256, bytes from outbound_documents where outbound_id = $1', [outbound.outboundId])).rows[0];
+      if (staged && staged.bytes === null) {
+        // Never submit the caption without its document.
+        const cancelled = (await c.query<Row>(
+          `update outbound_messages set status = 'cancelled', cancel_reason = 'document_unavailable', hold_reason = null, next_attempt_at = null, updated_at = clock_timestamp() where outbound_id = $1 returning *`,
+          [outbound.outboundId],
+        )).rows[0]!;
+        return { kind: 'cancelled', outbound: outboundFromRow(cancelled), reason: 'document_unavailable' };
+      }
+      const document = staged ? { contentType: 'application/pdf' as const, filename: String(staged.filename), sha256: String(staged.sha256), bytes: new Uint8Array(staged.bytes as Buffer) } : null;
       const claimed = (await c.query<Row>(
         `update outbound_messages set status = 'dispatching', attempts = attempts + 1, lease_generation = lease_generation + 1, lease_owner = $2,
                 lease_expires_at = clock_timestamp() + $3::int * interval '1 millisecond', hold_reason = null, next_attempt_at = null,
@@ -513,7 +536,7 @@ export class PostgresProductionStore implements ProductionStore {
       await c.query('insert into outbound_delivery_attempts (outbound_id, attempt, lease_generation, owner) values ($1, $2, $3, $4)', [outbound.outboundId, claimed.attempts, claimed.lease_generation, command.owner]);
       const record = outboundFromRow(claimed);
       return {
-        kind: 'dispatch', outbound: record, accountRef: binding.accountRef, recipientRef: binding.recipientRef, text,
+        kind: 'dispatch', outbound: record, accountRef: binding.accountRef, recipientRef: binding.recipientRef, text, document,
         token: { outboundId: record.outboundId, owner: command.owner, generation: record.leaseGeneration, attempt: record.attempts },
       };
     });
@@ -565,6 +588,16 @@ export class PostgresProductionStore implements ProductionStore {
       }
       return { applied: true, outbound: outboundFromRow(updated) };
     });
+  }
+
+  async purgeSettledDocuments(limit: number): Promise<number> {
+    const purged = await this.#pool.query(
+      `update outbound_documents set bytes = null, purged_at = clock_timestamp()
+        where outbound_id in (select d.outbound_id from outbound_documents d join outbound_messages o using (outbound_id)
+                               where d.bytes is not null and o.status not in ('pending', 'dispatching') limit $1)`,
+      [limit],
+    );
+    return purged.rowCount ?? 0;
   }
 
   expireDispatchLeases(limit: number): Promise<OutboundRecord[]> {

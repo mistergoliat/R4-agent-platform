@@ -54,6 +54,8 @@ export interface CapturedOutbound {
   readonly recipientRef: string;
   readonly attempt: number;
   readonly text: string;
+  /** (Platform notice document) The manifest of a document sent with it (never its bytes). */
+  readonly document?: { readonly filename: string; readonly sha256: string; readonly byteLength: number };
   readonly capturedAt: string;
 }
 
@@ -70,6 +72,7 @@ export class CaptureOutboundAdapter implements OutboundChannelAdapter {
   readonly bindingKind = 'local-fake' as const;
   readonly contractRef = 'r4-sales-canary:local-capture (JSONL file; no provider)';
   readonly customerWindowMs = null;
+  readonly supportsDocuments = true;
   readonly #file: string;
 
   constructor(file: string) {
@@ -85,7 +88,9 @@ export class CaptureOutboundAdapter implements OutboundChannelAdapter {
     const started = Date.now();
     const record: CapturedOutbound = {
       outboundId: submission.outboundId, idempotencyKey: submission.idempotencyKey, accountRef: submission.accountRef, recipientRef: submission.recipientRef,
-      attempt: submission.attempt, text: submission.text, capturedAt: new Date().toISOString(),
+      attempt: submission.attempt, text: submission.text,
+      ...(submission.document ? { document: { filename: submission.document.filename, sha256: submission.document.sha256, byteLength: submission.document.bytes.byteLength } } : {}),
+      capturedAt: new Date().toISOString(),
     };
     try {
       appendFileSync(this.#file, `${JSON.stringify(record)}\n`, { encoding: 'utf8' });

@@ -7,7 +7,7 @@ import { buildCommercialSnapshot, quoteRequestOf, type CommercialBlocker } from 
 import { OFFER_MESSAGE_MAX_CHARS, OFFER_TEMPLATE_VERSION, offerReference, renderOfferMessage } from './offer-presentation.js';
 import type { QuoteParityGuard } from './parity-guard.js';
 import type { CommercialEligibility } from './commercial-snapshot.js';
-import { QUOTE_V2_CORRELATION, QUOTE_V2_TIMEOUT_MS, classifySend, quoteCreateV2Output, reconcileQuoteV2Command, settle, type QuoteCreateV2Output } from './quote-v2.js';
+import { QUOTE_V2_CORRELATION, QUOTE_V2_TIMEOUT_MS, classifySend, quoteCreateV2Output, reconcileQuoteV2Command, settle, type QuoteCreateV2Output, type QuoteDocumentDelivery } from './quote-v2.js';
 import { quoteCreateV3Input, type QuoteCreateV3Input } from './quote-v3.js';
 import { confirmedQuoteRefusalMessage, judgeConfirmedQuote, locateConfirmation, type QuoteV4CapabilityDeps } from './quote-v4.js';
 
@@ -26,6 +26,8 @@ export interface QuoteV5CapabilityDeps extends QuoteV4CapabilityDeps {
   readonly parity?: QuoteParityGuard | null;
   /** (F1 commercial eligibility) When configured, every line and the shipping must satisfy the F1 commercial policy. */
   readonly eligibility?: CommercialEligibility | null;
+  /** (Quote PDF delivery, @18) When configured, an issued quote's verified PDF is queued for its conversation. */
+  readonly documents?: QuoteDocumentDelivery | null;
 }
 
 /** Failure code of an issuance stopped by the kill switch before anything reached the Quote owner. */
@@ -116,9 +118,9 @@ export function quoteCreateV5Capability(deps: QuoteV5CapabilityDeps): WriteCapab
         if (error instanceof DomainError && error.category === 'temporarily_unavailable') return ownerUnavailableHeld(error);
         return classifySend(error);
       }
-      return settle(deps, record, result.quote, result.operation, result.replayed, context, { strict: true });
+      return settle(deps, record, result.quote, result.operation, result.replayed, context, { strict: true, documents: deps.documents ?? null });
     },
-    reconcile: (context) => reconcileQuoteV2Command(deps, context, { strict: true }),
+    reconcile: (context) => reconcileQuoteV2Command(deps, context, { strict: true, documents: deps.documents ?? null }),
   };
 }
 
