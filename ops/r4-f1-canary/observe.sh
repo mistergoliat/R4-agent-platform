@@ -18,7 +18,7 @@ open=$(r4 "select count(*) from action_executions where capability_id='quote.cre
 # R4 receipts: quote id | number | gross | replayed
 r4 "select substring(resource_ref from 7), external_operation_ref, (result->'totals'->>'gross'), replayed from action_receipts where capability_id='quote.create' and status='succeeded' and recorded_at > now() - interval '$SINCE' order by 1" > "$T/r4"
 # Quote: quote id | number | gross | status, for the R4 principal
-qv "select quote_id, quote_number, gross_amount, status from quote_service.quotes where created_by_principal_id='$PRINCIPAL' and created_at > now() - interval '$SINCE' order by 1" > "$T/qv"
+qv "select quote_id, quote_number, gross_amount, status, external_reference from quote_service.quotes where created_by_principal_id='$PRINCIPAL' and created_at > now() - interval '$SINCE' order by 1" > "$T/qv"
 echo "== issued: R4 $(grep -c . "$T/r4") / Quote $(grep -c . "$T/qv")"
 while IFS=' | ' read -r id num gross rep; do
   [ -z "$id" ] && continue
@@ -29,7 +29,12 @@ while IFS=' | ' read -r id num gross rep; do
   echo "$num gross=$gross quote_status=$qs replayed=$rep"
 done < "$T/r4"
 cut -d' ' -f1 "$T/r4" | sort > "$T/r4ids"; cut -d' ' -f1 "$T/qv" | sort > "$T/qvids"
-for id in $(comm -13 "$T/r4ids" "$T/qvids"); do flag "Quote $(grep "^$id " "$T/qv" | awk -F' [|] ' '{print $2}') has no R4 receipt (unknown outcome?)"; done
+# A Quote quote without an R4 receipt is critical only when its task (the external reference) is a task of this R4;
+# otherwise it was issued by another R4 database with the same principal (isolated canary / L3) and is reported only.
+for id in $(comm -13 "$T/r4ids" "$T/qvids"); do
+  num=$(grep "^$id " "$T/qv" | awk -F' [|] ' '{print $2}'); ref=$(grep "^$id " "$T/qv" | awk -F' [|] ' '{print $5}')
+  if [ "$(r4 "select count(*) from agent_tasks where task_id::text = '$ref'")" != "0" ]; then flag "Quote $num has no R4 receipt for its production task (unknown outcome?)"; else echo "info: Quote $num was issued outside this R4 (another database: isolated canary or L3)"; fi
+done
 
 echo "== Quote idempotency and scope"
 d=$(qv "select count(*) from (select quote_id from quote_service.idempotency_bindings where principal_id='$PRINCIPAL' and bound_at > now() - interval '$SINCE' and quote_id is not null group by 1 having count(*) > 1) x")
