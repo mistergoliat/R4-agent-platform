@@ -33,7 +33,7 @@ export const SALES_PRODUCTION_PROFILE_V6: ProductionProfile = Object.freeze({
  * Profiles that issue only on a customer confirmation read from the conversation and need the v6 limits:
  * @6 (quote.create@4, quote.preview@2) and @7 (R4-J3E-C1: quote.create@5, quote.preview@3, the exact offer).
  */
-export const SALES_CONFIRMED_INTENT_PROFILES: ReadonlySet<string> = new Set(['sales-production@6', 'sales-production@7', 'sales-production@8', 'sales-production@12', 'sales-production@14', 'sales-production@15', 'sales-production@16', 'sales-production@17', 'sales-production@18']);
+export const SALES_CONFIRMED_INTENT_PROFILES: ReadonlySet<string> = new Set(['sales-production@6', 'sales-production@7', 'sales-production@8', 'sales-production@12', 'sales-production@14', 'sales-production@15', 'sales-production@16', 'sales-production@17', 'sales-production@18', 'sales-production@19']);
 
 export function isConfirmedIntentProfile(profile: ProductionProfile): boolean {
   return SALES_CONFIRMED_INTENT_PROFILES.has(profileLabel(profile));

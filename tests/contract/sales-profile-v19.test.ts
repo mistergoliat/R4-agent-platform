@@ -1,0 +1,123 @@
+import { describe, expect, it } from 'vitest';
+import { loadAgentDefinitionsFromDirectory } from '@r4/agent-registry';
+import { createSilentLogger } from '@r4/observability';
+import { loadProductionConfig, profileFingerprint, profileLabel, type ProductionStore } from '@r4/live-ops';
+import { FixtureCatalog, FixtureQuoteV2Service, FixtureShipping, type CatalogPort, type QuoteV2Service, type ShippingService } from '@r4-adapters/domains';
+import type { CatalogDiscoverPort } from '@r4-adapters/catalog-http';
+import { SALES_AGENT_DIR, loadSalesAgentDefinition } from '@r4-sales/agent';
+import { CANARY_PROFILES } from '@r4-sales/agent/canary';
+import {
+  SALES_CANARY_ONLY_PROFILES,
+  SALES_F1_CANARY_LIMITS,
+  SALES_HUMAN_REQUEST_NOTICE_PROFILES,
+  SALES_LANE_PROFILES,
+  SALES_PRODUCTION_AUTONOMOUS_ACTION_POLICY,
+  SALES_PRODUCTION_PROFILES,
+  SALES_PRODUCTION_PROFILE_V18,
+  SALES_PRODUCTION_PROFILE_V19,
+  SALES_PRODUCTION_PROFILE_V19_GATE,
+  SALES_QUOTE_DOCUMENT_PROFILES,
+  composeSalesProductionWorker,
+  isQuoteLaneProfile,
+  salesCommercialEligibility,
+  salesProductionActionPolicy,
+  salesProductionAgentVersion,
+  selectedSalesProductionProfile,
+} from '@r4-sales/agent/production';
+
+/**
+ * (F1 UX, mandate §D) sales-production@19 is exactly @18 except: shipping.quote is not bound (F1 quotes carry no
+ * delivery) and it runs definition v18 = v17 with the F1 delivery, offer and validity rules. @18 and @17 are unchanged.
+ */
+const noStore = { readControls: () => Promise.reject(new Error('unused')), thread: () => Promise.reject(new Error('unused')) } as unknown as ProductionStore;
+const env = (profile: string) => loadProductionConfig({ R4_EXECUTION_MODE: 'production', R4_PROD_POLICY_PROFILE: profile, R4_PROD_ROLLOUT_PERCENT: '0', R4_PROD_IDENTITY_HASH_KEY: 'x'.repeat(40), R4_PROD_ALLOW_NETWORK: 'false' });
+const http = <T extends object>(port: T) => Object.assign(Object.create(port) as T, { bindingKind: 'http' });
+const discover: CatalogDiscoverPort = { discoverConfigured: true, discover: () => Promise.reject(new Error('unused')) };
+const composed = (profile: string) =>
+  composeSalesProductionWorker({
+    pool: { query: () => Promise.reject(new Error('no db')) } as never,
+    store: noStore,
+    production: env(profile),
+    modelProvider: { providerId: 'none', invoke: () => Promise.reject(new Error('unused')) },
+    logger: createSilentLogger(),
+    catalog: http(new FixtureCatalog() as CatalogPort),
+    catalogDiscover: discover,
+    shipping: http(new FixtureShipping() as ShippingService),
+    quotes: http(new FixtureQuoteV2Service() as QuoteV2Service),
+    autonomousQuoteLimits: SALES_F1_CANARY_LIMITS,
+  });
+const ids = (profile: string) => composed(profile).bindings.capabilities.list().map((c) => `${c.capabilityId}@${c.version}`).sort();
+
+describe('@19 is @18 without shipping.quote and with definition v18, a lane (and isolated canary) profile only', () => {
+  const v19 = SALES_PRODUCTION_PROFILE_V19;
+  it('same domains and channel as @18 (Shipping stays REAL for the snapshot); every capability of @18 except shipping.quote', () => {
+    expect(v19.version).toBe(19);
+    expect(v19.domains).toEqual(SALES_PRODUCTION_PROFILE_V18.domains);
+    expect(v19.channel).toEqual(SALES_PRODUCTION_PROFILE_V18.channel);
+    expect(v19.capabilities).toEqual(SALES_PRODUCTION_PROFILE_V18.capabilities.filter((c) => c.capabilityId !== 'shipping.quote'));
+    expect(ids('sales-production@19')).toEqual(ids('sales-production@18').filter((id) => !id.startsWith('shipping.quote@')));
+    expect(ids('sales-production@19').some((id) => id.startsWith('shipping.quote@'))).toBe(false);
+    expect(profileFingerprint(v19)).not.toBe(profileFingerprint(SALES_PRODUCTION_PROFILE_V18));
+    expect(salesProductionAgentVersion(v19)).toBe(18);
+    expect(composed('sales-production@19').bindings.servedAgents).toEqual([{ agentId: 'sales', version: 18 }]);
+  });
+
+  it('keeps the F1 commercial policy, the PDF delivery and the F-ADV-2 notice; lane and canary only; every gate item blocking', () => {
+    expect(salesCommercialEligibility(v19)).toEqual(salesCommercialEligibility(SALES_PRODUCTION_PROFILE_V18));
+    expect(SALES_QUOTE_DOCUMENT_PROFILES.has('sales-production@19')).toBe(true);
+    expect(SALES_HUMAN_REQUEST_NOTICE_PROFILES).toContain('sales-production@19');
+    expect(SALES_LANE_PROFILES.map(profileLabel)).toContain('sales-production@19');
+    expect(CANARY_PROFILES.map(profileLabel)).toContain('sales-production@19');
+    expect([...SALES_PRODUCTION_PROFILES, ...SALES_CANARY_ONLY_PROFILES].map(profileLabel)).not.toContain('sales-production@19');
+    expect(() => selectedSalesProductionProfile(env('sales-production@19').config)).toThrow(/not a Sales production profile/);
+    expect(selectedSalesProductionProfile(env('sales-production@19').config, { lane: true })).toBe(v19);
+    expect(salesProductionActionPolicy(v19)).toBe(SALES_PRODUCTION_AUTONOMOUS_ACTION_POLICY);
+    expect(isQuoteLaneProfile(v19)).toBe(true);
+    expect(SALES_PRODUCTION_PROFILE_V19_GATE.every((g) => g.blocking)).toBe(true);
+    expect(SALES_PRODUCTION_PROFILE_V19_GATE.map((g) => g.id)).toEqual(expect.arrayContaining(['ux-l3', 'document-delivery-l3', 'profile-19-registered', 'explicit-authorization']));
+  });
+});
+
+describe('definition v18 = v17 with the F1 delivery, offer and validity rules', () => {
+  const v17 = loadSalesAgentDefinition(17);
+  const v18 = loadSalesAgentDefinition(18);
+  const lines17 = v17.instructions.split('\n');
+  const lines18 = v18.instructions.split('\n');
+  it('removes the shipping.quote and promotion rules; no instruction names shipping.quote or the delivery promotion', () => {
+    expect(lines17.some((l) => l.startsWith('- shipping.quote: '))).toBe(true);
+    expect(lines18.some((l) => l.startsWith('- shipping.quote: ') || l.startsWith('- Despacho Directo promotion: '))).toBe(false);
+    expect(v18.instructions).not.toMatch(/shipping\.quote|Despacho Directo|\$1/);
+  });
+
+  it('states the F1 delivery rule: no delivery offers, prices, promotions or pickup, no commune; a person for delivery questions', () => {
+    const rule = lines18.find((l) => l.startsWith('- Delivery: '))!;
+    expect(rule).toMatch(/issued without delivery/);
+    expect(rule).toMatch(/Do not offer, price or promise delivery, carriers, delivery promotions, delivery dates or store pickup, and do not ask for a commune or an address/);
+    expect(rule).toMatch(/a person of the team can coordinate it/);
+    expect(lines18.find((l) => l.startsWith('- Before quote.preview, record exclude_shipping'))).toMatch(/clear_delivery_destination first/);
+  });
+
+  it('presents the offer in the turn the quote is asked, and leaves the exact expiry to the platform', () => {
+    const preview = lines18.find((l) => l.startsWith('- quote.preview: '))!;
+    expect(preview).toMatch(/read quote\.preview in that same turn: never ask first whether to prepare or present it/);
+    expect(preview).toMatch(/your reply is presentation\.offerMessage exactly as given and nothing else/);
+    const create = lines18.find((l) => l.startsWith('- quote.create: '))!;
+    expect(create).toMatch(/say that it is valid for 60 minutes; the PDF that follows states the exact expiry date and time in Chile: never state, compute or convert the expiry date or time yourself/);
+    expect(create).toMatch(/the platform itself sends the issued quote's PDF/);
+  });
+
+  it('changes nothing else: same fields, and every other instruction line of v17 is kept', () => {
+    const changed = new Set(['- Delivery modality: ', '- Record with sales.workspace.update', '- When the customer chooses one of the shipping.quote', '- shipping.quote: ', '- Despacho Directo promotion: ', '- quote.preview: ', '- quote.create: ']);
+    const kept = lines17.filter((l) => ![...changed].some((p) => l.startsWith(p)));
+    expect(kept.every((l) => lines18.includes(l))).toBe(true);
+    expect(lines18.length).toBe(lines17.length - 2);
+    const { instructions: _a, version: _b, description: _c, ...rest18 } = v18;
+    const { instructions: _d, version: _e, description: _f, ...rest17 } = v17;
+    expect(rest18).toEqual(rest17);
+  });
+
+  it('is a candidate file: the plain bootstrap never registers it', async () => {
+    const loaded = await loadAgentDefinitionsFromDirectory(SALES_AGENT_DIR);
+    expect(loaded.map((e) => `${e.definition.agentId}@${e.definition.version}`)).not.toContain('sales@18');
+  });
+});
