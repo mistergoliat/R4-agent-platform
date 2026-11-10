@@ -6,6 +6,8 @@ const isObject = (v: unknown): v is Json => typeof v === 'object' && v !== null 
 
 /** Connection failures that prove the request never reached the provider. */
 const BEFORE_SEND = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ENETUNREACH', 'EHOSTUNREACH', 'UND_ERR_CONNECT_TIMEOUT']);
+/** A document message is not attempted with less time than this left of the submission deadline (it is not sent, so it is retried). */
+const MIN_MESSAGE_MS = 1000;
 /** Meta error code for free-form text outside the 24 h customer-service window. */
 const WINDOW_CLOSED_CODES = new Set(['131047']);
 
@@ -54,15 +56,19 @@ export class WhatsAppOutboundAdapter implements OutboundChannelAdapter {
       return result({ outcome: 'rejected', providerMessageId: null, httpStatus: null, errorClass: 'foreign_business_number', errorCode: null, retryAfterMs: null });
     }
     let message: Json = { type: 'text', text: { preview_url: false, body: submission.text } };
+    let timeoutMs = options.timeoutMs;
     if (submission.document) {
       const media = await this.#upload(submission.document, options.timeoutMs);
       if (typeof media !== 'string') return result(media);
+      // ONE deadline for the whole submission (upload + message), so the dispatch lease still outlives the call.
+      timeoutMs = options.timeoutMs - (Date.now() - started);
+      if (timeoutMs < MIN_MESSAGE_MS) return result({ outcome: 'not_sent', providerMessageId: null, httpStatus: null, errorClass: 'deadline_before_message', errorCode: null, retryAfterMs: null });
       message = { type: 'document', document: { id: media, filename: submission.document.filename, caption: submission.text } };
     }
     const url = `${this.#config.graphBaseUrl}/${this.#config.graphVersion}/${encodeURIComponent(this.#config.phoneNumberId)}/messages`;
     const body = JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: submission.recipientRef, ...message });
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), options.timeoutMs);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     let response: Awaited<ReturnType<FetchLike>>;
     let raw: string;
     try {
@@ -103,14 +109,14 @@ export class WhatsAppOutboundAdapter implements OutboundChannelAdapter {
   /** Uploads the document to the business number's media: its media id, or why nothing was sent. */
   async #upload(document: OutboundDocument, timeoutMs: number): Promise<string | Omit<SubmissionResult, 'latencyMs'>> {
     const url = `${this.#config.graphBaseUrl}/${this.#config.graphVersion}/${encodeURIComponent(this.#config.phoneNumberId)}/media`;
-    const form = new FormData();
-    form.set('messaging_product', 'whatsapp');
-    form.set('type', document.contentType);
-    form.set('file', new Blob([new Uint8Array(document.bytes)], { type: document.contentType }), document.filename);
     const notSent = (errorClass: string, httpStatus: number | null, errorCode: string | null, retryAfterMs: number | null = null) => ({ outcome: 'not_sent' as const, providerMessageId: null, httpStatus, errorClass, errorCode, retryAfterMs });
     let response: Awaited<ReturnType<FetchLike>>;
     let raw: string;
     try {
+      const form = new FormData();
+      form.set('messaging_product', 'whatsapp');
+      form.set('type', document.contentType);
+      form.set('file', new Blob([new Uint8Array(document.bytes)], { type: document.contentType }), document.filename);
       response = await this.#fetch(url, { method: 'POST', headers: { authorization: `Bearer ${this.#config.accessToken}` }, body: form, signal: AbortSignal.timeout(timeoutMs) });
       raw = await response.text();
     } catch (error) {

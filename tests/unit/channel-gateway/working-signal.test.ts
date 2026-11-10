@@ -82,7 +82,7 @@ describe('WhatsAppOutboundAdapter.signalWorking', () => {
   const config = loadWhatsAppCloudConfig({ R4_WHATSAPP_APP_SECRET: 's'.repeat(16), R4_WHATSAPP_VERIFY_TOKEN: 'v'.repeat(16), R4_WHATSAPP_ACCESS_TOKEN: 'a'.repeat(24), R4_WHATSAPP_PHONE_NUMBER_ID: '1098765432', R4_WHATSAPP_GRAPH_BASE_URL: 'http://127.0.0.1:9' }, { allowNetwork: false });
   const answering = (status: number, body: string) => {
     const requests: { url: string; body: unknown }[] = [];
-    const fetch: FetchLike = (url, init) => (requests.push({ url, body: JSON.parse(init.body) }), Promise.resolve({ status, headers: { get: () => null }, text: () => Promise.resolve(body) }));
+    const fetch: FetchLike = (url, init) => (requests.push({ url, body: JSON.parse(init.body as string) }), Promise.resolve({ status, headers: { get: () => null }, text: () => Promise.resolve(body) }));
     return { adapter: new WhatsAppOutboundAdapter(config, { fetch }), requests };
   };
 

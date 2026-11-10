@@ -29,7 +29,8 @@ export const quoteDocumentCaption = (quoteNumber: string, validUntilExclusive: s
  * (Quote PDF delivery, sales-production@18) Queues the issued quote's own PDF to its conversation as a platform notice
  * with the document: the single delivery owner sends it to the conversation's contact, under the agent-output gates.
  * Never throws — the quote is already issued and must stay so: a failure is reported (`quote.document.not_queued`,
- * without the file, its name or the recipient) and leaves the quote untouched.
+ * without the file, its name or the recipient), leaves the quote untouched and is returned as false (the quote.create
+ * result then says document.delivery = not_queued, so the agent never announces a PDF that will not come).
  */
 export function quoteDocumentDelivery(notices: QuoteDocumentNoticeSink, logger: StructuredLogger): QuoteDocumentDelivery {
   return {
@@ -43,9 +44,11 @@ export function quoteDocumentDelivery(notices: QuoteDocumentNoticeSink, logger: 
           document: { contentType: 'application/pdf', filename: quoteDocumentFilename(d.quoteNumber), sha256: d.sha256, bytes: d.bytes },
         });
         logger.info({ event: 'quote.document.queued', taskId: d.taskId, quoteId: d.quoteId, replayed, correlationId: d.correlationId }, 'quote document queued');
+        return true;
       } catch (error) {
         const code = typeof error === 'object' && error !== null && typeof (error as { code?: unknown }).code === 'string' ? (error as { code: string }).code : 'unexpected';
         logger.warn({ event: 'quote.document.not_queued', taskId: d.taskId, quoteId: d.quoteId, errorCode: code, correlationId: d.correlationId }, 'quote document not queued');
+        return false;
       }
     },
   };

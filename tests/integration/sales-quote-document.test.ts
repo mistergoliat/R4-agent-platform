@@ -104,8 +104,9 @@ async function issueOnce(profile: string, quotes: FixtureQuoteV2Service) {
   try {
     const issued = (await pool.query('select quote_id, quote_number, pdf_sha256, document_verification, valid_until_exclusive from sales.quote_v2_issued')).rows as { quote_id: string; quote_number: string; pdf_sha256: string; document_verification: string; valid_until_exclusive: Date }[];
     const documents = (await pool.query(`select o.notice_key, o.status, d.sha256, d.filename, d.bytes is null as purged from outbound_documents d join outbound_messages o using (outbound_id)`)).rows as { notice_key: string; status: string; sha256: string; filename: string; purged: boolean }[];
+    const delivery = (await pool.query(`select result->'document'->>'delivery' as delivery from action_receipts where capability_id = 'quote.create' and status = 'succeeded'`)).rows.map((r: { delivery: string | null }) => r.delivery);
     const captured = readFileSync(capture, 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { text: string; document?: { filename: string; sha256: string } });
-    return { ownerCalls, issued, documents, captured };
+    return { ownerCalls, issued, documents, captured, delivery };
   } finally {
     await pool.end();
   }
@@ -120,6 +121,7 @@ describe('quote PDF delivery (@18)', { timeout: 150_000 }, () => {
     expect(q.document_verification).toBe('verified');
     expect(r.documents).toEqual([{ notice_key: `sales.quote-document:${q.quote_id.toLowerCase()}`, status: 'accepted', sha256: q.pdf_sha256, filename: `Cotizacion-${q.quote_number}.pdf`, purged: true }]);
     const sentDocs = r.captured.filter((c) => c.document);
+    expect(r.delivery).toEqual(['queued']);
     expect(sentDocs).toEqual([expect.objectContaining({ text: quoteDocumentCaption(q.quote_number, new Date(q.valid_until_exclusive).toISOString()), document: expect.objectContaining({ sha256: q.pdf_sha256 }) })]);
   });
 
@@ -129,6 +131,8 @@ describe('quote PDF delivery (@18)', { timeout: 150_000 }, () => {
     const r = await issueOnce('sales-production@18', quotes);
     expect(r.ownerCalls).toBe(1);
     expect(r.issued.map((q) => q.document_verification)).toEqual(['mismatch']);
+    // The agent is told: the PDF will not come (definition v17 then never announces it).
+    expect(r.delivery).toEqual(['not_queued']);
     expect(r.documents).toEqual([]);
     expect(r.captured.filter((c) => c.document)).toEqual([]);
   });
@@ -137,6 +141,7 @@ describe('quote PDF delivery (@18)', { timeout: 150_000 }, () => {
     const r = await issueOnce('sales-production@17', new FixtureQuoteV2Service());
     expect(r.ownerCalls).toBe(1);
     expect(r.issued.map((q) => q.document_verification)).toEqual(['verified']);
+    expect(r.delivery).toEqual([null]);
     expect(r.documents).toEqual([]);
     expect(r.captured.filter((c) => c.document)).toEqual([]);
   });

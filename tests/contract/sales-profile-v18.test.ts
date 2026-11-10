@@ -85,8 +85,8 @@ describe('the document notice: one per quote, plain names, never throws', () => 
   it('derives its key from the quote id only, and a plain file name and caption from the quote number', async () => {
     const calls: { noticeKey: string; text: string; document: { filename: string; sha256: string } }[] = [];
     const delivery = quoteDocumentDelivery({ createPlatformNotice: (c) => (calls.push(c), Promise.resolve({ replayed: calls.length > 1 })) }, createSilentLogger());
-    await delivery.queue(doc);
-    await delivery.queue(doc);
+    expect(await delivery.queue(doc)).toBe(true);
+    expect(await delivery.queue(doc)).toBe(true);
     expect(calls.map((c) => c.noticeKey)).toEqual([quoteDocumentNoticeKey('AB-12'), quoteDocumentNoticeKey('AB-12')]);
     expect(quoteDocumentNoticeKey('AB-12')).toMatch(/^[a-z][a-z0-9._:-]{2,199}$/);
     expect(calls[0]).toMatchObject({ text: 'Cotización N° PC-000017 (PDF). Válida hasta el 10-11-2026 a las 00:17 (hora de Chile).', document: { filename: 'Cotizacion-PC-000017.pdf', sha256: 'f'.repeat(64) } });
@@ -101,7 +101,7 @@ describe('the document notice: one per quote, plain names, never throws', () => 
     const warned: unknown[] = [];
     const logger = { ...createSilentLogger(), warn: (fields: unknown) => void warned.push(fields) } as ReturnType<typeof createSilentLogger>;
     const delivery = quoteDocumentDelivery({ createPlatformNotice: () => Promise.reject(Object.assign(new Error('x'), { code: 'task_not_channel_bound' })) }, logger);
-    await expect(delivery.queue(doc)).resolves.toBeUndefined();
+    await expect(delivery.queue(doc)).resolves.toBe(false);
     expect(warned).toEqual([expect.objectContaining({ event: 'quote.document.not_queued', errorCode: 'task_not_channel_bound', quoteId: 'AB-12' })]);
     expect(JSON.stringify(warned)).not.toMatch(/Cotizacion|PC-000017/);
   });
@@ -113,7 +113,7 @@ describe('definition v17 = v16 except the document sentence of the quote.create 
   it('changes one line: the platform sends the PDF; the agent never sends it, links it or asks for an email', () => {
     const changed = v17.instructions.split('\n').filter((l) => !v16.instructions.split('\n').includes(l));
     expect(changed).toHaveLength(1);
-    expect(changed[0]).toMatch(/^- quote\.create: .*Right after issuance the platform itself sends the issued quote's PDF to this conversation; you never send it, write a link to it or ask for an email.*You cannot send the quote by email\.$/);
+    expect(changed[0]).toMatch(/^- quote\.create: .*Right after issuance the platform itself sends the issued quote's PDF to this conversation when the quote\.create result shows document\.delivery = queued; you never send it, write a link to it or ask for an email: say that the PDF follows in this conversation only in that case, and otherwise do not mention a PDF\. You cannot send the quote by email\.$/);
     expect(v17.instructions).not.toMatch(/share its document/);
     expect(v17.instructions.replace(changed[0]!, '')).toBe(v16.instructions.replace(v16.instructions.split('\n').find((l) => l.startsWith('- quote.create: '))!, ''));
     const { instructions: _a, version: _b, description: _c, ...rest17 } = v17;
