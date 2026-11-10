@@ -71,24 +71,36 @@ const INTENT_DISQUALIFIERS = new RegExp(
     String.raw`^si\s+(incluye|es|me|tiene|hay|puedes|pueden|alcanza|llega|sale)\b`,
     String.raw`\bsi\s+me\s+(haces|das|dejas)\b`,
     String.raw`\b(cambi\w*|modific\w*|agreg\w*|anad\w*|suma(le|r)?|quit\w*|saca(le|r)?|reemplaz\w*|elimin\w*|borr\w*|reduc\w*|en\s+vez|en\s+lugar|otro|otra|otros|otras|solo(?!\s+eso)|pon(le|me)?|dame|correo|mail|email|color|negro|negra|blanco|blanca|rojo|roja|azul|verde|gris|rosado|rosada)\b`,
-    String.raw`\bsin\b(?!\s+(despacho|envio|problema))`,
-    String.raw`\bcon\s+(despacho|envio|instalacion|factura)\b`,
+    String.raw`\bcon\s+(instalacion|factura)\b`,
+    // pickup and carriers are never "issue this offer as presented" (pickup is offered only when an owner returns it)
+    String.raw`\b(retir\w*|starken|chilexpress|blue\s*express|bluexpress|correos|pullman|varmontt)\b`,
     String.raw`\b(esta\s+bien\s+asi|asi\s+esta\s+bien)\b`,
     String.raw`^(ok\s+)?gracias(\s+igual)?$`,
     String.raw`\d`,
   ].join('|'),
 );
+/**
+ * Delivery words depend on the offer the customer answers: with delivery excluded, "sin despacho" agrees with it and
+ * "con despacho" asks for a change; with a delivery offer included, it is the other way round.
+ */
+const DELIVERY_CHANGE: Record<OfferDelivery, RegExp> = {
+  excluded: new RegExp([String.raw`\bsin\b(?!\s+(despacho|envio|problema))`, String.raw`\bcon\s+(despacho|envio)\b`].join('|')),
+  selected: new RegExp([String.raw`\bsin\b(?!\s+problema)`].join('|')),
+};
+
+/** Whether the offer the customer answers includes delivery (the snapshot's shipping kind). */
+export type OfferDelivery = 'excluded' | 'selected';
 
 /** The deterministic guard of @19: never an acceptance when the reply asks, rejects, hesitates or asks for a change. */
-export function guardIntentReply(text: string | null): ConfirmationVerdict {
+export function guardIntentReply(text: string | null, delivery: OfferDelivery = 'excluded'): ConfirmationVerdict {
   if (text === null || text.trim() === '') return { confirmed: false, reason: 'empty' };
   if (text.length > INTENT_MAX_LENGTH) return { confirmed: false, reason: 'too_long' };
   if (/[?¿？]/u.test(text) || NEGATIVE_EMOJI.test(text)) return { confirmed: false, reason: 'disqualified' };
   if (POSITIVE_EMOJI_ONLY.test(text)) return { confirmed: true, rule: 'agent_interpreted;emoji' };
   const normalized = normalizeMessage(text);
   if (normalized === '') return { confirmed: false, reason: 'empty' };
-  if (INTENT_DISQUALIFIERS.test(normalized)) return { confirmed: false, reason: 'disqualified' };
-  return { confirmed: true, rule: 'agent_interpreted;guard=no_question_negation_hesitation_change' };
+  if (INTENT_DISQUALIFIERS.test(normalized) || DELIVERY_CHANGE[delivery].test(normalized)) return { confirmed: false, reason: 'disqualified' };
+  return { confirmed: true, rule: `agent_interpreted;guard=no_question_negation_hesitation_change;delivery=${delivery}` };
 }
 
 export type ConfirmationVerdict =

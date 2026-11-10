@@ -134,8 +134,17 @@ En `@19` las cotizaciones pueden llevar despacho al precio que devuelve pc-carri
 - Corre la definición **v19**: la v17, con todas sus reglas de despacho, más la oferta en el mismo turno, la aceptación en lenguaje natural sin pedir frases, y la vigencia de 60 minutos sin que el agente calcule la hora.
 - La definición v18, sin despacho, quedó registrada en producción cuando `@19` estuvo unos minutos en el carril. No se modifica y ningún perfil la usa.
 
+**El guardia lee las palabras de despacho según la oferta que el cliente responde:**
+
+- **Oferta sin despacho:** «sin despacho» coincide con la oferta y «con despacho» pide un cambio.
+- **Oferta con despacho:** es al revés.
+- **En ambos casos** se rechazan el retiro y los nombres de transportistas.
+
+La definición v19 nombra también despacho, destino y transportista entre los cambios.
+
 **Pruebas:**
 
 - `@19` emite una cotización con la oferta de despacho elegida, al precio del owner, con su PDF (canary aislado).
+- No emite ante «sí, sin despacho» si la oferta incluye despacho.
 - Con la política v2 un destino no se bloquea; con v1 sí.
 - Mutaciones IA-M6 e IA-M7 (7/7).

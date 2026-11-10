@@ -73,7 +73,7 @@ const SHIPPING_STEPS = [
 ] as ScriptedStep[];
 
 /** One confirmed issuance under `profile`; what the owner issued, the R4 rows and what the delivery owner captured. */
-async function issueOnce(profile: string, quotes: FixtureQuoteV2Service, reply = 'Sí, emítela.', steps: readonly ScriptedStep[] = STEPS) {
+async function issueOnce(profile: string, quotes: FixtureQuoteV2Service, reply = 'Sí, emítela.', steps: readonly ScriptedStep[] = STEPS, ask = 'Quiero 2 barras Z, sin despacho') {
   db = await createTestDatabase('r4_it_intent_canary');
   const dir = mkdtempSync(join(tmpdir(), 'r4-intent-'));
   const capture = join(dir, 'capture.jsonl');
@@ -102,7 +102,7 @@ async function issueOnce(profile: string, quotes: FixtureQuoteV2Service, reply =
     await runtime.delivery.tick();
   };
   try {
-    const first = (await sendSynthetic(canary, { conversation: 'intent', text: 'Quiero 2 barras Z, sin despacho' }, logger)) as { taskId: string };
+    const first = (await sendSynthetic(canary, { conversation: 'intent', text: ask }, logger)) as { taskId: string };
     router.route(first.taskId, steps);
     await drain();
     await sendSynthetic(canary, { conversation: 'intent', text: reply }, logger);
@@ -138,13 +138,22 @@ describe('acceptance interpreted in natural language (@19)', { timeout: 150_000 
   });
 
   it('@19 (F1 policy v2) issues a quote with the delivery offer the customer chose, at the Shipping owner price', async () => {
-    const r = await issueOnce('sales-production@19', new FixtureQuoteV2Service(), 'dale', SHIPPING_STEPS);
+    const quotes = new FixtureQuoteV2Service();
+    const r = await issueOnce('sales-production@19', quotes, 'dale', SHIPPING_STEPS, 'Quiero 2 barras Z con despacho a Ñuñoa');
+    expect(quotes.quotes[0]!.shipping?.amounts.net ?? 0).toBeGreaterThan(0);
     expect(r.ownerCalls).toBe(1);
     expect(r.issued).toHaveLength(1);
     const offer = r.captured.find((c) => c.text.startsWith('Cotización lista para emitir'))!.text;
     expect(offer).toMatch(/^Despacho: Fixture Courier, NORMAL, a Ñuñoa.*: \$[\d.]+$/m);
     expect(offer).not.toMatch(/Despacho: no incluido/);
     expect(r.captured.filter((c) => c.document)).toHaveLength(1);
+  });
+
+  it('@19 never issues an offer with delivery when the reply declines the delivery ("sí, sin despacho"), even if proposed', async () => {
+    const r = await issueOnce('sales-production@19', new FixtureQuoteV2Service(), 'sí, sin despacho', SHIPPING_STEPS, 'Quiero 2 barras Z con despacho a Ñuñoa');
+    expect(r.ownerCalls).toBe(0);
+    expect(r.issued).toEqual([]);
+    expect(r.refusals).toEqual([{ error_code: 'customer_confirmation_not_explicit', reason: 'disqualified' }]);
   });
 
   it('@19 never issues when the reply is a question, even if the agent proposes it', async () => {

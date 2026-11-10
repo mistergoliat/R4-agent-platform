@@ -24,12 +24,17 @@ const MUTATIONS = [
   },
   {
     name: 'IA-M2 the guard ignores negations, hesitations and change requests',
-    edits: [{ file: GRAMMAR, from: '  if (INTENT_DISQUALIFIERS.test(normalized)) return', to: '  if (false) return' }],
+    edits: [{ file: GRAMMAR, from: '  if (INTENT_DISQUALIFIERS.test(normalized) || ', to: '  if (false || ' }],
     tests: [[UNIT, 'never takes']],
   },
   {
+    name: 'IA-M2b the guard ignores the delivery of the offer ("sí, sin despacho" accepts an offer with delivery)',
+    edits: [{ file: GRAMMAR, from: ' || DELIVERY_CHANGE[delivery].test(normalized)) return', to: ') return' }],
+    tests: [[UNIT, 'with a delivery offer included']],
+  },
+  {
     name: 'IA-M3 @19 still requires the closed grammar (the natural replies of the first canary are refused)',
-    edits: [{ file: CREATE, from: '  const judge = deps.naturalAcceptance === true ? INTENT_GUARD_JUDGE : CLOSED_GRAMMAR_JUDGE;', to: '  const judge = CLOSED_GRAMMAR_JUDGE;' }],
+    edits: [{ file: CREATE, from: "  const judge = deps.naturalAcceptance === true ? intentGuardJudge(built.snapshot.shipping.kind === 'selected' ? 'selected' : 'excluded') : CLOSED_GRAMMAR_JUDGE;", to: '  const judge = CLOSED_GRAMMAR_JUDGE;' }],
     tests: [[IT, '@19 issues exactly one quote']],
   },
   {

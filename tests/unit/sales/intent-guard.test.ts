@@ -46,6 +46,22 @@ describe('intent guard (r4-sales-intent-guard-es-v1)', () => {
     expect(guardIntentReply(text)).toEqual({ confirmed: false, reason });
   });
 
+  it('delivery words are read against the offer: without delivery, "con despacho" is a change and "sin despacho" agrees', () => {
+    expect(guardIntentReply('sí, sin despacho', 'excluded')).toMatchObject({ confirmed: true });
+    for (const text of ['sí, con despacho', 'dale, con envío', 'sí, retiro en tienda', 'dale, lo retiro yo', 'sí, por Starken']) {
+      expect(guardIntentReply(text, 'excluded'), text).toEqual({ confirmed: false, reason: 'disqualified' });
+    }
+  });
+
+  it('with a delivery offer included, "con despacho" agrees and "sin despacho", pickup or another carrier are changes', () => {
+    for (const text of ['sí, con despacho', 'dale, con envío', 'sí', 'dale', 'oka, me parece']) {
+      expect(guardIntentReply(text, 'selected'), text).toMatchObject({ confirmed: true, rule: expect.stringContaining('delivery=selected') });
+    }
+    for (const text of ['sí, sin despacho', 'sí, sin envío', 'sí, retiro en tienda', 'dale, lo retiro yo', 'sí, por Starken', 'ok, por Chilexpress']) {
+      expect(guardIntentReply(text, 'selected'), text).toEqual({ confirmed: false, reason: 'disqualified' });
+    }
+  });
+
   it('the closed grammar of @6–@18 is unchanged (it still refuses the natural replies of the first canary)', () => {
     for (const text of ['si', 'si emitela pls', 'sí, emítelas']) expect(parseConfirmation(text).confirmed).toBe(false);
     for (const text of ['Sí, emítela.', 'confirmo']) expect(parseConfirmation(text).confirmed).toBe(true);

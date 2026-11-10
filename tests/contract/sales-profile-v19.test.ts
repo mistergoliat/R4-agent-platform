@@ -161,7 +161,8 @@ describe('definition v19 = v17 (delivery rules kept) with the offer, acceptance 
   it('quote.preview: in the same turn once delivery is chosen or excluded; quote.create: the v18 rule verbatim (natural acceptance, validity, PDF)', () => {
     const preview = line(lines19, '- quote.preview: ');
     expect(preview).toContain('the shipping choice is recorded (or delivery excluded) and the customer asks for a quote, read quote.preview in that same turn: never ask first whether to prepare or present it');
-    expect(line(lines19, '- quote.create: ')).toBe(line(v18.instructions.split('\n'), '- quote.create: '));
+    // The v18 rule, with delivery, destination and carrier named as changes (an offer may now include delivery).
+    expect(line(lines19, '- quote.create: ')).toBe(line(v18.instructions.split('\n'), '- quote.create: ').replace('asks for a change (another product, variant, colour or quantity)', 'asks for a change (another product, variant, colour, quantity, delivery, destination or carrier)'));
   });
 
   it('is a candidate file: the plain bootstrap never registers it', async () => {

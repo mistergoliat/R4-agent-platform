@@ -36,7 +36,7 @@ No hay motores de precio, catálogos, políticas de stock ni sistemas de elegibi
 ## 2. Presentación al cliente
 
 - Una cotización sin despacho dice «Despacho: no incluido». **Nunca** se presenta como entrega gratuita ni como retiro disponible.
-- Si el cliente pide despacho, se le explica que la cotización se emite sin despacho, o se deriva a una persona.
+- (v1: `@17`, `@18`) Si el cliente pide despacho, se le explica que la cotización se emite sin despacho, o se deriva a una persona. En v2 (`@19`, §4) el despacho se cotiza.
 - Un rechazo nunca se reintenta con otra vigencia ni con otro principal.
 
 ## 3. Pendiente antes de la primera escritura real
@@ -51,7 +51,7 @@ No hay motores de precio, catálogos, políticas de stock ni sistemas de elegibi
 | Cambio respecto de v1 | Control |
 |---|---|
 | Se elimina la regla 7: la cotización **puede llevar despacho** al precio que devuelve el owner de Shipping (pc-carrier) para los productos y la comuna, incluida la promoción Despacho Directo tal como venga | `F1-COMMERCIAL-POLICY-v2` (`shippingAllowed`) solo en `@19` |
-| El precio de despacho se respeta tal cual, pero se vuelve a cotizar al emitir, como todo hecho del snapshot. Si la oferta cambió o ya no está, no se emite y el agente presenta la oferta actualizada | Snapshot (existente: oferta elegida por el cliente, mismo destino, monto exacto) |
+| El precio de despacho se respeta tal cual, pero se vuelve a cotizar al emitir, como todo hecho del snapshot. Si la oferta cambió o ya no está, no se emite (`shipping_offer_changed`, `shipping_offer_unavailable`): el cliente vuelve a elegir entre las ofertas actuales (`select_shipping_offer`) y el agente presenta la oferta nueva | Snapshot (existente: oferta elegida por el cliente, mismo destino, monto exacto) |
 | El retiro en tienda solo se ofrece si una oferta devuelta lo confirma | Definición v19 (regla de v17) |
 
 Todo lo demás de v1 sigue igual: Catalog V2 como autoridad, la procedencia, la validez acotada, el precio, el stock, sin promociones de producto, los límites F1, la vigencia de 60 minutos, sin carrito ni Checkout. **`@17` y `@18` siguen en v1, sin despacho.**
