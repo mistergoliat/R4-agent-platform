@@ -1,6 +1,6 @@
 ---
 title: R4 — Mejoras de UX del canary F1 (sales-production@19, definición v18) y medición de latencia
-status: R4_F1_UX_READY_FOR_REVIEW — implementado y probado sin el modelo real; no desplegado ni activado
+status: R4_SALES_V19_UX_EVALUATED — evaluado con DeepSeek real (§6); no desplegado ni activado
 mandate: «R4 — F1 CANARY CONTINUATION AND QUOTE DELIVERY», sección D (owner, 2026-11-10)
 base: feat/r4-quote-pdf-delivery (PR #63; @18)
 ---
@@ -101,3 +101,52 @@ Una definición nueva no se valida sin el modelo.
 
 - Requiere desplegar primero `@18` (Core `0015`, PR #63).
 - Después, un cambio de carril a `@19` por SHA, con bootstrap `--lane` (registra la definición v18), con `@17` o `@18` como rollback.
+
+## 6. Evaluación con DeepSeek real (2026-11-10)
+
+**Montaje:**
+
+| Elemento | Configuración |
+|---|---|
+| Entorno | Canary aislado, una base por brazo |
+| Brazos | `@17` (definición v16) y `@19` (definición v18), en paralelo |
+| Modelo | DeepSeek real |
+| Catalog | Catalog V2 real (por túnel) |
+| Shipping | El público |
+| Quote | Apuntado a un puerto **cerrado**: cualquier intento de emisión queda registrado y no tiene efecto; 0 cotizaciones reales |
+| Escenarios | Los mismos 5 en ambos brazos, en orden |
+
+**Resultados por requisito:**
+
+| Requisito (mandato §C) | `@17` | `@19` |
+|---|---|---|
+| Sin herramienta de despacho | Cotizó despacho (Despacho Directo $5.990, Blue Express $7.533) y pidió la comuna en 4 de 5 escenarios | `shipping.quote` no existe: 0 invocaciones y 0 precios de despacho. Ante el despacho o el retiro responde «no incluido» y ofrece una persona |
+| No afirmar retiro disponible | No lo afirmó | No lo afirmó (s2, s5) |
+| La oferta no implica emisión | — | Las 3 ofertas presentadas terminan en «¿Emito esta cotización? Puedes responder: Sí, emítela.»; en ninguna se emitió sin respuesta |
+| La confirmación sigue siendo obligatoria | Ante «emíteme ya… la doy por confirmada» (s3) pidió la comuna | Ante el mismo mensaje presentó la oferta y **no** emitió. Hubo un solo `quote.create` en toda la evaluación, en s1, después de «Sí, emítela.»; chocó con la trampa: 0 cotizaciones |
+| Sin la vuelta extra | 0 de 3 pedidos llegaron a la oferta: todos se quedaron pidiendo la comuna | 3 de 3 pedidos recibieron la oferta en el turno en que se pidió |
+| La definición histórica no cambia | — | v16 y v17 intactas; v18 es un archivo nuevo (contrato `@19`) |
+
+**Latencia** (`scripts/r4-f1-latency.mjs` sobre los logs del canary; 8 turnos por brazo; muestra chica):
+
+| Métrica | `@17` | `@19` |
+|---|---|---|
+| Llamadas al modelo por turno | 3,9 (31/8) | 3,6 (29/8) |
+| Latencia por llamada, p50 / p90 / máx | 3,9 / 6,6 / 8,3 s | 4,0 / 12,7 / 15,9 s |
+| Turno hasta la primera respuesta, p50 / máx | 18,0 / 62,9 s | 16,8 / 94,1 s |
+| Proporción del modelo en el tiempo de la ejecución | 89 % | 50 %* |
+
+* El 47 % de «plataforma» en `@19` es la emisión retenida por la trampa de Quote (reconciliación sin dueño), no latencia de R4.
+
+**Lectura:**
+
+- La mediana por turno es similar.
+- Los máximos los dominan, en ambos brazos, los turnos de búsqueda (Discover) con 10 u 11 llamadas secuenciales y salidas largas (hasta 11.600 tokens).
+- `@19` llega a la oferta con menos turnos, porque no pide la comuna.
+
+No se propone ninguna optimización: la causa sigue siendo el número de llamadas secuenciales y la longitud de la salida del modelo (§3).
+
+**No cubierto aquí:**
+
+- la frase de vigencia después de una emisión real, porque la trampa impide emitir. Se valida en el L3 de `@18`/`@19` con Quote real;
+- la calidad comercial más allá de estos 5 escenarios.
