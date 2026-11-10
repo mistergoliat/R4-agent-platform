@@ -94,6 +94,54 @@ describe('platform notice with a document (0015)', { timeout: 90_000 }, () => {
     expect((await b.rows<{ status: string; cancel_reason: string }>(`select status, cancel_reason from outbound_messages where notice_key = 'sales.quote-document:q-5'`))[0]).toEqual({ status: 'cancelled', cancel_reason: 'document_unavailable' });
   });
 
+  it('after the upload, a closed window (131047) fails the document once; its bytes are purged', async () => {
+    const { b, taskId, store } = await conversation();
+    b.provider.script({ kind: 'status', status: 400, body: { error: { code: 131047 } } });
+    await store.createPlatformNotice({ taskId, noticeKey: 'sales.quote-document:q-7', text: CAPTION, correlationId: randomUUID(), document: document() });
+    await b.deliver();
+    await b.deliver();
+    expect((await b.rows<{ status: string; error_class: string }>(`select status, error_class from outbound_messages where notice_key = 'sales.quote-document:q-7'`))[0]).toEqual({ status: 'failed', error_class: 'window_closed' });
+    expect(b.provider.uploads).toHaveLength(1);
+    expect((await staged(b, 'sales.quote-document:q-7'))[0]!.has_bytes).toBe(false);
+  });
+
+  it('after the upload, a rate-limited message is retried with a fresh upload and accepted once', async () => {
+    const { b, taskId, store } = await conversation();
+    b.provider.script({ kind: 'status', status: 429, retryAfter: '0' });
+    await store.createPlatformNotice({ taskId, noticeKey: 'sales.quote-document:q-8', text: CAPTION, correlationId: randomUUID(), document: document() });
+    await b.deliver();
+    await b.rows(`update outbound_messages set next_attempt_at = null where notice_key = 'sales.quote-document:q-8'`);
+    await b.deliver();
+    expect(b.provider.uploads).toHaveLength(2);
+    expect(b.provider.sends.filter((s) => s.document !== null && s.providerMessageId !== null)).toHaveLength(1);
+    expect((await b.rows<{ status: string }>(`select status from outbound_messages where notice_key = 'sales.quote-document:q-8'`))[0]!.status).toBe('accepted');
+    expect((await staged(b, 'sales.quote-document:q-8'))[0]!.has_bytes).toBe(false);
+  });
+
+  it('a message that times out after the upload is unknown: never re-sent; its bytes are purged', async () => {
+    const { b, taskId, store } = await conversation();
+    b.provider.script({ kind: 'hang', ms: 4000 });
+    await store.createPlatformNotice({ taskId, noticeKey: 'sales.quote-document:q-9', text: CAPTION, correlationId: randomUUID(), document: document() });
+    await b.deliver();
+    await b.rows(`update outbound_messages set next_attempt_at = null where notice_key = 'sales.quote-document:q-9'`);
+    await b.deliver();
+    expect((await b.rows<{ status: string }>(`select status from outbound_messages where notice_key = 'sales.quote-document:q-9'`))[0]!.status).toBe('unknown');
+    expect(b.provider.sends.filter((s) => s.document !== null)).toHaveLength(1);
+    expect((await staged(b, 'sales.quote-document:q-9'))[0]!.has_bytes).toBe(false);
+  });
+
+  it('a dispatch whose lease expired (the gateway died mid-call) becomes unknown: never uploaded again; bytes purged', async () => {
+    const { b, taskId, store } = await conversation();
+    await b.setAutonomy(false);
+    await store.createPlatformNotice({ taskId, noticeKey: 'sales.quote-document:q-10', text: CAPTION, correlationId: randomUUID(), document: document() });
+    await b.rows(`update outbound_messages set status = 'dispatching', attempts = 1, lease_generation = lease_generation + 1, lease_owner = 'dead-gateway', lease_expires_at = clock_timestamp() - interval '1 second', next_attempt_at = null where notice_key = 'sales.quote-document:q-10'`);
+    await b.setAutonomy(true);
+    await b.deliver();
+    expect((await b.rows<{ status: string }>(`select status from outbound_messages where notice_key = 'sales.quote-document:q-10'`))[0]!.status).toBe('unknown');
+    expect(b.provider.uploads).toHaveLength(0);
+    expect((await staged(b, 'sales.quote-document:q-10'))[0]!.has_bytes).toBe(false);
+  });
+
   it('staged bytes that no longer match their SHA-256 are never uploaded nor sent (document_integrity)', async () => {
     const { b, taskId, store } = await conversation();
     await store.createPlatformNotice({ taskId, noticeKey: 'sales.quote-document:q-6', text: CAPTION, correlationId: randomUUID(), document: document() });

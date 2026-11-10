@@ -80,4 +80,33 @@ Además:
 - **Core `0015`** cambia la compatibilidad de ejecución, así que el despliegue es **coordinado**: gateway, workers y scheduler juntos, igual que con `0014` (procedimiento del PR #62, etapa 1).
 - **El código viejo funciona sobre `0015`:** la tabla es nueva y readiness ignora migraciones extra.
 - **El código nuevo no envía documentos con `@17`.** Activar `@18` es un cambio de carril aparte, con autorización por SHA: bootstrap `--lane` registra la definición v17, y `@17` queda como rollback.
-- **Rollback:** antes de volver al código viejo no debe quedar ningún outbound pendiente con documento, porque el código viejo los enviaría como texto. Basta con cancelarlos o esperar a que se entreguen.
+- **El código nuevo exige `0015` aplicada antes de arrancar el gateway:** cada claim lee `outbound_documents`. Por eso el orden del procedimiento es migrar y después arrancar.
+- **Rollback de código a `a704319` con `@18` ya activo.** El código viejo no conoce `outbound_documents`: un outbound pendiente con documento lo enviaría solo como leyenda, sin PDF. Pasos, en este orden:
+  1. Poner el kill switch: `autonomy off`.
+  2. Detener **todos** los workers del carril `@18`. Mientras corran pueden encolar documentos nuevos.
+  3. Contar los documentos que todavía pueden enviarse, incluidos los retenidos por el kill switch o en espera de reintento:
+     ```sql
+     select count(*) from outbound_documents d join outbound_messages o using (outbound_id)
+      where o.status in ('pending', 'dispatching');
+     ```
+  4. Si el resultado es mayor que 0, cancelarlos y borrar sus bytes en una sola transacción, porque el código viejo no los purga:
+     ```sql
+     begin;
+     update outbound_messages set status = 'cancelled', cancel_reason = 'rollback_document_outbound', hold_reason = null, next_attempt_at = null, updated_at = clock_timestamp()
+      where status = 'pending' and outbound_id in (select outbound_id from outbound_documents);
+     update outbound_documents set bytes = null, purged_at = clock_timestamp()
+      where bytes is not null and outbound_id in (select outbound_id from outbound_messages where status not in ('pending', 'dispatching'));
+     commit;
+     ```
+     Si queda una fila en `dispatching`, esperar a que el sweep la deje en `unknown` y repetir los pasos 3 y 4.
+  5. Repetir el paso 3: debe dar 0. Recién entonces volver al código viejo.
+
+  Mientras el carril siga en `@17` no existen filas de documentos, así que revertir solo el despliegue de `0015` es seguro.
+
+**Notas de operación:**
+
+- **Orden de llegada.** El aviso con el PDF se crea durante la emisión, antes de que la respuesta del agente se materialice, así que normalmente el PDF llega antes que el texto de confirmación. Es aceptable: la leyenda nombra la cotización.
+- **Media en WhatsApp.** El borrado elimina la copia de R4. Cada subida crea un objeto de media en Meta, también cuando un reintento repite la subida; esos objetos no se eliminan.
+- **Sin reenvío.** Un documento que termina `failed`, `unknown` o `cancelled` no se vuelve a enviar: la clave se repite y los bytes ya se borraron. Si el cliente necesita el PDF, lo envía una persona desde Quote.
+- **Un solo plazo por envío.** Subida y mensaje comparten el plazo del proveedor. Si la subida lo agota, el mensaje no se intenta (`not_sent`) y se reintenta todo, así que el lease sigue cubriendo la llamada.
+- **El agente solo anuncia el PDF si quedó encolado.** El resultado de `quote.create` trae `document.delivery` = `queued` o `not_queued`; la definición v17 solo permite decir que el PDF va en camino con `queued`. Un `quote.document.not_queued` queda en el log como advertencia.
