@@ -5,7 +5,7 @@ import { CAPABILITY_IDS, SCOPES } from '../ids.js';
 import type { AutonomousQuoteCounters, QuoteIntentEvidenceRecord } from '../workspace/store.js';
 import { snapshotLimitBreaches, type AutonomousQuoteLimitsV6 } from './autonomy-limits.js';
 import { buildCommercialSnapshot, quoteRequestOf, type CommercialBlocker } from './commercial-snapshot.js';
-import { CONFIRMATION_GRAMMAR_VERSION, parseConfirmation } from './confirmation-grammar.js';
+import { CONFIRMATION_GRAMMAR_VERSION, parseConfirmation, type ConfirmationVerdict } from './confirmation-grammar.js';
 import { offerReference, presentsOffer } from './offer-presentation.js';
 import { QUOTE_V2_CORRELATION, QUOTE_V2_TIMEOUT_MS, classifySend, quoteCreateV2Output, reconcileQuoteV2Command, settle, type QuoteCreateV2Output, type QuoteV2CapabilityDeps } from './quote-v2.js';
 import { quoteCreateV3Input, type QuoteCreateV3Input } from './quote-v3.js';
@@ -185,7 +185,20 @@ type Located =
  * Finds the customer's confirmation of the offer that presented `reference`
  * and `gross`. Deterministic over the recorded thread; never consults the model.
  */
-export function locateConfirmation(thread: readonly ConversationThreadEntry[], reference: string, gross: number, windowSeconds: number): Located {
+/** How the customer's reply to the offer is judged: the closed grammar (default) or, for @19, the intent guard. */
+export interface ReplyJudge {
+  readonly version: string;
+  parse(text: string | null): ConfirmationVerdict;
+  /** The refusal message the agent receives when the reply is not an acceptance. */
+  readonly refusal: string;
+}
+export const CLOSED_GRAMMAR_JUDGE: ReplyJudge = Object.freeze({
+  version: CONFIRMATION_GRAMMAR_VERSION,
+  parse: parseConfirmation,
+  refusal: 'the customer\'s last message is not an explicit, unconditional confirmation of the quote: ask them to confirm it explicitly (for example "CONFIRMO")',
+});
+
+export function locateConfirmation(thread: readonly ConversationThreadEntry[], reference: string, gross: number, windowSeconds: number, judge: ReplyJudge = CLOSED_GRAMMAR_JUDGE): Located {
   const entries = [...thread].sort((a, b) => (a.cursor < b.cursor ? -1 : a.cursor > b.cursor ? 1 : 0));
   const refuse = (code: string, message: string, trace: Record<string, string | null> = {}, details: Record<string, string | number | boolean | null> = {}): Located => ({ status: 'refused', blocker: { code, message, details }, trace });
   const contacts = entries.filter((e) => e.kind === 'contact');
@@ -198,9 +211,9 @@ export function locateConfirmation(thread: readonly ConversationThreadEntry[], r
   if (entries.some((e) => (e.kind === 'agent' || e.kind === 'operator') && e.cursor > confirmation.cursor)) {
     return refuse('customer_confirmation_superseded', 'the conversation continued after the customer\'s confirmation: present the quote again and ask for a new confirmation', trace);
   }
-  const verdict = parseConfirmation(confirmation.text);
+  const verdict = judge.parse(confirmation.text);
   if (!verdict.confirmed) {
-    return refuse('customer_confirmation_not_explicit', 'the customer\'s last message is not an explicit, unconditional confirmation of the quote: ask them to confirm it explicitly (for example "CONFIRMO")', trace, { reason: verdict.reason });
+    return refuse('customer_confirmation_not_explicit', judge.refusal, trace, { reason: verdict.reason });
   }
   const offer = entries.filter((e) => (e.kind === 'agent' || e.kind === 'operator') && e.cursor < confirmation.cursor).at(-1);
   if (!offer || offer.kind !== 'agent') return refuse('customer_confirmation_without_offer', 'no agent offer precedes the customer\'s confirmation', trace);
@@ -236,7 +249,7 @@ export function locateConfirmation(thread: readonly ConversationThreadEntry[], r
       confirmationInputId,
       confirmationAt: confirmation.at,
       confirmationTextSha256: sha256(confirmation.text ?? ''),
-      grammarVersion: CONFIRMATION_GRAMMAR_VERSION,
+      grammarVersion: judge.version,
       grammarRule: verdict.rule,
     }),
   };

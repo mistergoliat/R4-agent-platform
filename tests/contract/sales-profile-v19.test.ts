@@ -55,7 +55,9 @@ describe('@19 is @18 without shipping.quote and with definition v18, a lane (and
     expect(v19.domains).toEqual(SALES_PRODUCTION_PROFILE_V18.domains);
     expect(v19.channel).toEqual(SALES_PRODUCTION_PROFILE_V18.channel);
     expect(v19.capabilities).toEqual(SALES_PRODUCTION_PROFILE_V18.capabilities.filter((c) => c.capabilityId !== 'shipping.quote'));
-    expect(ids('sales-production@19')).toEqual(ids('sales-production@18').filter((id) => !id.startsWith('shipping.quote@')));
+    // (owner decision 2026-11-10) quote.preview@4 (offer template v2) and quote.create@6 (intent) replace @3/@5 in @19 only.
+    expect(ids('sales-production@19')).toEqual(ids('sales-production@18').filter((id) => !id.startsWith('shipping.quote@')).map((id) => (id === 'quote.preview@3' ? 'quote.preview@4' : id === 'quote.create@5' ? 'quote.create@6' : id)).sort());
+    expect(ids('sales-production@18')).toEqual(expect.arrayContaining(['quote.preview@3', 'quote.create@5']));
     expect(ids('sales-production@19').some((id) => id.startsWith('shipping.quote@'))).toBe(false);
     expect(profileFingerprint(v19)).not.toBe(profileFingerprint(SALES_PRODUCTION_PROFILE_V18));
     expect(salesProductionAgentVersion(v19)).toBe(18);
@@ -95,6 +97,15 @@ describe('definition v18 = v17 with the F1 delivery, offer and validity rules', 
     expect(rule).toMatch(/Do not offer, price or promise delivery, carriers, delivery promotions, delivery dates or store pickup, and do not ask for a commune or an address/);
     expect(rule).toMatch(/a person of the team can coordinate it/);
     expect(lines18.find((l) => l.startsWith('- Before quote.preview, record exclude_shipping'))).toMatch(/clear_delivery_destination first/);
+  });
+
+  it('interprets acceptance in natural language: no literal phrase; never a question, rejection, hesitation or change', () => {
+    const create = lines18.find((l) => l.startsWith('- quote.create: '))!;
+    expect(create).toMatch(/shows that they want that quote, in any natural wording .*no literal phrase is needed/);
+    expect(create).toMatch(/Never propose it when the reply asks something, rejects, hesitates or asks for a change/);
+    expect(create).toMatch(/never repeat the same offer without answering/);
+    expect(v18.instructions).not.toContain('explicitly confirms it');
+    expect(v18.instructions).not.toContain('it already asks for an explicit confirmation');
   });
 
   it('presents the offer in the turn the quote is asked, and leaves the exact expiry to the platform', () => {

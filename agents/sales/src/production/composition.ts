@@ -52,6 +52,8 @@ import { SALES_CANARY_ONLY_PROFILES, assertF1CanaryLimits, isF1CanaryProfile } f
 import { SALES_LANE_PROFILES, isCheckoutLaneProfile, isQuoteLaneProfile, isSalesLaneProfile } from './profile-v15.js';
 import { SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_VARIANT_AVAILABILITY_PROFILES } from './profile-v17.js';
 import { SALES_QUOTE_DOCUMENT_PROFILES, SALES_QUOTE_LANE_V18_PROFILE_LABEL } from './profile-v18.js';
+import { SALES_INTENT_ACCEPTANCE_PROFILES } from './profile-v19.js';
+import { OFFER_TEMPLATE_V2 } from '../capabilities/offer-presentation.js';
 import { quoteDocumentDelivery } from '../capabilities/quote-document.js';
 import { catalogDiscoverCapability } from '../capabilities/catalog-discover.js';
 import type { CatalogDiscoverPort } from '@r4-adapters/catalog-http';
@@ -210,8 +212,8 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
           // (R4-J5 F1) The F1 canary, and the quote lane @14, run within the owner-approved canary limits, never looser.
           if (isF1CanaryProfile(profile) || isQuoteLaneProfile(profile)) assertF1CanaryLimits(limits, profileLabel(profile));
           if (options.quoteParity) options.logger.info({ quoteParity: { profile: profileLabel(profile), fingerprint: options.quoteParity.fingerprint, items: options.quoteParity.items, maxAgeSeconds: options.quoteParity.maxAgeSeconds } }, 'sales quote parity evidence configured');
-          if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV3Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now(), parity: options.quoteParity ?? null, eligibility: salesCommercialEligibility(profile) }));
-          if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV5Capability({ store: sales, quotes, catalog, shipping: options.shipping, limits, conversation: options.store, admission: controls, now: () => clock.now(), parity: options.quoteParity ?? null, eligibility: salesCommercialEligibility(profile), documents: SALES_QUOTE_DOCUMENT_PROFILES.has(profileLabel(profile)) ? quoteDocumentDelivery(options.store, options.logger) : null }));
+          if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV3Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now(), parity: options.quoteParity ?? null, eligibility: salesCommercialEligibility(profile), ...(SALES_INTENT_ACCEPTANCE_PROFILES.has(profileLabel(profile)) ? { offerTemplate: OFFER_TEMPLATE_V2 } : {}) }));
+          if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV5Capability({ store: sales, quotes, catalog, shipping: options.shipping, limits, conversation: options.store, admission: controls, now: () => clock.now(), parity: options.quoteParity ?? null, eligibility: salesCommercialEligibility(profile), documents: SALES_QUOTE_DOCUMENT_PROFILES.has(profileLabel(profile)) ? quoteDocumentDelivery(options.store, options.logger) : null, naturalAcceptance: SALES_INTENT_ACCEPTANCE_PROFILES.has(profileLabel(profile)) }));
         } else {
           if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV2Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now() }));
           if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV4Capability({ store: sales, quotes: options.quotes, catalog, shipping: options.shipping, limits, conversation: options.store, now: () => clock.now() }));

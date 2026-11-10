@@ -24,6 +24,9 @@ export function formatClp(amount: number): string {
  * already produced (no arithmetic here). A new wording is a new version.
  */
 export const OFFER_TEMPLATE_VERSION = 'r4-sales-offer-es-v1';
+/** (@19) The same offer, closing with a natural question instead of a literal phrase to copy. */
+export const OFFER_TEMPLATE_V2 = 'r4-sales-offer-es-v2';
+export type OfferTemplate = typeof OFFER_TEMPLATE_VERSION | typeof OFFER_TEMPLATE_V2;
 /** An offer longer than this is never presented (a channel text limit leaves no margin above it). */
 export const OFFER_MESSAGE_MAX_CHARS = 3500;
 
@@ -47,7 +50,7 @@ export interface OfferContent {
  * formatting marks; owner text (descriptions, carrier, places) is printed
  * as the owners wrote it.
  */
-export function renderOfferMessage(content: OfferContent, reference: string): string {
+export function renderOfferMessage(content: OfferContent, reference: string, template: OfferTemplate = OFFER_TEMPLATE_VERSION): string {
   const lines = content.lines.map((line) =>
     [
       `${line.position}. ${line.description}`,
@@ -65,7 +68,7 @@ export function renderOfferMessage(content: OfferContent, reference: string): st
     [`Neto: $${formatClp(content.totals.net)}`, `IVA: $${formatClp(content.totals.tax)}`, `Total: $${formatClp(content.totals.gross)} (IVA incluido)`].join('\n'),
     [
       'Condiciones: montos en pesos chilenos, con IVA incluido salvo el neto. No incluye descuentos ni otros cargos. Al emitir se verifican de nuevo precios, stock y despacho: si algo cambió, no se emite y te presento la oferta actualizada. El número y la validez de la cotización se informan al emitirla.',
-      '¿Emito esta cotización? Puedes responder: Sí, emítela.',
+      template === OFFER_TEMPLATE_V2 ? '¿Te emito esta cotización? Si quieres cambiar algo, dímelo.' : '¿Emito esta cotización? Puedes responder: Sí, emítela.',
     ].join('\n'),
   ].join('\n\n');
 }

@@ -5,7 +5,7 @@ import type { CapabilityRegistration } from '@r4/capability-runtime';
 import { AUTONOMOUS_QUOTE_CAPABILITY_IDS, SCOPES } from '../ids.js';
 import type { PostgresSalesStore } from '../workspace/store.js';
 import { snapshotLimitBreaches, type AutonomousQuoteLimits, type AutonomousQuoteLimitsV6 } from './autonomy-limits.js';
-import { OFFER_MESSAGE_MAX_CHARS, OFFER_TEMPLATE_VERSION, formatClp, offerReference, renderOfferMessage } from './offer-presentation.js';
+import { OFFER_MESSAGE_MAX_CHARS, OFFER_TEMPLATE_V2, OFFER_TEMPLATE_VERSION, formatClp, offerReference, renderOfferMessage, type OfferTemplate } from './offer-presentation.js';
 import { buildCommercialSnapshot, type CommercialEligibility } from './commercial-snapshot.js';
 import { domainRead, readDefinition } from './common.js';
 import type { QuoteParityGuard } from './parity-guard.js';
@@ -212,7 +212,7 @@ export const quotePreviewV3Output = quotePreviewV2Output.extend({
       commercialVersion: z.int().nonnegative(),
       grossClp: z.int().nonnegative(),
       totalText: z.string(),
-      offerTemplate: z.literal(OFFER_TEMPLATE_VERSION),
+      offerTemplate: z.enum([OFFER_TEMPLATE_VERSION, OFFER_TEMPLATE_V2]),
       offerMessage: z.string(),
       offerMessageSha256: z.string().regex(/^[0-9a-f]{64}$/),
     })
@@ -227,14 +227,18 @@ export type QuotePreviewV3Output = z.infer<typeof quotePreviewV3Output>;
  * message, and issues only if the message the customer answered is
  * byte-identical to it.
  */
-export function quotePreviewV3Capability(deps: { readonly store: Pick<PostgresSalesStore, 'workspace' | 'commercialVersion'>; readonly catalog: CatalogPort; readonly shipping: ShippingService; readonly limits: AutonomousQuoteLimitsV6; readonly now?: () => Date; readonly parity?: QuoteParityGuard | null; readonly eligibility?: CommercialEligibility | null }): CapabilityRegistration<QuotePreviewInput, QuotePreviewV3Output> {
+export function quotePreviewV3Capability(deps: { readonly store: Pick<PostgresSalesStore, 'workspace' | 'commercialVersion'>; readonly catalog: CatalogPort; readonly shipping: ShippingService; readonly limits: AutonomousQuoteLimitsV6; readonly now?: () => Date; readonly parity?: QuoteParityGuard | null; readonly eligibility?: CommercialEligibility | null; readonly offerTemplate?: OfferTemplate }): CapabilityRegistration<QuotePreviewInput, QuotePreviewV3Output> {
   const v2 = quotePreviewV2Capability(deps);
+  // (@19) quote.preview@4: the same preview with offer template v2 (a natural closing question, no phrase to copy).
+  const template = deps.offerTemplate ?? OFFER_TEMPLATE_VERSION;
+  const v4 = template === OFFER_TEMPLATE_V2;
   return {
     definition: {
       ...v2.definition,
-      description:
-        'Previews the formal quote the current Sales workspace would produce: every selected item with the catalog price for its quantity (tax included), the shipping offer the customer chose (or delivery explicitly excluded), and the net, VAT and gross totals with the Quote owner arithmetic. Takes no arguments: everything comes from the workspace and the owners now. status=blocked lists what prevents a quote; limitBreaches lists autonomy limits it exceeds (it then needs a human). presentation is present only when status=ready and issuable=true; then presentation.offerMessage is the complete offer message, written by Sales: reply to the customer with exactly that text and nothing else (no words before or after it, no character changed). The quote is issued only if the message the customer confirmed is identical to it.',
-      version: 3,
+      description: v4
+        ? 'Previews the formal quote the current Sales workspace would produce: every selected item with the catalog price for its quantity (tax included), delivery excluded, and the net, VAT and gross totals with the Quote owner arithmetic. Takes no arguments: everything comes from the workspace and the owners now. status=blocked lists what prevents a quote; limitBreaches lists autonomy limits it exceeds (it then needs a human). presentation is present only when status=ready and issuable=true; then presentation.offerMessage is the complete offer message, written by Sales: reply to the customer with exactly that text and nothing else (no words before or after it, no character changed). The quote is issued when the customer accepts that offer in their own words; a question or a change request is not an acceptance.'
+        : 'Previews the formal quote the current Sales workspace would produce: every selected item with the catalog price for its quantity (tax included), the shipping offer the customer chose (or delivery explicitly excluded), and the net, VAT and gross totals with the Quote owner arithmetic. Takes no arguments: everything comes from the workspace and the owners now. status=blocked lists what prevents a quote; limitBreaches lists autonomy limits it exceeds (it then needs a human). presentation is present only when status=ready and issuable=true; then presentation.offerMessage is the complete offer message, written by Sales: reply to the customer with exactly that text and nothing else (no words before or after it, no character changed). The quote is issued only if the message the customer confirmed is identical to it.',
+      version: v4 ? 4 : 3,
     },
     input: quotePreviewInput,
     output: quotePreviewV3Output,
@@ -243,14 +247,14 @@ export function quotePreviewV3Capability(deps: { readonly store: Pick<PostgresSa
       const preview = await v2.handler(input, context);
       // Only an issuable quote is offered: with a limit breach there is nothing the customer could confirm.
       if (preview.status !== 'ready' || !preview.issuable || !preview.snapshot || !preview.presentation) return { ...preview, presentation: null };
-      const offerMessage = renderOfferMessage(preview.snapshot, preview.presentation.reference);
+      const offerMessage = renderOfferMessage(preview.snapshot, preview.presentation.reference, template);
       if (offerMessage.length > OFFER_MESSAGE_MAX_CHARS) {
         return {
           ...preview, status: 'blocked' as const, previewId: null, snapshot: null, limitBreaches: [], issuable: false, presentation: null,
           blockers: [{ code: 'offer_message_too_long', message: `the offer message would exceed ${OFFER_MESSAGE_MAX_CHARS} characters: reduce the number of lines`, details: { characters: offerMessage.length, limit: OFFER_MESSAGE_MAX_CHARS } }],
         };
       }
-      return { ...preview, presentation: { ...preview.presentation, offerTemplate: OFFER_TEMPLATE_VERSION, offerMessage, offerMessageSha256: createHash('sha256').update(offerMessage).digest('hex') } };
+      return { ...preview, presentation: { ...preview.presentation, offerTemplate: template, offerMessage, offerMessageSha256: createHash('sha256').update(offerMessage).digest('hex') } };
     },
   };
 }

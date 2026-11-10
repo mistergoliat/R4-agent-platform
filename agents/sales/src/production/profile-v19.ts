@@ -22,6 +22,13 @@ export const SALES_PRODUCTION_PROFILE_V19: ProductionProfile = Object.freeze({
 
 export const SALES_QUOTE_LANE_V19_PROFILE_LABEL = 'sales-production@19';
 
+/**
+ * (owner decision «Activación @18, cierre @19 y decisiones R4-L», 2026-11-10) Profiles whose quote issuance follows the
+ * customer's intent as the agent interprets it (quote.preview@4 with offer template v2, quote.create@6 with the intent
+ * guard) instead of the closed confirmation grammar. Every other control is unchanged. @17 and @18 keep the grammar.
+ */
+export const SALES_INTENT_ACCEPTANCE_PROFILES: ReadonlySet<string> = new Set([SALES_QUOTE_LANE_V19_PROFILE_LABEL]);
+
 /** What must be true before @19 is activated on the lane: what @18 requires, plus the UX evaluation with the real model. */
 export const SALES_PRODUCTION_PROFILE_V19_GATE = Object.freeze([
   ...SALES_PRODUCTION_PROFILE_V18_GATE.filter((g) => g.id !== 'profile-18-registered' && g.id !== 'explicit-authorization'),

@@ -33,6 +33,29 @@ const COURTESY: readonly (readonly string[])[] = [['por', 'favor'], ['porfa'], [
 /** Signals that a message is NOT an unconditional confirmation, whatever else it says. */
 const DISQUALIFIERS = /[?¿]|\b(no|nunca|todavia|aun|pero|aunque|si\s+es\s+que|cambia|cambiar|cambiame|otro|otra|otros|otras|despues|luego|espera|esperar|mejor|quizas|tal\s+vez|creo|primero|cuanto|cuando|que\s+pasa)\b/;
 
+/**
+ * (sales-production@19, owner decision «Activación @18, cierre @19 y decisiones R4-L», 2026-11-10) Quote issuance
+ * follows the customer's commercial intent as the AGENT interprets it in natural language ("sí", "dale", "oka, me
+ * parece", "sí, emítelas"…): no literal phrase is required. A quote is not a purchase, a payment or a reservation.
+ * The platform keeps a deterministic guard on the customer's reply: a question, a negation, a hesitation or a change
+ * request is never taken as acceptance, whatever the agent proposes. Every other control (the exact offer presented
+ * and delivered, immediacy, the window, prices, stock, F1 limits, idempotency, concurrency) is unchanged.
+ */
+export const INTENT_GUARD_VERSION = 'r4-sales-intent-guard-es-v1';
+const INTENT_MAX_LENGTH = 400;
+const INTENT_DISQUALIFIERS = /\b(no|nop|nunca|todavia|aun|pero|aunque|si\s+es\s+que|cambi\w*|modific\w*|agreg\w*|sum[ae]\w*|quit\w*|sac[ao]\w*|en\s+vez|en\s+lugar|otro|otra|otros|otras|despues|luego|manana|espera|esperame|esperar|mejor|quizas|quiza|tal\s+vez|creo|pensarlo|pensar|lo\s+pienso|primero|cuanto|cuando|que\s+pasa|dudo|duda)\b/;
+
+/** The deterministic guard of @19: never an acceptance when the reply asks, rejects, hesitates or asks for a change. */
+export function guardIntentReply(text: string | null): ConfirmationVerdict {
+  if (text === null || text.trim() === '') return { confirmed: false, reason: 'empty' };
+  if (text.length > INTENT_MAX_LENGTH) return { confirmed: false, reason: 'too_long' };
+  if (/[?¿]/.test(text)) return { confirmed: false, reason: 'disqualified' };
+  const normalized = normalizeMessage(text);
+  if (normalized === '') return { confirmed: false, reason: 'empty' };
+  if (INTENT_DISQUALIFIERS.test(normalized)) return { confirmed: false, reason: 'disqualified' };
+  return { confirmed: true, rule: 'agent_interpreted;guard=no_question_negation_hesitation_change' };
+}
+
 export type ConfirmationVerdict =
   | { readonly confirmed: true; readonly rule: string }
   | { readonly confirmed: false; readonly reason: 'empty' | 'too_long' | 'disqualified' | 'not_a_confirmation' };
