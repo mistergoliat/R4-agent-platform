@@ -146,7 +146,7 @@ Una definición nueva no se valida sin el modelo.
 
 No se propone ninguna optimización: la causa sigue siendo el número de llamadas secuenciales y la longitud de la salida del modelo (§3).
 
-**Versión evaluada:** la definición v18 previa a la revisión de #63. Después de esa revisión v17 cambió una sola frase (el agente anuncia el PDF solo si `document.delivery = queued`), y v18 se regeneró desde ella. Esa frase solo actúa después de una emisión real, y en esta evaluación no hubo ninguna, así que los resultados de arriba no cambian.
+**Versión evaluada:** la definición v18 previa a la revisión de #63 y previa a la aceptación en lenguaje natural (#66), que cambió de nuevo v18 antes de cualquier registro en producción. La evaluación de #66 se reporta aparte (`R4_SALES_V19_INTENT_ACCEPTANCE.md`). Después de esa revisión v17 cambió una sola frase (el agente anuncia el PDF solo si `document.delivery = queued`), y v18 se regeneró desde ella. Esa frase solo actúa después de una emisión real, y en esta evaluación no hubo ninguna, así que los resultados de arriba no cambian.
 
 **No cubierto aquí:**
 

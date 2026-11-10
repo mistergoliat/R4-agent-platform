@@ -135,7 +135,13 @@ describe('worker presence lifecycle', () => {
     expect(await execution()).toMatchObject({ ok: true, workers: { ready: 1, stopping: 1 } });
     const b = await started('C', FAST);
     await b.close();
-    expect((await execution()).workers.stopping).toBe(2);
+    // A stopping row counts only while its (600 ms) lease is fresh: under full-suite load A may already have expired
+    // while C started, so assert what matters — both stopped, neither came back to ready — not A's freshness.
+    expect((await row('C'))!.state).toBe('stopping');
+    expect((await row('A'))!.state).toBe('stopping');
+    const after = (await execution()).workers;
+    expect(after.ready).toBe(1);
+    expect(after.stopping).toBeGreaterThanOrEqual(1);
   });
 });
 

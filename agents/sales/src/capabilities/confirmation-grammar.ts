@@ -33,6 +33,64 @@ const COURTESY: readonly (readonly string[])[] = [['por', 'favor'], ['porfa'], [
 /** Signals that a message is NOT an unconditional confirmation, whatever else it says. */
 const DISQUALIFIERS = /[?¿]|\b(no|nunca|todavia|aun|pero|aunque|si\s+es\s+que|cambia|cambiar|cambiame|otro|otra|otros|otras|despues|luego|espera|esperar|mejor|quizas|tal\s+vez|creo|primero|cuanto|cuando|que\s+pasa)\b/;
 
+/**
+ * (sales-production@19, owner decision «Activación @18, cierre @19 y decisiones R4-L», 2026-11-10) Quote issuance
+ * follows the customer's commercial intent as the AGENT interprets it in natural language ("sí", "dale", "oka, me
+ * parece", "sí, emítelas"…): no literal phrase is required. A quote is not a purchase, a payment or a reservation.
+ * The platform keeps a deterministic guard on the customer's reply: a question, a negation, a hesitation or a change
+ * request is never taken as acceptance, whatever the agent proposes. Every other control (the exact offer presented
+ * and delivered, immediacy, the window, prices, stock, F1 limits, idempotency, concurrency) is unchanged.
+ */
+export const INTENT_GUARD_VERSION = 'r4-sales-intent-guard-es-v1';
+const INTENT_MAX_LENGTH = 400;
+/** A reply made only of approving emojis: the agent may take it as acceptance. */
+const POSITIVE_EMOJI_ONLY = /^(?:\s|👍[🏻-🏿]?|✅|👌[🏻-🏿]?|🙌[🏻-🏿]?|💯|🤝|✔️?|☑️?|🙏[🏻-🏿]?|😊|🙂|😀|😃|😄|😁|🔥|💪[🏻-🏿]?)+$/u;
+/** Emojis that are never an acceptance: dislike, doubt, anger, eye-roll, laughter, refusal. */
+const NEGATIVE_EMOJI = /👎|🤔|😡|😠|🙄|😂|🤣|😕|😐|😑|😒|🤨|😬|🙅|❌|⛔|🚫/u;
+/**
+ * What is never an acceptance, on the normalized text (lowercase, no accents, punctuation as spaces): negations and
+ * Chilean refusals, hesitations and postponements, questions written without a question mark, price talk, conditions,
+ * and any change (another product, variant, colour, quantity: any digit). The agent remains the primary judge; this
+ * list only refuses what is certainly not "issue this offer as presented". A harmless false refusal ("sí, no hay
+ * problema") makes the agent ask again; a false acceptance would issue the wrong quote.
+ */
+const INTENT_DISQUALIFIERS = new RegExp(
+  [
+    // negations and refusals
+    String.raw`\b(no+|nop[oe]?|nah|nel|nones|negativo|nada|nunca|paso|filo|chao|cancel\w*|olvid\w*|dej\w*lo|dejalo|ni\s+(idea|ahi|cagando|loco|ahi))\b`,
+    // hesitations and postponements
+    String.raw`\b(todavia|aun|pero+|aunque|m{2,}|h?m{2,}|hm+|(ja){2,}j?|(je){2,}|si\s+es\s+que|despues|luego|manana|esper\w*|mejor|quizas?|kizas?|tal\s*vez|capaz|puede\s+ser|a\s+ver|veremos|veamos|lo\s+veo|te\s+(aviso|confirmo|cuento)|(mas|en\s+un)\s+rato|mas\s+tarde|un\s+momento|semana|por\s+ahora|creo|pens\w*|primero|dud\w*|nose|ns|consult\w*|revis\w*|dejame\s+ver|igual)\b`,
+    // questions without a question mark
+    String.raw`^(cual|cuales|como|donde|cuando|cuanto|cuanta|por\s+que|hay|tienen|tiene|incluye|puedo|puede|se\s+puede|aceptan|acepta|me\s+la\s+pueden|me\s+lo\s+pueden)\b`,
+    String.raw`^que\b(?!\s+(bueno|buena|bacan|genial|rico|bien|lindo|linda)\b)`,
+    String.raw`\b(y\s+(si|el|la|los|las|con|sin|que|cuanto|como)|incluye|que\s+pasa|cuanto|cuando)\b`,
+    // price talk
+    String.raw`\b(descuento\w*|rebaj\w*|caro|cara|carisim\w*|presupuesto|cuota\w*|factura\w*|precio\w*|lucas|excede)\b`,
+    String.raw`\$`,
+    // conditions and changes (product, variant, colour, quantity)
+    String.raw`^si\s+(incluye|es|me|tiene|hay|puedes|pueden|alcanza|llega|sale)\b`,
+    String.raw`\bsi\s+me\s+(haces|das|dejas)\b`,
+    String.raw`\b(cambi\w*|modific\w*|agreg\w*|anad\w*|suma(le|r)?|quit\w*|saca(le|r)?|reemplaz\w*|elimin\w*|borr\w*|reduc\w*|en\s+vez|en\s+lugar|otro|otra|otros|otras|solo(?!\s+eso)|pon(le|me)?|dame|correo|mail|email|color|negro|negra|blanco|blanca|rojo|roja|azul|verde|gris|rosado|rosada)\b`,
+    String.raw`\bsin\b(?!\s+(despacho|envio|problema))`,
+    String.raw`\bcon\s+(despacho|envio|instalacion|factura)\b`,
+    String.raw`\b(esta\s+bien\s+asi|asi\s+esta\s+bien)\b`,
+    String.raw`^(ok\s+)?gracias(\s+igual)?$`,
+    String.raw`\d`,
+  ].join('|'),
+);
+
+/** The deterministic guard of @19: never an acceptance when the reply asks, rejects, hesitates or asks for a change. */
+export function guardIntentReply(text: string | null): ConfirmationVerdict {
+  if (text === null || text.trim() === '') return { confirmed: false, reason: 'empty' };
+  if (text.length > INTENT_MAX_LENGTH) return { confirmed: false, reason: 'too_long' };
+  if (/[?¿？]/u.test(text) || NEGATIVE_EMOJI.test(text)) return { confirmed: false, reason: 'disqualified' };
+  if (POSITIVE_EMOJI_ONLY.test(text)) return { confirmed: true, rule: 'agent_interpreted;emoji' };
+  const normalized = normalizeMessage(text);
+  if (normalized === '') return { confirmed: false, reason: 'empty' };
+  if (INTENT_DISQUALIFIERS.test(normalized)) return { confirmed: false, reason: 'disqualified' };
+  return { confirmed: true, rule: 'agent_interpreted;guard=no_question_negation_hesitation_change' };
+}
+
 export type ConfirmationVerdict =
   | { readonly confirmed: true; readonly rule: string }
   | { readonly confirmed: false; readonly reason: 'empty' | 'too_long' | 'disqualified' | 'not_a_confirmation' };

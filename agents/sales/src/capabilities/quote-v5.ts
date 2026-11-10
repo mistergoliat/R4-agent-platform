@@ -4,12 +4,13 @@ import type { WriteCapabilityRegistration, WriteExecutionResult, WriteHandlerCon
 import { CAPABILITY_IDS, SCOPES } from '../ids.js';
 import { snapshotLimitBreaches } from './autonomy-limits.js';
 import { buildCommercialSnapshot, quoteRequestOf, type CommercialBlocker } from './commercial-snapshot.js';
-import { OFFER_MESSAGE_MAX_CHARS, OFFER_TEMPLATE_VERSION, offerReference, renderOfferMessage } from './offer-presentation.js';
+import { INTENT_GUARD_VERSION, guardIntentReply } from './confirmation-grammar.js';
+import { OFFER_MESSAGE_MAX_CHARS, OFFER_TEMPLATE_V2, OFFER_TEMPLATE_VERSION, offerReference, renderOfferMessage } from './offer-presentation.js';
 import type { QuoteParityGuard } from './parity-guard.js';
 import type { CommercialEligibility } from './commercial-snapshot.js';
 import { QUOTE_V2_CORRELATION, QUOTE_V2_TIMEOUT_MS, classifySend, quoteCreateV2Output, reconcileQuoteV2Command, settle, type QuoteCreateV2Output, type QuoteDocumentDelivery } from './quote-v2.js';
 import { quoteCreateV3Input, type QuoteCreateV3Input } from './quote-v3.js';
-import { confirmedQuoteRefusalMessage, judgeConfirmedQuote, locateConfirmation, type QuoteV4CapabilityDeps } from './quote-v4.js';
+import { CLOSED_GRAMMAR_JUDGE, confirmedQuoteRefusalMessage, judgeConfirmedQuote, locateConfirmation, type QuoteV4CapabilityDeps, type ReplyJudge } from './quote-v4.js';
 
 /**
  * The kill switch as quote.create@5 reads it, structurally (satisfied by the
@@ -28,7 +29,24 @@ export interface QuoteV5CapabilityDeps extends QuoteV4CapabilityDeps {
   readonly eligibility?: CommercialEligibility | null;
   /** (Quote PDF delivery, @18) When configured, an issued quote's verified PDF is queued for its conversation. */
   readonly documents?: QuoteDocumentDelivery | null;
+  /**
+   * (@19, owner decision 2026-11-10) quote.create@6: the agent interprets the customer's acceptance in natural language
+   * (offer template v2, intent guard); the closed grammar is not required. Absent/false: quote.create@5 (grammar).
+   */
+  readonly naturalAcceptance?: boolean;
 }
+
+/** (@19) The judge of the customer's reply: the agent interprets; the platform refuses questions, negations, hesitations and changes. */
+export const INTENT_GUARD_JUDGE: ReplyJudge = Object.freeze<ReplyJudge>({
+  version: INTENT_GUARD_VERSION,
+  parse: guardIntentReply,
+  refusal: (reason) =>
+    reason === 'empty'
+      ? 'the customer\'s reply to the offer has no words you can rely on (for example only punctuation): nothing was issued; ask briefly whether they want this quote issued, without presenting the offer again'
+      : reason === 'too_long'
+        ? 'the customer\'s reply to the offer is long: nothing was issued; answer what they wrote and, if they still want this quote, ask briefly whether to issue it'
+        : 'the customer\'s reply to the offer is a question, a negation, a hesitation, a condition or a change request, not an acceptance: nothing was issued; answer it or adjust the selection first, and present a new offer only in a later reply when the quote changes; never present the same offer again without answering',
+});
 
 /** Failure code of an issuance stopped by the kill switch before anything reached the Quote owner. */
 export const QUOTE_WRITES_BLOCKED = 'autonomy_disabled';
@@ -67,11 +85,14 @@ export function quoteWritesBlockedError(): DomainError {
 export function quoteCreateV5Capability(deps: QuoteV5CapabilityDeps): WriteCapabilityRegistration<QuoteCreateV3Input, QuoteCreateV2Output> {
   const { store, quotes } = deps;
   const now = deps.now ?? (() => new Date());
+  const natural = deps.naturalAcceptance === true;
   return {
     definition: {
       capabilityId: CAPABILITY_IDS.quoteCreate,
-      version: 5,
-      description:
+      version: natural ? 6 : 5,
+      description: natural
+        ? 'Issues the formal quote (Quote owner V2) previewed by quote.preview, without a human approval, once the customer accepts the offer Sales wrote, in their own words. Before proposing: quote.preview returned status=ready and issuable=true, your LAST message to the customer was presentation.offerMessage exactly as given, and the customer\'s reply shows that they want that quote (for example "sí", "dale", "ok", "me parece", "perfecto", "sí, emítelas", "mándamela"; any natural wording, no literal phrase). Never propose it when the reply asks something, rejects, hesitates or asks for a change: answer or adjust first. The only argument is the previewId. The platform compares your message with the offer Sales rendered and refuses a reply that is a question, a negation, a hesitation or a change request; it never decides acceptance for you. Refused, with nothing issued, when your message was not exactly the current offerMessage or anything changed since (offer_not_presented, preview_stale: preview again and reply with the new offerMessage), when the reply came too late, when an autonomy limit would be exceeded, when the same quote was already issued, or when autonomous operation is disabled (autonomy_disabled: nothing was sent; say the quote cannot be issued right now). When the outcome is uncertain because the quote owner did not answer or was unavailable, the platform keeps reconciling the same issuance under the same key: tell the customer it is pending and will be confirmed, and do not present the offer again or propose another issuance. Quote numbers, totals and validity come only from the result of an issued quote.'
+        :
         'Issues the formal quote (Quote owner V2) previewed by quote.preview, without a human approval, once the customer has explicitly confirmed the exact offer Sales wrote. Before proposing: quote.preview returned status=ready and issuable=true, your LAST message to the customer was presentation.offerMessage exactly as given (nothing added, removed or changed), and the customer\'s reply is an explicit confirmation. The only argument is the previewId. The platform reads the customer\'s confirmation from their own message and compares your message with the offer Sales rendered, never from you. Refused, with nothing issued, when the customer\'s last message is not an explicit, unconditional confirmation (reply again with presentation.offerMessage exactly), when your message was not exactly the current offerMessage or anything changed since (offer_not_presented, preview_stale: preview again and reply with the new offerMessage), when the confirmation came too late, when an autonomy limit would be exceeded, when the same quote was already issued, or when autonomous operation is disabled (autonomy_disabled: nothing was sent; say the quote cannot be issued right now). When the outcome is uncertain because the quote owner did not answer or was unavailable, the platform keeps reconciling the same issuance under the same key: tell the customer it is pending and will be confirmed, and do not present the offer again or propose another issuance. Quote numbers, totals and validity come only from the result of an issued quote.',
       owner: 'quote',
       riskClass: 'IRREVERSIBLE_WRITE',
@@ -185,21 +206,23 @@ async function decide(deps: QuoteV5CapabilityDeps, input: QuoteCreateV3Input, co
   const commercialVersion = await store.commercialVersion(taskId);
   const reference = offerReference(built.previewId, commercialVersion);
   const gross = built.snapshot.totals.gross;
-  const expected = renderOfferMessage(built.snapshot, reference);
-  const offer = { reference, offerTemplate: OFFER_TEMPLATE_VERSION, offerMessageSha256: sha256(expected) };
+  const template = deps.naturalAcceptance === true ? OFFER_TEMPLATE_V2 : OFFER_TEMPLATE_VERSION;
+  const expected = renderOfferMessage(built.snapshot, reference, template);
+  const offer = { reference, offerTemplate: template, offerMessageSha256: sha256(expected) };
   if (expected.length > OFFER_MESSAGE_MAX_CHARS) {
     return refuse({ code: 'offer_message_too_long', message: `the offer message would exceed ${OFFER_MESSAGE_MAX_CHARS} characters and is never presented`, details: { characters: expected.length, limit: OFFER_MESSAGE_MAX_CHARS } }, { snapshot: built.snapshot, confirmation: offer });
   }
 
   // 3. The conversation the platform recorded: the offer message, its delivery and the customer's confirmation (quote.create@4 rules).
-  const found = locateConfirmation(await deps.conversation.thread(taskId), reference, gross, limits.confirmationWindowSeconds);
+  const judge = deps.naturalAcceptance === true ? INTENT_GUARD_JUDGE : CLOSED_GRAMMAR_JUDGE;
+  const found = locateConfirmation(await deps.conversation.thread(taskId), reference, gross, limits.confirmationWindowSeconds, judge);
   if (found.status !== 'confirmed') return refuse(found.blocker, { snapshot: built.snapshot, confirmation: { ...offer, ...found.trace } });
   const evidence = found.evidence(commercialVersion, reference, gross);
 
   // 4. Byte for byte: the message the customer answered IS the Sales rendering (the evidence keeps its SHA-256, 0009).
   if (evidence.offerTextSha256 !== offer.offerMessageSha256) {
     return refuse(
-      { code: 'offer_not_presented', message: 'the message the customer answered is not exactly the offer Sales rendered for this quote (every line, amount, shipping, total and the reference must match character for character): preview again and reply with presentation.offerMessage exactly', details: { offerTemplate: OFFER_TEMPLATE_VERSION, expectedSha256: offer.offerMessageSha256, presentedSha256: evidence.offerTextSha256 } },
+      { code: 'offer_not_presented', message: 'the message the customer answered is not exactly the offer Sales rendered for this quote (every line, amount, shipping, total and the reference must match character for character): preview again and reply with presentation.offerMessage exactly', details: { offerTemplate: template, expectedSha256: offer.offerMessageSha256, presentedSha256: evidence.offerTextSha256 } },
       { snapshot: built.snapshot, confirmation: { ...offer, offerRef: evidence.offerRef, confirmationInputId: evidence.confirmationInputId } },
     );
   }
