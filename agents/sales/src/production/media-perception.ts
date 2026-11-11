@@ -265,12 +265,15 @@ function withDeadline<T>(work: (signal: AbortSignal) => Promise<T>, ms: number):
 }
 
 export class SalesMediaPerceiver implements MediaPerception {
+  /** Only the kinds whose provider is configured (images without the STT key: audio stays held for a person). */
+  readonly kinds: ReadonlySet<MediaKind>;
   readonly #o: SalesMediaPerceiverOptions;
   readonly #limits: MediaPerceptionLimits;
 
   constructor(options: SalesMediaPerceiverOptions) {
     this.#o = options;
     this.#limits = { ...DEFAULT_MEDIA_LIMITS, ...options.limits };
+    this.kinds = new Set<MediaKind>([...(options.describer ? ['image' as const] : []), ...(options.transcriber ? ['audio' as const] : [])]);
   }
 
   async perceive(ref: InboundMediaRef, context: { readonly accountRef: string }): Promise<SalesMediaPerceptionResult> {

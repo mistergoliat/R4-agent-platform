@@ -249,6 +249,22 @@ describe('inbound multimodal v1 (gateway)', { timeout: 60_000 }, () => {
 
 });
 
+describe('inbound multimodal v1 with images only (no transcription credential)', { timeout: 60_000 }, () => {
+  it('a voice note is held for a person exactly as before (never downloaded); an image is perceived', async () => {
+    const imagesOnly = await LiveOpsTestbed.start({ allowlist: [ALLOWED], autonomy: true, env: { R4_MEDIA_PERCEPTION: 'enabled', R4_MEDIA_PERCEPTION_PROFILES: 'sales-production@1', R4_PERCEPTION_VISION_BASE_URL: perception.url, R4_PERCEPTION_VISION_API_KEY: 'perception-test-key' } });
+    try {
+      imagesOnly.provider.hostMedia('voice-x', { bytes: oggOpus(4), mimeType: 'audio/ogg; codecs=opus' });
+      imagesOnly.provider.hostMedia('img-y', { bytes: JPEG, mimeType: 'image/jpeg' });
+      await imagesOnly.customer(ALLOWED, 'wamid.io.1', '', { type: 'audio', media: { id: 'voice-x', mimeType: 'audio/ogg; codecs=opus', voice: true } });
+      const audio = await settled(imagesOnly, 'wamid.io.1');
+      expect(audio).toMatchObject({ content_kind: 'unsupported', content_type: 'audio', disposition: 'held:unsupported_inbound_content' });
+      expect(imagesOnly.provider.mediaRequests.filter((r) => r.mediaId === 'voice-x')).toEqual([]);
+    } finally {
+      await imagesOnly.close();
+    }
+  });
+});
+
 describe('inbound multimodal v1 enabled for another profile only', { timeout: 60_000 }, () => {
   it('a profile perception was not enabled for keeps holding media for a person (nothing downloaded)', async () => {
     const other = await LiveOpsTestbed.start({ allowlist: [ALLOWED], autonomy: true, env: { R4_MEDIA_PERCEPTION: 'enabled', R4_MEDIA_PERCEPTION_PROFILES: 'sales-production@19', R4_PERCEPTION_VISION_BASE_URL: perception.url, R4_PERCEPTION_VISION_API_KEY: 'perception-test-key' } });

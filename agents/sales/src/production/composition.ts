@@ -400,7 +400,7 @@ export function salesMediaPerception(env: Readonly<Record<string, string | undef
     ...(c.transcriber ? { transcriber: c.transcriber } : {}),
     transcriptionPrompt: c.transcriptionPromptOverride ?? SALES_TRANSCRIPTION_PROMPT,
   });
-  return { perception: { perception, profiles }, describe: { ...c.description, mediaPerceptionProfiles: profiles.join(',') } };
+  return { perception: { perception, profiles }, describe: { ...c.description, mediaPerceptionProfiles: profiles.join(','), mediaPerceptionKinds: [...perception.kinds].join(',') || 'none' } };
 }
 
 /** (ADR-045) The lane variables of the gateway: both set (the lane) or neither (exactly R4-I). */

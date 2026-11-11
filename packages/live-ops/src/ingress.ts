@@ -6,7 +6,7 @@ import { canonicalInboundSchema, type CanonicalInbound, type HeaderBag, type Inb
 import type { AutonomyControls } from './controls.js';
 import type { ProductionConfig, ProductionSecrets } from './mode.js';
 import type { InboundInspector } from './inspection.js';
-import { mediaRefContent, parseMediaRefContent, type MediaPerception } from './media.js';
+import { mediaRefContent, parseMediaRefContent, type MediaKind, type MediaPerception } from './media.js';
 import type { OutboundDeliveryRuntime } from './outbound.js';
 import type { ConversationBindingRecord, InboundEventRecord, ProductionStore } from './ports.js';
 import { profileFingerprint, profileLabel, type ProductionProfile } from './profile.js';
@@ -205,7 +205,7 @@ export class ChannelIngress {
     const event = canonicalInboundSchema.parse(raw);
     const key = conversationKey(this.#o.secrets.identityHashKey, event.channel, event.accountRef, event.conversationRef);
     // Without perception, a media item is recorded exactly as before multimodal v1 (`unsupported`, its type only).
-    const c = event.content.kind === 'media' && !this.#perceivesMedia() ? { kind: 'unsupported' as const, contentType: event.content.mediaKind } : event.content;
+    const c = event.content.kind === 'media' && !this.#perceivesMedia(undefined, event.content.mediaKind) ? { kind: 'unsupported' as const, contentType: event.content.mediaKind } : event.content;
     // A media item keeps only its provider reference until it is perceived (or held as unsupported); never bytes.
     const text = c.kind === 'text' ? c.text : c.kind === 'media'
       ? mediaRefContent({ kind: c.mediaKind, mediaId: c.mediaId, mimeType: c.mimeType, sha256: c.sha256, caption: c.caption, voice: c.voice })
@@ -273,9 +273,10 @@ export class ChannelIngress {
    * Media is perceived only when perception is composed, no inspector is (its guarantees cover text only) and, for a
    * given binding, its profile is one perception was enabled for. Without a label: for any profile of this gateway.
    */
-  #perceivesMedia(profileLabel?: string): boolean {
+  #perceivesMedia(profileLabel?: string, kind?: string | null): boolean {
     const m = this.#o.media;
-    return m !== undefined && this.#o.inspector === undefined && (profileLabel === undefined || m.profiles.includes(profileLabel));
+    return m !== undefined && this.#o.inspector === undefined && (profileLabel === undefined || m.profiles.includes(profileLabel))
+      && (kind === undefined || (kind !== null && m.perception.kinds.has(kind as MediaKind)));
   }
 
   /**
@@ -287,7 +288,7 @@ export class ChannelIngress {
     const ref = parseMediaRefContent(record.content ?? '');
     const humanOwned = binding.taskId ? ((await this.#o.store.taskState(binding.taskId))?.humanOwned ?? false) : false;
     let text = unsupportedContentMarker(record.contentType ?? 'media');
-    if (!held && !humanOwned && ref && this.#perceivesMedia(profileLabel)) {
+    if (!held && !humanOwned && ref && this.#perceivesMedia(profileLabel, ref.kind)) {
       try {
         const result = await this.#o.media!.perception.perceive(ref, { accountRef: record.accountRef! });
         emitTelemetry(this.#o.logger, 'inbound.media.perceived', { channel: record.channel, inboundId: record.inboundId, outcome: result.outcome, reason: result.reason, ...result.evidence });
@@ -356,7 +357,7 @@ export class ChannelIngress {
         const served = this.#servedBy(binding) ?? this.#main;
         const { taskFactory } = served;
         // Media is unsupported content (held per profile, never downloaded) unless perceived for this binding's profile.
-        const unsupported = record.contentKind === 'unsupported' || (media && !this.#perceivesMedia(served.label));
+        const unsupported = record.contentKind === 'unsupported' || (media && !this.#perceivesMedia(served.label, record.contentType));
         const decision: InboundAutonomyDecision = decideInboundAutonomy({
           controls: await controls.state(),
           channel: record.channel,

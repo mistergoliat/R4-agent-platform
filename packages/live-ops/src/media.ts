@@ -59,5 +59,7 @@ export interface MediaPerceptionResult {
 
 /** One inbound media reference → one input text. Never throws (failures degrade to a text the agent can act on). */
 export interface MediaPerception {
+  /** The kinds this composition can actually perceive; any other kind is held exactly like unsupported content. */
+  readonly kinds: ReadonlySet<MediaKind>;
   perceive(ref: InboundMediaRef, context: { readonly accountRef: string }): Promise<MediaPerceptionResult>;
 }
