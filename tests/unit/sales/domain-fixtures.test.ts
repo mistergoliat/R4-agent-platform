@@ -127,7 +127,7 @@ describe('Sales READ capabilities over the domain ports', () => {
     const { d, invoker } = setup();
     d.catalog.availability.set({ mode: 'down' });
     const o = await invoker.invoke({ capabilityId: 'catalog.search', arguments: { query: 'barra' } }, context);
-    expect(o).toMatchObject({ outcome: 'failed', payload: null, validUntil: null, error: { code: 'handler_error', details: { category: 'temporarily_unavailable', code: 'catalog_unavailable', retryable: true } } });
+    expect(o).toMatchObject({ outcome: 'failed', payload: null, validUntil: null, error: { code: 'dependency_unavailable', details: { category: 'temporarily_unavailable', code: 'catalog_unavailable', retryable: true } } });
   });
 
   it('catalog answers carry R4\'s bounded window; an unknown key is an answer', async () => {
