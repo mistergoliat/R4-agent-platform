@@ -2,7 +2,7 @@ import type pg from 'pg';
 import type { Logger } from 'pino';
 import { DomainError, type CatalogPort, type CheckoutConsentSource, type CheckoutService, type QuoteV2Service, type ShippingService } from '@r4-adapters/domains';
 import { identityVerificationSchemaIsCurrent } from '@r4-adapters/identity-verification';
-import { WhatsAppInboundAdapter, WhatsAppOutboundAdapter, describeWhatsAppConfig, loadWhatsAppCloudConfig, type FetchLike, type WhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
+import { WhatsAppInboundAdapter, WhatsAppMediaDownloader, WhatsAppOutboundAdapter, describeWhatsAppConfig, loadWhatsAppCloudConfig, type FetchLike, type WhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
 import { CapabilityRegistry } from '@r4/capability-runtime';
 import { systemClock, type Clock, type Principal } from '@r4/contracts';
 import type { ModelProvider } from '@r4/model-gateway';
@@ -17,6 +17,7 @@ import {
   profileLabel,
   type ConversationLane,
   type ConversationTaskFactory,
+  type MediaPerception,
   type ProductionCompositionReport,
   type ProductionProfile,
   type ProductionConfig,
@@ -37,6 +38,8 @@ import { isDeterministicOfferProfile } from './profile-v7.js';
 import { SALES_PRODUCTION_PROFILES, isCustomerIdentityProfile, salesActionPolicyFor, salesProductionAgentVersion, salesProductionProfile } from './profile-v8.js';
 import { composeSyntheticCustomerCapabilities, composeSyntheticIdentityVerificationCapabilities } from '../capabilities/customer-synthetic.js';
 import { GATEWAY_ONLY_ENV, salesGatewayInspection } from './gateway-identity.js';
+import { SALES_IMAGE_PERCEPTION_INSTRUCTIONS, SALES_TRANSCRIPTION_PROMPT, SalesMediaPerceiver } from './media-perception.js';
+import { configuredMediaPerception } from '../model.js';
 import { catalogCapabilities } from '../capabilities/catalog.js';
 import { F1_COMMERCIAL_POLICY_V2_VERSION, F1_COMMERCIAL_POLICY_VERSION, type CommercialEligibility } from '../capabilities/commercial-snapshot.js';
 import { shippingCapability } from '../capabilities/shipping.js';
@@ -357,9 +360,10 @@ export function composeSalesGateway(options: SalesGatewayOptions): { bindings: G
   const config = assertProductionMode(options.production.config);
   const profile = selectedSalesProductionProfile(config);
   const whatsapp = loadWhatsAppCloudConfig(options.env, { allowNetwork: config.allowNetwork });
+  const media = salesMediaPerception(options.env, whatsapp, config.allowNetwork);
   return {
     whatsapp,
-    describe: describeWhatsAppConfig(whatsapp),
+    describe: { ...describeWhatsAppConfig(whatsapp), ...media.describe },
     bindings: {
       production: options.production,
       profile,
@@ -369,10 +373,28 @@ export function composeSalesGateway(options: SalesGatewayOptions): { bindings: G
       runFailureFallback: { text: SALES_RUN_FAILURE_FALLBACK_TEXT },
       humanRequestNotice: { text: SALES_HUMAN_REQUEST_NOTICE_TEXT, profiles: SALES_HUMAN_REQUEST_NOTICE_PROFILES },
       ...laneOf(salesGatewayLane(options.env, options.pool)),
+      ...(media.perception ? { media: media.perception } : {}),
       // (R4-J4-R4) v8 never runs without the inbound inspector, requested in full (ADR-040).
       ...(isCustomerIdentityProfile(profile) ? { inspection: salesGatewayInspection(profile, options.env, { transport: options.identityFetch, allowedHosts: options.allowedHosts }) } : {}),
     },
   };
+}
+
+/**
+ * (Inbound multimodal v1) Image and voice-note perception for the gateway, off unless R4_MEDIA_PERCEPTION=enabled.
+ * The downloader holds the WhatsApp token; the describer (DeepSeek deepseek-flash) and the transcriber (OpenAI
+ * gpt-transcribe) hold their own credentials, which only the gateway's environment carries (never the worker's).
+ */
+export function salesMediaPerception(env: Readonly<Record<string, string | undefined>>, whatsapp: WhatsAppCloudConfig, allowNetwork: boolean): { perception?: MediaPerception; describe: Record<string, string | boolean> } {
+  const c = configuredMediaPerception(env, { allowNetwork, imageInstructions: SALES_IMAGE_PERCEPTION_INSTRUCTIONS });
+  if (!c.enabled) return { describe: c.description };
+  const perception = new SalesMediaPerceiver({
+    downloader: new WhatsAppMediaDownloader(whatsapp),
+    ...(c.describer ? { describer: c.describer } : {}),
+    ...(c.transcriber ? { transcriber: c.transcriber } : {}),
+    transcriptionPrompt: c.transcriptionPromptOverride ?? SALES_TRANSCRIPTION_PROMPT,
+  });
+  return { perception, describe: c.description };
 }
 
 /** (ADR-045) The lane variables of the gateway: both set (the lane) or neither (exactly R4-I). */

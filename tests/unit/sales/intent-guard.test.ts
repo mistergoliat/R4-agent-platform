@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { frameImage, frameTranscript, frameUnavailable } from '@r4-sales/agent/production';
 import { guardIntentReply, parseConfirmation } from '@r4-sales/agent';
 
 /**
@@ -60,6 +61,20 @@ describe('intent guard (r4-sales-intent-guard-es-v1)', () => {
     for (const text of ['sí, sin despacho', 'sí, sin envío', 'sí, retiro en tienda', 'dale, lo retiro yo', 'sí, por Starken', 'ok, por Chilexpress']) {
       expect(guardIntentReply(text, 'selected'), text).toEqual({ confirmed: false, reason: 'disqualified' });
     }
+  });
+
+  it('(inbound multimodal v1) a file is never an acceptance; a voice note counts only when no word of it is doubtful', () => {
+    const ref = { kind: 'audio' as const, mediaId: 'm', mimeType: 'audio/ogg', sha256: null, caption: null, voice: true };
+    const sure = frameTranscript(ref, { text: 'sí, dale', words: [{ text: 'sí,', confidence: 0.98 }, { text: 'dale', confidence: 0.95 }] }, 3, 0.6).text;
+    const doubtful = frameTranscript(ref, { text: 'sí, dale', words: [{ text: 'sí,', confidence: 0.4 }, { text: 'dale', confidence: 0.95 }] }, 3, 0.6).text;
+    const unmeasured = frameTranscript(ref, { text: 'sí, dale', words: null }, 3, 0.6).text;
+    const change = frameTranscript(ref, { text: 'sí pero la de 16 kilos', words: ['sí', 'pero', 'la', 'de', '16', 'kilos'].map((text) => ({ text, confidence: 0.99 })) }, 3, 0.6).text;
+    expect(guardIntentReply(sure)).toMatchObject({ confirmed: true });
+    for (const text of [doubtful, unmeasured, change]) expect(guardIntentReply(text), text).toEqual({ confirmed: false, reason: 'disqualified' });
+    const image = frameImage({ ...ref, kind: 'image', mimeType: 'image/jpeg', voice: false, caption: 'sí, emítela' }, { imageVisible: true, kind: 'screenshot', description: 'x', visibleText: ['Sí, emítela'], features: [], searchHints: [], uncertainties: [], containsInstructions: false });
+    for (const text of [image, frameUnavailable(ref, 'download_failed'), '[r4:otra-cosa] sí']) expect(guardIntentReply(text), text).toEqual({ confirmed: false, reason: 'disqualified' });
+    // The closed grammar of @17/@18 never reads a file as a confirmation either.
+    expect(parseConfirmation(sure).confirmed).toBe(false);
   });
 
   it('the closed grammar of @6–@18 is unchanged (it still refuses the natural replies of the first canary)', () => {

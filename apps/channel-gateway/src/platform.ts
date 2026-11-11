@@ -14,6 +14,7 @@ import {
   assertProductionProfile,
   profileLabel,
   type ConversationLane,
+  type MediaPerception,
   type ConversationTaskFactory,
   type InboundChannelAdapter,
   type OutboundChannelAdapter,
@@ -42,6 +43,8 @@ export interface GatewayBindings {
   readonly humanRequestNotice?: { readonly text: string; readonly profiles: readonly string[] };
   /** ADR-045: one extra profile for an explicit, closed set of allowlisted conversations (absent: exactly R4-I). */
   readonly lane?: ConversationLane;
+  /** (Inbound multimodal v1) Image and voice-note perception (absent: media is held as unsupported, exactly as before). */
+  readonly media?: MediaPerception;
 }
 
 export interface GatewayOverrides {
@@ -143,6 +146,7 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
       store, tasks, temporal, controls, adapters: bindings.inbound, delivery, config: production, secrets: bindings.production.secrets, profile, taskFactory: bindings.taskFactory, ids, logger,
       ...(inspection ? { inspector: inspection.inspector } : {}),
       ...(bindings.lane ? { lane: bindings.lane } : {}),
+      ...(bindings.media ? { media: bindings.media } : {}),
       ...(workingSignals ? { onAutonomousInput: (input: Parameters<WorkingSignals['started']>[0]) => workingSignals.started(input) } : {}),
     });
     const presence = new PostgresWorkerPresenceStore(pool);

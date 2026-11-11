@@ -25,8 +25,24 @@ export const canonicalInboundSchema = z.strictObject({
   occurredAt: timestampSchema,
   content: z.discriminatedUnion('kind', [
     z.strictObject({ kind: z.literal('text'), text: z.string().trim().min(1).max(8000) }),
-    /** Content R4 does not represent (media, reactions, location…): classified, never silently dropped. */
+    /** Content R4 does not represent (video, documents, reactions, location…): classified, never silently dropped. */
     z.strictObject({ kind: z.literal('unsupported'), contentType: z.string().regex(/^[a-z][a-z0-9_.-]{0,63}$/) }),
+    /**
+     * (Inbound multimodal v1) An image or audio the contact sent: only the provider's REFERENCE, never the bytes. It is
+     * downloaded and perceived only for autonomous work (media.ts); otherwise it is held exactly like `unsupported`.
+     */
+    z.strictObject({
+      kind: z.literal('media'),
+      mediaKind: z.enum(['image', 'audio']),
+      mediaId: z.string().regex(/^[A-Za-z0-9._:-]{1,256}$/),
+      mimeType: z.string().regex(/^[a-z]+\/[a-z0-9.+-]+(; ?[a-z0-9=._ -]+)*$/i).max(128),
+      /** The provider's SHA-256 of the file (hex), when it states one. */
+      sha256: z.string().regex(/^[0-9a-f]{64}$/).nullable(),
+      /** The contact's own text sent with an image. */
+      caption: z.string().trim().min(1).max(1024).nullable(),
+      /** A recorded voice note, as opposed to a forwarded audio file. */
+      voice: z.boolean(),
+    }),
   ]),
   /** Small provider metadata useful for audit (ids, types); no personal data, no free text. */
   metadata: z.record(z.string().max(64), z.union([z.string().max(128), z.number(), z.boolean()])).default({}),

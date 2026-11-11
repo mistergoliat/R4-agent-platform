@@ -6,6 +6,7 @@ import { canonicalInboundSchema, type CanonicalInbound, type HeaderBag, type Inb
 import type { AutonomyControls } from './controls.js';
 import type { ProductionConfig, ProductionSecrets } from './mode.js';
 import type { InboundInspector } from './inspection.js';
+import { mediaRefContent, parseMediaRefContent, type MediaPerception } from './media.js';
 import type { OutboundDeliveryRuntime } from './outbound.js';
 import type { ConversationBindingRecord, InboundEventRecord, ProductionStore } from './ports.js';
 import { profileFingerprint, profileLabel, type ProductionProfile } from './profile.js';
@@ -57,6 +58,13 @@ export interface ChannelIngressOptions {
    * gateway's cosmetic working signal. Must not throw or block; its failures are ignored. Absent: nothing.
    */
   readonly onAutonomousInput?: (input: { readonly channel: string; readonly accountRef: string; readonly providerEventId: string; readonly taskId: string }) => void;
+  /**
+   * (Inbound multimodal v1) Perception of images and voice notes. Absent — or with an inspector composed, whose ADR-040
+   * guarantees cover text only — a media item is exactly an `unsupported` one (held per profile, never downloaded).
+   * Present: a media item is acknowledged at once and processed right after (download + perception take seconds), and it
+   * is downloaded ONLY when its input starts autonomous work in a task no human owns.
+   */
+  readonly media?: MediaPerception;
 }
 
 interface ServedProfile {
@@ -68,6 +76,8 @@ interface ServedProfile {
 
 export type IngestOutcome =
   | { readonly kind: 'duplicate'; readonly inboundId: string }
+  /** (media) Durable and acknowledged; processed right after the response (or by the resume sweep after a crash). */
+  | { readonly kind: 'deferred'; readonly inboundId: string }
   | { readonly kind: 'ingested'; readonly inboundId: string; readonly taskId: string; readonly inputId: string; readonly taskCreated: boolean; readonly disposition: string }
   | { readonly kind: 'failed'; readonly inboundId: string; readonly code: string };
 
@@ -101,6 +111,8 @@ export class ChannelIngress {
   readonly #main: ServedProfile;
   readonly #lane: (ServedProfile & { readonly keys: ReadonlySet<string> }) | null;
   readonly #rolloutFingerprint: string;
+  /** Media inbound being processed in this process right now (the resume sweep never takes them twice). */
+  readonly #inFlight = new Set<string>();
 
   constructor(options: ChannelIngressOptions) {
     this.#o = options;
@@ -162,7 +174,7 @@ export class ChannelIngress {
       return { status: 401, body: { error: 'unauthenticated' } };
     }
     const parsed = adapter.parse(rawBody);
-    const results = { ingested: 0, duplicates: 0, failed: 0, rejected: 0, statuses: 0 };
+    const results = { ingested: 0, deferred: 0, duplicates: 0, failed: 0, rejected: 0, statuses: 0 };
     for (const item of parsed.rejected) {
       const providerEventId = item.providerEventId ?? `unidentified:${sha256Hex(rawBody).slice(0, 48)}`;
       const { created } = await this.#o.store.recordInbound({
@@ -175,6 +187,7 @@ export class ChannelIngress {
     for (const inbound of parsed.inbound) {
       const outcome = await this.ingest(inbound, correlationId);
       if (outcome.kind === 'ingested') results.ingested += 1;
+      else if (outcome.kind === 'deferred') results.deferred += 1;
       else if (outcome.kind === 'duplicate') results.duplicates += 1;
       else results.failed += 1;
     }
@@ -189,13 +202,18 @@ export class ChannelIngress {
   async ingest(raw: CanonicalInbound, correlationId: string): Promise<IngestOutcome> {
     const event = canonicalInboundSchema.parse(raw);
     const key = conversationKey(this.#o.secrets.identityHashKey, event.channel, event.accountRef, event.conversationRef);
-    const text = event.content.kind === 'text' ? event.content.text : unsupportedContentMarker(event.content.contentType);
+    // Without perception, a media item is recorded exactly as before multimodal v1 (`unsupported`, its type only).
+    const c = event.content.kind === 'media' && !this.#perceivesMedia() ? { kind: 'unsupported' as const, contentType: event.content.mediaKind } : event.content;
+    // A media item keeps only its provider reference until it is perceived (or held as unsupported); never bytes.
+    const text = c.kind === 'text' ? c.text : c.kind === 'media'
+      ? mediaRefContent({ kind: c.mediaKind, mediaId: c.mediaId, mimeType: c.mimeType, sha256: c.sha256, caption: c.caption, voice: c.voice })
+      : unsupportedContentMarker(c.contentType);
     const inbound = {
       inboundId: this.#o.ids.next(),
       channel: event.channel,
       providerEventId: event.providerEventId,
-      contentKind: event.content.kind,
-      contentType: event.content.kind === 'unsupported' ? event.content.contentType : 'text',
+      contentKind: c.kind,
+      contentType: c.kind === 'unsupported' ? c.contentType : c.kind === 'media' ? c.mediaKind : 'text',
       content: text,
       contentSha256: sha256Hex(text),
       conversationKey: key,
@@ -211,7 +229,7 @@ export class ChannelIngress {
     const { record, created } = inspector
       ? await this.#o.store.recordInboundInspected(inbound, {
           inspector,
-          inspectable: event.content.kind === 'text',
+          inspectable: c.kind === 'text',
           senderRef: event.senderRef,
           direct: this.#adapters.get(event.channel)?.directConversations === true && event.senderRef === event.conversationRef,
         })
@@ -220,7 +238,16 @@ export class ChannelIngress {
       emitTelemetry(this.#o.logger, 'inbound.duplicate', { channel: event.channel, inboundId: record.inboundId, status: record.status, correlationId });
       return { kind: 'duplicate', inboundId: record.inboundId };
     }
-    emitTelemetry(this.#o.logger, 'inbound.received', { channel: event.channel, inboundId: record.inboundId, contentKind: event.content.kind, correlationId });
+    emitTelemetry(this.#o.logger, 'inbound.received', { channel: event.channel, inboundId: record.inboundId, contentKind: c.kind, correlationId });
+    if (record.contentKind === 'media' && this.#perceivesMedia()) {
+      // Acknowledged now (the row is durable); download and perception run after the response. A crash leaves the row
+      // `received` and the resume sweep processes it.
+      this.#inFlight.add(record.inboundId);
+      void this.#process(record)
+        .catch((error: unknown) => emitTelemetry(this.#o.logger, 'inbound.media.deferred_failed', { channel: record.channel, inboundId: record.inboundId, error: error instanceof PlatformError ? error.code : 'infrastructure' }))
+        .finally(() => this.#inFlight.delete(record.inboundId));
+      return { kind: 'deferred', inboundId: record.inboundId };
+    }
     return this.#process(record);
   }
 
@@ -228,8 +255,36 @@ export class ChannelIngress {
   async resumeUnsettled(olderThanMs = 30_000, limit = 50): Promise<IngestOutcome[]> {
     const pending = await this.#o.store.unsettledInbound(olderThanMs, limit);
     const out: IngestOutcome[] = [];
-    for (const record of pending) out.push(await this.#process(record));
+    for (const record of pending) {
+      if (this.#inFlight.has(record.inboundId)) continue;
+      this.#inFlight.add(record.inboundId);
+      try {
+        out.push(await this.#process(record));
+      } finally {
+        this.#inFlight.delete(record.inboundId);
+      }
+    }
     return out;
+  }
+
+  /** Media is perceived only when perception is composed and no inspector is (its guarantees cover text only). */
+  #perceivesMedia(): boolean {
+    return this.#o.media !== undefined && this.#o.inspector === undefined;
+  }
+
+  /**
+   * The input text of a media inbound, decided once. Held, human-owned or not perceivable: the unsupported marker, and
+   * nothing is downloaded. Otherwise it is perceived and the framed text is made durable on the inbound row BEFORE it
+   * becomes an input, so a crash after this point never perceives (or downloads) the same message again.
+   */
+  async #mediaText(record: InboundEventRecord, binding: ConversationBindingRecord, held: boolean): Promise<string> {
+    const ref = parseMediaRefContent(record.content ?? '');
+    const humanOwned = binding.taskId ? ((await this.#o.store.taskState(binding.taskId))?.humanOwned ?? false) : false;
+    if (held || humanOwned || !ref || !this.#perceivesMedia()) return unsupportedContentMarker(record.contentType ?? 'media');
+    const result = await this.#o.media!.perceive(ref, { accountRef: record.accountRef! });
+    emitTelemetry(this.#o.logger, 'inbound.media.perceived', { channel: record.channel, inboundId: record.inboundId, outcome: result.outcome, reason: result.reason, ...result.evidence });
+    await this.#o.store.recordInboundPerception(record.inboundId, result.text);
+    return result.text;
   }
 
   async #process(record: InboundEventRecord): Promise<IngestOutcome> {
@@ -238,7 +293,11 @@ export class ChannelIngress {
       await store.settleInbound(record.inboundId, { status: 'failed', failureCode: 'incomplete_inbound_record' });
       return { kind: 'failed', inboundId: record.inboundId, code: 'incomplete_inbound_record' };
     }
-    const unsupported = record.contentKind === 'unsupported';
+    const media = record.contentKind === 'media';
+    // Without perception, media is exactly unsupported content (held per profile, never downloaded).
+    const unsupported = record.contentKind === 'unsupported' || (media && !this.#perceivesMedia());
+    /** The text of a media input: the stored perception (after a crash), or decided once below. */
+    let mediaText: string | null = media && parseMediaRefContent(record.content) === null ? record.content : null;
     try {
       for (let attempt = 0; ; attempt += 1) {
         let binding = await store.findOpenBinding(record.channel, record.conversationKey);
@@ -288,7 +347,8 @@ export class ChannelIngress {
           unsupportedContentPolicy: served.profile.unsupportedContent,
         });
         const hold = decision.kind === 'hold' ? { reason: decision.reason, summary: decision.summary } : undefined;
-        const input = { externalKey: record.providerEventId, content: record.content, sourceRef: `channel:${record.channel}`, occurredAt: record.occurredAt };
+        if (media && mediaText === null) mediaText = await this.#mediaText(record, binding, hold !== undefined);
+        const input = { externalKey: record.providerEventId, content: mediaText ?? record.content, sourceRef: `channel:${record.channel}`, occurredAt: record.occurredAt };
         // The provider identity is a provisional participant reference; the address itself never becomes a principal.
         const actor: Principal = { kind: 'user', ref: `${record.channel}:${record.conversationKey.slice(0, 32)}` };
         try {

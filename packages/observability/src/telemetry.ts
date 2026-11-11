@@ -126,6 +126,8 @@ export const TELEMETRY_EVENTS = [
   'autonomy.control.changed',
   'inbound.received',
   'inbound.duplicate',
+  'inbound.media.perceived',
+  'inbound.media.deferred_failed',
   'inbound.rejected',
   'inbound.ingested',
   'inbound.authentication_failed',
