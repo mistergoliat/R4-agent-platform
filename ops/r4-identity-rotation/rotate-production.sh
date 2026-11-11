@@ -86,7 +86,12 @@ step "8. verify the database under the key the env files now hold"
 node "$TOOL/rotate.mjs" verify "${ENVS[@]}" --key-from-env
 
 step "9. start (gateway last) with a clean pm2 environment: only the new key is injected, the old value is purged"
-for p in $WORKERS $GATEWAY; do env -i HOME="$HOME" PATH="$PATH" R4_PROD_IDENTITY_HASH_KEY="$(cat "$B/new.key")" pm2 restart "$p" --update-env >/dev/null; sleep 3; done
+# Only the processes that compute conversation keys get the key (the scheduler never held it and does not get it).
+for p in $WORKERS $GATEWAY; do
+  if [ "$p" = r4-scheduler ]; then env -i HOME="$HOME" PATH="$PATH" pm2 restart "$p" --update-env >/dev/null
+  else env -i HOME="$HOME" PATH="$PATH" R4_PROD_IDENTITY_HASH_KEY="$(cat "$B/new.key")" pm2 restart "$p" --update-env >/dev/null; fi
+  sleep 3
+done
 sleep 12; pm2 save >/dev/null
 [ "$(grep -cF -f "$B/old.key" ~/.pm2/dump.pm2 || true)" = 0 ] || { echo "FAILED: the pm2 dump still holds the old key"; exit 1; }
 pm2 jlist | PROCS="$PROCS" node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const want=process.env.PROCS.split(" ");const r=JSON.parse(s).filter(p=>want.includes(p.name));for(const p of r)console.log(p.name,p.pm2_env.status);if(r.length!==want.length||r.some(p=>p.pm2_env.status!=="online"))process.exit(1)})'

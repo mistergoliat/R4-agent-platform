@@ -33,7 +33,12 @@ cat "$B/production.env" > "$C/production.env"; cat "$B/production-lane.env" > "$
 node "$TOOL/rotate.mjs" verify --env-file "$C/production.env" --env-file "$C/production-lane.env" --key-from-env
 
 step "5. restart with the old key (clean pm2 environment), autonomy on"
-for p in $WORKERS $GATEWAY; do env -i HOME="$HOME" PATH="$PATH" R4_PROD_IDENTITY_HASH_KEY="$(cat "$B/old.key")" pm2 restart "$p" --update-env >/dev/null; sleep 3; done
+# Only the processes that compute conversation keys get the key (the scheduler never held it and does not get it).
+for p in $WORKERS $GATEWAY; do
+  if [ "$p" = r4-scheduler ]; then env -i HOME="$HOME" PATH="$PATH" pm2 restart "$p" --update-env >/dev/null
+  else env -i HOME="$HOME" PATH="$PATH" R4_PROD_IDENTITY_HASH_KEY="$(cat "$B/old.key")" pm2 restart "$p" --update-env >/dev/null; fi
+  sleep 3
+done
 sleep 12; pm2 save >/dev/null
 curl -sf -m 5 127.0.0.1:8090/health >/dev/null || { echo "FAILED: gateway /health"; exit 1; }
 envrun npm run -s production:sales:control -- autonomy on --reason "identity rotation rolled back (owner-authorized)" >/dev/null 2>&1

@@ -132,3 +132,24 @@ Encrypting `recipient_ref` (a delivery key that only the gateway holds) is the m
 | Integrity | **0 tables changed** other than `channel_conversation_bindings` (checksum of all 47); trigger enabled; an ordinary update of the key is refused again |
 | Rollback (keys swapped) | **Every table identical** to the original; lists identical to the original |
 | Leftovers | No container or temporary file from the rehearsal remains; production still at 24 bindings with its key unchanged |
+
+## 7. Production rotation (2026-11-11 21:13–21:14 UTC, owner-authorized)
+
+**State:** `R4_IDENTITY_HMAC_ROTATED_VERIFIED`, pending only the owner's message that confirms continuity end to end.
+
+| Check | Result |
+|---|---|
+| Pre-checks (production running) | Plan ready: 24/24 verified, 3 identities, 0 blockers; 0 pending actions, outbound or inbound; rollout 0 %; role is superuser; the scheduler never held the key (it doesn't get the new one) |
+| Plain-text scope | Of 286 text/JSON columns, the numbers appear only in `channel_conversation_bindings.recipient_ref` (24 rows, 3 contacts) |
+| Window | Workers stopped, outbound drained, gateway stopped, kill switch: about 40 s; **0 messages held** |
+| Backup | `identity-rotation-20261111T211343Z`: checksums verified; the dump is restorable (47 table data entries) |
+| Apply | 24 rewritten in one transaction; install: `production.env` 3 lines (key, allowlist, lane list) |
+| Verify | 24/24 under the key in the files; 0 open unverifiable; 0 duplicates |
+| The new key is really used | Gateway, worker and lane worker carry the new key in their process environment (`/proc`); the gateway started (it refuses to start if the lane keys aren't allowlisted under its key) |
+| The old key is not in active environments | 0 processes, 0 in the pm2 dump, 0 in pm2's stored environment, 0 in `production.env` and `production-lane.env` |
+| History | 135 inputs and 135 memory entries kept as they were (old-derived actor refs untouched); 24 bindings with their 24 tasks |
+| Dependencies | Catalog 200, Quote 200, pc-carrier 202, gateway 200; observer OK; autonomy back on |
+
+**Old copies (names only).** The value remains in 14 historical `production.env.bak*` / `pre-*` files, in `~/transport/develop-r1/dump.pm2.copy-20261104T1724Z`, in older backup folders, and in the rotation backup (rollback window). It is the same value as the former database password, which no longer works. The owner decides when to shred them, once the rollback window is closed.
+
+**Residual folder `/tmp/tmp.3x6rW8olY6`:** an empty `git init` (default config, stock sample hooks, no objects or refs), unreferenced and not in use. Removed.
