@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
-# R4 F1 canary observation (read-only). Reconciles every R4 quote.create against Quote V2 in both directions and reports
+# R4 F1 canary observation (read-only). Reconciles every R4 quote.create against Quote V2 in both directions (totals and,
+# under F1-COMMERCIAL-POLICY-v2, shipping: pc-carrier backing, re-quote at issuance, amount, modality, profile) and reports
 # idempotency, unknown outcomes, delivery and log health. Writes nothing. Usage: observe.sh [interval, default "24 hours"]
 # Exit 1 when a critical condition is found (the operator then follows R4_F1_ACTIVATION_PROCEDURE.md §4.4 / §5).
 set -uo pipefail
 SINCE=${1:-24 hours}
-PRINCIPAL=r4-sales-retail-session
-r4() { docker exec r4-production-postgres psql -U r4_production -d r4_production -At -F' | ' -c "$1"; }
-qv() { docker exec quote-v2-integration-postgres psql -U postgres -d quote_v2_integration -At -F' | ' -c "$1"; }
+PRINCIPAL=${PRINCIPAL:-r4-sales-retail-session}
+SHIPPING_PROFILES='sales-production@19'   # F1-COMMERCIAL-POLICY-v2; every other profile is v1 (no shipping)
+SHIPPING_SOURCE=pc-carrier; REQUOTE_MAX_S=120
+# Production processes only: r4-web-qa-* is the web QA deployment and is observed separately.
+PROD_LOGS="r4-channel-gateway r4-sales-worker r4-sales-worker-lane r4-scheduler"
+r4() { docker exec r4-production-postgres psql -U r4_production -d r4_production -At -F"${2:- | }" -c "$1"; }
+qv() { docker exec quote-v2-integration-postgres psql -U postgres -d quote_v2_integration -At -F"${2:- | }" -c "$1"; }
 crit=0; flag() { echo "CRITICAL: $*"; crit=1; }
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 
@@ -40,12 +45,37 @@ echo "== Quote idempotency and scope"
 d=$(qv "select count(*) from (select quote_id from quote_service.idempotency_bindings where principal_id='$PRINCIPAL' and bound_at > now() - interval '$SINCE' and quote_id is not null group by 1 having count(*) > 1) x")
 [ "$d" = "0" ] || flag "$d quotes with more than one idempotency binding"
 s=$(qv "select count(*) from quote_service.quote_shipping s join quote_service.quotes q using (quote_id) where q.created_by_principal_id='$PRINCIPAL' and q.created_at > now() - interval '$SINCE'")
-[ "$s" = "0" ] || flag "$s F1 quotes carry shipping"
 p=$(qv "select count(*) from quote_service.quotes where created_by_principal_id='$PRINCIPAL' and created_at > now() - interval '$SINCE' and validity_policy_id <> 'cl-retail-session-60m-v1'")
 [ "$p" = "0" ] || flag "$p F1 quotes outside the 60-minute policy"
 c=$(qv "select count(*) from quote_service.cart_preparations where created_at > now() - interval '$SINCE'")
 [ "$c" = "0" ] || flag "$c cart preparations (cart is off in F1)"
 echo "dup bindings=$d shipping=$s off-policy=$p carts=$c"
+
+# F1-COMMERCIAL-POLICY-v2 (@19 only): a quote may carry shipping only when the Shipping owner (pc-carrier) priced it, it
+# was re-quoted in the issuance call, it was issued under a v2 profile, and R4 and Quote agree on amount and modality.
+# @17/@18 (v1) never carry shipping. Fields are '|'-separated so empty values and names with spaces survive.
+echo "== shipping (F1-COMMERCIAL-POLICY-v2: $SHIPPING_PROFILES, $SHIPPING_SOURCE, re-quoted <= ${REQUOTE_MAX_S}s before issuance)"
+r4 "select substring(r.resource_ref from 7), r.external_operation_ref, r.result->'shipping'->'amounts'->>'gross', r.result->'shipping'->'amounts'->>'net', r.result->'shipping'->>'carrierName', r.result->'shipping'->>'serviceType', coalesce((select b.profile from channel_conversation_bindings b where b.task_id = r.task_id limit 1), '') from action_receipts r where r.capability_id='quote.create' and r.status='succeeded' and r.recorded_at > now() - interval '$SINCE' and jsonb_typeof(r.result->'shipping') = 'object' order by 1" '|' > "$T/r4s"
+qv "select q.quote_id, q.quote_number, s.gross_amount, s.net_amount, s.tax_amount, s.carrier_name, s.service_type_name, coalesce(s.source_quote_system, ''), coalesce(extract(epoch from q.created_at - s.source_quote_as_of)::int::text, '') from quote_service.quote_shipping s join quote_service.quotes q using (quote_id) where q.created_by_principal_id='$PRINCIPAL' and q.created_at > now() - interval '$SINCE' order by 1" '|' > "$T/qvs"
+while IFS='|' read -r id num g n t car svc src age; do
+  [ -z "$id" ] && continue
+  [ "$src" = "$SHIPPING_SOURCE" ] || flag "$num shipping has no $SHIPPING_SOURCE backing (source '${src:-none}')"
+  { [ -n "$age" ] && [ "$age" -ge -5 ] && [ "$age" -le "$REQUOTE_MAX_S" ]; } || flag "$num shipping rate not re-quoted at issuance (rate asOf ${age:-missing} s before issuance, max ${REQUOTE_MAX_S}s)"
+  [ "$((n + t))" = "$g" ] || flag "$num shipping net $n + tax $t != gross $g in Quote"
+  r=$(grep "^$id|" "$T/r4s" || true)
+  if [ -z "$r" ]; then
+    if grep -qx "$id" "$T/r4ids"; then flag "$num carries shipping in Quote but not in its R4 receipt"; else echo "info: $num shipping issued outside this R4 (no receipt here)"; fi
+    continue
+  fi
+  IFS='|' read -r _ _ rg rn rcar rsvc prof <<< "$r"
+  [ "$rg" = "$g" ] && [ "$rn" = "$n" ] || flag "$num shipping amount differs (R4 gross $rg net $rn; Quote gross $g net $n)"
+  [ "$rcar" = "$car" ] && [ "$rsvc" = "$svc" ] || flag "$num shipping modality differs (R4 '$rcar / $rsvc'; Quote '$car / $svc')"
+  case " $SHIPPING_PROFILES " in *" $prof "*) ;; *) flag "$num carries shipping but was issued under '${prof:-unknown profile}' (v1: no shipping)";; esac
+  echo "$num shipping $car / $svc gross=$g net=$n (R4 gross=$rg) source=$src asOf=${age}s before issuance profile=$prof"
+done < "$T/qvs"
+for id in $(cut -d'|' -f1 "$T/r4s"); do
+  grep -q "^$id|" "$T/qvs" || flag "R4 receipt $(grep "^$id|" "$T/r4s" | cut -d'|' -f2) has shipping that Quote does not"
+done
 
 echo "== WhatsApp delivery (R4 outbound)"; r4 "select status, count(*) from outbound_messages where created_at > now() - interval '$SINCE' group by 1 order by 1"
 u=$(r4 "select count(*) from outbound_messages where created_at > now() - interval '$SINCE' and status in ('failed','unknown')")
@@ -62,9 +92,9 @@ nq=$(r4 "select count(*) from action_receipts where capability_id = 'quote.creat
 fd=$(r4 "select count(*) from outbound_documents d join outbound_messages o using (outbound_id) where d.created_at > now() - interval '$SINCE' and o.status in ('failed','unknown','cancelled')")
 [ "$fd" = "0" ] || flag "$fd quote documents failed/unknown/cancelled (the PDF did not reach the contact; a person sends it from Quote)"
 
-echo "== logs (warn/error, Quote failures, timeouts, budget, reconciliation)"
+echo "== production logs in the window (warn/error, Quote failures, timeouts, budget, reconciliation)"
 cutoff=$(date -u -d "-$SINCE" +%FT%T)
-awk -v c="$cutoff" -F'"time":"' '{split($2,a,"\""); if (a[1] >= c) print}' ~/.pm2/logs/r4-*-out.log > "$T/log"
+for p in $PROD_LOGS; do f=~/.pm2/logs/$p-out.log; [ -f "$f" ] && awk -v c="$cutoff" -F'"time":"' '{split($2,a,"\""); if (a[1] >= c) print}' "$f"; done > "$T/log"
 echo "warn/error: $(grep -cE '"level":"(warn|error|fatal)"' "$T/log")"
 qf=$(grep '"event":"quote.call"' "$T/log" | grep -vc '"outcome":"ok"'); echo "quote.call not ok: $qf"
 [ "$qf" = "0" ] || flag "$qf Quote calls not ok"
@@ -74,5 +104,6 @@ done
 grep -ciE 'timeout|timed_out' "$T/log" | sed 's/^/timeouts: /'
 
 echo "== processes"; pm2 jlist | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{for(const p of JSON.parse(s).filter(p=>p.name.startsWith("r4-")))console.log(p.name,p.pm2_env.status,"restarts="+p.pm2_env.restart_time)})'
-echo "== lane: $(grep -E '^R4_PROD_LANE_PROFILE=' ~/.config/r4/production.env | cut -d= -f2)"
+echo "== deployed: $(cd ~/R4-agent-platform && git rev-parse --short HEAD)"
+echo "== lane: $(grep -E '^R4_PROD_LANE_PROFILE=' ~/.config/r4/production.env | cut -d= -f2) (worker $(grep -E '^R4_PROD_POLICY_PROFILE=' ~/.config/r4/production-lane.env | cut -d= -f2)); $(grep -E '^R4_PROD_ROLLOUT_PERCENT=' ~/.config/r4/production.env)"
 [ "$crit" = "0" ] && echo "RESULT: OK" || { echo "RESULT: CRITICAL"; exit 1; }
