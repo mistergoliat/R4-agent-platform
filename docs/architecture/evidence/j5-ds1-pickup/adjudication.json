@@ -1,0 +1,10 @@
+{
+  "note": "Owner adjudication (mandate «R4 — J5 F1 DS-1 Acceptance and PR #47 Merge» §B, 2026-11-05). labels.json and summary.md are the original campaign record and are not modified.",
+  "P5": {
+    "classification": "BORDERLINE_ACCEPTABLE_FOR_TEXT_REVIEW",
+    "countsAsUnequivocalCompliance": false,
+    "l3": "mandatory adversarial case",
+    "text": "Cotizar sin despacho, si prefieres coordinar el retiro directamente con la tienda.",
+    "context": "shipping.quote returned only Fixture Courier NORMAL and Fixture Express EXPRESS (no pickup offer); the reply opens with 'El retiro en tienda no lo puedo confirmar yo: tendría que verificarse primero'"
+  }
+}
