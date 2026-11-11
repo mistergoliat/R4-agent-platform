@@ -43,9 +43,12 @@ describe('format checks (from the bytes, never from the declared type alone)', (
     expect(sniffMediaFormat(Buffer.alloc(4))).toBeNull();
   });
 
-  it('reads the duration of an Ogg Opus voice note from its last granule position', () => {
+  it('reads the duration of an Ogg Opus voice note by walking its pages; forged or appended bytes make it unmeasured', () => {
     expect(oggOpusDurationSeconds(oggOpus(12))).toBeCloseTo(12, 3);
     expect(oggOpusDurationSeconds(JPEG)).toBeNull();
+    const forged = Buffer.concat([Buffer.from(oggOpus(900)), Buffer.from('OggS'), Buffer.alloc(10)]);
+    expect(oggOpusDurationSeconds(forged)).toBeNull();
+    expect(oggOpusDurationSeconds(Buffer.from(oggOpus(900)).subarray(0, 60))).toBeNull();
   });
 
   it('round-trips the stored reference and never mistakes perceived text for one', () => {
@@ -91,6 +94,7 @@ describe('InboundMediaPerceiver', () => {
     ['unknown bytes', { downloader: { ok: true, bytes: Buffer.from('%PDF-1.7 .............'), mimeType: 'image/jpeg' } as MediaDownloadResult }, image, 'unsupported_format', 1],
     ['AAC (would need conversion)', { downloader: { ok: true, bytes: AAC, mimeType: 'audio/aac' } as MediaDownloadResult }, { ...voice, mimeType: 'audio/aac' }, 'unsupported_format', 1],
     ['a voice note over the duration limit', { downloader: { ok: true, bytes: oggOpus(400), mimeType: 'audio/ogg' } as MediaDownloadResult }, voice, 'too_long', 1],
+    ['a voice note whose duration cannot be measured, over the smaller byte cap', { downloader: { ok: true, bytes: Buffer.concat([Buffer.from(oggOpus(5)), Buffer.from('OggS'), Buffer.alloc(2 * 1024 * 1024)]), mimeType: 'audio/ogg' } as MediaDownloadResult }, voice, 'too_long', 1],
     ['an empty transcript', { downloader: { ok: true, bytes: oggOpus(2), mimeType: 'audio/ogg' } as MediaDownloadResult, transcript: '  ' }, voice, 'empty', 1],
   ])('degrades: %s', async (_name, o, ref, reason, downloads) => {
     const d = downloader(o.downloader);
@@ -109,6 +113,19 @@ describe('InboundMediaPerceiver', () => {
     expect((await slow.perceive(image, { accountRef: 'a' })).reason).toBe('perception_timeout');
     const blind = new InboundMediaPerceiver({ downloader: downloader(ok), describer: describer({ ...seen, imageVisible: false }) });
     expect((await blind.perceive(image, { accountRef: 'a' })).reason).toBe('not_seen');
+  });
+
+  it('a forwarded audio file is framed apart (it is never the customer answering)', () => {
+    const t = frameTranscript({ ...voice, voice: false }, { text: 'sí, dale', words: [{ text: 'sí,', confidence: 0.99 }, { text: 'dale', confidence: 0.99 }] }, 3, 0.6);
+    expect(t.text.startsWith('[r4:audio-reenviado] ')).toBe(true);
+  });
+
+  it('a perception step that overruns its deadline is aborted, not just abandoned', async () => {
+    let aborted = false;
+    const slow: ImageDescriber = { model: 'm', describe: (_i, o) => new Promise((_, reject) => o.signal?.addEventListener('abort', () => { aborted = true; reject(new Error('aborted')); })) };
+    const p = new InboundMediaPerceiver({ downloader: downloader({ ok: true, bytes: JPEG, mimeType: 'image/jpeg' }), describer: slow, limits: { perceptionTimeoutMs: 20 } });
+    expect((await p.perceive(image, { accountRef: 'a' })).reason).toBe('perception_timeout');
+    expect(aborted).toBe(true);
   });
 
   it('evidence never carries content: no text, no bytes, no URL', async () => {

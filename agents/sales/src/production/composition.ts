@@ -360,7 +360,7 @@ export function composeSalesGateway(options: SalesGatewayOptions): { bindings: G
   const config = assertProductionMode(options.production.config);
   const profile = selectedSalesProductionProfile(config);
   const whatsapp = loadWhatsAppCloudConfig(options.env, { allowNetwork: config.allowNetwork });
-  const media = salesMediaPerception(options.env, whatsapp, config.allowNetwork);
+  const media = salesMediaPerception(options.env, whatsapp, config.allowNetwork, isCustomerIdentityProfile(profile));
   return {
     whatsapp,
     describe: { ...describeWhatsAppConfig(whatsapp), ...media.describe },
@@ -385,16 +385,22 @@ export function composeSalesGateway(options: SalesGatewayOptions): { bindings: G
  * The downloader holds the WhatsApp token; the describer (DeepSeek deepseek-flash) and the transcriber (OpenAI
  * gpt-transcribe) hold their own credentials, which only the gateway's environment carries (never the worker's).
  */
-export function salesMediaPerception(env: Readonly<Record<string, string | undefined>>, whatsapp: WhatsAppCloudConfig, allowNetwork: boolean): { perception?: MediaPerception; describe: Record<string, string | boolean> } {
+export function salesMediaPerception(env: Readonly<Record<string, string | undefined>>, whatsapp: WhatsAppCloudConfig, allowNetwork: boolean, inspected: boolean): { perception?: { perception: MediaPerception; profiles: readonly string[] }; describe: Record<string, string | boolean> } {
   const c = configuredMediaPerception(env, { allowNetwork, imageInstructions: SALES_IMAGE_PERCEPTION_INSTRUCTIONS });
   if (!c.enabled) return { describe: c.description };
+  // Opt-in per profile (never the whole gateway): every other profile keeps holding media for a person, as before.
+  const profiles = [...new Set((env.R4_MEDIA_PERCEPTION_PROFILES ?? '').split(/[\s,]+/).map((p) => p.trim()).filter(Boolean))];
+  const known = new Set([...SALES_PRODUCTION_PROFILES, ...SALES_LANE_PROFILES].map(profileLabel));
+  if (profiles.length === 0 || profiles.some((p) => !known.has(p))) throw new Error(`refusing media perception: R4_MEDIA_PERCEPTION_PROFILES must list Sales profiles (${[...known].join(', ')})`);
+  // The ADR-040 inspector covers text only: with it, the ingress never perceives media (and says so here).
+  if (inspected) return { describe: { ...c.description, mediaPerception: 'off_inspector_composed' } };
   const perception = new SalesMediaPerceiver({
     downloader: new WhatsAppMediaDownloader(whatsapp),
     ...(c.describer ? { describer: c.describer } : {}),
     ...(c.transcriber ? { transcriber: c.transcriber } : {}),
     transcriptionPrompt: c.transcriptionPromptOverride ?? SALES_TRANSCRIPTION_PROMPT,
   });
-  return { perception, describe: c.description };
+  return { perception: { perception, profiles }, describe: { ...c.description, mediaPerceptionProfiles: profiles.join(',') } };
 }
 
 /** (ADR-045) The lane variables of the gateway: both set (the lane) or neither (exactly R4-I). */

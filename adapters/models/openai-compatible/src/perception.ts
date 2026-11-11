@@ -90,9 +90,11 @@ export function describePerceptionConfig(c: PerceptionConfig): Record<string, st
   };
 }
 
-async function post(fetchImpl: FetchLike, url: string, apiKey: string, body: string | FormData, json: boolean, timeoutMs: number): Promise<{ status: number; text: string }> {
+async function post(fetchImpl: FetchLike, url: string, apiKey: string, body: string | FormData, json: boolean, timeoutMs: number, signal?: AbortSignal): Promise<{ status: number; text: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  if (signal?.aborted) controller.abort();
+  signal?.addEventListener('abort', () => controller.abort(), { once: true });
   try {
     const res = await fetchImpl(url, { method: 'POST', headers: { authorization: `Bearer ${apiKey}`, accept: 'application/json', ...(json ? { 'content-type': 'application/json' } : {}) }, body, signal: controller.signal });
     return { status: res.status, text: await res.text() };
@@ -148,7 +150,7 @@ export class ChatCompletionsImageDescriber {
     this.#instructions = options.instructions ?? IMAGE_PERCEPTION_INSTRUCTIONS;
   }
 
-  async describe(image: { readonly bytes: Uint8Array; readonly mimeType: string }, options: { readonly timeoutMs: number }): Promise<ImagePerceptionOutput> {
+  async describe(image: { readonly bytes: Uint8Array; readonly mimeType: string }, options: { readonly timeoutMs: number; readonly signal?: AbortSignal }): Promise<ImagePerceptionOutput> {
     const dataUrl = `data:${image.mimeType};base64,${Buffer.from(image.bytes.buffer, image.bytes.byteOffset, image.bytes.byteLength).toString('base64')}`;
     const body = JSON.stringify({
       model: this.#e.model,
@@ -156,7 +158,7 @@ export class ChatCompletionsImageDescriber {
       max_tokens: 1500,
       messages: [{ role: 'system', content: this.#instructions }, { role: 'user', content: [{ type: 'image_url', image_url: { url: dataUrl } }] }],
     });
-    const res = await post(this.#fetch, `${this.#e.baseUrl}/chat/completions`, this.#e.apiKey, body, true, options.timeoutMs);
+    const res = await post(this.#fetch, `${this.#e.baseUrl}/chat/completions`, this.#e.apiKey, body, true, options.timeoutMs, options.signal);
     if (res.status !== 200) throw new PerceptionError('vision_http_error', `vision endpoint answered ${res.status}`);
     let content: unknown;
     try {
@@ -206,7 +208,7 @@ export class OpenAISpeechTranscriber {
     this.#fetch = options.fetch ?? (globalThis.fetch);
   }
 
-  async transcribe(audio: { readonly bytes: Uint8Array; readonly mimeType: string; readonly filename: string }, options: { readonly timeoutMs: number; readonly prompt: string | null }): Promise<{ text: string; words: { text: string; confidence: number }[] | null }> {
+  async transcribe(audio: { readonly bytes: Uint8Array; readonly mimeType: string; readonly filename: string }, options: { readonly timeoutMs: number; readonly prompt: string | null; readonly signal?: AbortSignal }): Promise<{ text: string; words: { text: string; confidence: number }[] | null }> {
     const form = (withLogprobs: boolean) => {
       const f = new FormData();
       f.append('file', new Blob([audio.bytes], { type: audio.mimeType.split(';')[0]!.trim() }), audio.filename);
@@ -218,9 +220,10 @@ export class OpenAISpeechTranscriber {
       return f;
     };
     const url = `${this.#e.baseUrl}/audio/transcriptions`;
-    let res = await post(this.#fetch, url, this.#e.apiKey, form(true), false, options.timeoutMs);
-    // A model without log-probabilities refuses `include`: transcribe without them (the confidence is then "unmeasured").
-    if (res.status === 400 && /logprob|include/i.test(res.text)) res = await post(this.#fetch, url, this.#e.apiKey, form(false), false, options.timeoutMs);
+    let res = await post(this.#fetch, url, this.#e.apiKey, form(true), false, options.timeoutMs, options.signal);
+    // A model without log-probabilities refuses `include`: transcribe without them (the confidence is then "unmeasured"),
+    // never after the caller's deadline.
+    if (res.status === 400 && /logprob|include/i.test(res.text) && !options.signal?.aborted) res = await post(this.#fetch, url, this.#e.apiKey, form(false), false, options.timeoutMs, options.signal);
     if (res.status !== 200) throw new PerceptionError('stt_http_error', `transcription endpoint answered ${res.status}`);
     let parsed: z.output<typeof transcriptionSchema>;
     try {

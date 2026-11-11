@@ -349,6 +349,8 @@ export interface ProductionStore {
    * before that text becomes an input; cleared at settlement like any inbound content. No-op once settled.
    */
   recordInboundPerception(inboundId: string, text: string): Promise<void>;
+  /** One inbound event as it is now (null: unknown). */
+  inboundEvent(inboundId: string): Promise<InboundEventRecord | null>;
   /** Received but never settled (a crash between persistence and ingestion). */
   unsettledInbound(olderThanMs: number, limit: number): Promise<InboundEventRecord[]>;
 

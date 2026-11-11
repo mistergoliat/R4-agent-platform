@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { PostgresProductionStore } from '@r4/persistence-postgres';
 import { mediaRefContent, type InboundMediaRef } from '@r4/live-ops';
 import { LiveOpsTestbed, keyOf } from '../support/live-ops.js';
 
@@ -96,6 +97,7 @@ beforeAll(async () => {
     autonomy: true,
     env: {
       R4_MEDIA_PERCEPTION: 'enabled',
+      R4_MEDIA_PERCEPTION_PROFILES: 'sales-production@1',
       R4_PERCEPTION_VISION_BASE_URL: perception.url,
       R4_PERCEPTION_VISION_API_KEY: 'perception-test-key',
       R4_PERCEPTION_STT_BASE_URL: perception.url,
@@ -203,6 +205,24 @@ describe('inbound multimodal v1 (gateway)', { timeout: 60_000 }, () => {
     expect(bed.provider.mediaRequests.map((r) => r.mediaId)).toEqual(['img-3', 'img-3']);
   });
 
+  it('a resume sweep holding an old snapshot of a row already processed does nothing (no second download or perception)', async () => {
+    const id = nextId();
+    bed.provider.hostMedia('img-snap', { bytes: JPEG, mimeType: 'image/jpeg' });
+    await bed.customer(ALLOWED, id, '', { type: 'image', media: { id: 'img-snap', mimeType: 'image/jpeg' } });
+    const [snapshot] = await bed.rows<{ inbound_id: string }>('select inbound_id from inbound_events where provider_event_id = $1', [id]);
+    const stale = await bed.store.inboundEvent(snapshot!.inbound_id);
+    await settled(bed, id);
+    const calls = perception.calls.length;
+    // The sweep's list was taken while the row was still received: processing that stale record must be a no-op.
+    const spy = vi.spyOn(PostgresProductionStore.prototype, 'unsettledInbound').mockResolvedValueOnce(stale ? [stale] : []);
+    try {
+      expect(await bed.gateway.ingress.resumeUnsettled(0)).toEqual([{ kind: 'duplicate', inboundId: snapshot!.inbound_id }]);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(perception.calls.length).toBe(calls);
+  });
+
   it('text is unchanged', async () => {
     const id = nextId();
     const response = await bed.customer(ALLOWED, id, 'hola, ¿tienen mancuernas?');
@@ -210,6 +230,38 @@ describe('inbound multimodal v1 (gateway)', { timeout: 60_000 }, () => {
     const row = await settled(bed, id);
     expect(row).toMatchObject({ content_kind: 'text', disposition: 'autonomous' });
     expect(await inputText(bed, row.input_id as string)).toBe('hola, ¿tienen mancuernas?');
+  });
+  // Last of this block: a kill-switch hold stays until a person releases it (by design).
+  it('a held media input persists its marker before submission (a resume submits exactly the same input)', async () => {
+    const id = nextId();
+    await bed.setAutonomy(false);
+    try {
+      bed.provider.hostMedia('img-held', { bytes: JPEG, mimeType: 'image/jpeg' });
+      await bed.customer(ALLOWED, id, '', { type: 'image', media: { id: 'img-held', mimeType: 'image/jpeg' } });
+      const row = await settled(bed, id);
+      expect(row.disposition).toMatch(/^held:/);
+      expect(await inputText(bed, row.input_id as string)).toBe('[unsupported inbound content: image]');
+      expect(bed.provider.mediaRequests).toEqual([]);
+    } finally {
+      await bed.setAutonomy(true);
+    }
+  });
+
+});
+
+describe('inbound multimodal v1 enabled for another profile only', { timeout: 60_000 }, () => {
+  it('a profile perception was not enabled for keeps holding media for a person (nothing downloaded)', async () => {
+    const other = await LiveOpsTestbed.start({ allowlist: [ALLOWED], autonomy: true, env: { R4_MEDIA_PERCEPTION: 'enabled', R4_MEDIA_PERCEPTION_PROFILES: 'sales-production@19', R4_PERCEPTION_VISION_BASE_URL: perception.url, R4_PERCEPTION_VISION_API_KEY: 'perception-test-key' } });
+    try {
+      other.provider.hostMedia('img-p', { bytes: JPEG, mimeType: 'image/jpeg' });
+      await other.customer(ALLOWED, 'wamid.p.1', '', { type: 'image', media: { id: 'img-p', mimeType: 'image/jpeg' } });
+      const row = await settled(other, 'wamid.p.1');
+      expect(row).toMatchObject({ disposition: 'held:unsupported_inbound_content' });
+      expect(await inputText(other, row.input_id as string)).toBe('[unsupported inbound content: image]');
+      expect(other.provider.mediaRequests).toEqual([]);
+    } finally {
+      await other.close();
+    }
   });
 });
 

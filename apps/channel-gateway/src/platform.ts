@@ -44,7 +44,7 @@ export interface GatewayBindings {
   /** ADR-045: one extra profile for an explicit, closed set of allowlisted conversations (absent: exactly R4-I). */
   readonly lane?: ConversationLane;
   /** (Inbound multimodal v1) Image and voice-note perception (absent: media is held as unsupported, exactly as before). */
-  readonly media?: MediaPerception;
+  readonly media?: { readonly perception: MediaPerception; readonly profiles: readonly string[] };
 }
 
 export interface GatewayOverrides {

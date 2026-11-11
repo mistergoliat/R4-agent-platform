@@ -9,6 +9,8 @@ export const MEDIA_TEXT_HEADERS = Object.freeze({
   audio: '[r4:nota-de-voz]',
   /** A transcript without measured confidence: never certain enough to be an acceptance. */
   audioUnmeasured: '[r4:nota-de-voz-sin-confianza]',
+  /** A forwarded or attached audio file (not recorded by the customer): content, never an acceptance. */
+  audioForwarded: '[r4:audio-reenviado]',
   unavailable: '[r4:adjunto-no-procesado]',
 });
 export const UNCERTAIN_OPEN = '⟦';

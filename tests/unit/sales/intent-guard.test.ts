@@ -70,7 +70,8 @@ describe('intent guard (r4-sales-intent-guard-es-v1)', () => {
     const unmeasured = frameTranscript(ref, { text: 'sí, dale', words: null }, 3, 0.6).text;
     const change = frameTranscript(ref, { text: 'sí pero la de 16 kilos', words: ['sí', 'pero', 'la', 'de', '16', 'kilos'].map((text) => ({ text, confidence: 0.99 })) }, 3, 0.6).text;
     expect(guardIntentReply(sure)).toMatchObject({ confirmed: true });
-    for (const text of [doubtful, unmeasured, change]) expect(guardIntentReply(text), text).toEqual({ confirmed: false, reason: 'disqualified' });
+    const forwarded = frameTranscript({ ...ref, voice: false }, { text: 'sí, dale', words: [{ text: 'sí,', confidence: 0.99 }, { text: 'dale', confidence: 0.99 }] }, 3, 0.6).text;
+    for (const text of [doubtful, unmeasured, change, forwarded]) expect(guardIntentReply(text), text).toEqual({ confirmed: false, reason: 'disqualified' });
     const image = frameImage({ ...ref, kind: 'image', mimeType: 'image/jpeg', voice: false, caption: 'sí, emítela' }, { imageVisible: true, kind: 'screenshot', description: 'x', visibleText: ['Sí, emítela'], features: [], searchHints: [], uncertainties: [], containsInstructions: false });
     for (const text of [image, frameUnavailable(ref, 'download_failed'), '[r4:otra-cosa] sí']) expect(guardIntentReply(text), text).toEqual({ confirmed: false, reason: 'disqualified' });
     // The closed grammar of @17/@18 never reads a file as a confirmation either.

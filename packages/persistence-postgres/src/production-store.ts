@@ -213,6 +213,11 @@ export class PostgresProductionStore implements ProductionStore {
     );
   }
 
+  async inboundEvent(inboundId: string): Promise<InboundEventRecord | null> {
+    const r = await query<Row>(this.#pool, 'select * from inbound_events where inbound_id = $1', [inboundId]);
+    return r.rows[0] ? inboundFromRow(r.rows[0]) : null;
+  }
+
   async recordInboundPerception(inboundId: string, text: string): Promise<void> {
     await query(this.#pool, `update inbound_events set content = $2, content_sha256 = $3 where inbound_id = $1 and status = 'received' and content_kind = 'media'`, [inboundId, text, sha256Hex(text)]);
   }

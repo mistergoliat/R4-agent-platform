@@ -85,6 +85,8 @@ export class WhatsAppMediaDownloader implements InboundMediaDownloader {
       return { ok: false, reason: controller.signal.aborted ? 'timeout' : 'provider_error' };
     } finally {
       clearTimeout(timer);
+      // Releases any response body left unread on an early return (the bytes already read are kept).
+      controller.abort();
     }
   }
 }

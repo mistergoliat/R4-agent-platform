@@ -62,9 +62,10 @@ export interface ChannelIngressOptions {
    * (Inbound multimodal v1) Perception of images and voice notes. Absent — or with an inspector composed, whose ADR-040
    * guarantees cover text only — a media item is exactly an `unsupported` one (held per profile, never downloaded).
    * Present: a media item is acknowledged at once and processed right after (download + perception take seconds), and it
-   * is downloaded ONLY when its input starts autonomous work in a task no human owns.
+   * is downloaded ONLY when its input starts autonomous work, in a task no human owns, of a binding whose profile is one
+   * of `profiles` (every other profile keeps holding media exactly as before).
    */
-  readonly media?: MediaPerception;
+  readonly media?: { readonly perception: MediaPerception; readonly profiles: readonly string[] };
 }
 
 interface ServedProfile {
@@ -120,6 +121,7 @@ export class ChannelIngress {
     this.#main = { label: profileLabel(options.profile), fingerprint: profileFingerprint(options.profile), profile: options.profile, taskFactory: options.taskFactory };
     const lane = options.lane;
     this.#lane = lane ? { label: profileLabel(lane.profile), fingerprint: profileFingerprint(lane.profile), profile: lane.profile, taskFactory: lane.taskFactory, keys: new Set(lane.conversationKeys) } : null;
+    if (options.media && options.media.profiles.length === 0) throw new PlatformError('precondition', 'media_perception_refused', 'media perception needs at least one profile');
     if (this.#lane) {
       const { rollout } = options.config;
       const problems: string[] = [];
@@ -267,9 +269,13 @@ export class ChannelIngress {
     return out;
   }
 
-  /** Media is perceived only when perception is composed and no inspector is (its guarantees cover text only). */
-  #perceivesMedia(): boolean {
-    return this.#o.media !== undefined && this.#o.inspector === undefined;
+  /**
+   * Media is perceived only when perception is composed, no inspector is (its guarantees cover text only) and, for a
+   * given binding, its profile is one perception was enabled for. Without a label: for any profile of this gateway.
+   */
+  #perceivesMedia(profileLabel?: string): boolean {
+    const m = this.#o.media;
+    return m !== undefined && this.#o.inspector === undefined && (profileLabel === undefined || m.profiles.includes(profileLabel));
   }
 
   /**
@@ -277,27 +283,38 @@ export class ChannelIngress {
    * nothing is downloaded. Otherwise it is perceived and the framed text is made durable on the inbound row BEFORE it
    * becomes an input, so a crash after this point never perceives (or downloads) the same message again.
    */
-  async #mediaText(record: InboundEventRecord, binding: ConversationBindingRecord, held: boolean): Promise<string> {
+  async #mediaText(record: InboundEventRecord, binding: ConversationBindingRecord, held: boolean, profileLabel: string): Promise<string> {
     const ref = parseMediaRefContent(record.content ?? '');
     const humanOwned = binding.taskId ? ((await this.#o.store.taskState(binding.taskId))?.humanOwned ?? false) : false;
-    if (held || humanOwned || !ref || !this.#perceivesMedia()) return unsupportedContentMarker(record.contentType ?? 'media');
-    const result = await this.#o.media!.perceive(ref, { accountRef: record.accountRef! });
-    emitTelemetry(this.#o.logger, 'inbound.media.perceived', { channel: record.channel, inboundId: record.inboundId, outcome: result.outcome, reason: result.reason, ...result.evidence });
-    await this.#o.store.recordInboundPerception(record.inboundId, result.text);
-    return result.text;
+    let text = unsupportedContentMarker(record.contentType ?? 'media');
+    if (!held && !humanOwned && ref && this.#perceivesMedia(profileLabel)) {
+      try {
+        const result = await this.#o.media!.perception.perceive(ref, { accountRef: record.accountRef! });
+        emitTelemetry(this.#o.logger, 'inbound.media.perceived', { channel: record.channel, inboundId: record.inboundId, outcome: result.outcome, reason: result.reason, ...result.evidence });
+        text = result.text;
+      } catch {
+        // The port never throws; if an implementation does, the input is the marker (never a retry loop of downloads).
+        emitTelemetry(this.#o.logger, 'inbound.media.perceived', { channel: record.channel, inboundId: record.inboundId, outcome: 'degraded', reason: 'perception_threw' });
+      }
+    }
+    // Durable BEFORE it becomes an input (also the marker): a resume submits exactly what may already be submitted.
+    await this.#o.store.recordInboundPerception(record.inboundId, text);
+    return text;
   }
 
-  async #process(record: InboundEventRecord): Promise<IngestOutcome> {
+  async #process(stale: InboundEventRecord): Promise<IngestOutcome> {
     const { store, controls, config, temporal, tasks, logger } = this.#o;
+    // A snapshot (resume sweep) may be older than the row: a media row is processed only while still received (never twice).
+    const record = stale.contentKind === 'media' ? await store.inboundEvent(stale.inboundId) : stale;
+    if (!record || record.status !== 'received') return { kind: 'duplicate', inboundId: stale.inboundId };
     if (record.conversationKey === null || record.accountRef === null || record.conversationRef === null || record.content === null || record.occurredAt === null) {
       await store.settleInbound(record.inboundId, { status: 'failed', failureCode: 'incomplete_inbound_record' });
       return { kind: 'failed', inboundId: record.inboundId, code: 'incomplete_inbound_record' };
     }
     const media = record.contentKind === 'media';
-    // Without perception, media is exactly unsupported content (held per profile, never downloaded).
-    const unsupported = record.contentKind === 'unsupported' || (media && !this.#perceivesMedia());
-    /** The text of a media input: the stored perception (after a crash), or decided once below. */
+    /** The text of a media input: the stored decision (after a crash: exactly what may already be submitted), or decided below. */
     let mediaText: string | null = media && parseMediaRefContent(record.content) === null ? record.content : null;
+    let decidedHere = false;
     try {
       for (let attempt = 0; ; attempt += 1) {
         let binding = await store.findOpenBinding(record.channel, record.conversationKey);
@@ -338,6 +355,8 @@ export class ChannelIngress {
         // Everything after the opening follows the binding (ADR-045): its profile, never the current lane configuration.
         const served = this.#servedBy(binding) ?? this.#main;
         const { taskFactory } = served;
+        // Media is unsupported content (held per profile, never downloaded) unless perceived for this binding's profile.
+        const unsupported = record.contentKind === 'unsupported' || (media && !this.#perceivesMedia(served.label));
         const decision: InboundAutonomyDecision = decideInboundAutonomy({
           controls: await controls.state(),
           channel: record.channel,
@@ -347,7 +366,11 @@ export class ChannelIngress {
           unsupportedContentPolicy: served.profile.unsupportedContent,
         });
         const hold = decision.kind === 'hold' ? { reason: decision.reason, summary: decision.summary } : undefined;
-        if (media && mediaText === null) mediaText = await this.#mediaText(record, binding, hold !== undefined);
+        // Decided once; again only after a terminal race (nothing was submitted, and the new task may decide otherwise).
+        if (media && (mediaText === null || (attempt > 0 && decidedHere))) {
+          mediaText = await this.#mediaText(record, binding, hold !== undefined, served.label);
+          decidedHere = true;
+        }
         const input = { externalKey: record.providerEventId, content: mediaText ?? record.content, sourceRef: `channel:${record.channel}`, occurredAt: record.occurredAt };
         // The provider identity is a provisional participant reference; the address itself never becomes a principal.
         const actor: Principal = { kind: 'user', ref: `${record.channel}:${record.conversationKey.slice(0, 32)}` };

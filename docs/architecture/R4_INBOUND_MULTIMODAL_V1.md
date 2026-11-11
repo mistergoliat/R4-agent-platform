@@ -105,8 +105,8 @@ The silent degradation of `v4-pro` is guarded against: perception requires `imag
    - `[r4:nota-de-voz-sin-confianza]`: the transcript when confidence was not measured.
    - `[r4:adjunto-no-procesado]`: the reason the file could not be processed.
 7. **Acceptance** (intent guard of `@19`):
-   - an image, an unprocessed file or an audio without measured confidence **is never** an acceptance;
-   - an audio counts only if no word is doubtful, and then it goes through the same guard as text (questions, changes, hesitation);
+   - an image, an unprocessed file, a **forwarded** audio (`[r4:audio-reenviado]`) or a voice note without measured confidence **is never** an acceptance;
+   - a voice note recorded by the customer counts only if no word is doubtful, and then it goes through the same guard as text (questions, changes, hesitation). This follows the owner's earlier decision that a customer may accept by voice;
    - the closed grammar of `@17`/`@18` never accepts a file.
 
 ## 5. Implementation and tests
@@ -147,7 +147,7 @@ The silent degradation of `v4-pro` is guarded against: perception requires `imag
   - Vision and STT credentials: perception only, gateway environment only (not the worker's).
   - The agent: commercial capabilities only.
   - The model never sees a credential.
-- **Injection.** Perceived content is always framed as content of the customer and never instructions. Text that imitates platform headers or doubt marks is neutralised. Instructions inside an image are flagged (`containsInstructions`). Images and audio never count as acceptance. Catalog V2 is still the only source of prices and stock.
+- **Injection.** Perceived content is always framed as content of the customer and never instructions. Text that imitates platform headers or doubt marks is neutralised. Instructions inside an image are flagged (`containsInstructions`). Images, forwarded audio, unprocessed files and doubtful or unmeasured transcripts never count as acceptance; only a voice note the customer recorded, with every word certain, goes through the text guard. Catalog V2 is still the only source of prices and stock.
 - **Download.**
   - https only, on Meta's host;
   - no redirects;
@@ -189,7 +189,7 @@ The conversation turn grows by the length of the framed text (≈ 200–500 toke
 1. Coordinated deploy of the SHA. Core goes `0015 → 0016`: the migration only extends a check constraint.
    - The gateway and the workers declare their compatibility with the schema head (`0016_inbound_media:<profile>`), so they are deployed together.
    - `~/r4-deploy.sh` checks head `0015` today and has to expect `0016` for this deploy.
-2. `~/.config/r4/secrets/perception.env` (0600) is sourced **only** by `run-gateway.sh`, with `R4_MEDIA_PERCEPTION=enabled`, `R4_PERCEPTION_VISION_API_KEY` and `R4_PERCEPTION_STT_API_KEY`.
+2. `~/.config/r4/secrets/perception.env` (0600) is sourced **only** by `run-gateway.sh`, with `R4_MEDIA_PERCEPTION=enabled`, `R4_MEDIA_PERCEPTION_PROFILES` (the profiles that perceive, e.g. only the lane's; every other profile keeps holding media for a person), `R4_PERCEPTION_VISION_API_KEY` and `R4_PERCEPTION_STT_API_KEY`.
 3. Restart the gateway. The lane is unchanged, the allowlist is unchanged and the rollout stays at 0 %.
 
 **Rollback:**
