@@ -3,6 +3,7 @@ import type { Logger } from 'pino';
 import { DomainError, type CatalogPort, type CheckoutConsentSource, type CheckoutService, type QuoteV2Service, type ShippingService } from '@r4-adapters/domains';
 import { identityVerificationSchemaIsCurrent } from '@r4-adapters/identity-verification';
 import { WhatsAppInboundAdapter, WhatsAppOutboundAdapter, describeWhatsAppConfig, loadWhatsAppCloudConfig, type FetchLike, type WhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
+import { WebInboundAdapter, WebOutboundAdapter, describeWebChannelConfig, loadWebChannelConfig, type WebFetch } from '@r4-adapters/web';
 import { CapabilityRegistry } from '@r4/capability-runtime';
 import { systemClock, type Clock, type Principal } from '@r4/contracts';
 import type { ModelProvider } from '@r4/model-gateway';
@@ -57,6 +58,14 @@ import { quoteDocumentDelivery } from '../capabilities/quote-document.js';
 import { catalogDiscoverCapability } from '../capabilities/catalog-discover.js';
 import type { CatalogDiscoverPort } from '@r4-adapters/catalog-http';
 import { checkoutPurchaseStatusCapability, checkoutRequestLinkCapability, checkoutStartPurchaseCapability } from '../capabilities/checkout.js';
+import { SALES_WEB_PROFILES, isSalesWebProfile, salesWebAgentVersion, salesWebProfile } from './profile-web.js';
+import { SALES_WEB_AGENT_ID } from '../ids.js';
+
+/** (ADR-046) The agent (identity and pinned definition version) a Sales profile runs: `sales-web@N` for web profiles, `sales@vN` otherwise. */
+export function salesAgentOf(profile: ProductionProfile): { readonly agentId: string; readonly version: number } {
+  const web = salesWebAgentVersion(profile);
+  return web === null ? { agentId: SALES_AGENT_ID, version: salesProductionAgentVersion(profile) } : { agentId: SALES_WEB_AGENT_ID, version: web };
+}
 
 /** Who opens production Sales conversations: the channel ingress (a platform service, never the model). */
 export const SALES_CHANNEL_INGRESS: Principal = { kind: 'service', ref: 'sales-channel-ingress' };
@@ -115,12 +124,14 @@ export interface SalesProductionWorkerOptions {
 }
 
 /** The Sales production profile the deployment declared, or a refusal (nothing is defaulted). */
-export function selectedSalesProductionProfile(config: ProductionConfig, options: { readonly canary?: boolean; readonly lane?: boolean } = {}): ProductionProfile {
+export function selectedSalesProductionProfile(config: ProductionConfig, options: { readonly canary?: boolean; readonly lane?: boolean; readonly web?: boolean } = {}): ProductionProfile {
   const profile =
     salesProductionProfile(config.policyProfile) ??
     (options.canary ? (SALES_CANARY_ONLY_PROFILES.find((p) => profileLabel(p) === config.policyProfile) ?? null) : null) ??
     // (ADR-045) A lane profile is selected only by a production worker; a gateway serves it as its lane, never as its main profile.
-    (options.lane ? (SALES_LANE_PROFILES.find((p) => profileLabel(p) === config.policyProfile) ?? null) : null);
+    (options.lane ? (SALES_LANE_PROFILES.find((p) => profileLabel(p) === config.policyProfile) ?? null) : null) ??
+    // (ADR-046) A web profile is selected by a worker or by the web gateway, never by the WhatsApp gateway.
+    (options.web ? salesWebProfile(config.policyProfile) : null);
   if (!profile) throw new Error(`refusing production composition: R4_PROD_POLICY_PROFILE=${config.policyProfile} is not a Sales production profile (${SALES_PRODUCTION_PROFILES.map(profileLabel).join(', ')})`);
   return profile;
 }
@@ -147,7 +158,7 @@ export interface SalesProductionWorker {
  */
 export function composeSalesProductionWorker(options: SalesProductionWorkerOptions): SalesProductionWorker {
   const config = assertProductionMode(options.production.config);
-  const profile = selectedSalesProductionProfile(config, { canary: options.canary === true, lane: true });
+  const profile = selectedSalesProductionProfile(config, { canary: options.canary === true, lane: true, web: true });
   const clock = options.clock ?? systemClock;
   const sales = new PostgresSalesStore(options.pool);
   const controls = new AutonomyControls({ store: options.store, logger: options.logger });
@@ -165,12 +176,12 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
   }
   if (catalogReal) {
     // READ capabilities offered to the model; they execute through the CapabilityInvoker only.
-    const [catalogSearch, productContext] = catalogCapabilities(catalog, { variantAvailability: SALES_VARIANT_AVAILABILITY_PROFILES.has(profileLabel(profile)) });
+    const [catalogSearch, productContext] = catalogCapabilities(catalog, { variantAvailability: SALES_VARIANT_AVAILABILITY_PROFILES.has(profileLabel(profile)) || isSalesWebProfile(profile) });
     capabilities.register(catalogSearch);
     capabilities.register(productContext);
   }
-  // (ADR-045) The lane profile reads Catalog V2 Discover; it never composes without it.
-  if (isSalesLaneProfile(profile)) {
+  // (ADR-045) The lane profile reads Catalog V2 Discover; it never composes without it. (ADR-046) Nor does a web profile.
+  if (isSalesLaneProfile(profile) || isSalesWebProfile(profile)) {
     // A port whose Discover key (or V2 source) is missing would compose and then fail every call: refuse at start.
     if (!catalogReal || !options.catalogDiscover?.discoverConfigured) throw new Error(`refusing production composition: ${profileLabel(profile)} requires Catalog V2 Discover (R4_CATALOG_V2_* and R4_CATALOG_V2_DISCOVER_API_KEY)`);
     capabilities.register(catalogDiscoverCapability(options.catalogDiscover));
@@ -266,7 +277,7 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
       presence: { executionMode: 'production', runtimeProfile: profileLabel(profile) },
       // R4-J4-R6 EV-2: only tasks pinned to this profile's definition; after a rollback, tasks of another
       // definition wait (durable, visible) instead of running with this profile's capabilities.
-      servedAgents: [{ agentId: SALES_AGENT_ID, version: salesProductionAgentVersion(profile) }],
+      servedAgents: [salesAgentOf(profile)],
     },
   };
 }
@@ -309,11 +320,11 @@ export async function assertSalesProductionPrerequisites(profile: ProductionProf
  * The task is pinned to the Sales definition version of the selected profile (R4-J2D): registering a newer
  * definition never switches a running profile, since an unpinned task would run the latest registered version.
  */
-export function salesConversationTaskFactory(pool: pg.Pool, agentVersion: number): ConversationTaskFactory {
+export function salesConversationTaskFactory(pool: pg.Pool, agentVersion: number, agentId: string = SALES_AGENT_ID): ConversationTaskFactory {
   const sales = new PostgresSalesStore(pool);
   return {
     requestedBy: SALES_CHANNEL_INGRESS,
-    request: (binding) => ({ taskType: SALES_TASK_TYPE, agentId: SALES_AGENT_ID, agentVersion, goal: SALES_ROOT_GOAL, input: { channel: binding.channel, conversationBinding: binding.bindingId } }),
+    request: (binding) => ({ taskType: SALES_TASK_TYPE, agentId, agentVersion, goal: SALES_ROOT_GOAL, input: { channel: binding.channel, conversationBinding: binding.bindingId } }),
     // Customer identity is UNAVAILABLE in this profile: the conversation acts for an unknown customer.
     afterOpen: async (taskId, binding) => {
       await sales.bindConversation({ taskId, customerRef: null, channelRef: binding.channel });
@@ -352,6 +363,16 @@ export const SALES_HUMAN_REQUEST_NOTICE_TEXT =
 /** The profiles whose conversations get that notice: only the F1 quote lane candidate (@13 and the others unchanged). */
 export const SALES_HUMAN_REQUEST_NOTICE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_QUOTE_LANE_V18_PROFILE_LABEL, 'sales-production@19']);
 
+/**
+ * (ADR-046) The web chat's own notices. No person attends it yet: they say so, show the store contact ([[contacto]],
+ * filled by the web edge from its configuration) and start a fresh conversation for the visitor's next message
+ * ([[nueva-conversacion]]), so a task blocked on a handoff never leaves the visitor without an answer. Fixed text.
+ */
+export const SALES_WEB_RUN_FAILURE_FALLBACK_TEXT =
+  'Disculpa, tuve un problema técnico y no pude responder tu último mensaje. Escríbeme de nuevo y lo intento otra vez. Si prefieres hablar con una persona del equipo:\n[[contacto]]\n[[nueva-conversacion]]';
+export const SALES_WEB_HUMAN_REQUEST_NOTICE_TEXT =
+  'En este chat todavía no puede atenderte una persona del equipo. Para hablar con alguien:\n[[contacto]]\nSi quieres, escríbeme de nuevo y sigo ayudándote por aquí.\n[[nueva-conversacion]]';
+
 /** Gateway bindings of the Sales canary: the WhatsApp Cloud adapter (canary number), the profile and the task factory. */
 export function composeSalesGateway(options: SalesGatewayOptions): { bindings: GatewayBindings; whatsapp: WhatsAppCloudConfig; describe: Record<string, string | boolean> } {
   const config = assertProductionMode(options.production.config);
@@ -371,6 +392,30 @@ export function composeSalesGateway(options: SalesGatewayOptions): { bindings: G
       ...laneOf(salesGatewayLane(options.env, options.pool)),
       // (R4-J4-R4) v8 never runs without the inbound inspector, requested in full (ADR-040).
       ...(isCustomerIdentityProfile(profile) ? { inspection: salesGatewayInspection(profile, options.env, { transport: options.identityFetch, allowedHosts: options.allowedHosts }) } : {}),
+    },
+  };
+}
+
+/**
+ * (ADR-046) Gateway bindings of the store website chat: the web edge adapters, a web profile and its own task factory
+ * (sales-web). A separate process from the WhatsApp gateway (one channel per profile); no lane, no inspector.
+ */
+export function composeSalesWebGateway(options: Omit<SalesGatewayOptions, 'fetch'> & { readonly fetch?: WebFetch }): { bindings: GatewayBindings; describe: Record<string, string> } {
+  const config = assertProductionMode(options.production.config);
+  const profile = salesWebProfile(config.policyProfile);
+  if (!profile) throw new Error(`refusing the web gateway: R4_PROD_POLICY_PROFILE=${config.policyProfile} is not a Sales web profile (${SALES_WEB_PROFILES.map(profileLabel).join(', ')})`);
+  const web = loadWebChannelConfig(options.env, { allowNetwork: config.allowNetwork });
+  const agent = salesAgentOf(profile);
+  return {
+    describe: describeWebChannelConfig(web),
+    bindings: {
+      production: options.production,
+      profile,
+      inbound: [new WebInboundAdapter(web)],
+      outbound: [new WebOutboundAdapter(web, options.fetch ? { fetch: options.fetch } : {})],
+      taskFactory: salesConversationTaskFactory(options.pool, agent.version, agent.agentId),
+      runFailureFallback: { text: SALES_WEB_RUN_FAILURE_FALLBACK_TEXT },
+      humanRequestNotice: { text: SALES_WEB_HUMAN_REQUEST_NOTICE_TEXT, profiles: [profileLabel(profile)] },
     },
   };
 }

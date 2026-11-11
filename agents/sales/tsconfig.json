@@ -85,6 +85,9 @@
       "path": "../../adapters/channels/whatsapp-cloud"
     },
     {
+      "path": "../../adapters/channels/web"
+    },
+    {
       "path": "../../adapters/domains/identity/verification"
     }
   ]

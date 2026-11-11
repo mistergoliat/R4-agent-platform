@@ -81,6 +81,7 @@
     "production:sales:smoke": "node agents/sales/dist/cli/production.js --smoke",
     "production:sales:gateway": "node agents/sales/dist/cli/production.js --gateway",
     "production:sales:worker": "node agents/sales/dist/cli/production.js --worker",
+    "production:sales:web-gateway": "node agents/sales/dist/cli/production.js --web-gateway",
     "production:sales:control": "node agents/sales/dist/cli/production-control.js",
     "production:sales:bootstrap": "node agents/sales/dist/cli/production-bootstrap.js",
     "production:sales:operator": "node agents/sales/dist/cli/operator.js",

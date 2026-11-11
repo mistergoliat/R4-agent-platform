@@ -1,0 +1,21 @@
+{
+  "name": "@r4-adapters/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "R4 channel adapter for a web chat edge (ADR-046): HMAC-signed notifications from the edge, canonical text inbound with a validated page hint, honest text submission back to the edge and an optional working signal. Pure transport: no agent, store or commerce semantics. Outside R4 Core.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@r4/live-ops": "*"
+  }
+}
