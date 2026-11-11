@@ -5,14 +5,18 @@
 #   bash image-l3-eval.sh down                           stop, destroy the DB, shred the eval config and logs, remove the copy
 # The evaluator is its own checkout copy (~/r4-eval-pr70), its own Postgres (tmpfs, 127.0.0.1:55497), its own gateway
 # (127.0.0.1:8093, never nginx-facing unless the owner-authorized tee routes to it) and its own lane worker
-# (sales-production@19, R4_EXEC_MAX_WRITE_ACTIONS=0: the model is not offered any write capability). Image perception:
-# DeepSeek deepseek-flash. Production's checkout, database, processes and configuration are only READ.
+# (sales-production@19). Commercial writes are impossible: the evaluator has NO Quote credential and its Quote base URL is
+# a closed loopback port (tripwire), so any issuance fails before leaving the host (@19 itself refuses a write budget of 0,
+# by design). Image perception: DeepSeek deepseek-flash. Production's checkout, database, processes and configuration are
+# only READ.
 set -euo pipefail
 umask 077
 P=~/R4-agent-platform; PC=~/.config/r4
 E=~/r4-eval-pr70; EC=~/.config/r4-eval; DB=r4-image-l3-eval-db; PORT_DB=55497; PORT_GW=8093
 step() { echo "== $(date -u +%T) $*"; }
 evrun() { local f=$1; shift; (cd "$E" && set -a && . "$EC/$f" && set +a && "$@"); }
+# The evaluator's processes are exactly those whose working directory is the evaluator copy (never production's).
+evalpids() { for d in /proc/[0-9]*; do [ "$(readlink "$d/cwd" 2>/dev/null)" = "$(readlink -f "$E")" ] && echo "${d#/proc/}"; done; }
 
 case "${1:-}" in
 up)
@@ -20,7 +24,9 @@ up)
   DISPATCH=false; [ "${2:-}" = dispatch ] && DISPATCH=true
   step "1. evaluator code: copy of the production checkout at $EVAL_SHA, built (production's checkout untouched)"
   [ -d "$E" ] || cp -a "$P" "$E"
-  (cd "$E" && git fetch -q origin "$EVAL_SHA" 2>/dev/null || git fetch -q origin; git checkout -q --detach "$EVAL_SHA" && npm run -s build >/dev/null) || { echo "build failed"; exit 1; }
+  if [ "$(cd "$E" && git rev-parse --short HEAD)" != "$EVAL_SHA" ]; then
+    (cd "$E" && { git fetch -q origin "$EVAL_SHA" 2>/dev/null || git fetch -q origin; } && git checkout -q --detach "$EVAL_SHA" && npm run -s build >/dev/null < /dev/null) || { echo "build failed"; exit 1; }
+  fi
   echo "evaluator at $(cd "$E" && git rev-parse --short HEAD); production checkout still at $(cd "$P" && git rev-parse --short HEAD)"
 
   step "2. own database (tmpfs, 127.0.0.1:$PORT_DB)"
@@ -44,8 +50,10 @@ const common = { ...prod, R4_DATABASE_URL: url };
 const write = (name, vars) => fs.writeFileSync(`${ec}/${name}`, Object.entries(vars).map(([k, v]) => `${k}='${String(v).replace(/'/g, '')}'`).join('\n') + '\n', { mode: 0o600 });
 write('gateway.env', { ...common, R4_GATEWAY_PORT: portGw, R4_GATEWAY_ID: 'r4-image-l3-eval', R4_GATEWAY_DISPATCH: dispatch, R4_GATEWAY_WORKING_SIGNAL: 'off',
   R4_MEDIA_PERCEPTION: 'enabled', R4_MEDIA_PERCEPTION_PROFILES: 'sales-production@19', R4_PERCEPTION_VISION_API_KEY: prod.R4_MODEL_API_KEY, R4_PERCEPTION_VISION_MODEL: 'deepseek-flash' });
-write('lane.env', { ...common, ...parse(`${pc}/secrets/catalog-v2.env`), ...parse(`${pc}/quote-v2-retail.env`), ...parse(`${pc}/production-lane.env`), R4_DATABASE_URL: url, R4_EXEC_MAX_WRITE_ACTIONS: '0' });
-console.log('gateway.env and lane.env written (0600); lane worker write budget 0; perception profiles sales-production@19');
+// Quote: no real credential and a closed loopback port (tripwire): no commercial write can leave the evaluator.
+write('lane.env', { ...common, ...parse(`${pc}/secrets/catalog-v2.env`), ...parse(`${pc}/quote-v2-retail.env`), ...parse(`${pc}/production-lane.env`), R4_DATABASE_URL: url,
+  R4_QUOTE_BASE_URL: 'http://127.0.0.1:14999', R4_QUOTE_BEARER_TOKEN: 'eval-tripwire-' + require('crypto').randomBytes(24).toString('hex') });
+console.log('gateway.env and lane.env written (0600); Quote = closed-port tripwire without credential; perception profiles sales-production@19');
 NODE
 
   step "4. migrate, bootstrap (main + lane), autonomy on — all in the eval database"
@@ -56,23 +64,29 @@ NODE
   evrun gateway.env npm run -s production:sales:control -- autonomy on --reason "image L3 evaluator (isolated)" > /dev/null 2>&1
 
   step "5. start the evaluator gateway (dispatch=$DISPATCH) and lane worker (own processes, not pm2)"
+  for pid in $(evalpids); do kill "$pid" 2>/dev/null || true; done; sleep 3
   for svc in gateway lane; do
-    [ -f "$E/eval-logs/$svc.pid" ] && kill "$(cat "$E/eval-logs/$svc.pid")" 2>/dev/null || true
     f=gateway.env; cmd=production:sales:gateway; [ $svc = lane ] && f=lane.env && cmd=production:sales:worker
-    (cd "$E" && set -a && . "$EC/$f" && set +a && nohup npm run -s "$cmd" > "$E/eval-logs/$svc.log" 2>&1 & echo $! > "$E/eval-logs/$svc.pid")
+    # The whole subshell is detached with every descriptor redirected (an ssh session never waits for it).
+    (cd "$E" && set -a && . "$EC/$f" && set +a && exec nohup npm run -s "$cmd") < /dev/null > "$E/eval-logs/$svc.log" 2>&1 &
+    echo $! > "$E/eval-logs/$svc.pid"
   done
   sleep 15
+  ! (exec 3<>/dev/tcp/127.0.0.1/14999) 2>/dev/null && echo "Quote tripwire 127.0.0.1:14999: closed (nothing listens)" || { echo "something listens on 14999: refusing"; exit 1; }
   curl -sf -m 5 "127.0.0.1:$PORT_GW/health" >/dev/null && echo "evaluator gateway /health 200 on 127.0.0.1:$PORT_GW"
+  for svc in gateway lane; do kill -0 "$(cat "$E/eval-logs/$svc.pid")" 2>/dev/null && echo "evaluator $svc running" || { echo "$svc not running:"; tail -c 400 "$E/eval-logs/$svc.log"; exit 1; }; done
+  echo "evaluator processes (cwd = evaluator copy): $(evalpids | wc -w)"
   grep -hoE '"event":"service.composed"[^}]*"profile":"[^"]*"' "$E/eval-logs/lane.log" | grep -oE '"profile":"[^"]*"' | tail -1
   ;;
 status)
   for svc in gateway lane; do echo "$svc: $( [ -f "$E/eval-logs/$svc.pid" ] && kill -0 "$(cat "$E/eval-logs/$svc.pid")" 2>/dev/null && echo running || echo stopped)"; done
+  echo "evaluator processes (cwd = evaluator copy): $(evalpids | wc -w)"
   docker ps --format '{{.Names}} {{.Status}}' | grep "$DB" || echo "db: absent"
   ;;
 down)
   step "stop, destroy, shred"
-  for svc in gateway lane; do [ -f "$E/eval-logs/$svc.pid" ] && kill "$(cat "$E/eval-logs/$svc.pid")" 2>/dev/null || true; done
-  pkill -f "$E/" 2>/dev/null || true
+  for pid in $(evalpids); do kill "$pid" 2>/dev/null || true; done; sleep 3
+  for pid in $(evalpids); do kill -9 "$pid" 2>/dev/null || true; done
   docker rm -f "$DB" >/dev/null 2>&1 || true
   [ -d "$EC" ] && find "$EC" -type f -exec shred -u {} + && rmdir "$EC"
   [ -d "$E" ] && find "$E/eval-logs" -type f -exec shred -u {} + 2>/dev/null; rm -rf "$E"
