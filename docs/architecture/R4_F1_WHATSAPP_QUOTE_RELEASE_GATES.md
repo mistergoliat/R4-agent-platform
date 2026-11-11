@@ -6,6 +6,10 @@ date: 2026-11-09
 r4: main 8e75b5e + PR de este documento (F-ADV-2 y registro del candidato)
 ---
 
+> **Estado vigente (2026-11-10).** El resumen inicial, §2 (auditoría de Quote) y §7 (bloqueos) describen el estado **previo** al despliegue del 2026-11-09 y quedan superados por la matriz de §1.1. En particular:
+> - Quote V2 `a79d33f` está desplegado en producción, con la migración `000010` **aplicada**. Se ensayó (890 ms) y se verificaron el restore y el rollback (G4–G9).
+> - El canary F1 se activó en la allowlist: `@17`, y después `@18` (R4 `2b3b5a2`).
+
 # R4 — Gates de release del canary F1 de cotizaciones por WhatsApp
 
 ## 0. Estado
@@ -43,7 +47,7 @@ El registro en código está en `profile-v17.ts` (`SALES_PRODUCTION_PROFILE_V17_
 | Repositorio | SHA | Estado |
 |---|---|---|
 | R4 | `8e75b5e` + el merge de este PR | **Se define al mergear el PR**, que trae F-ADV-2, un gate de `@17`. Pendiente de revisión |
-| Quote V2 | **No designado.** Opciones: `a79d33f` (main; exige `000010`) o `ca66a2e` / `d419640` (en `000009`, con A10) | Decisión del owner de Quote (§2) |
+| Quote V2 | **`a79d33f`, desplegado** el 2026-11-09 con `000010` aplicada (G4, G5). *Antes del despliegue: no designado; opciones `a79d33f`, `ca66a2e` o `d419640`* | Owner de Quote (§2) |
 | Catalog V2 | Desplegado `8a72c38` (`RELEASE.json`); `origin/main` `5f2c086` | Lo confirma el owner de Catalog junto con P-1 (§4) |
 
 ## 1.1 Matriz de gates (actualizada 2026-11-09, mandato «F1 commercial eligibility and release preparation»)
@@ -56,7 +60,7 @@ El registro en código está en `profile-v17.ts` (`SALES_PRODUCTION_PROFILE_V17_
 | G2 | F-ADV-2: aviso ante una consulta o derivación del agente | R4 | Inicio | **Hecho** (PR #59, `05139bb`) |
 | G22 | Una sola emisión de Quote en vuelo entre todos los workers | R4 | Inicio | **Hecho** (PR #60, `cc8dde7`) |
 | G23 | Política comercial F1 aplicada en `quote.preview` y `quote.create` (`@17`) | R4 | Inicio | **Simplificada** (PR #61): Catalog V2 es la autoridad; se exigen procedencia, validez acotada, precio y stock; sin promociones ni despacho |
-| G3 | SHA final de R4 | Owner | Inicio | Pendiente: el merge de G23; el contrato de Catalog #57 puede pedir un ajuste |
+| G3 | SHA final de R4 | Owner | Inicio | **Hecho**: `a704319`, desplegado en producción (etapa 1, 2026-11-09) con Core `0014` y Sales `0010`; el carril siguió en `@13` |
 | G4 | SHA de Quote | Owner de Quote | Inicio | **Hecho**: `a79d33f`, desplegado en EC2 |
 | G5 | Migración `000010` | Owner de Quote / ops | Inicio | **Hecho**: aplicada (aditiva, 890 ms ensayada) |
 | G6 | Restore verificado | Ops | Inicio | **Hecho**: base, documentos y configuración, en un entorno aislado |
@@ -64,14 +68,14 @@ El registro en código está en `profile-v17.ts` (`SALES_PRODUCTION_PROFILE_V17_
 | G8 | Espacio en el host | Ops | Inicio | **Hecho**: 6,2 GB libres; sin swap (recomendado agregarlo) |
 | G9 | Procedimiento de actualización | Ops | Inicio | **Hecho**: ejecutado en el lugar, con respaldos en `~/backups/quote-v2-integration/` |
 | G10 | A10 conjunto (R4 + Quote) | R4 + Quote | Inicio | **Hecho** en el ensayo (91.395 / 17.365 / 108.760) y en el runtime de R4; en producción se verifica con la primera emisión autorizada |
-| G11 | Principal de 60 minutos | Owner de Quote | Inicio | Provisionado (`r4-sales-retail-session`); conectividad de solo lectura validada; **falta la autorización V6** (Quote #33) |
+| G11 | Principal de 60 minutos | Owner de Quote | Inicio | Provisionado (`r4-sales-retail-session`); conectividad de solo lectura validada; **autorizado** por el owner de Quote (Quote #33): solo allowlist, sin despacho, sin promociones, sin carrito ni Checkout, 60 minutos, límites F1, una emisión a la vez |
 | G24 | Política comercial `F1-COMMERCIAL-POLICY-v1` | Owner | Inicio | **Definida por el owner** (mandato «F1 simplified commercial canary»); las promociones esperan autorización del owner comercial y del owner de Quote |
 | G25 | Clasificación de precio (Catalog #57) | Owner de Catalog | — | **Fuera de F1** (decisión del owner); solo sería necesaria para habilitar promociones |
 | G13 | P-1: archivo estático por SKU | Owner de Catalog | — | **Fuera de F1** (decisión del owner: Catalog V2 es la autoridad comercial) |
-| G12 | Autorización de escrituras de Quote en producción (etapas 2–4) | Owner | Inicio | Pendiente (las escrituras se validaron solo en el ensayo) |
-| G14 | L3 sobre los SHAs fijos | R4 + owners | Inicio | Preparado (§6); no ejecutado |
-| G15 | Alertas del carril | R4 / ops | Inicio | Pendiente |
-| G16 | Autorización de activación por SHA (allowlist; `@13` como rollback) | Owner | Inicio | Pendiente |
+| G12 | Autorización de escrituras de Quote en producción (etapas 2–4) | Owner | Inicio | **Autorizada** (mandato «F1 canary activation without CloudWatch»): etapa 2 y **una única** emisión controlada desde WhatsApp |
+| G14 | L3 sobre los SHAs fijos | R4 + owners | Inicio | **Hecho**: conversacional (13 escenarios, 8 emisiones reales) y técnico sobre `a704319` (20 suites de mutación, 279/279 mutantes detectados; recuperación 19/19) |
+| G15 | Observabilidad del carril | R4 / ops | Inicio | **F1:** PM2 y logs disponibles, readiness de R4 y de Quote, monitoreo manual durante la primera emisión, kill switch operativo, rollback documentado y conciliación de cada operación contra Quote. **`CLOUDWATCH = DEFERRED_FOR_GENERAL_ROLLOUT`** (decisión del owner): CloudWatch/SNS (`ops/r4-f1-alerts/`) es requisito del rollout comercial general, no del canary; no se instala el agente, roles IAM ni SNS, y su ausencia no es un fallo del canary |
+| G16 | Autorización de activación por SHA (allowlist; `@13` como rollback) | Owner | Inicio | **Autorizada** (`a704319` / Quote `a79d33f` / Catalog `8a72c38`): carril de la allowlist a `@17`; la allowlist y el rollout general no cambian |
 | G17–G21 | Etapas de Quote, ensayo con datos reales, 7 días, W10 y aceptación §Z | Owner de Quote | Release | Pendientes |
 
 ## 2. Estado de Quote R1.7 (B)
@@ -80,8 +84,8 @@ Auditoría de `origin/main` de Quote, solo lectura. No hay documentos de R1.7 po
 
 | # | Punto | Estado | Evidencia |
 |---|---|---|---|
-| 1 | SHA candidato definitivo | **No designado.** `main` = `a79d33f`, 36 commits adelante del desplegado `6735352`. En `000009` y con A10: `ca66a2e` (+22) y `d419640` (+29) | §S del pre-flight exige un SHA aprobado y fijo |
-| 2 | Migración `000010` | **No aplicada en ningún entorno.** `a79d33f` la exige (`readiness-gate` responde `schema_not_ready` sin ella, aun con el carrito apagado). Es reversible en código, pero el pre-flight prohíbe `down` en producción | El plan de despliegue está abierto (owner) |
+| 1 | SHA candidato definitivo | **Superado (2026-11-09): `a79d33f` designado y desplegado.** *Auditoría previa:* no designado. `main` = `a79d33f`, 36 commits adelante del desplegado `6735352`. En `000009` y con A10: `ca66a2e` (+22) y `d419640` (+29) | §S del pre-flight exige un SHA aprobado y fijo |
+| 2 | Migración `000010` | **Superado: aplicada en producción el 2026-11-09** (aditiva, 890 ms en el ensayo; restore y rollback verificados). *Auditoría previa:* no aplicada en ningún entorno. `a79d33f` la exige (`readiness-gate` responde `schema_not_ready` sin ella, aun con el carrito apagado). Es reversible en código, pero el pre-flight prohíbe `down` en producción | El plan de despliegue está abierto (owner) |
 | 3 | Restore verificado | **No** (G2-D02 abierto; F14) | |
 | 4 | Preparación del host | Reinicio: **no** (G2-D03 abierto; solo un workaround manual). Inventario B-S2: solo hay plan, no informe | |
 | 5 | Espacio | **No cumple.** 1.064 MB libres frente a un pico de carga de 1.213 MB y un requisito de ≥ 3.000 MB. Dato del 2026-10-08, sin medición posterior | |
@@ -227,7 +231,7 @@ La holgura de disco es una inferencia de R4, a partir del gate de 3 GB del READM
 
 **Resultado:** `L3_PASS` solo si no hay ningún `NOT_RUN` en un punto obligatorio.
 
-## 7. Bloqueos restantes
+## 7. Bloqueos restantes (al 2026-11-09, antes del despliegue; superados, ver la nota inicial y §1.1)
 
 1. **Quote R1.7** (G4–G10, G12): falta designar un SHA, decidir `000010`, verificar el restore, hacer el simulacro de rollback, liberar disco y escribir el procedimiento de actualización. Responsable: owner de Quote / ops.
 2. **Principal de 60 minutos** (G11): no está autorizado en producción. Además depende del SHA nuevo y de la condición O-1 de promociones. Responsable: owner de Quote.
