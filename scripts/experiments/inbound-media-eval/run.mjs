@@ -16,6 +16,9 @@ import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { extname, join } from 'node:path';
 import { ChatCompletionsImageDescriber, OpenAISpeechTranscriber } from '@r4-adapters/openai-compatible';
 import { SALES_IMAGE_PERCEPTION_INSTRUCTIONS, SALES_TRANSCRIPTION_PROMPT, SalesMediaPerceiver } from '@r4-sales/agent/production';
+import { URL } from 'node:url';
+
+const { fetch } = globalThis;
 
 const [dir, ...rest] = process.argv.slice(2);
 const opt = (name, fallback) => { const i = rest.indexOf(name); return i >= 0 ? rest[i + 1] : fallback; };

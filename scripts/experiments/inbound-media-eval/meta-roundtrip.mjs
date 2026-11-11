@@ -8,6 +8,11 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { basename, extname } from 'node:path';
+import { Buffer } from 'node:buffer';
+import { URL } from 'node:url';
+
+const { fetch, FormData, Blob } = globalThis;
+const say = (line) => process.stdout.write(`${line}\n`);
 
 const [envFile, ...files] = process.argv.slice(2);
 const env = Object.fromEntries(readFileSync(envFile, 'utf8').split('\n').map((l) => /^([A-Z0-9_]+)=['"]?(.*?)['"]?$/.exec(l.trim())).filter(Boolean).map((m) => [m[1], m[2]]));
@@ -28,7 +33,7 @@ for (const file of files) {
   form.append('file', new Blob([bytes], { type }), basename(file));
   const up = await fetch(`${base}/${phone}/media`, { method: 'POST', headers: auth, body: form });
   const upBody = await up.json().catch(() => ({}));
-  if (up.status !== 200 || !upBody.id) { console.log(JSON.stringify({ file: basename(file), upload: up.status, error: upBody?.error?.code ?? null })); continue; }
+  if (up.status !== 200 || !upBody.id) { say(JSON.stringify({ file: basename(file), upload: up.status, error: upBody?.error?.code ?? null })); continue; }
   const meta = await fetch(`${base}/${encodeURIComponent(upBody.id)}?phone_number_id=${encodeURIComponent(phone)}`, { headers: { ...auth, accept: 'application/json' }, redirect: 'manual' });
   const m = await meta.json().catch(() => ({}));
   let host = null; let fileStatus = null; let location = null; let got = null; let ms = null;
@@ -42,7 +47,7 @@ for (const file of files) {
     if (res.status === 200) got = Buffer.from(await res.arrayBuffer());
     ms = Date.now() - t0;
   }
-  console.log(JSON.stringify({
+  say(JSON.stringify({
     file: basename(file), bytes: bytes.length, upload: up.status, meta: meta.status, declaredMime: m.mime_type ?? null, declaredSize: m.file_size ?? null,
     statedHashForm: hashForm(m.sha256), statedHashEqualsUploaded: asHex(m.sha256) === sha(bytes), fileHost: host, fileStatus, redirectTo: location,
     downloadMs: ms, downloadedEqualsUploaded: got ? sha(got) === sha(bytes) : null, statedHashEqualsDownloaded: got ? asHex(m.sha256) === sha(got) : null,
