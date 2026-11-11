@@ -1,3 +1,5 @@
+import { MEDIA_TEXT_HEADERS, UNCERTAIN_OPEN } from './media-text.js';
+
 /**
  * (R4-J3E-B) The deterministic grammar of an explicit quote confirmation in a
  * customer's own message (Spanish, Chile). Deliberately small and closed:
@@ -91,8 +93,24 @@ const DELIVERY_CHANGE: Record<OfferDelivery, RegExp> = {
 /** Whether the offer the customer answers includes delivery (the snapshot's shipping kind). */
 export type OfferDelivery = 'excluded' | 'selected';
 
+/**
+ * (Inbound multimodal v1) A reply that came as a file: an image, an unprocessed file or a transcript without measured
+ * confidence is never an acceptance ("a file is not an authorization"); a voice note is read as its transcript only when
+ * no word of it was transcribed with doubt. Any other platform-style header is refused (false). Null: an ordinary text.
+ */
+export function mediaReplyBody(text: string): string | false | null {
+  const t = text.trimStart();
+  if (!t.startsWith('[r4:')) return null;
+  if (!t.startsWith(`${MEDIA_TEXT_HEADERS.audio} `)) return false;
+  const body = /\n«([\s\S]*)»\s*$/.exec(t)?.[1];
+  return body === undefined || body.includes(UNCERTAIN_OPEN) ? false : body;
+}
+
 /** The deterministic guard of @19: never an acceptance when the reply asks, rejects, hesitates or asks for a change. */
-export function guardIntentReply(text: string | null, delivery: OfferDelivery = 'excluded'): ConfirmationVerdict {
+export function guardIntentReply(reply: string | null, delivery: OfferDelivery = 'excluded'): ConfirmationVerdict {
+  const media = reply === null ? null : mediaReplyBody(reply);
+  if (media === false) return { confirmed: false, reason: 'disqualified' };
+  const text = media ?? reply;
   if (text === null || text.trim() === '') return { confirmed: false, reason: 'empty' };
   if (text.length > INTENT_MAX_LENGTH) return { confirmed: false, reason: 'too_long' };
   if (/[?¿？]/u.test(text) || NEGATIVE_EMOJI.test(text)) return { confirmed: false, reason: 'disqualified' };

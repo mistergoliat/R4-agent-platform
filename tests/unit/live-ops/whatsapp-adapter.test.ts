@@ -55,14 +55,15 @@ describe('inbound: verification and authenticity', () => {
 });
 
 describe('inbound: canonicalization', () => {
-  it('maps text messages, classifies media as unsupported, maps statuses (sent → accepted)', () => {
+  it('maps text messages, keeps only the reference of an image (multimodal v1), classifies the rest as unsupported, maps statuses (sent → accepted)', () => {
     const parsed = new WhatsAppInboundAdapter(config).parse(notification(PHONE, {
-      messages: [{ id: 'wamid.a', from: '+56 9 1111 2222', text: 'hola', timestamp: 1_790_000_000 }, { id: 'wamid.b', from: '56911112222', type: 'image' }],
+      messages: [{ id: 'wamid.a', from: '+56 9 1111 2222', text: 'hola', timestamp: 1_790_000_000 }, { id: 'wamid.b', from: '56911112222', type: 'image' }, { id: 'wamid.c', from: '56911112222', type: 'sticker' }],
       statuses: [{ id: 'wamid.out.1', status: 'sent', recipientId: '56911112222', timestamp: 1_790_000_100 }, { id: 'wamid.out.1', status: 'failed', recipientId: '56911112222', errorCode: 131047 }],
     }));
     expect(parsed.rejected).toEqual([]);
     expect(parsed.inbound[0]).toMatchObject({ channel: 'whatsapp', accountRef: PHONE, conversationRef: '56911112222', providerEventId: 'wamid.a', occurredAt: new Date(1_790_000_000_000).toISOString(), content: { kind: 'text', text: 'hola' } });
-    expect(parsed.inbound[1]).toMatchObject({ providerEventId: 'wamid.b', content: { kind: 'unsupported', contentType: 'image' } });
+    expect(parsed.inbound[1]).toMatchObject({ providerEventId: 'wamid.b', content: { kind: 'media', mediaKind: 'image', mediaId: 'media-wamid.b', mimeType: 'image/jpeg' } });
+    expect(parsed.inbound[2]).toMatchObject({ providerEventId: 'wamid.c', content: { kind: 'unsupported', contentType: 'sticker' } });
     expect(parsed.statuses.map((s) => [s.status, s.errorCode])).toEqual([['accepted', null], ['failed', '131047']]);
     expect(JSON.stringify(parsed)).not.toContain('Test Contact');
   });

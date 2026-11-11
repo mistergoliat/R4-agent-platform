@@ -37,7 +37,7 @@ export interface InboundEventRecord {
   readonly channel: string;
   readonly providerEventId: string;
   readonly status: InboundStatus;
-  /** text | unsupported | rejected */
+  /** text | unsupported | media | rejected */
   readonly contentKind: string;
   readonly contentType: string | null;
   /** Canonical text, kept only until the input is durable in R4 (then cleared). */
@@ -63,7 +63,7 @@ export interface NewInboundEvent {
   readonly inboundId: string;
   readonly channel: string;
   readonly providerEventId: string;
-  readonly contentKind: 'text' | 'unsupported' | 'rejected';
+  readonly contentKind: 'text' | 'unsupported' | 'media' | 'rejected';
   readonly contentType: string | null;
   readonly content: string | null;
   readonly contentSha256: string | null;
@@ -344,6 +344,13 @@ export interface ProductionStore {
    */
   recordInboundInspected(event: NewInboundEvent, inspected: InspectedInbound): Promise<{ readonly record: InboundEventRecord; readonly created: boolean }>;
   settleInbound(inboundId: string, settlement: InboundSettlement): Promise<void>;
+  /**
+   * (Inbound multimodal v1) Replaces an UNSETTLED media row's provider reference with its perceived text (and hash),
+   * before that text becomes an input; cleared at settlement like any inbound content. No-op once settled.
+   */
+  recordInboundPerception(inboundId: string, text: string): Promise<void>;
+  /** One inbound event as it is now (null: unknown). */
+  inboundEvent(inboundId: string): Promise<InboundEventRecord | null>;
   /** Received but never settled (a crash between persistence and ingestion). */
   unsettledInbound(olderThanMs: number, limit: number): Promise<InboundEventRecord[]>;
 

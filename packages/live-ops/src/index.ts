@@ -4,6 +4,7 @@ export * from './rollout.js';
 export * from './autonomy.js';
 export * from './delivery.js';
 export * from './channel.js';
+export * from './media.js';
 export * from './ports.js';
 export * from './controls.js';
 export * from './inspection.js';

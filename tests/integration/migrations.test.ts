@@ -6,7 +6,7 @@ import { DEFAULT_MIGRATIONS_DIR, checkDatabaseReadiness, migrate, migrationStatu
 import { createTestDatabase, openPool, type TestDatabase } from '../support/database.js';
 
 // R4-J4-R7-4 R-9: 0013_conversation_binding_history (index) is the Core head, after ADR-041 0012.
-const EXPECTED_MIGRATIONS = ['0001_initial_runtime_schema', '0002_execution_kernel', '0003_context_and_memory', '0004_governed_execution', '0005_temporal_human_runtime', '0007_governed_production', '0008_worker_presence', '0009_run_step_origin', '0010_platform_step_decisions', '0011_binding_identity_immutability', '0012_platform_fallback_outbound', '0013_conversation_binding_history', '0014_platform_notice_outbound', '0015_platform_notice_document'];
+const EXPECTED_MIGRATIONS = ['0001_initial_runtime_schema', '0002_execution_kernel', '0003_context_and_memory', '0004_governed_execution', '0005_temporal_human_runtime', '0007_governed_production', '0008_worker_presence', '0009_run_step_origin', '0010_platform_step_decisions', '0011_binding_identity_immutability', '0012_platform_fallback_outbound', '0013_conversation_binding_history', '0014_platform_notice_outbound', '0015_platform_notice_document', '0016_inbound_media'];
 const EXPECTED_TABLES = [
   'action_execution_attempts', 'action_executions', 'action_proposals', 'action_receipts',
   'agent_definitions', 'agent_run_steps', 'agent_runs', 'agent_task_transitions', 'agent_tasks',
