@@ -10,7 +10,7 @@ export interface AutonomousInput {
 
 export interface WorkingSignalsOptions {
   readonly adapters: readonly OutboundChannelAdapter[];
-  readonly store: Pick<ProductionStore, 'outboundForTask'>;
+  readonly store: Pick<ProductionStore, 'outboundForTask' | 'taskState'>;
   readonly logger: Logger;
   /** Re-send period while the turn has not answered (providers dismiss such an indicator after ~25 s). */
   readonly refreshMs?: number;
@@ -19,6 +19,9 @@ export interface WorkingSignalsOptions {
   readonly timeoutMs?: number;
   readonly now?: () => number;
 }
+
+/** Task statuses in which the agent is (about to be) working on the turn. */
+const EXECUTING: ReadonlySet<string> = new Set(['pending', 'running']);
 
 interface Pending extends AutonomousInput {
   readonly since: number;
@@ -31,7 +34,9 @@ interface Pending extends AutonomousInput {
  *   - only for autonomous dispositions (never for held/excluded conversations: no reply would follow);
  *   - fire-and-forget: it never delays, fails or changes ingestion or delivery;
  *   - in memory only: a restart at most ends an indicator early;
- *   - one entry per task (the latest inbound), dropped once an outbound of the task exists after it, or after maxMs.
+ *   - one entry per task (the latest inbound), dropped once an outbound of the task exists after it, once the task is
+ *     no longer executing (e.g. it suspended waiting for a human without replying: "typing…" would be a lie), or after
+ *     maxMs.
  */
 export class WorkingSignals {
   readonly #o: Required<Omit<WorkingSignalsOptions, 'now'>> & { now: () => number };
@@ -60,6 +65,12 @@ export class WorkingSignals {
       try {
         const outbound = await this.#o.store.outboundForTask(taskId);
         if (outbound.some((o) => Date.parse(o.createdAt) >= entry.since - 1_000)) {
+          this.#pending.delete(taskId);
+          continue;
+        }
+        // Only while the task is executing (runnable or running): a suspended/blocked/terminal task is not "typing".
+        const state = await this.#o.store.taskState(taskId);
+        if (!state || !EXECUTING.has(state.status)) {
           this.#pending.delete(taskId);
           continue;
         }
