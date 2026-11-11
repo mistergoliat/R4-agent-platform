@@ -1,6 +1,8 @@
 # Rotation of `R4_PROD_IDENTITY_HASH_KEY` (identity HMAC)
 
-**State:** `R4_IDENTITY_HMAC_ROTATION_READY_FOR_REVIEW`. The procedure is executable and has been rehearsed on a restored copy of production (§6). **It has not been run in production**: that needs the owner's authorization.
+**State:** `R4_IDENTITY_HMAC_ROTATION_READY_FOR_REVIEW`. The procedure is executable. **It has not been run in production**: that needs the owner's authorization.
+
+**What has been rehearsed** on a restored copy of production (§6): the database logic, the install into copies of the env files, the verification and the rollback. **What has not:** the process operation (stop, kill switch, pm2, health), which can only be checked in production.
 
 **Why it is needed:** the key had the same value as the former PostgreSQL password, which was exposed in an admin session's output on 2026-11-11 and rotated that same day. So the key counts as compromised.
 
@@ -39,7 +41,11 @@ Each binding keeps the inputs of its own key: `channel`, `account_ref` and `reci
 - An inbound event `received` (not settled).
 - An identity-verification expectation that is live or protected.
 - A list entry with no verifiable identity.
-- An unsettled action or outbound, or a failed verification after the rewrite (that one goes to rollback).
+- An unsettled action or outbound, re-checked after the stop.
+- An env file a rewrite could get wrong: a managed variable with `export`, indented, or defined more than once (in one file or across both).
+- `R4_PROD_ROLLOUT_PERCENT` other than 0 (the cohort would reshuffle).
+- A database role that is neither owner of the binding table nor superuser.
+- A failed verification after the rewrite: from the commit on, it goes to rollback.
 
 ## 4. Procedure (`ops/r4-identity-rotation/`)
 
@@ -47,17 +53,29 @@ Each binding keeps the inputs of its own key: `channel`, `account_ref` and `reci
   - The identity-immutability trigger is disabled only inside the transaction.
   - Before commit it checks that every row verifies under the new key and that the trigger is back on.
 - **`rotate.mjs`**: the CLI. It prints counts only and never a key, a wa_id or a derived key. The recalculated lists are written to a 0600 file.
-- **`rotate-production.sh`**:
+- **`rotate-production.sh`** (reviewed version):
   1. preconditions;
-  2. new key by CSPRNG (256 bits) into a 0700 folder;
+  2. old key extracted with the same parser as the CLI; new key by CSPRNG (256 bits); both in a 0700 folder; it lists (names only) the files that hold the old key;
   3. read-only plan with production running;
-  4. kill switch, drain, stop the 4 processes;
-  5. backup: `pg_dump`, configuration, pm2 dump;
-  6. `apply`;
-  7. new key and lists written in place;
-  8. `verify`;
-  9. restart with `--update-env` passing **only** the new key, which also purges the old value from pm2 and its dump;
-  10. autonomy back as it was.
+  4. **stop order with no hold window**: workers first (the gateway keeps ingesting and delivering), outbound drained, gateway stopped (Meta retries webhooks), only then the kill switch;
+  5. pending actions, outbound and inbound re-checked with everything stopped;
+  6. backup: `pg_dump`, configuration, pm2 dump;
+  7. plan again with production stopped;
+  8. `apply`;
+  9. `install`: new key and lists into the env files, **atomically** (temporary file, then rename), then re-read and checked: values correct, every other line untouched, no old value left;
+  10. `verify` under the key the files now hold;
+  11. restart in a **clean** pm2 environment (`env -i` with only HOME, PATH and the new key), `pm2 save`, and a check that the pm2 dump no longer holds the old key;
+  12. health checked on the 4 processes;
+  13. autonomy back as it was, plus a count of any holds in the window (expected 0).
+  - **If it aborts before the commit**, a trap restores production: processes started, autonomy as it was, database untouched.
+  - **If it fails after the commit**, it says "DATABASE ROTATED" and points to the rollback.
+- **`rollback-production.sh`**: an executable rollback:
+  - checks the backup's checksums;
+  - stops processes and engages the kill switch;
+  - applies with the keys swapped;
+  - restores the env files;
+  - **verifies the database under the key those restored files hold**, so a key file that doesn't match the configuration can never go unnoticed;
+  - restarts with the old key and turns autonomy back on.
 - **`restored-copy-test.sh`**: the rehearsal on a copy (§6).
 
 **Impact:**
@@ -66,7 +84,7 @@ Each binding keeps the inputs of its own key: `channel`, `account_ref` and `reci
 - New `actor_ref` values use the new key; earlier ones keep the old one (audit readability only).
 - `rollout_fingerprint` changes for new bindings (informational).
 
-**Rollback:** the same tool with the keys swapped (`B/rotated.env` with `B/old.key`), plus the configuration restored from the backup. As a last resort, `pg_restore` of the dump. Rollback is rehearsed in §6.
+**Rollback:** `rollback-production.sh` (the same tool with the keys swapped, plus the configuration restored and checked). As a last resort, `pg_restore` of the dump. The database part of the rollback is rehearsed in §6.
 
 ## 5. Exposure of old copies and access control
 
@@ -75,6 +93,7 @@ Each binding keeps the inputs of its own key: `channel`, `account_ref` and `reci
 - `production.env` inside every backup folder in `~/backups/r4-production/`;
 - the credential-rotation backup;
 - `~/transport/develop-r1/dump.pm2.copy-*`;
+- any other env file that copied the value: the procedure lists, by name only, the files under `~/.config/r4`, `~/.config/r4-web-qa` and `~/transport` that contain it;
 - the current `~/.pm2/dump.pm2` (until the rotation).
 
 Outside EC2 it is in the local history of the admin session where the exposure happened (owner's PC) and in what was sent to the model provider in that session.
@@ -99,16 +118,17 @@ Encrypting `recipient_ref` (a delivery key that only the gateway holds) is the m
   - the output contains no keys or numbers;
   - rollback restores the original keys;
   - the immutability trigger is back in force.
-- **Rehearsal on a restored copy of production** (2026-11-11 19:52 UTC, `restored-copy-test.sh`):
-  - **Copy:** fresh dump restored into a temporary `postgres:16-alpine` on tmpfs (127.0.0.1 only), destroyed at the end. Production was only read (`pg_dump`). The test key was random and shredded.
+- **Rehearsal on a restored copy of production** (`restored-copy-test.sh`; the reviewed version with every check asserted, 2026-11-11 20:53 UTC; the first version had already passed at 19:52):
+  - **Copy:** fresh dump restored into a temporary `postgres:16-alpine` on tmpfs (127.0.0.1 only), destroyed at the end. Production was only read (`pg_dump`). The test key was random and shredded. The temporary password went through an env file, not through `argv`.
 
 | Check | Result |
 |---|---|
-| Copy | 24 bindings, 24 tasks, 665 inbound events |
-| Plan | 24/24 bindings verify under the old key (3 open; 3 distinct identities); 0 collisions; 0 unsettled inbound; identity-verification schema absent; **0 blockers** |
+| Copy | 24 bindings, 24 tasks, 665 inbound events; 47 tables in every schema checksummed |
+| Plan | 24/24 bindings verify under the old key (3 open; 3 distinct identities); 0 collisions; 0 unsettled inbound; env files well-formed; rollout 0 %; identity-verification schema absent; **0 blockers** |
 | Lists | Rollout allowlist 2/2 recalculated; lane allowlist 2/2; denylist empty |
 | Apply | 24 rewritten in one transaction |
-| Verify (new key) | 24/24; 0 open unverifiable; 0 duplicate open |
-| Integrity | **0 tables changed** other than `channel_conversation_bindings` (checksum per table); 0 tasks without a binding; trigger enabled; an ordinary update of the key is refused again |
-| Rollback (keys swapped) | Binding table **identical** to the original (same checksum for every table) |
+| Install (into copies of the env files) | `production.env`: 3 lines (key, allowlist, lane list); `production-lane.env`: 0; **0 old values left**; every other line unchanged |
+| Verify (key read from the files) | 24/24; 0 open unverifiable; 0 duplicate open |
+| Integrity | **0 tables changed** other than `channel_conversation_bindings` (checksum of all 47); trigger enabled; an ordinary update of the key is refused again |
+| Rollback (keys swapped) | **Every table identical** to the original; lists identical to the original |
 | Leftovers | No container or temporary file from the rehearsal remains; production still at 24 bindings with its key unchanged |

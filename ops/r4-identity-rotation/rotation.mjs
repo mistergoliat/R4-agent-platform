@@ -8,6 +8,7 @@
 // Never prints, logs or returns a key, a wa_id or a derived key value: results are counts and reasons.
 
 import { createHmac } from 'node:crypto';
+import { readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 
 export const BINDING_TRIGGER = 'channel_conversation_bindings_identity_immutable';
 
@@ -19,6 +20,67 @@ function assertKeys(oldKey, newKey) {
   if (typeof oldKey !== 'string' || oldKey.length < 32) throw new Error('the old key must be the configured key (>= 32 characters)');
   if (typeof newKey !== 'string' || newKey.length < 32) throw new Error('the new key must be >= 32 characters');
   if (oldKey === newKey) throw new Error('the new key equals the old key');
+}
+
+/** The variables a rotation rewrites in the deployment env files. */
+export const MANAGED_VARS = Object.freeze(['R4_PROD_IDENTITY_HASH_KEY', 'R4_PROD_ROLLOUT_ALLOWLIST', 'R4_PROD_ROLLOUT_DENYLIST', 'R4_PROD_LANE_ALLOWLIST']);
+
+/**
+ * Shape problems that would make the env rewrite unsafe: a managed variable defined more than once (in one file or
+ * across files), with `export`, or indented. `files` is [{ name, text }]. Returns problem strings (no values).
+ */
+export function envShapeProblems(files) {
+  const problems = [];
+  const seen = new Map();
+  for (const { name, text } of files) {
+    for (const line of text.split('\n')) {
+      for (const v of MANAGED_VARS) {
+        if (!new RegExp(`(^|\\s)(export\\s+)?${v}=`).test(line)) continue;
+        if (!line.startsWith(`${v}=`)) problems.push(`${name}: ${v} is not a plain unindented assignment`);
+        seen.set(v, [...(seen.get(v) ?? []), name]);
+      }
+    }
+  }
+  for (const [v, where] of seen) if (where.length > 1) problems.push(`${v} is defined ${where.length} times (${where.join(', ')})`);
+  return problems;
+}
+
+/**
+ * Installs the new values (`next`: { VAR: value }) in place in each env file that defines them: written to a temporary
+ * file and renamed (atomic, same mode), then re-read and checked. Refuses on any shape problem; throws if a file does
+ * not end up with exactly the new values or still contains any of `forbidden` (old key, old list entries). Counts only.
+ */
+export function installEnv(paths, next, forbidden) {
+  const files = paths.map((p) => ({ name: p, text: readFileSync(p, 'utf8') }));
+  const problems = envShapeProblems(files);
+  if (problems.length > 0) throw new Error(`refusing to rewrite the env files: ${problems.join('; ')}`);
+  const report = [];
+  for (const { name, text } of files) {
+    let updated = 0;
+    const out = text.split('\n').map((line) => {
+      const v = /^([A-Z0-9_]+)=/.exec(line)?.[1];
+      if (v && Object.prototype.hasOwnProperty.call(next, v)) {
+        updated += 1;
+        return `${v}='${next[v]}'`;
+      }
+      return line;
+    }).join('\n');
+    if (updated > 0) {
+      const tmp = `${name}.rotation-tmp`;
+      writeFileSync(tmp, out, { mode: statSync(name).mode & 0o777 });
+      renameSync(tmp, name);
+    }
+    report.push({ file: name.split('/').pop(), updated });
+  }
+  // Postcondition: every managed value present is the new one, and no forbidden value survives anywhere.
+  const merged = Object.assign({}, ...paths.map((p) => parseEnvFile(readFileSync(p, 'utf8'))));
+  for (const [v, value] of Object.entries(next)) if (merged[v] !== value) throw new Error(`after the rewrite ${v} does not hold the new value`);
+  for (const p of paths) {
+    const text = readFileSync(p, 'utf8');
+    const left = forbidden.filter((f) => f.length >= 32 && text.includes(f)).length;
+    if (left > 0) throw new Error(`after the rewrite ${p.split('/').pop()} still contains ${left} old value(s)`);
+  }
+  return report;
 }
 
 /** `KEY=value` lines of an env file (quotes stripped); comments and blanks ignored. */
@@ -47,7 +109,7 @@ async function schemaHasExpectations(client) {
  * Read-only. What a rotation would do, and what blocks it. `lists` are the deployment's key lists (keyListsOf).
  * Returns { summary (counts only), blockers, mapping (old→new, internal), newLists (internal) }.
  */
-export async function planRotation(client, { oldKey, newKey, lists }) {
+export async function planRotation(client, { oldKey, newKey, lists, rolloutPercent }) {
   assertKeys(oldKey, newKey);
   const rows = (await client.query('select binding_id, channel, conversation_key, account_ref, recipient_ref, status from channel_conversation_bindings')).rows;
   const mapping = new Map();
@@ -89,6 +151,9 @@ export async function planRotation(client, { oldKey, newKey, lists }) {
     newLists[name] = mapped.map((k) => mapping.get(k));
   }
   const blockers = [];
+  const role = (await client.query(`select (select tableowner from pg_tables where schemaname = 'public' and tablename = 'channel_conversation_bindings') = current_user or (select rolsuper from pg_roles where rolname = current_user) as ok`)).rows[0];
+  if (!role.ok) blockers.push('the connected role cannot disable the binding identity trigger (neither owner nor superuser)');
+  if (rolloutPercent !== undefined && rolloutPercent !== '0') blockers.push('R4_PROD_ROLLOUT_PERCENT is not 0 (the cohort would reshuffle)');
   if (unverifiedOpen > 0) blockers.push(`${unverifiedOpen} open binding(s) do not verify under the old key (routing would break)`);
   if (collisions > 0) blockers.push(`${collisions} key collision(s)`);
   if (received > 0) blockers.push(`${received} inbound event(s) not settled (drain them first)`);
@@ -111,12 +176,14 @@ export async function planRotation(client, { oldKey, newKey, lists }) {
  * (rollback) and nothing changes. Only bindings change: settled inbound events, task inputs, memory and snapshots keep
  * the old derived values as history (they are never compared across keys).
  */
-export async function applyRotation(client, { oldKey, newKey, lists }) {
+export async function applyRotation(client, { oldKey, newKey, lists, rolloutPercent }) {
   await client.query('begin');
   try {
+    // A leftover idle-in-transaction session must make this fail fast, not hang with production stopped.
+    await client.query(`set local lock_timeout = '5s'`);
     await client.query('lock table channel_conversation_bindings in access exclusive mode');
     await client.query('lock table inbound_events in share mode');
-    const plan = await planRotation(client, { oldKey, newKey, lists });
+    const plan = await planRotation(client, { oldKey, newKey, lists, rolloutPercent });
     if (plan.blockers.length > 0) throw new Error(`refusing to rotate: ${plan.blockers.join('; ')}`);
     await client.query(`alter table channel_conversation_bindings disable trigger ${BINDING_TRIGGER}`);
     let updated = 0;
