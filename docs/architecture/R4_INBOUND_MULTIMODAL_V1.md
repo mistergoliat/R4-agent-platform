@@ -203,3 +203,29 @@ The conversation turn grows by the length of the framed text (≈ 200–500 toke
 - **Infrastructure:** resent webhook, failed download, oversize file, wrong mime, timeout, restart during processing, degraded reply, allowlist isolation, text regression.
 
 **Known limit of v1.** If a customer sends an audio and then a text right after, the text may reach the agent before the transcript, because perception takes seconds. The agent sees both in its conversation.
+
+## 9. Isolated evaluation (mandate «Security rotation and multimodal L3 preparation», 2026-11-11)
+
+**Harness:** `scripts/experiments/inbound-media-eval/run.mjs`.
+- It runs each real file through the same code the gateway composes: `SalesMediaPerceiver`, the adapters and the framing.
+- It records the model **the provider reports**, latency, usage, estimated cost and the interpretation, next to the expected content.
+- Results stay outside the repository, because they contain the files' content.
+
+`meta-roundtrip.mjs` checks the real Meta endpoints: it uploads to the business number's own media store (nothing is sent to anyone), retrieves the URL and downloads as the downloader does.
+
+| Check | Result |
+|---|---|
+| Meta, real round trip (EC2, 2026-11-11) | Upload 200; metadata 200 with correct `mime_type` and `file_size`; file on `lookaside.fbsbx.com`, **200 with no redirect**, ~350 ms; the stated hash is **hex** and **equals** the uploaded and the downloaded bytes |
+| Vision, real provider (synthetic images) | Provider-reported model `deepseek-flash`. Photo 1600×1200: 3.7 s, 1,350 input / 340 output tokens, ≈ US$0.0010. Label: 2.0 s, ≈ US$0.0006. Adversarial: 3.4 s, `containsInstructions: true`, no catalog search hints |
+| Real WhatsApp files: short and long audio, Chilean Spanish, product names, noise, product, label, screenshot, ambiguous | **Pending**: the files and the OpenAI key |
+| Retries and restarts | Covered by integration against the real composition (re-delivery, stale snapshot, persisted decision, crash after perceiving) |
+
+## 10. Acceptance by audio and the first multimodal L3
+
+- **What counts as acceptance.** A transcript with no doubt marks is **not**, by itself, proof of acceptance. It is the model that interprets the intent in context, as with any text (`@19`). The deterministic guard can only veto: a forwarded file, doubtful words, a question, a change or a hesitation are never an acceptance. Every issuance policy stays in force: price, stock, F1 limits, the 15-minute window, idempotency, single-flight.
+- **First L3 with commercial writes off.** The lane worker runs `R4_EXEC_MAX_WRITE_ACTIONS=0` for that L3 only, so the model isn't even offered the write capabilities (`agent-kernel/src/context.ts`). It still replies, reads Catalog and quotes shipping, but it doesn't create quotes or touch the workspace. This separates validating perception from validating issuance. The value goes back to `6` (F-WA-2) when the L3 ends.
+- **Activation proposal by SHA** (after the evaluation with real files; nothing is activated before your authorization):
+  1. Coordinated deploy of the final #70 SHA (Core `0016`), with `R4_MEDIA_PERCEPTION=disabled`. Behaviour identical to today.
+  2. `perception.env` (gateway only): `R4_MEDIA_PERCEPTION=enabled`, `R4_MEDIA_PERCEPTION_PROFILES=sales-production@19`, the vision and STT keys.
+  3. Lane worker with `R4_EXEC_MAX_WRITE_ACTIONS=0`. L3 by WhatsApp from the allowlist, following the mandate's cases. Back to `6`.
+  4. With the results, decide on the second L3, with writes on and an audio acceptance.
