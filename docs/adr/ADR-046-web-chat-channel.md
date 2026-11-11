@@ -110,6 +110,21 @@ Cada versión es un perfil más, con su propia definición, sobre las mismas lec
    Todos se reconstruyen como claves de catálogo y cantidades enteras, con un máximo de 10 líneas cada uno. Nunca
    incluyen texto del navegador.
 
+## Avance mientras trabaja
+
+El worker de un perfil web informa al edge qué está leyendo: una búsqueda (con las palabras buscadas), Discover, el
+producto que revisa (con el nombre que entrega Catalog) o la comuna del despacho. Viaja por el mismo
+`/r4/v1/working` firmado, con `step` y `detail` (texto para mostrar, máximo 80 caracteres), y el chat lo muestra en vez
+de solo "escribiendo".
+
+Se hace en el mejor esfuerzo:
+- la lectura no lo espera;
+- sus errores se ignoran;
+- nunca cambia ni hace fallar la lectura;
+- R4 no vuelve a leer lo que envía.
+
+Va solo en el paquete de Ventas y solo para perfiles web. No cambia Core, `live-ops` ni WhatsApp.
+
 ## Fuera de alcance
 
 - **Excluido:** Quote V2, Checkout, CIA, Customer Profile, escrituras, el botón «Continuar por WhatsApp» y cambios en

@@ -24,6 +24,10 @@ export const WEB_EDGE_CONTRACT_REF = 'r4-web-edge v1 (ADR-046): signed JSON even
 export const WEB_SIGNATURE_HEADER = 'x-r4-web-signature';
 export const WEB_TIMESTAMP_HEADER = 'x-r4-web-timestamp';
 const PAGES = ['index', 'product', 'category', 'cart', 'search', 'other'] as const;
+
+/** What the agent can say it is doing while it works (ADR-046): a catalog search, Discover, a product or a shipping quote. */
+export const WEB_PROGRESS_STEPS = ['search', 'discover', 'product', 'shipping'] as const;
+export type WebProgressStep = (typeof WEB_PROGRESS_STEPS)[number];
 const SLUG = /^[a-z][a-z0-9.-]{0,63}$/;
 const REF = /^[A-Za-z0-9_-]{8,128}$/;
 const BEFORE_SEND = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ENETUNREACH', 'EHOSTUNREACH', 'UND_ERR_CONNECT_TIMEOUT']);
@@ -223,6 +227,18 @@ export class WebOutboundAdapter implements OutboundChannelAdapter {
   async signalWorking(signal: { readonly accountRef: string; readonly providerEventId: string }, options: { readonly timeoutMs: number }): Promise<boolean> {
     if (signal.accountRef !== this.#config.accountRef) return false;
     const sent = await this.#post('/r4/v1/working', { accountRef: signal.accountRef, eventId: signal.providerEventId }, options.timeoutMs).catch(() => null);
+    return sent !== null && !('error' in sent) && sent.status >= 200 && sent.status < 300;
+  }
+
+  /**
+   * What the agent is doing right now (a read it is making), so the chat can say it instead of only "working".
+   * Best effort: never throws, and nothing depends on it. `detail` is display text for the visitor (a catalog name,
+   * a commune, the agent's search words), cut to 80 characters.
+   */
+  async reportProgress(signal: { readonly accountRef: string; readonly providerEventId: string; readonly step: WebProgressStep; readonly detail: string | null }, options: { readonly timeoutMs: number }): Promise<boolean> {
+    if (signal.accountRef !== this.#config.accountRef || !WEB_PROGRESS_STEPS.includes(signal.step)) return false;
+    const detail = typeof signal.detail === 'string' ? signal.detail.replace(/\p{Cc}+/gu, ' ').trim().slice(0, 80) : '';
+    const sent = await this.#post('/r4/v1/working', { accountRef: signal.accountRef, eventId: signal.providerEventId, step: signal.step, ...(detail ? { detail } : {}) }, options.timeoutMs).catch(() => null);
     return sent !== null && !('error' in sent) && sent.status >= 200 && sent.status < 300;
   }
 

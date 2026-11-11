@@ -4,7 +4,7 @@ import { DomainError, type CatalogPort, type CheckoutConsentSource, type Checkou
 import { identityVerificationSchemaIsCurrent } from '@r4-adapters/identity-verification';
 import { WhatsAppInboundAdapter, WhatsAppOutboundAdapter, describeWhatsAppConfig, loadWhatsAppCloudConfig, type FetchLike, type WhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
 import { WebInboundAdapter, WebOutboundAdapter, describeWebChannelConfig, loadWebChannelConfig, type WebFetch } from '@r4-adapters/web';
-import { CapabilityRegistry } from '@r4/capability-runtime';
+import { CapabilityRegistry, type CapabilityRegistration } from '@r4/capability-runtime';
 import { systemClock, type Clock, type Principal } from '@r4/contracts';
 import type { ModelProvider } from '@r4/model-gateway';
 import {
@@ -39,6 +39,7 @@ import { SALES_PRODUCTION_PROFILES, isCustomerIdentityProfile, salesActionPolicy
 import { composeSyntheticCustomerCapabilities, composeSyntheticIdentityVerificationCapabilities } from '../capabilities/customer-synthetic.js';
 import { GATEWAY_ONLY_ENV, salesGatewayInspection } from './gateway-identity.js';
 import { catalogCapabilities } from '../capabilities/catalog.js';
+import { withWebProgress, type WebProgressReporter } from './web-progress.js';
 import { F1_COMMERCIAL_POLICY_V2_VERSION, F1_COMMERCIAL_POLICY_VERSION, type CommercialEligibility } from '../capabilities/commercial-snapshot.js';
 import { shippingCapability } from '../capabilities/shipping.js';
 import { quoteCreateV2Capability } from '../capabilities/quote-v2.js';
@@ -98,6 +99,8 @@ export interface SalesProductionWorkerOptions {
   readonly clock?: Clock;
   /** The catalog-service binding; required when the selected profile makes Catalog REAL (v2). */
   readonly catalog?: CatalogPort & { readonly bindingKind: string };
+  /** (ADR-046) Where a web profile reports what it is reading while it works (the store chat shows it). Ignored by any other profile. */
+  readonly webProgress?: WebProgressReporter;
   /** (ADR-045) Catalog V2 Discover; required when the selected profile is a lane profile (@13), ignored otherwise. */
   readonly catalogDiscover?: CatalogDiscoverPort;
   /** The pc-carrier binding (ProductionShippingAdapter); required when the selected profile makes Shipping REAL (v3). */
@@ -163,6 +166,9 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
   const sales = new PostgresSalesStore(options.pool);
   const controls = new AutonomyControls({ store: options.store, logger: options.logger });
   const capabilities = new CapabilityRegistry();
+  // (ADR-046) A web profile's reads also say what they are doing, for the store chat; any other profile's are untouched.
+  const webProgress = isSalesWebProfile(profile) ? options.webProgress : undefined;
+  const progress = <I, O>(registration: CapabilityRegistration<I, O>): CapabilityRegistration<I, O> => (webProgress ? withWebProgress(registration, webProgress) : registration);
   // Catalog is bound only when the profile makes it REAL (v2); otherwise every call is refused honestly.
   const catalogReal = profile.domains[SALES_DOMAINS.catalog]?.status === 'REAL';
   if (catalogReal && (!options.catalog || options.catalog.bindingKind === UNAVAILABLE_CATALOG.bindingKind)) {
@@ -177,14 +183,14 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
   if (catalogReal) {
     // READ capabilities offered to the model; they execute through the CapabilityInvoker only.
     const [catalogSearch, productContext] = catalogCapabilities(catalog, { variantAvailability: SALES_VARIANT_AVAILABILITY_PROFILES.has(profileLabel(profile)) || isSalesWebProfile(profile) });
-    capabilities.register(catalogSearch);
-    capabilities.register(productContext);
+    capabilities.register(progress(catalogSearch));
+    capabilities.register(progress(productContext));
   }
   // (ADR-045) The lane profile reads Catalog V2 Discover; it never composes without it. (ADR-046) Nor does a web profile.
   if (isSalesLaneProfile(profile) || isSalesWebProfile(profile)) {
     // A port whose Discover key (or V2 source) is missing would compose and then fail every call: refuse at start.
     if (!catalogReal || !options.catalogDiscover?.discoverConfigured) throw new Error(`refusing production composition: ${profileLabel(profile)} requires Catalog V2 Discover (R4_CATALOG_V2_* and R4_CATALOG_V2_DISCOVER_API_KEY)`);
-    capabilities.register(catalogDiscoverCapability(options.catalogDiscover));
+    capabilities.register(progress(catalogDiscoverCapability(options.catalogDiscover)));
   }
   // Shipping is bound only when the profile makes it REAL (v3): the pc-carrier HTTP adapter, never a fixture.
   // Its order basis reads Catalog, so a REAL Shipping without a REAL Catalog is refused too.
@@ -194,7 +200,7 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
       throw new Error(`refusing production composition: ${profileLabel(profile)} binds Shipping REAL but no pc-carrier binding was provided (R4_SHIPPING_*)`);
     }
     if (!catalogReal) throw new Error(`refusing production composition: ${profileLabel(profile)} binds Shipping REAL without a REAL Catalog (the order basis reads Catalog)`);
-    if (capabilityAvailability(profile, CAPABILITY_IDS.shippingQuote).available) capabilities.register(shippingCapability(options.shipping, catalog));
+    if (capabilityAvailability(profile, CAPABILITY_IDS.shippingQuote).available) capabilities.register(progress(shippingCapability(options.shipping, catalog)));
   }
   // Quote is bound only when the profile makes it REAL (v4): the Quote V2 HTTP adapter, never a fixture.
   // quote.create@2 verifies the approved snapshot against Catalog and Shipping, so both must be REAL too.

@@ -25,6 +25,8 @@ import { adminDatabaseUrl } from '../harness/database.js';
 import { configuredModelProvider } from '../model.js';
 import { assertSalesProductionPrerequisites, composeSalesGateway, composeSalesProductionWorker, composeSalesWebGateway, salesAgentOf, selectedSalesProductionProfile } from '../production/composition.js';
 import { isSalesWebProfile } from '../production/profile-web.js';
+import { webProgressReporter } from '../production/web-progress.js';
+import { WebOutboundAdapter, loadWebChannelConfig } from '@r4-adapters/web';
 import { isAutonomousQuoteProfile } from '../production/profile-v5.js';
 import { isConfirmedIntentProfile } from '../production/profile-v6.js';
 import { isCustomerIdentityProfile } from '../production/profile-v8.js';
@@ -177,6 +179,13 @@ function composition() {
   return composeSalesProductionWorker({ pool: { query: () => Promise.reject(new Error('plan only')) } as never, store: noStore, production, modelProvider: { providerId: 'plan', invoke: () => Promise.reject(new Error('plan only')) }, logger: createLogger({ service: 'plan', level: 'silent' }), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production) });
 }
 
+/** (ADR-046) A web worker reports what it reads to the store chat, through the same signed edge as its replies. */
+function webProgressOf(production: ReturnType<typeof loadProductionConfig>, pool: ReturnType<typeof createPool>) {
+  if (!isSalesWebProfile(workerProfile(production))) return {};
+  const web = loadWebChannelConfig(process.env, { allowNetwork: production.config.allowNetwork });
+  return { webProgress: webProgressReporter(pool, new WebOutboundAdapter(web), web.accountRef) };
+}
+
 /** (ADR-045) The lane profile's Discover binding: the same Catalog V2 adapter (the composition refuses it without the Discover key). */
 function discoverOf(production: ReturnType<typeof loadProductionConfig>, catalog: HttpCatalogAdapter | undefined) {
   const profile = workerProfile(production);
@@ -301,7 +310,7 @@ async function worker(production: ReturnType<typeof loadProductionConfig>): Prom
   const catalog = productionCatalog(production, logger);
   const shipping = productionShipping(production, logger);
   const quotes = productionQuotes(production, logger);
-  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production, logger) });
+  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...webProgressOf(production, pool), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production, logger) });
   await assertSalesProductionPrerequisites(workerProfile(production), pool);
   logger.info({ event: 'service.composed', profile: composed.report.profile, profileFingerprint: composed.report.profileFingerprint }, 'production worker composed');
   await runWorkerProcess(config, composed.bindings, { logger });

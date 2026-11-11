@@ -111,4 +111,21 @@ describe('outbound: one honest submission to the edge', () => {
     expect(await new WebOutboundAdapter(config, { fetch: () => Promise.reject(new Error('down')) }).signalWorking(signal, { timeoutMs: 1000 })).toBe(false);
     expect(await new WebOutboundAdapter(config).signalWorking({ ...signal, accountRef: 'other' }, { timeoutMs: 1000 })).toBe(false);
   });
+
+  it('progress says what the agent reads: signed, a known step, display text cut to 80 characters without control characters', async () => {
+    const seen: { url?: string; headers?: Record<string, string>; body?: string } = {};
+    const progress = { accountRef: 'shop-qa', providerEventId: 'evt-00000001', step: 'product' as const, detail: `Trotadora\u0000\nPlegable ${'x'.repeat(100)}` };
+    expect(await new WebOutboundAdapter(config, { fetch: replying(204, undefined, seen) }).reportProgress(progress, { timeoutMs: 1000 })).toBe(true);
+    expect(seen.url).toBe('http://127.0.0.1:8094/r4/v1/working');
+    const body = JSON.parse(seen.body!) as { step: string; detail: string };
+    expect(body).toMatchObject({ accountRef: 'shop-qa', eventId: 'evt-00000001', step: 'product' });
+    expect(body.detail.startsWith('Trotadora Plegable x')).toBe(true);
+    expect(body.detail).toHaveLength(80);
+    expect(seen.headers!['x-r4-web-signature']).toBe(signWebBody(SECRET, seen.headers!['x-r4-web-timestamp']!, seen.body!));
+    const plain = await new WebOutboundAdapter(config, { fetch: replying(204, undefined, seen) }).reportProgress({ ...progress, step: 'discover', detail: null }, { timeoutMs: 1000 });
+    expect(plain).toBe(true);
+    expect(JSON.parse(seen.body!)).toEqual({ accountRef: 'shop-qa', eventId: 'evt-00000001', step: 'discover' });
+    expect(await new WebOutboundAdapter(config, { fetch: replying(204, undefined) }).reportProgress({ ...progress, step: 'quote' as never }, { timeoutMs: 1000 })).toBe(false);
+    expect(await new WebOutboundAdapter(config, { fetch: () => Promise.reject(new Error('down')) }).reportProgress(progress, { timeoutMs: 1000 })).toBe(false);
+  });
 });
