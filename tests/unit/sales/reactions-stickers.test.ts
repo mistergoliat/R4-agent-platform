@@ -40,6 +40,14 @@ describe('what the channel cannot deliver', () => {
     expect(frameUnsupported('unsupported')).toContain('pídele que la envíe como foto normal desde su galería o la app Fotos');
   });
 
+  it('an album container (observed in production): the photos follow one by one; the agent waits, no "I had a problem"', () => {
+    const t = frameUnsupported('unsupported.album');
+    expect(t).toMatch(/^\[r4:evento\] El cliente está enviando un álbum de fotos/);
+    expect(t).toContain('no respondas nada ahora');
+    expect(t).not.toContain('Tuve un problema');
+    expect(guardIntentReply(t)).toEqual({ confirmed: false, reason: 'disqualified' });
+  });
+
   it('an edit, a poll, a video or GIF', () => {
     expect(frameUnsupported('unsupported.edit')).toMatch(/^\[r4:evento\] El cliente editó un mensaje anterior/);
     expect(frameUnsupported('unsupported.poll_creation')).toContain('encuesta');
