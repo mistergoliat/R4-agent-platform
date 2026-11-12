@@ -23,10 +23,13 @@ import { CheckoutHttpClient, SandboxConsentDirectory, loadCheckoutHttpConfig, sa
 import { describeWhatsAppConfig, loadWhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
 import { adminDatabaseUrl } from '../harness/database.js';
 import { configuredModelProvider } from '../model.js';
-import { assertSalesProductionPrerequisites, composeSalesGateway, composeSalesProductionWorker, selectedSalesProductionProfile } from '../production/composition.js';
+import { assertSalesProductionPrerequisites, composeSalesGateway, composeSalesProductionWorker, composeSalesWebGateway, salesAgentOf, selectedSalesProductionProfile } from '../production/composition.js';
+import { isSalesWebProfile } from '../production/profile-web.js';
+import { webProgressReporter } from '../production/web-progress.js';
+import { WebOutboundAdapter, loadWebChannelConfig } from '@r4-adapters/web';
 import { isAutonomousQuoteProfile } from '../production/profile-v5.js';
 import { isConfirmedIntentProfile } from '../production/profile-v6.js';
-import { isCustomerIdentityProfile, salesProductionAgentVersion } from '../production/profile-v8.js';
+import { isCustomerIdentityProfile } from '../production/profile-v8.js';
 import { loadAutonomousQuoteLimits, loadAutonomousQuoteLimitsV6 } from '../capabilities/autonomy-limits.js';
 import { salesShippingPlan } from '../production/shipping-plan.js';
 import { SALES_DOMAINS, SALES_PRODUCTION_PROFILE } from '../production/profile.js';
@@ -56,6 +59,7 @@ import { VALIDATION_SCENARIOS, VALIDATION_SECRETS, validationIdentity, type Scen
  *                     one real inbound from that identity, then for provider
  *                     acceptance (and a status callback if it arrives).
  *   --gateway         run the channel gateway process (deployment entry point)
+ *   --web-gateway     (ADR-046) run the store website chat gateway (a web profile; its own process)
  *   --worker          run the production worker process (deployment entry point)
  *   --identity-key W  print the conversation key (keyed hash) of wa_id W for the allowlist
  *
@@ -86,6 +90,7 @@ async function main(): Promise<void> {
   const production = loadProductionConfig(process.env);
   if (flag('plan')) return plan(production);
   if (flag('gateway')) return gateway(production);
+  if (flag('web-gateway')) return webGateway(production);
   if (flag('worker')) return worker(production);
   if (flag('smoke')) return smoke(production);
   print('usage: --plan | --validate | --smoke | --gateway | --worker | --identity-key <wa_id>');
@@ -93,7 +98,7 @@ async function main(): Promise<void> {
 
 /** (ADR-045) The profile a production WORKER (and its plan) runs: a production profile or a lane profile (@13). The gateway's main profile never is a lane profile. */
 function workerProfile(production: ReturnType<typeof loadProductionConfig>) {
-  return selectedSalesProductionProfile(production.config, { lane: true });
+  return selectedSalesProductionProfile(production.config, { lane: true, web: true });
 }
 
 const nodeFetch: CatalogFetch = async (url, init) => {
@@ -174,9 +179,17 @@ function composition() {
   return composeSalesProductionWorker({ pool: { query: () => Promise.reject(new Error('plan only')) } as never, store: noStore, production, modelProvider: { providerId: 'plan', invoke: () => Promise.reject(new Error('plan only')) }, logger: createLogger({ service: 'plan', level: 'silent' }), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production) });
 }
 
+/** (ADR-046) A web worker reports what it reads to the store chat, through the same signed edge as its replies. */
+function webProgressOf(production: ReturnType<typeof loadProductionConfig>, pool: ReturnType<typeof createPool>) {
+  if (!isSalesWebProfile(workerProfile(production))) return {};
+  const web = loadWebChannelConfig(process.env, { allowNetwork: production.config.allowNetwork });
+  return { webProgress: webProgressReporter(pool, new WebOutboundAdapter(web), web.accountRef) };
+}
+
 /** (ADR-045) The lane profile's Discover binding: the same Catalog V2 adapter (the composition refuses it without the Discover key). */
 function discoverOf(production: ReturnType<typeof loadProductionConfig>, catalog: HttpCatalogAdapter | undefined) {
-  return catalog && isSalesLaneProfile(workerProfile(production)) ? { catalogDiscover: catalog } : {};
+  const profile = workerProfile(production);
+  return catalog && (isSalesLaneProfile(profile) || isSalesWebProfile(profile)) ? { catalogDiscover: catalog } : {};
 }
 
 /** (R4-J4-R4) The worker's R4_CUSTOMER_* configuration, passed only when the selected profile composes Customer (v8). */
@@ -245,7 +258,7 @@ async function plan(production: ReturnType<typeof loadProductionConfig>): Promis
     networkAllowed: production.config.allowNetwork,
     profile: report.profile,
     profileFingerprint: report.profileFingerprint,
-    agentDefinition: `sales@${salesProductionAgentVersion(workerProfile(production))}`,
+    agentDefinition: `${salesAgentOf(workerProfile(production)).agentId}@${salesAgentOf(workerProfile(production)).version}`,
     productionConfigFingerprint: productionConfigFingerprint(production.config),
     model: model ? { provider: 'openai_compatible', ...model.description } : 'not configured (R4_MODEL_*)',
     channel: whatsapp,
@@ -275,6 +288,16 @@ async function gateway(production: ReturnType<typeof loadProductionConfig>): Pro
   await runGatewayProcess(config, bindings, { logger });
 }
 
+/** (ADR-046) The store website chat gateway: a web profile, the web edge adapters; nothing of the WhatsApp gateway. */
+async function webGateway(production: ReturnType<typeof loadProductionConfig>): Promise<void> {
+  const config = loadGatewayConfig(process.env);
+  const logger = createLogger({ service: 'r4-web-gateway', level: config.logLevel });
+  const pool = createPool({ connectionString: config.databaseUrl, logger, applicationName: 'r4-web-gateway-bindings', max: 2 });
+  const { bindings, describe } = composeSalesWebGateway({ pool, production, env: process.env });
+  logger.info({ event: 'service.composed', profile: profileLabel(bindings.profile), web: describe }, 'web gateway composed');
+  await runGatewayProcess(config, bindings, { logger });
+}
+
 async function worker(production: ReturnType<typeof loadProductionConfig>): Promise<void> {
   const model = configuredModelProvider(process.env);
   if (!model) throw new Error('refusing: no model provider configured (R4_MODEL_*)');
@@ -287,7 +310,7 @@ async function worker(production: ReturnType<typeof loadProductionConfig>): Prom
   const catalog = productionCatalog(production, logger);
   const shipping = productionShipping(production, logger);
   const quotes = productionQuotes(production, logger);
-  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production, logger) });
+  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...webProgressOf(production, pool), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production, logger) });
   await assertSalesProductionPrerequisites(workerProfile(production), pool);
   logger.info({ event: 'service.composed', profile: composed.report.profile, profileFingerprint: composed.report.profileFingerprint }, 'production worker composed');
   await runWorkerProcess(config, composed.bindings, { logger });

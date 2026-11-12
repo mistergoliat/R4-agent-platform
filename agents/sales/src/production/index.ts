@@ -20,5 +20,7 @@ export * from './profile-v19.js';
 export * from './profile-v15.js';
 export * from './shipping-plan.js';
 export * from './topology.js';
+export * from './profile-web.js';
+export * from './web-progress.js';
 export * from './media-perception.js';
 export * from './service-hours.js';

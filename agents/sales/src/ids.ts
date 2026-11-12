@@ -1,5 +1,7 @@
 /** Identifiers of the Sales agent pack. Namespaced by owner; none of them exists in R4 Core. */
 export const SALES_AGENT_ID = 'sales';
+/** (ADR-046) The same Sales pack, configured for the store website chat: its own definition line, never a `sales` version. */
+export const SALES_WEB_AGENT_ID = 'sales-web';
 export const SALES_TASK_TYPE = 'sales.conversation';
 
 export const CAPABILITY_IDS = {

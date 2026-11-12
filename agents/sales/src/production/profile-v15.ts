@@ -9,6 +9,7 @@ import { SALES_PRODUCTION_PROFILE_V16, SALES_QUOTE_LANE_V16_PROFILE_LABEL } from
 import { SALES_PRODUCTION_PROFILE_V17, SALES_QUOTE_LANE_V17_PROFILE_LABEL } from './profile-v17.js';
 import { SALES_PRODUCTION_PROFILE_V18, SALES_QUOTE_LANE_V18_PROFILE_LABEL } from './profile-v18.js';
 import { SALES_PRODUCTION_PROFILE_V19, SALES_QUOTE_LANE_V19_PROFILE_LABEL } from './profile-v19.js';
+import { isSalesWebProfile } from './profile-web.js';
 
 /** The Checkout contract R4 consumes (Checkout side final as of SBX-2; still PROPOSED for R4, Quote and CIA). */
 export const CHECKOUT_CONTRACT_REF = 'checkout: docs/reviews/R4_CHECKOUT_INTEGRATION_CONTRACT.md (owner commit d11e3c7, OpenAPI /v1 1.0.3-proposed, sandbox-purchase API listener only)';
@@ -86,7 +87,8 @@ export function isQuoteLaneProfile(profile: ProductionProfile): boolean {
 
 /** The Catalog source a profile binds: V2 only for the lane profiles (decided by the profile, never by a variable). */
 export function salesCatalogSourceOf(profile: ProductionProfile): 'v1' | 'v2' {
-  return isSalesLaneProfile(profile) ? 'v2' : 'v1';
+  // (ADR-046) A web profile reads Catalog V2 too: decided by the profile, never by a variable.
+  return isSalesLaneProfile(profile) || isSalesWebProfile(profile) ? 'v2' : 'v1';
 }
 
 /** What must be true before @15 serves a real (sandbox) purchase. */

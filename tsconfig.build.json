@@ -29,6 +29,7 @@
     { "path": "adapters/domains/identity/verification" },
     { "path": "adapters/models/openai-compatible" },
     { "path": "adapters/channels/whatsapp-cloud" },
+    { "path": "adapters/channels/web" },
     { "path": "agents/sales" }
   ]
 }
