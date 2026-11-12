@@ -7,6 +7,7 @@
 # Nothing is stopped before TARGET is proven deployable: a full 40-hex SHA that resolves to itself, the expected Core
 # head shipped in that tree, and a clean install + build of that exact tree in a staging directory outside production
 # (step 0b). A short or unknown SHA, a missing migration or a broken build stops here with production untouched.
+# CHECK_ONLY=1 runs steps 0 and 0b and exits: no backup, nothing stopped, no autonomy change (validates a candidate).
 set -euo pipefail
 umask 077
 : "${TARGET:?set TARGET=<full sha>}" "${PREV:?set PREV=<deployed short sha>}" "${LANE:?set LANE=<current lane profile>}" "${EXPECT_HEAD:?set EXPECT_HEAD=<core migration id>}"
@@ -21,6 +22,7 @@ STARTED=$(date -u +%FT%TZ)
 step "0. preconditions"
 [[ "$TARGET" =~ ^[0-9a-f]{40}$ ]] || { echo "TARGET must be the full 40-character SHA (got '$TARGET'): nothing was stopped"; exit 1; }
 [ "$(cd "$R" && git rev-parse --short HEAD)" = "$PREV" ] || { echo "deployed SHA is not $PREV"; exit 1; }
+PREV_FULL=$(cd "$R" && git rev-parse HEAD); echo "deployed: $PREV_FULL (rollback: PREV_FULL=$PREV_FULL bash rollback.sh 2)"
 [ -z "$(cd "$R" && git status --short)" ] || { echo "working tree not clean"; exit 1; }
 avail=$(df -B1M --output=avail / | tail -1 | tr -d ' '); [ "$avail" -ge 3000 ] || { echo "disk $avail MB"; exit 1; }
 grep -q "^R4_PROD_LANE_PROFILE=$LANE$" "$C/production.env" && grep -q "^R4_PROD_POLICY_PROFILE=$LANE$" "$C/production-lane.env" || { echo "lane is not $LANE"; exit 1; }
@@ -37,6 +39,7 @@ STAGE=~/r4-deploy-stage/$TARGET; rm -rf "$STAGE"; mkdir -p "$STAGE"
 (cd "$STAGE" && npm run build > /tmp/r4-deploy-stage-build.log 2>&1) || { tail -5 /tmp/r4-deploy-stage-build.log; echo "staging build failed: nothing was stopped"; exit 1; }
 for f in agents/sales/dist/cli/production.js agents/sales/dist/cli/production-control.js apps/api/dist/migrate.js apps/scheduler/dist/main.js; do [ -e "$STAGE/$f" ] || { echo "staging build lacks $f: nothing was stopped"; exit 1; }; done
 echo "staging build of $TARGET OK"; rm -rf "$STAGE"
+if [ "${CHECK_ONLY:-0}" = 1 ]; then step "CHECK ONLY: $TARGET is deployable over $PREV_FULL; nothing was backed up or stopped"; exit 0; fi
 
 step "1. fresh backup (production running)"
 TS=$(date -u +%Y%m%dT%H%M%SZ); B=~/backups/r4-production/$TS; mkdir -p "$B"

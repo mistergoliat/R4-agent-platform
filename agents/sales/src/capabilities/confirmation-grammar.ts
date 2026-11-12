@@ -102,17 +102,18 @@ export type OfferDelivery = 'excluded' | 'selected';
 const REACTION_LAST_LINE = new RegExp(`\\n«([^»\\n]{1,16})» ${REACTION_STEP_MARK} ([0-9A-Za-z-]{8,64})\\s*$`, 'u');
 
 /**
- * (Owner decision 2026-11-12, semantic confirmation) Which emoji accepts is the agent's reading of the conversation:
- * there is no list of accepting emojis. The platform only refuses a rejection or doubt emoji (the same list as written
- * replies) and a reaction not bound to the step it reacts to (one framed before the binding existed); the binding is
- * then checked against the offer by quote.create (locateConfirmation), from recorded rows the model cannot change.
+ * (Owner decisions 2026-11-12, semantic confirmation) What a reaction means is the agent's reading of the whole
+ * conversation: no list of emojis — positive or negative — decides it. The platform decides only what does not depend
+ * on meaning: a reaction to anything but the agent's latest message, a removed reaction, and a reaction not bound to the
+ * step it reacts to (one framed before the binding existed) never reach issuance; the binding is then checked against
+ * the offer by quote.create (locateConfirmation), from recorded rows the model cannot change, with every F1 control.
  */
 export function mediaReplyBody(text: string): string | false | null | { readonly reaction: string; readonly stepId: string } {
   const t = text.trimStart();
   if (!t.startsWith('[r4:')) return null;
   if (t.startsWith(`${MEDIA_TEXT_HEADERS.reactionToLatest} `)) {
     const last = REACTION_LAST_LINE.exec(t);
-    return last && !NEGATIVE_EMOJI.test(last[1]!) ? { reaction: last[1]!, stepId: last[2]! } : false;
+    return last ? { reaction: last[1]!, stepId: last[2]! } : false;
   }
   if (!t.startsWith(`${MEDIA_TEXT_HEADERS.audio} `)) return false;
   const body = /\n«([\s\S]*)»\s*$/.exec(t)?.[1];
