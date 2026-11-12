@@ -246,6 +246,10 @@ export interface NotificationMessage {
   readonly timestamp?: number;
   readonly text?: string;
   readonly type?: string;
+  /** (reaction) The emoji (absent: removed) and the provider id of the message reacted to. */
+  readonly reaction?: { readonly messageId: string; readonly emoji?: string };
+  /** (unsupported) What the provider says it was (`unsupported.type`). */
+  readonly unsupportedType?: string;
   /** (image/audio) The media object as the provider sends it (default: `{ id: media-<id>, mime_type: image/jpeg }`). */
   readonly media?: { readonly id?: string; readonly mimeType?: string; readonly sha256?: string; readonly caption?: string; readonly voice?: boolean };
 }
@@ -275,6 +279,8 @@ export function notification(phoneNumberId: string, items: { messages?: readonly
               contacts: (items.messages ?? []).map((m) => ({ profile: { name: 'Test Contact' }, wa_id: m.from })),
               messages: (items.messages ?? []).map((m) => {
                 const type = m.type ?? 'text';
+                if (type === 'reaction') return { from: m.from, id: m.id, timestamp: String(m.timestamp ?? now), type, reaction: { message_id: m.reaction?.messageId ?? '', ...(m.reaction?.emoji ? { emoji: m.reaction.emoji } : {}) } };
+                if (type === 'unsupported') return { from: m.from, id: m.id, timestamp: String(m.timestamp ?? now), type, ...(m.unsupportedType ? { unsupported: { type: m.unsupportedType } } : {}), errors: [{ code: 131051, title: 'Message type unknown' }] };
                 return type === 'text'
                   ? { from: m.from, id: m.id, timestamp: String(m.timestamp ?? now), type, text: { body: m.text ?? '' } }
                   : {

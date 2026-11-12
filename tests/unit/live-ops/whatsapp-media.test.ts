@@ -32,6 +32,25 @@ describe('inbound parse', () => {
     ]);
   });
 
+  it('a sticker is media; a reaction keeps its emoji and target; unsupported keeps what it was', () => {
+    const { inbound } = parse([
+      { id: 'w7', from: '56911111111', type: 'sticker', media: { id: 'mid.7', mimeType: 'image/webp' } },
+      { id: 'w8', from: '56911111111', type: 'reaction', reaction: { messageId: 'wamid.out.1', emoji: '👍' } },
+      { id: 'w9', from: '56911111111', type: 'reaction', reaction: { messageId: 'wamid.out.1' } },
+      { id: 'w10', from: '56911111111', type: 'unsupported', unsupportedType: 'view_once' },
+      { id: 'w11', from: '56911111111', type: 'unsupported' },
+      { id: 'w12', from: '56911111111', type: 'reaction', reaction: { messageId: 'wamid.out.1', emoji: 'no»\n«👍' } },
+    ]);
+    expect(inbound.map((i) => i.content)).toEqual([
+      { kind: 'media', mediaKind: 'sticker', mediaId: 'mid.7', mimeType: 'image/webp', sha256: null, caption: null, voice: false },
+      { kind: 'reaction', emoji: '👍', targetProviderMessageId: 'wamid.out.1' },
+      { kind: 'reaction', emoji: null, targetProviderMessageId: 'wamid.out.1' },
+      { kind: 'unsupported', contentType: 'unsupported.view_once' },
+      { kind: 'unsupported', contentType: 'unsupported' },
+      { kind: 'unsupported', contentType: 'reaction' },
+    ]);
+  });
+
   it('video, documents and a media item without a usable reference stay unsupported', () => {
     const { inbound } = parse([
       { id: 'w3', from: '56911111111', type: 'video' },

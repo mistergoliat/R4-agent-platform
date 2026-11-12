@@ -6,7 +6,7 @@ import { canonicalInboundSchema, type CanonicalInbound, type HeaderBag, type Inb
 import type { AutonomyControls } from './controls.js';
 import type { ProductionConfig, ProductionSecrets } from './mode.js';
 import type { InboundInspector } from './inspection.js';
-import { mediaRefContent, parseMediaRefContent, type MediaKind, type MediaPerception } from './media.js';
+import { mediaRefContent, parseMediaRefContent, parseReactionRefContent, reactionRefContent, type MediaKind, type MediaPerception } from './media.js';
 import type { OutboundDeliveryRuntime } from './outbound.js';
 import type { ConversationBindingRecord, InboundEventRecord, ProductionStore } from './ports.js';
 import { profileFingerprint, profileLabel, type ProductionProfile } from './profile.js';
@@ -205,17 +205,23 @@ export class ChannelIngress {
     const event = canonicalInboundSchema.parse(raw);
     const key = conversationKey(this.#o.secrets.identityHashKey, event.channel, event.accountRef, event.conversationRef);
     // Without perception, a media item is recorded exactly as before multimodal v1 (`unsupported`, its type only).
-    const c = event.content.kind === 'media' && !this.#perceivesMedia(undefined, event.content.mediaKind) ? { kind: 'unsupported' as const, contentType: event.content.mediaKind } : event.content;
+    // A reaction is kept (emoji + target) only where media perception is composed; elsewhere it is unsupported, as before.
+    const ec = event.content;
+    const c = ec.kind === 'media' && !this.#perceivesMedia(undefined, ec.mediaKind) ? { kind: 'unsupported' as const, contentType: ec.mediaKind }
+      : ec.kind === 'reaction' && !this.#perceivesMedia() ? { kind: 'unsupported' as const, contentType: 'reaction' }
+      : ec;
     // A media item keeps only its provider reference until it is perceived (or held as unsupported); never bytes.
-    const text = c.kind === 'text' ? c.text : c.kind === 'media'
+    // A contact's text never starts with a platform header: "[r4:…" written by the contact is neutralized, so it can
+    // never pose as a perceived file or a reaction.
+    const text = c.kind === 'text' ? c.text.replace(/^(\s*)\[\s*r4\s*:/i, '$1[r4 :') : c.kind === 'reaction' ? reactionRefContent({ emoji: c.emoji, targetProviderMessageId: c.targetProviderMessageId }) : c.kind === 'media'
       ? mediaRefContent({ kind: c.mediaKind, mediaId: c.mediaId, mimeType: c.mimeType, sha256: c.sha256, caption: c.caption, voice: c.voice })
       : unsupportedContentMarker(c.contentType);
     const inbound = {
       inboundId: this.#o.ids.next(),
       channel: event.channel,
       providerEventId: event.providerEventId,
-      contentKind: c.kind,
-      contentType: c.kind === 'unsupported' ? c.contentType : c.kind === 'media' ? c.mediaKind : 'text',
+      contentKind: c.kind === 'reaction' ? ('unsupported' as const) : c.kind,
+      contentType: c.kind === 'unsupported' ? c.contentType : c.kind === 'media' ? c.mediaKind : c.kind === 'reaction' ? 'reaction' : 'text',
       content: text,
       contentSha256: sha256Hex(text),
       conversationKey: key,
@@ -288,7 +294,14 @@ export class ChannelIngress {
     const ref = record.contentKind === 'media' ? parseMediaRefContent(record.content ?? '') : null;
     const humanOwned = binding.taskId ? ((await this.#o.store.taskState(binding.taskId))?.humanOwned ?? false) : false;
     let text = unsupportedContentMarker(record.contentType ?? 'media');
-    if (!held && !humanOwned && !(ref && this.#perceivesMedia(profileLabel, ref.kind)) && this.#perceivesMedia(profileLabel)) {
+    const reaction = record.contentKind === 'unsupported' ? parseReactionRefContent(record.content ?? '') : null;
+    if (!held && !humanOwned && reaction && this.#perceivesMedia(profileLabel)) {
+      // (Reactions) The agent learns which of its messages was reacted to, and whether it is its latest one (the offer).
+      const target = await this.#o.store.reactionTarget(record.channel, reaction.targetProviderMessageId);
+      const own = target && target.taskId === binding.taskId ? target : null;
+      text = this.#o.media!.perception.frameReaction({ emoji: reaction.emoji, target: own ? { text: own.text, latest: own.latest } : null });
+      emitTelemetry(this.#o.logger, 'inbound.media.perceived', { channel: record.channel, inboundId: record.inboundId, outcome: 'reaction', reason: own ? (own.latest ? 'latest_agent_message' : 'earlier_message') : 'unknown_message' });
+    } else if (!held && !humanOwned && !(ref && this.#perceivesMedia(profileLabel, ref.kind)) && this.#perceivesMedia(profileLabel)) {
       // Not representable here (an album, a sticker, a kind without a provider…): the agent answers, nothing is downloaded.
       text = this.#o.media!.perception.frameUnsupported(record.contentType ?? 'unsupported');
       emitTelemetry(this.#o.logger, 'inbound.media.perceived', { channel: record.channel, inboundId: record.inboundId, outcome: 'not_representable', reason: record.contentType ?? null });
@@ -320,7 +333,7 @@ export class ChannelIngress {
     const unsupportedRow = record.contentKind === 'unsupported';
     /** The text of a media or unsupported input: the stored decision (after a crash: exactly what may already be submitted), or decided below. */
     let mediaText: string | null = media && parseMediaRefContent(record.content) === null ? record.content
-      : unsupportedRow && record.content !== unsupportedContentMarker(record.contentType ?? '') ? record.content : null;
+      : unsupportedRow && record.content !== unsupportedContentMarker(record.contentType ?? '') && parseReactionRefContent(record.content) === null ? record.content : null;
     let decidedHere = false;
     try {
       for (let attempt = 0; ; attempt += 1) {

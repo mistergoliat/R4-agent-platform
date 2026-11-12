@@ -10,7 +10,7 @@
  * governed capabilities. A file is never an authorization.
  */
 
-export type MediaKind = 'image' | 'audio';
+export type MediaKind = 'image' | 'audio' | 'sticker';
 
 export interface InboundMediaRef {
   readonly kind: MediaKind;
@@ -28,12 +28,42 @@ export function mediaRefContent(ref: InboundMediaRef): string {
   return JSON.stringify({ [REF_TAG]: ref });
 }
 
+const REACTION_TAG = 'r4-reaction-ref/v1';
+
+/** A reaction as it waits on its unsettled row (until its framed text replaces it). */
+export interface InboundReactionRef {
+  readonly emoji: string | null;
+  readonly targetProviderMessageId: string;
+}
+
+export function reactionRefContent(ref: InboundReactionRef): string {
+  return JSON.stringify({ [REACTION_TAG]: ref });
+}
+
+export function parseReactionRefContent(content: string): InboundReactionRef | null {
+  if (!content.startsWith(`{"${REACTION_TAG}"`)) return null;
+  try {
+    const ref = (JSON.parse(content) as Record<string, InboundReactionRef>)[REACTION_TAG];
+    return ref && typeof ref.targetProviderMessageId === 'string' ? ref : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The agent message a reaction points at, as the platform resolved it (null: not one of this deployment's messages). */
+export interface ReactionTarget {
+  /** The text of that agent message (null when it was not an agent response, e.g. a platform notice). */
+  readonly text: string | null;
+  /** True when it is the latest agent message of the conversation's current task (e.g. the offer just presented). */
+  readonly latest: boolean;
+}
+
 /** The reference of a NOT-yet-perceived media row; null when the content is already the perceived text. */
 export function parseMediaRefContent(content: string): InboundMediaRef | null {
   if (!content.startsWith(`{"${REF_TAG}"`)) return null;
   try {
     const ref = (JSON.parse(content) as Record<string, InboundMediaRef>)[REF_TAG];
-    return ref && (ref.kind === 'image' || ref.kind === 'audio') && typeof ref.mediaId === 'string' ? ref : null;
+    return ref && (ref.kind === 'image' || ref.kind === 'audio' || ref.kind === 'sticker') && typeof ref.mediaId === 'string' ? ref : null;
   } catch {
     return null;
   }
@@ -68,4 +98,6 @@ export interface MediaPerception {
    * conversation continues, instead of a silent hand-off.
    */
   frameUnsupported(contentType: string): string;
+  /** The input text of a reaction (emoji null: removed), given the agent message it points at as the platform resolved it. */
+  frameReaction(reaction: { readonly emoji: string | null; readonly target: ReactionTarget | null }): string;
 }
