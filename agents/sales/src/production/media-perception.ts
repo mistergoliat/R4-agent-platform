@@ -245,6 +245,12 @@ export function frameUnsupported(contentType: string, at: Date = new Date()): st
   if (/^unsupported\.view_?once/.test(contentType)) {
     return `${MEDIA_TEXT_HEADERS.unavailable} El cliente envió una foto o un video de «ver una vez», que el canal no entrega a la plataforma. No sabes qué contiene: no supongas nada. Pídele con amabilidad que la vuelva a enviar como foto normal, eligiéndola desde su galería o la app Fotos (sin la opción «ver una vez»).`;
   }
+  // (Owner decision 2026-11-12, observed in production) An album is a container: each photo arrives right after it as
+  // its own message, perceived one by one. Nothing to answer here; the agent waits for the photos.
+  // ponytail: relies on the agent choosing `wait`; a deterministic skip needs an "acknowledged, no input" inbound state.
+  if (contentType === 'unsupported.album') {
+    return `${MEDIA_TEXT_HEADERS.event} El cliente está enviando un álbum de fotos: cada foto llega a continuación como un mensaje aparte, con su descripción. Este aviso no es un mensaje ni un problema y no trae contenido propio: no respondas nada ahora; espera su próximo mensaje (las fotos) y respóndelas a ellas.`;
+  }
   if (contentType === 'unsupported.edit') return `${MEDIA_TEXT_HEADERS.event} El cliente editó un mensaje anterior y el canal no entrega el texto nuevo. Si lo editado podía cambiar algo importante (producto, cantidad, despacho), pídele que lo escriba de nuevo; si no, sigue la conversación.`;
   if (/^unsupported\.poll/.test(contentType)) return `${MEDIA_TEXT_HEADERS.unavailable} El cliente envió o respondió una encuesta, que el canal no entrega a la plataforma. Pídele que te escriba su respuesta o su consulta.`;
   const what = Object.hasOwn(UNSUPPORTED_ES, contentType) ? UNSUPPORTED_ES[contentType] : 'un tipo de mensaje que la plataforma no puede procesar';
