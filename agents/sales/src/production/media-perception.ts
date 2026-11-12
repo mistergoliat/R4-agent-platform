@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { InboundMediaDownloader, InboundMediaRef, MediaDownloadResult, MediaKind, MediaPerception, MediaPerceptionResult } from '@r4/live-ops';
 import { MEDIA_TEXT_HEADERS, UNCERTAIN_CLOSE, UNCERTAIN_OPEN } from '../capabilities/media-text.js';
+import { salesUnprocessableSentence } from './service-hours.js';
 
 /**
  * (Inbound multimodal v1, owner decision 2026-11-11) How the Sales pack perceives an image or a voice note the customer
@@ -191,9 +192,25 @@ const REASON_ES: Readonly<Record<MediaDegradedReason, string>> = {
   perception_failed: 'no se pudo interpretar', perception_timeout: 'la interpretación tardó demasiado', not_configured: 'no está habilitada la interpretación de este tipo de archivo',
 };
 
-export function frameUnavailable(ref: InboundMediaRef, reason: MediaDegradedReason): string {
+/** How the agent must answer content it could not process: the owner's sentence (service-hours aware), no guessing. */
+const answerUnprocessable = (at: Date) =>
+  `No sabes qué contiene: no supongas nada sobre su contenido. Responde por escrito con un mensaje como: «${salesUnprocessableSentence(at)}» Si el cliente pide hablar con una persona, deriva la conversación.`;
+
+export function frameUnavailable(ref: InboundMediaRef, reason: MediaDegradedReason, at: Date = new Date()): string {
   const what = ref.kind === 'image' ? 'una imagen' : ref.voice ? 'una nota de voz' : 'un audio';
-  return `${MEDIA_TEXT_HEADERS.unavailable} El cliente envió ${what} que no se pudo procesar (${REASON_ES[reason]}). No sabes qué contiene: no supongas nada sobre su contenido y pídele que lo escriba${ref.kind === 'image' ? ' o describa lo que muestra' : ''}.${caption(ref)}`;
+  return `${MEDIA_TEXT_HEADERS.unavailable} El cliente envió ${what} que no se pudo procesar (${REASON_ES[reason]}). ${answerUnprocessable(at)}${caption(ref)}`;
+}
+
+const UNSUPPORTED_ES: Readonly<Record<string, string>> = {
+  unsupported: 'un mensaje que WhatsApp no entrega a la plataforma (por ejemplo varias fotos juntas o una foto de «ver una vez»)',
+  audio: 'una nota de voz (la transcripción no está habilitada)', video: 'un video', document: 'un documento', sticker: 'un sticker',
+  location: 'una ubicación', contacts: 'un contacto', reaction: 'una reacción', interactive: 'una respuesta interactiva', button: 'un botón',
+};
+
+/** (Owner decision 2026-11-12) Content the composition cannot represent: the agent answers it; the conversation continues. */
+export function frameUnsupported(contentType: string, at: Date = new Date()): string {
+  const what = UNSUPPORTED_ES[contentType] ?? 'un tipo de mensaje que la plataforma no puede procesar';
+  return `${MEDIA_TEXT_HEADERS.unavailable} El cliente envió ${what}. ${answerUnprocessable(at)}`;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -250,6 +267,8 @@ export interface SalesMediaPerceiverOptions {
   readonly limits?: Partial<MediaPerceptionLimits>;
   /** Vocabulary hint for the transcriber (product words); never customer data. */
   readonly transcriptionPrompt?: string | null;
+  /** The clock of the service-hours sentences (tests); default: now. */
+  readonly now?: () => Date;
 }
 
 class PerceptionTimeout extends Error {}
@@ -276,10 +295,18 @@ export class SalesMediaPerceiver implements MediaPerception {
     this.kinds = new Set<MediaKind>([...(options.describer ? ['image' as const] : []), ...(options.transcriber ? ['audio' as const] : [])]);
   }
 
+  #now(): Date {
+    return this.#o.now?.() ?? new Date();
+  }
+
+  frameUnsupported(contentType: string): string {
+    return frameUnsupported(contentType, this.#now());
+  }
+
   async perceive(ref: InboundMediaRef, context: { readonly accountRef: string }): Promise<SalesMediaPerceptionResult> {
     const L = this.#limits;
     let evidence: MediaPerceptionEvidence = { kind: ref.kind, format: null, byteLength: null, sha256: null, durationSeconds: null, model: null, uncertainWords: null, containsInstructions: null, downloadMs: null, perceptionMs: null };
-    const degraded = (reason: MediaDegradedReason): SalesMediaPerceptionResult => ({ outcome: 'degraded', reason, text: frameUnavailable(ref, reason), evidence });
+    const degraded = (reason: MediaDegradedReason): SalesMediaPerceptionResult => ({ outcome: 'degraded', reason, text: frameUnavailable(ref, reason, this.#now()), evidence });
     if (ref.kind === 'image' ? !this.#o.describer : !this.#o.transcriber) return degraded('not_configured');
 
     const t0 = Date.now();

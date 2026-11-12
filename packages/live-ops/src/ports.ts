@@ -345,7 +345,7 @@ export interface ProductionStore {
   recordInboundInspected(event: NewInboundEvent, inspected: InspectedInbound): Promise<{ readonly record: InboundEventRecord; readonly created: boolean }>;
   settleInbound(inboundId: string, settlement: InboundSettlement): Promise<void>;
   /**
-   * (Inbound multimodal v1) Replaces an UNSETTLED media row's provider reference with its perceived text (and hash),
+   * (Inbound multimodal v1) Replaces an UNSETTLED media (or unsupported) row's content with its decided text (and hash),
    * before that text becomes an input; cleared at settlement like any inbound content. No-op once settled.
    */
   recordInboundPerception(inboundId: string, text: string): Promise<void>;

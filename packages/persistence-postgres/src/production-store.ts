@@ -219,7 +219,7 @@ export class PostgresProductionStore implements ProductionStore {
   }
 
   async recordInboundPerception(inboundId: string, text: string): Promise<void> {
-    await query(this.#pool, `update inbound_events set content = $2, content_sha256 = $3 where inbound_id = $1 and status = 'received' and content_kind = 'media'`, [inboundId, text, sha256Hex(text)]);
+    await query(this.#pool, `update inbound_events set content = $2, content_sha256 = $3 where inbound_id = $1 and status = 'received' and content_kind in ('media', 'unsupported')`, [inboundId, text, sha256Hex(text)]);
   }
 
   async unsettledInbound(olderThanMs: number, limit: number): Promise<InboundEventRecord[]> {

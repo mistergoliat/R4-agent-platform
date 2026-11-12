@@ -223,6 +223,22 @@ describe('inbound multimodal v1 (gateway)', { timeout: 60_000 }, () => {
     expect(perception.calls.length).toBe(calls);
   });
 
+  it("(owner decision 2026-11-12) a provider 'unsupported' item (e.g. an album) never takes the conversation away: the agent answers it, and the photos after it are perceived", async () => {
+    const album = nextId();
+    const photo = nextId();
+    await bed.customer(ALLOWED, album, '', { type: 'unsupported' });
+    const row = await settled(bed, album);
+    expect(row).toMatchObject({ content_kind: 'unsupported', content_type: 'unsupported', disposition: 'autonomous' });
+    const text = await inputText(bed, row.input_id as string);
+    expect(text).toMatch(/^\[r4:adjunto-no-procesado\] El cliente envió un mensaje que WhatsApp no entrega a la plataforma/);
+    expect(text).toContain('Si prefieres, te derivo con un entrenador de nuestro equipo.');
+    bed.provider.hostMedia('img-after-album', { bytes: JPEG, mimeType: 'image/jpeg' });
+    await bed.customer(ALLOWED, photo, '', { type: 'image', media: { id: 'img-after-album', mimeType: 'image/jpeg' } });
+    const after = await settled(bed, photo);
+    expect(after).toMatchObject({ disposition: 'autonomous' });
+    expect((await inputText(bed, after.input_id as string)).startsWith('[r4:imagen] ')).toBe(true);
+  });
+
   it('text is unchanged', async () => {
     const id = nextId();
     const response = await bed.customer(ALLOWED, id, 'hola, ¿tienen mancuernas?');
@@ -250,14 +266,15 @@ describe('inbound multimodal v1 (gateway)', { timeout: 60_000 }, () => {
 });
 
 describe('inbound multimodal v1 with images only (no transcription credential)', { timeout: 60_000 }, () => {
-  it('a voice note is held for a person exactly as before (never downloaded); an image is perceived', async () => {
+  it('(owner decision 2026-11-12) a voice note without transcription is never a hand-off: the agent is told to answer it (nothing downloaded)', async () => {
     const imagesOnly = await LiveOpsTestbed.start({ allowlist: [ALLOWED], autonomy: true, env: { R4_MEDIA_PERCEPTION: 'enabled', R4_MEDIA_PERCEPTION_PROFILES: 'sales-production@1', R4_PERCEPTION_VISION_BASE_URL: perception.url, R4_PERCEPTION_VISION_API_KEY: 'perception-test-key' } });
     try {
       imagesOnly.provider.hostMedia('voice-x', { bytes: oggOpus(4), mimeType: 'audio/ogg; codecs=opus' });
       imagesOnly.provider.hostMedia('img-y', { bytes: JPEG, mimeType: 'image/jpeg' });
       await imagesOnly.customer(ALLOWED, 'wamid.io.1', '', { type: 'audio', media: { id: 'voice-x', mimeType: 'audio/ogg; codecs=opus', voice: true } });
       const audio = await settled(imagesOnly, 'wamid.io.1');
-      expect(audio).toMatchObject({ content_kind: 'unsupported', content_type: 'audio', disposition: 'held:unsupported_inbound_content' });
+      expect(audio).toMatchObject({ content_kind: 'unsupported', content_type: 'audio', disposition: 'autonomous' });
+      expect(await inputText(imagesOnly, audio.input_id as string)).toMatch(/^\[r4:adjunto-no-procesado\] El cliente envió una nota de voz \(la transcripción no está habilitada\)\. .*«Tuve un problema para ver lo que me enviaste/s);
       expect(imagesOnly.provider.mediaRequests.filter((r) => r.mediaId === 'voice-x')).toEqual([]);
     } finally {
       await imagesOnly.close();
