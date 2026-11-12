@@ -351,9 +351,10 @@ export interface ProductionStore {
   recordInboundPerception(inboundId: string, text: string): Promise<void>;
   /**
    * (Reactions) The outbound a provider message id names, with the text of the agent response it delivered and whether
-   * it is the latest agent outbound of its task. Null: not one of this deployment's outbound messages.
+   * it is the latest agent outbound of its task, and the respond step that produced it. Null: not one of this
+   * deployment's agent messages.
    */
-  reactionTarget(channel: string, providerMessageId: string): Promise<{ readonly taskId: string; readonly text: string | null; readonly latest: boolean } | null>;
+  reactionTarget(channel: string, providerMessageId: string): Promise<{ readonly taskId: string; readonly text: string | null; readonly latest: boolean; readonly stepId: string } | null>;
   /** One inbound event as it is now (null: unknown). */
   inboundEvent(inboundId: string): Promise<InboundEventRecord | null>;
   /** Received but never settled (a crash between persistence and ingestion). */

@@ -56,6 +56,8 @@ export interface ReactionTarget {
   readonly text: string | null;
   /** True when it is the latest agent message of the conversation's current task (e.g. the offer just presented). */
   readonly latest: boolean;
+  /** The recorded respond step that produced that message: what a pack binds the reaction to (never the model). */
+  readonly stepId: string;
 }
 
 /** The reference of a NOT-yet-perceived media row; null when the content is already the perceived text. */

@@ -15,6 +15,8 @@ const PREVIEW = 'agents/sales/src/capabilities/quote-preview.ts';
 const SALES = 'agents/sales/src/production/composition.ts';
 const SNAPSHOT = 'agents/sales/src/capabilities/commercial-snapshot.ts';
 const ELIGIBILITY = { project: 'unit', file: 'tests/unit/sales/commercial-eligibility.test.ts' };
+const LOCATE = 'agents/sales/src/capabilities/quote-v4.ts';
+const REACTIONS = { project: 'unit', file: 'tests/unit/sales/reactions-stickers.test.ts' };
 
 const MUTATIONS = [
   {
@@ -56,6 +58,21 @@ const MUTATIONS = [
     name: 'IA-M7 the v1 policy (@17, @18) lets a delivery through',
     edits: [{ file: SNAPSHOT, from: '  if (deps.eligibility && delivery && deps.eligibility.shippingAllowed !== true) {', to: '  if (deps.eligibility && delivery && false) {' }],
     tests: [[ELIGIBILITY, 'a delivery destination is refused before pricing any shipping']],
+  },
+  {
+    name: 'IA-M8 a 👍 issues whatever offer is last, not the message it reacts to (reaction → step binding dropped)',
+    edits: [{ file: LOCATE, from: '  if (verdict.reactedStepId !== undefined && (offerRef === null || verdict.reactedStepId !== offerRef)) {', to: '  if (false) {' }],
+    tests: [[REACTIONS, 'bound to an older offer'], [REACTIONS, 'after the quantities changed']],
+  },
+  {
+    name: 'IA-M9 ambiguous positive reactions (❤️, 🔥, ✅…) authorize issuance',
+    edits: [{ file: GRAMMAR, from: 'const ACCEPTING_REACTION = /^👍[🏻-🏿]?$/u;', to: 'const ACCEPTING_REACTION = /^(?:👍[🏻-🏿]?|❤️?|😍|👌|✅|🔥|🙏)$/u;' }],
+    tests: [[REACTIONS, 'never an acceptance: an ambiguous']],
+  },
+  {
+    name: 'IA-M10 a reaction framed without its step binding still accepts',
+    edits: [{ file: GRAMMAR, from: "    return last && ACCEPTING_REACTION.test(last[1]!) ? { reaction: last[1]!, stepId: last[2]! } : false;", to: "    const any = /\\n«([^»\\n]{1,16})»/u.exec(t);\n    return any && ACCEPTING_REACTION.test(any[1]!) ? { reaction: any[1]!, stepId: last?.[2] ?? 'unbound' } : false;" }],
+    tests: [[REACTIONS, 'without its step binding']],
   },
 ];
 

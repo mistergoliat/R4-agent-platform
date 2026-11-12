@@ -1,4 +1,4 @@
-import { MEDIA_TEXT_HEADERS, UNCERTAIN_OPEN } from './media-text.js';
+import { MEDIA_TEXT_HEADERS, REACTION_STEP_MARK, UNCERTAIN_OPEN } from './media-text.js';
 
 /**
  * (R4-J3E-B) The deterministic grammar of an explicit quote confirmation in a
@@ -98,15 +98,21 @@ export type OfferDelivery = 'excluded' | 'selected';
  * confidence is never an acceptance ("a file is not an authorization"); a voice note is read as its transcript only when
  * no word of it was transcribed with doubt. Any other platform-style header is refused (false). Null: an ordinary text.
  */
-/** Positive reactions the agent may take as acceptance of its latest message (👍 accepts; the others are its call). */
-const POSITIVE_REACTION = /^(?:👍[🏻-🏿]?|✅|👌[🏻-🏿]?|🙌[🏻-🏿]?|💯|🤝|🙏[🏻-🏿]?|🔥|💪[🏻-🏿]?|❤️?|🧡|💛|💚|💙|💜|🖤|🤍|💖|💗|😍|🥰|😊|🙂|😀|😃|😄|😁)$/u;
+/** The only reaction that may accept an offer: 👍 (any skin tone). Other positive emojis are ambiguous (the agent asks). */
+const ACCEPTING_REACTION = /^👍[🏻-🏿]?$/u;
+/** The platform-written last line of a reaction to the latest message: the emoji and the respond step it reacts to. */
+const REACTION_LAST_LINE = new RegExp(`\\n«([^»\\n]{1,16})» ${REACTION_STEP_MARK} ([0-9A-Za-z-]{8,64})\\s*$`, 'u');
 
-export function mediaReplyBody(text: string): string | false | null | { readonly reaction: string } {
+/**
+ * A reaction is an acceptance only as a 👍 bound to the step it reacts to; the binding is then checked against the offer
+ * by quote.create (locateConfirmation). A reaction framed without that binding (written before it existed) never accepts.
+ */
+export function mediaReplyBody(text: string): string | false | null | { readonly reaction: string; readonly stepId: string } {
   const t = text.trimStart();
   if (!t.startsWith('[r4:')) return null;
   if (t.startsWith(`${MEDIA_TEXT_HEADERS.reactionToLatest} `)) {
-    const emoji = /\n«([^»\n]{1,16})»\s*$/.exec(t)?.[1];
-    return emoji !== undefined && POSITIVE_REACTION.test(emoji) ? { reaction: emoji } : false;
+    const last = REACTION_LAST_LINE.exec(t);
+    return last && ACCEPTING_REACTION.test(last[1]!) ? { reaction: last[1]!, stepId: last[2]! } : false;
   }
   if (!t.startsWith(`${MEDIA_TEXT_HEADERS.audio} `)) return false;
   const body = /\n«([\s\S]*)»\s*$/.exec(t)?.[1];
@@ -117,7 +123,7 @@ export function mediaReplyBody(text: string): string | false | null | { readonly
 export function guardIntentReply(reply: string | null, delivery: OfferDelivery = 'excluded'): ConfirmationVerdict {
   const media = reply === null ? null : mediaReplyBody(reply);
   if (media === false) return { confirmed: false, reason: 'disqualified' };
-  if (media !== null && typeof media === 'object') return { confirmed: true, rule: `agent_interpreted;reaction=${media.reaction}` };
+  if (media !== null && typeof media === 'object') return { confirmed: true, rule: `agent_interpreted;reaction=${media.reaction};bound_to=reacted_step`, reactedStepId: media.stepId };
   const text = media ?? reply;
   if (text === null || text.trim() === '') return { confirmed: false, reason: 'empty' };
   if (text.length > INTENT_MAX_LENGTH) return { confirmed: false, reason: 'too_long' };
@@ -130,7 +136,8 @@ export function guardIntentReply(reply: string | null, delivery: OfferDelivery =
 }
 
 export type ConfirmationVerdict =
-  | { readonly confirmed: true; readonly rule: string }
+  /** reactedStepId: the acceptance is a reaction, valid only for the offer that step recorded (checked by quote.create). */
+  | { readonly confirmed: true; readonly rule: string; readonly reactedStepId?: string }
   | { readonly confirmed: false; readonly reason: 'empty' | 'too_long' | 'disqualified' | 'not_a_confirmation' };
 
 export function normalizeMessage(text: string): string {
