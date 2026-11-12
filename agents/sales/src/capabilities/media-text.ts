@@ -20,8 +20,8 @@ export const MEDIA_TEXT_HEADERS = Object.freeze({
   reaction: '[r4:reaccion]',
   /**
    * (Owner decisions 2026-11-12) A reaction to the agent's LATEST message (e.g. the offer just presented). The agent
-   * interprets the emoji in context (no list of accepting emojis; ambiguous → it asks); the guard refuses rejection and
-   * doubt emojis. It can accept only the exact message reacted to: the last line is `«emoji» REACTION_STEP_MARK
+   * interprets the emoji in context (no emoji list, positive or negative, decides; ambiguous → it asks). It can accept
+   * only the exact message reacted to: the last line is `«emoji» REACTION_STEP_MARK
    * <stepId>`, the recorded respond step the platform resolved from the provider message id; quote.create requires that
    * step to be the offer it issues.
    */
