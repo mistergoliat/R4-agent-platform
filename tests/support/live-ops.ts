@@ -164,6 +164,19 @@ export class LiveOpsTestbed {
   }
 
   /**
+   * (Identity HMAC rotation) Redeploys the gateway over the same database with `patch` applied to its environment
+   * verbatim (e.g. a new R4_PROD_IDENTITY_HASH_KEY with the recomputed key lists).
+   */
+  async redeployGatewayEnv(patch: Readonly<Record<string, string>>): Promise<void> {
+    const env = { ...this.env, ...patch };
+    const production = loadProductionConfig(env);
+    await this.gateway.close().catch(() => undefined);
+    this.gateway = await startGateway(this.db.url, this.pool, production, env, this.#identityVerification, this.#gatewayLogger);
+    this.production = production;
+    this.env = env;
+  }
+
+  /**
    * (SEC-OTP) Redeploys the gateway over the same database with another identity-verification
    * composition (a rollback step or a mode change). Rejects when the new gateway refuses to start;
    * the previous gateway is closed either way.
