@@ -193,24 +193,30 @@ const REASON_ES: Readonly<Record<MediaDegradedReason, string>> = {
 };
 
 /** How the agent must answer content it could not process: the owner's sentence (service-hours aware), no guessing. */
-const answerUnprocessable = (at: Date) =>
-  `No sabes qué contiene: no supongas nada sobre su contenido. Responde por escrito con un mensaje como: «${salesUnprocessableSentence(at)}» Si el cliente pide hablar con una persona, deriva la conversación.`;
+const answerUnprocessable = (at: Date, sense: 'ver' | 'escuchar' = 'ver') =>
+  `No sabes qué contiene: no supongas nada sobre su contenido. Responde por escrito con un mensaje como: «${salesUnprocessableSentence(at, sense)}» Si el cliente pide hablar con una persona, deriva la conversación.`;
 
 export function frameUnavailable(ref: InboundMediaRef, reason: MediaDegradedReason, at: Date = new Date()): string {
   const what = ref.kind === 'image' ? 'una imagen' : ref.voice ? 'una nota de voz' : 'un audio';
-  return `${MEDIA_TEXT_HEADERS.unavailable} El cliente envió ${what} que no se pudo procesar (${REASON_ES[reason]}). ${answerUnprocessable(at)}${caption(ref)}`;
+  return `${MEDIA_TEXT_HEADERS.unavailable} El cliente envió ${what} que no se pudo procesar (${REASON_ES[reason]}). ${answerUnprocessable(at, ref.kind === 'audio' ? 'escuchar' : 'ver')}${caption(ref)}`;
 }
 
 const UNSUPPORTED_ES: Readonly<Record<string, string>> = {
-  unsupported: 'un mensaje que WhatsApp no entrega a la plataforma (por ejemplo varias fotos juntas o una foto de «ver una vez»)',
+  unsupported: 'un mensaje que el canal no entrega a la plataforma (por ejemplo varias fotos juntas o una foto de «ver una vez»)',
   audio: 'una nota de voz (la transcripción no está habilitada)', video: 'un video', document: 'un documento', sticker: 'un sticker',
-  location: 'una ubicación', contacts: 'un contacto', reaction: 'una reacción', interactive: 'una respuesta interactiva', button: 'un botón',
+  location: 'una ubicación', contacts: 'un contacto', interactive: 'una respuesta interactiva', button: 'un botón', order: 'un pedido desde el catálogo del canal',
 };
+/** Not a message from the customer: never answered with "I had a problem". */
+const EVENTS_ES: Readonly<Record<string, string>> = { reaction: 'reaccionó con un emoji a un mensaje anterior', system: 'generó un aviso del sistema del canal', 'request-welcome': 'abrió el chat sin escribir' };
 
 /** (Owner decision 2026-11-12) Content the composition cannot represent: the agent answers it; the conversation continues. */
 export function frameUnsupported(contentType: string, at: Date = new Date()): string {
-  const what = UNSUPPORTED_ES[contentType] ?? 'un tipo de mensaje que la plataforma no puede procesar';
-  return `${MEDIA_TEXT_HEADERS.unavailable} El cliente envió ${what}. ${answerUnprocessable(at)}`;
+  if (Object.hasOwn(EVENTS_ES, contentType)) {
+    return `${MEDIA_TEXT_HEADERS.event} El cliente ${EVENTS_ES[contentType]}. No es un mensaje nuevo ni una aceptación, y no hubo ningún problema: no respondas solo por esto; si no hay nada pendiente, espera su próximo mensaje.`;
+  }
+  const what = Object.hasOwn(UNSUPPORTED_ES, contentType) ? UNSUPPORTED_ES[contentType] : 'un tipo de mensaje que la plataforma no puede procesar';
+  const album = contentType === 'unsupported' ? ' Si en la conversación llegan imágenes junto con este aviso, respóndelas a ellas: este aviso puede ser el contenedor de varias fotos.' : '';
+  return `${MEDIA_TEXT_HEADERS.unavailable} El cliente envió ${what}. ${answerUnprocessable(at, contentType === 'audio' ? 'escuchar' : 'ver')}${album}`;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

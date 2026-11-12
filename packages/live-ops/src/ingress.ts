@@ -309,8 +309,8 @@ export class ChannelIngress {
 
   async #process(stale: InboundEventRecord): Promise<IngestOutcome> {
     const { store, controls, config, temporal, tasks, logger } = this.#o;
-    // A snapshot (resume sweep) may be older than the row: a media row is processed only while still received (never twice).
-    const record = stale.contentKind === 'media' ? await store.inboundEvent(stale.inboundId) : stale;
+    // A snapshot (resume sweep) may be older than the row: a media or unsupported row is processed only while still received.
+    const record = stale.contentKind === 'media' || stale.contentKind === 'unsupported' ? await store.inboundEvent(stale.inboundId) : stale;
     if (!record || record.status !== 'received') return { kind: 'duplicate', inboundId: stale.inboundId };
     if (record.conversationKey === null || record.accountRef === null || record.conversationRef === null || record.content === null || record.occurredAt === null) {
       await store.settleInbound(record.inboundId, { status: 'failed', failureCode: 'incomplete_inbound_record' });

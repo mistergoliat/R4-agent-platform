@@ -230,7 +230,8 @@ describe('inbound multimodal v1 (gateway)', { timeout: 60_000 }, () => {
     const row = await settled(bed, album);
     expect(row).toMatchObject({ content_kind: 'unsupported', content_type: 'unsupported', disposition: 'autonomous' });
     const text = await inputText(bed, row.input_id as string);
-    expect(text).toMatch(/^\[r4:adjunto-no-procesado\] El cliente envió un mensaje que WhatsApp no entrega a la plataforma/);
+    expect(text).toMatch(/^\[r4:adjunto-no-procesado\] El cliente envió un mensaje que el canal no entrega a la plataforma/);
+    expect(text).toContain('respóndelas a ellas');
     expect(text).toContain('Si prefieres, te derivo con un entrenador de nuestro equipo.');
     bed.provider.hostMedia('img-after-album', { bytes: JPEG, mimeType: 'image/jpeg' });
     await bed.customer(ALLOWED, photo, '', { type: 'image', media: { id: 'img-after-album', mimeType: 'image/jpeg' } });
@@ -263,6 +264,20 @@ describe('inbound multimodal v1 (gateway)', { timeout: 60_000 }, () => {
     }
   });
 
+  it('a held conversation (kill switch) keeps the unsupported marker: the agent is not told to answer, nothing changes', async () => {
+    const id = nextId();
+    await bed.setAutonomy(false);
+    try {
+      await bed.customer(ALLOWED, id, '', { type: 'sticker' });
+      const row = await settled(bed, id);
+      // Held by the kill switch, or already human-owned by the hold of the previous test: either way never framed.
+      expect(row.disposition).toMatch(/^held:|^human_owned$/);
+      expect(await inputText(bed, row.input_id as string)).toBe('[unsupported inbound content: sticker]');
+    } finally {
+      await bed.setAutonomy(true);
+    }
+  });
+
 });
 
 describe('inbound multimodal v1 with images only (no transcription credential)', { timeout: 60_000 }, () => {
@@ -274,7 +289,7 @@ describe('inbound multimodal v1 with images only (no transcription credential)',
       await imagesOnly.customer(ALLOWED, 'wamid.io.1', '', { type: 'audio', media: { id: 'voice-x', mimeType: 'audio/ogg; codecs=opus', voice: true } });
       const audio = await settled(imagesOnly, 'wamid.io.1');
       expect(audio).toMatchObject({ content_kind: 'unsupported', content_type: 'audio', disposition: 'autonomous' });
-      expect(await inputText(imagesOnly, audio.input_id as string)).toMatch(/^\[r4:adjunto-no-procesado\] El cliente envió una nota de voz \(la transcripción no está habilitada\)\. .*«Tuve un problema para ver lo que me enviaste/s);
+      expect(await inputText(imagesOnly, audio.input_id as string)).toMatch(/^\[r4:adjunto-no-procesado\] El cliente envió una nota de voz \(la transcripción no está habilitada\)\. .*«Tuve un problema para escuchar lo que me enviaste/s);
       expect(imagesOnly.provider.mediaRequests.filter((r) => r.mediaId === 'voice-x')).toEqual([]);
     } finally {
       await imagesOnly.close();

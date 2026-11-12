@@ -34,12 +34,16 @@ describe('what the customer is told', () => {
     expect(salesUnprocessableSentence(evening)).toMatch(/Si prefieres hablar con un entrenador: Nuestro equipo está entrenando 💪 y te responderá el siguiente día hábil, entre las 10:00 y las 17:00\.$/);
     expect(salesUnprocessableSentence(early)).toMatch(/te responderá hoy, entre las 10:00 y las 17:00\.$/);
     expect(frameUnsupported('unsupported', evening)).toContain('Nuestro equipo está entrenando');
+    expect(frameUnsupported('audio', open)).toContain('Tuve un problema para escuchar lo que me enviaste');
+    expect(frameUnsupported('reaction', open)).toMatch(/^\[r4:evento\] El cliente reaccionó con un emoji/);
+    expect(frameUnsupported('reaction', open)).not.toMatch(/Tuve un problema|entrenador/);
+    expect(frameUnsupported('constructor', open)).toContain('un tipo de mensaje que la plataforma no puede procesar');
   });
 
   it('notices that promise a person say when the person answers', () => {
     expect(salesRunFailureNotice(open)).toBe(SALES_RUN_FAILURE_FALLBACK_TEXT);
     expect(salesHumanRequestNotice(open)).toBe(SALES_HUMAN_REQUEST_NOTICE_TEXT);
-    expect(SALES_RUN_FAILURE_FALLBACK_TEXT).toMatch(/estoy intentando solucionarlo: ya lo estoy consultando con un asesor/);
+    expect(SALES_RUN_FAILURE_FALLBACK_TEXT).toMatch(/estoy intentando solucionarlo: ya le avisé a un asesor/);
     for (const text of [salesRunFailureNotice(evening), salesHumanRequestNotice(evening)]) {
       expect(text).toContain('Nuestro equipo está entrenando 💪 y te responderá el siguiente día hábil, entre las 10:00 y las 17:00.');
       expect(text).not.toMatch(/asesor|cotizaci[oó]n|emit|confirm|pedido|pago|qued[oó]/i);

@@ -128,6 +128,7 @@ export const TELEMETRY_EVENTS = [
   'inbound.duplicate',
   'inbound.media.perceived',
   'inbound.media.deferred_failed',
+  'outbound.notice.unavailable',
   'inbound.rejected',
   'inbound.ingested',
   'inbound.authentication_failed',

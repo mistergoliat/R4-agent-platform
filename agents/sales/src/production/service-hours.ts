@@ -17,11 +17,10 @@ export interface ServiceWindow {
 }
 
 const WEEKDAYS: Readonly<Record<string, number>> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
+const CHILE = new Intl.DateTimeFormat('en-US', { timeZone: SALES_SERVICE_HOURS.timeZone, weekday: 'short', hour: '2-digit', hourCycle: 'h23' });
 
 export function salesServiceWindow(at: Date): ServiceWindow {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat('en-US', { timeZone: SALES_SERVICE_HOURS.timeZone, weekday: 'short', hour: '2-digit', hourCycle: 'h23' }).formatToParts(at).map((p) => [p.type, p.value]),
-  );
+  const parts = Object.fromEntries(CHILE.formatToParts(at).map((p) => [p.type, p.value]));
   const weekday = WEEKDAYS[parts.weekday ?? ''] ?? 1;
   const hour = Number(parts.hour);
   const businessDay = weekday <= 5;
@@ -38,9 +37,9 @@ export function salesTeamTrainingSentence(w: ServiceWindow): string {
  * What the customer is told when the bot could not see or process what they sent (and the conversation continues: no
  * hand-off). In hours: the problem, a retry, and the offer of a trainer. Outside hours: the same, and when the team answers.
  */
-export function salesUnprocessableSentence(at: Date): string {
+export function salesUnprocessableSentence(at: Date, sense: 'ver' | 'escuchar' = 'ver'): string {
   const w = salesServiceWindow(at);
-  const ask = 'Tuve un problema para ver lo que me enviaste y estoy intentando solucionarlo. ¿Me lo puedes enviar de nuevo o escribirme qué necesitas?';
+  const ask = `Tuve un problema para ${sense} lo que me enviaste y estoy intentando solucionarlo. ¿Me lo puedes enviar de nuevo o escribirme qué necesitas?`;
   return w.open ? `${ask} Si prefieres, te derivo con un entrenador de nuestro equipo.` : `${ask} Si prefieres hablar con un entrenador: ${salesTeamTrainingSentence(w)}`;
 }
 
@@ -48,7 +47,7 @@ export function salesUnprocessableSentence(at: Date): string {
 export function salesRunFailureNotice(at: Date): string {
   const w = salesServiceWindow(at);
   return w.open
-    ? 'Tuve un problema con tu mensaje y estoy intentando solucionarlo: ya lo estoy consultando con un asesor de nuestro equipo, que te responderá por este mismo chat. No hace falta que repitas lo que escribiste.'
+    ? 'Tuve un problema con tu mensaje y estoy intentando solucionarlo: ya le avisé a un asesor de nuestro equipo, que te responderá por este mismo chat. No hace falta que repitas lo que escribiste.'
     : `Tuve un problema con tu mensaje y se lo dejé a nuestro equipo. ${salesTeamTrainingSentence(w)} No hace falta que repitas lo que escribiste.`;
 }
 

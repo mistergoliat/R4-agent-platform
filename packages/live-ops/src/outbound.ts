@@ -93,9 +93,20 @@ export class OutboundDeliveryRuntime {
   async materialize(limit = 50): Promise<OutboundRecord[]> {
     const created = await this.#o.store.materializeResponses({ limit });
     const fallback = this.#o.runFailureFallback;
-    if (fallback) created.push(...(await this.#o.store.materializeRunFailureFallbacks({ text: noticeText(fallback.text, 'runFailureFallback.text'), limit })));
+    const safe = (text: NoticeText, name: string): string | null => {
+      try {
+        return noticeText(text, name);
+      } catch {
+        // A notice the pack cannot word this tick is skipped (retried next tick); agent responses keep flowing.
+        emitTelemetry(this.#o.logger, 'outbound.notice.unavailable', { notice: name });
+        return null;
+      }
+    };
+    const fallbackText = fallback ? safe(fallback.text, 'runFailureFallback.text') : null;
+    if (fallbackText !== null) created.push(...(await this.#o.store.materializeRunFailureFallbacks({ text: fallbackText, limit })));
     const notice = this.#o.humanRequestNotice;
-    if (notice) created.push(...(await this.#o.store.materializeHumanRequestNotices({ text: noticeText(notice.text, 'humanRequestNotice.text'), profiles: notice.profiles, limit })));
+    const noticeValue = notice ? safe(notice.text, 'humanRequestNotice.text') : null;
+    if (notice && noticeValue !== null) created.push(...(await this.#o.store.materializeHumanRequestNotices({ text: noticeValue, profiles: notice.profiles, limit })));
     for (const o of created) {
       emitTelemetry(this.#o.logger, 'outbound.created', { outboundId: o.outboundId, taskId: o.taskId, runId: o.runId, responseStepId: o.responseStepId, channel: o.channel, origin: o.origin, status: o.status, correlationId: o.correlationId });
       if (o.status === 'cancelled') emitTelemetry(this.#o.logger, 'outbound.cancelled', { outboundId: o.outboundId, taskId: o.taskId, reason: o.cancelReason, duplicateOf: o.duplicateOf });
