@@ -285,10 +285,14 @@ export class ChannelIngress {
    * becomes an input, so a crash after this point never perceives (or downloads) the same message again.
    */
   async #mediaText(record: InboundEventRecord, binding: ConversationBindingRecord, held: boolean, profileLabel: string): Promise<string> {
-    const ref = parseMediaRefContent(record.content ?? '');
+    const ref = record.contentKind === 'media' ? parseMediaRefContent(record.content ?? '') : null;
     const humanOwned = binding.taskId ? ((await this.#o.store.taskState(binding.taskId))?.humanOwned ?? false) : false;
     let text = unsupportedContentMarker(record.contentType ?? 'media');
-    if (!held && !humanOwned && ref && this.#perceivesMedia(profileLabel, ref.kind)) {
+    if (!held && !humanOwned && !(ref && this.#perceivesMedia(profileLabel, ref.kind)) && this.#perceivesMedia(profileLabel)) {
+      // Not representable here (an album, a sticker, a kind without a provider…): the agent answers, nothing is downloaded.
+      text = this.#o.media!.perception.frameUnsupported(record.contentType ?? 'unsupported');
+      emitTelemetry(this.#o.logger, 'inbound.media.perceived', { channel: record.channel, inboundId: record.inboundId, outcome: 'not_representable', reason: record.contentType ?? null });
+    } else if (!held && !humanOwned && ref && this.#perceivesMedia(profileLabel, ref.kind)) {
       try {
         const result = await this.#o.media!.perception.perceive(ref, { accountRef: record.accountRef! });
         emitTelemetry(this.#o.logger, 'inbound.media.perceived', { channel: record.channel, inboundId: record.inboundId, outcome: result.outcome, reason: result.reason, ...result.evidence });
@@ -305,16 +309,18 @@ export class ChannelIngress {
 
   async #process(stale: InboundEventRecord): Promise<IngestOutcome> {
     const { store, controls, config, temporal, tasks, logger } = this.#o;
-    // A snapshot (resume sweep) may be older than the row: a media row is processed only while still received (never twice).
-    const record = stale.contentKind === 'media' ? await store.inboundEvent(stale.inboundId) : stale;
+    // A snapshot (resume sweep) may be older than the row: a media or unsupported row is processed only while still received.
+    const record = stale.contentKind === 'media' || stale.contentKind === 'unsupported' ? await store.inboundEvent(stale.inboundId) : stale;
     if (!record || record.status !== 'received') return { kind: 'duplicate', inboundId: stale.inboundId };
     if (record.conversationKey === null || record.accountRef === null || record.conversationRef === null || record.content === null || record.occurredAt === null) {
       await store.settleInbound(record.inboundId, { status: 'failed', failureCode: 'incomplete_inbound_record' });
       return { kind: 'failed', inboundId: record.inboundId, code: 'incomplete_inbound_record' };
     }
     const media = record.contentKind === 'media';
-    /** The text of a media input: the stored decision (after a crash: exactly what may already be submitted), or decided below. */
-    let mediaText: string | null = media && parseMediaRefContent(record.content) === null ? record.content : null;
+    const unsupportedRow = record.contentKind === 'unsupported';
+    /** The text of a media or unsupported input: the stored decision (after a crash: exactly what may already be submitted), or decided below. */
+    let mediaText: string | null = media && parseMediaRefContent(record.content) === null ? record.content
+      : unsupportedRow && record.content !== unsupportedContentMarker(record.contentType ?? '') ? record.content : null;
     let decidedHere = false;
     try {
       for (let attempt = 0; ; attempt += 1) {
@@ -357,7 +363,9 @@ export class ChannelIngress {
         const served = this.#servedBy(binding) ?? this.#main;
         const { taskFactory } = served;
         // Media is unsupported content (held per profile, never downloaded) unless perceived for this binding's profile.
-        const unsupported = record.contentKind === 'unsupported' || (media && !this.#perceivesMedia(served.label, record.contentType));
+        // With perception composed for this profile, content it cannot represent is answered by the agent (no hand-off);
+        // without it, such content is held per profile exactly as before.
+        const unsupported = (unsupportedRow || (media && !this.#perceivesMedia(served.label, record.contentType))) && !this.#perceivesMedia(served.label);
         const decision: InboundAutonomyDecision = decideInboundAutonomy({
           controls: await controls.state(),
           channel: record.channel,
@@ -368,7 +376,7 @@ export class ChannelIngress {
         });
         const hold = decision.kind === 'hold' ? { reason: decision.reason, summary: decision.summary } : undefined;
         // Decided once; again only after a terminal race (nothing was submitted, and the new task may decide otherwise).
-        if (media && (mediaText === null || (attempt > 0 && decidedHere))) {
+        if ((media || unsupportedRow) && (mediaText === null || (attempt > 0 && decidedHere))) {
           mediaText = await this.#mediaText(record, binding, hold !== undefined, served.label);
           decidedHere = true;
         }

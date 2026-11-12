@@ -59,7 +59,13 @@ export interface MediaPerceptionResult {
 
 /** One inbound media reference → one input text. Never throws (failures degrade to a text the agent can act on). */
 export interface MediaPerception {
-  /** The kinds this composition can actually perceive; any other kind is held exactly like unsupported content. */
+  /** The kinds this composition can actually perceive; any other kind is unsupported content (answered via frameUnsupported). */
   readonly kinds: ReadonlySet<MediaKind>;
   perceive(ref: InboundMediaRef, context: { readonly accountRef: string }): Promise<MediaPerceptionResult>;
+  /**
+   * The input text for content this composition cannot represent (a provider `unsupported` item such as an album, a
+   * sticker, a location, or a media kind without a provider): framed by the pack so the agent answers and the
+   * conversation continues, instead of a silent hand-off.
+   */
+  frameUnsupported(contentType: string): string;
 }

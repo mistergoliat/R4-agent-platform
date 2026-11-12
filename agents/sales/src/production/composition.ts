@@ -39,6 +39,7 @@ import { SALES_PRODUCTION_PROFILES, isCustomerIdentityProfile, salesActionPolicy
 import { composeSyntheticCustomerCapabilities, composeSyntheticIdentityVerificationCapabilities } from '../capabilities/customer-synthetic.js';
 import { GATEWAY_ONLY_ENV, salesGatewayInspection } from './gateway-identity.js';
 import { SALES_IMAGE_PERCEPTION_INSTRUCTIONS, SALES_TRANSCRIPTION_PROMPT, SalesMediaPerceiver } from './media-perception.js';
+import { salesHumanRequestNotice, salesRunFailureNotice } from './service-hours.js';
 import { configuredMediaPerception } from '../model.js';
 import { catalogCapabilities } from '../capabilities/catalog.js';
 import { F1_COMMERCIAL_POLICY_V2_VERSION, F1_COMMERCIAL_POLICY_VERSION, type CommercialEligibility } from '../capabilities/commercial-snapshot.js';
@@ -334,6 +335,8 @@ export interface SalesGatewayOptions {
   readonly identityFetch?: (url: string, init: RequestInit) => Promise<Response>;
   /** (R4-J4-R5 preparation) The isolated canary's closed test-host allowlist for the CIA confirm client. */
   readonly allowedHosts?: readonly string[];
+  /** The clock of the service-hours wording of platform messages (tests pin it); default: now. */
+  readonly now?: () => Date;
 }
 
 /**
@@ -341,16 +344,16 @@ export interface SalesGatewayOptions {
  * person (ADR-028 recovery exhausted, or a non-retryable model failure). Fixed text, never model output. It claims
  * no effect: whatever was or was not done (a quote, a verification) stays for the person to confirm.
  */
-export const SALES_RUN_FAILURE_FALLBACK_TEXT =
-  'Disculpa, tuve un problema técnico y no pude responder tu último mensaje. Ya avisé a una persona del equipo de PesasChile, que seguirá la conversación por este mismo chat. No hace falta que repitas lo que escribiste.';
+/** A business-day noon in Chile: the in-hours wording of the platform messages (tests, synthetic canary). */
+export const SALES_IN_HOURS_REFERENCE = new Date('2026-01-07T15:00:00.000Z');
+export const SALES_RUN_FAILURE_FALLBACK_TEXT = salesRunFailureNotice(SALES_IN_HOURS_REFERENCE);
 
 /**
  * (F-ADV-2, ADR-041 extension) The notice the delivery owner sends once when the agent opens a human request (a
  * consultation or a handoff) without replying in that run, so the contact never waits in silence. Fixed text, never
  * model output; it claims no commercial effect: the answer, and any commercial resolution, stay with the person.
  */
-export const SALES_HUMAN_REQUEST_NOTICE_TEXT =
-  'Gracias por tu mensaje. Tu consulta quedó pendiente de revisión por una persona del equipo de PesasChile. La respuesta llegará por este mismo chat; no hace falta que repitas lo que escribiste.';
+export const SALES_HUMAN_REQUEST_NOTICE_TEXT = salesHumanRequestNotice(SALES_IN_HOURS_REFERENCE);
 
 /** The profiles whose conversations get that notice: only the F1 quote lane candidate (@13 and the others unchanged). */
 export const SALES_HUMAN_REQUEST_NOTICE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_QUOTE_LANE_V18_PROFILE_LABEL, 'sales-production@19']);
@@ -360,7 +363,8 @@ export function composeSalesGateway(options: SalesGatewayOptions): { bindings: G
   const config = assertProductionMode(options.production.config);
   const profile = selectedSalesProductionProfile(config);
   const whatsapp = loadWhatsAppCloudConfig(options.env, { allowNetwork: config.allowNetwork });
-  const media = salesMediaPerception(options.env, whatsapp, config.allowNetwork, isCustomerIdentityProfile(profile));
+  const now = options.now ?? (() => new Date());
+  const media = salesMediaPerception(options.env, whatsapp, config.allowNetwork, isCustomerIdentityProfile(profile), now);
   return {
     whatsapp,
     describe: { ...describeWhatsAppConfig(whatsapp), ...media.describe },
@@ -370,8 +374,9 @@ export function composeSalesGateway(options: SalesGatewayOptions): { bindings: G
       inbound: [new WhatsAppInboundAdapter(whatsapp)],
       outbound: [new WhatsAppOutboundAdapter(whatsapp, options.fetch ? { fetch: options.fetch } : {})],
       taskFactory: salesConversationTaskFactory(options.pool, salesProductionAgentVersion(profile)),
-      runFailureFallback: { text: SALES_RUN_FAILURE_FALLBACK_TEXT },
-      humanRequestNotice: { text: SALES_HUMAN_REQUEST_NOTICE_TEXT, profiles: SALES_HUMAN_REQUEST_NOTICE_PROFILES },
+      // (Owner decision 2026-11-12) Worded by the team's service hours at the moment each notice is created.
+      runFailureFallback: { text: () => salesRunFailureNotice(now()) },
+      humanRequestNotice: { text: () => salesHumanRequestNotice(now()), profiles: SALES_HUMAN_REQUEST_NOTICE_PROFILES },
       ...laneOf(salesGatewayLane(options.env, options.pool)),
       ...(media.perception ? { media: media.perception } : {}),
       // (R4-J4-R4) v8 never runs without the inbound inspector, requested in full (ADR-040).
@@ -385,7 +390,7 @@ export function composeSalesGateway(options: SalesGatewayOptions): { bindings: G
  * The downloader holds the WhatsApp token; the describer (DeepSeek deepseek-flash) and the transcriber (OpenAI
  * gpt-transcribe) hold their own credentials, which only the gateway's environment carries (never the worker's).
  */
-export function salesMediaPerception(env: Readonly<Record<string, string | undefined>>, whatsapp: WhatsAppCloudConfig, allowNetwork: boolean, inspected: boolean): { perception?: { perception: MediaPerception; profiles: readonly string[] }; describe: Record<string, string | boolean> } {
+export function salesMediaPerception(env: Readonly<Record<string, string | undefined>>, whatsapp: WhatsAppCloudConfig, allowNetwork: boolean, inspected: boolean, now: () => Date = () => new Date()): { perception?: { perception: MediaPerception; profiles: readonly string[] }; describe: Record<string, string | boolean> } {
   const c = configuredMediaPerception(env, { allowNetwork, imageInstructions: SALES_IMAGE_PERCEPTION_INSTRUCTIONS });
   if (!c.enabled) return { describe: c.description };
   // Opt-in per profile (never the whole gateway): every other profile keeps holding media for a person, as before.
@@ -399,8 +404,9 @@ export function salesMediaPerception(env: Readonly<Record<string, string | undef
     ...(c.describer ? { describer: c.describer } : {}),
     ...(c.transcriber ? { transcriber: c.transcriber } : {}),
     transcriptionPrompt: c.transcriptionPromptOverride ?? SALES_TRANSCRIPTION_PROMPT,
+    now,
   });
-  return { perception: { perception, profiles }, describe: { ...c.description, mediaPerceptionProfiles: profiles.join(','), mediaPerceptionKinds: [...perception.kinds].join(',') || 'none' } };
+  return { perception: { perception, profiles }, describe: { ...c.description, mediaPerceptionProfiles: profiles.join(','), mediaPerceptionKinds: [...perception.kinds].join(',') || 'none', unsupportedContentOnPerceptionProfiles: 'agent_answers' } };
 }
 
 /** (ADR-045) The lane variables of the gateway: both set (the lane) or neither (exactly R4-I). */
