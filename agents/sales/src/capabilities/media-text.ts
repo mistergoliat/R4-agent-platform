@@ -19,10 +19,11 @@ export const MEDIA_TEXT_HEADERS = Object.freeze({
   /** A reaction to an earlier agent message (or an unknown one): never an acceptance. */
   reaction: '[r4:reaccion]',
   /**
-   * (Owner decision 2026-11-12) A reaction to the agent's LATEST message (e.g. the offer just presented). Only 👍 may
-   * be an acceptance, and only of the exact message reacted to: the last line is `«emoji» REACTION_STEP_MARK <stepId>`,
-   * the recorded respond step the platform resolved from the provider message id; quote.create requires that step to be
-   * the offer it issues. Other positive emojis are ambiguous: the agent asks.
+   * (Owner decisions 2026-11-12) A reaction to the agent's LATEST message (e.g. the offer just presented). The agent
+   * interprets the emoji in context (no list of accepting emojis; ambiguous → it asks); the guard refuses rejection and
+   * doubt emojis. It can accept only the exact message reacted to: the last line is `«emoji» REACTION_STEP_MARK
+   * <stepId>`, the recorded respond step the platform resolved from the provider message id; quote.create requires that
+   * step to be the offer it issues.
    */
   reactionToLatest: '[r4:reaccion-a-tu-ultimo-mensaje]',
 });

@@ -98,21 +98,21 @@ export type OfferDelivery = 'excluded' | 'selected';
  * confidence is never an acceptance ("a file is not an authorization"); a voice note is read as its transcript only when
  * no word of it was transcribed with doubt. Any other platform-style header is refused (false). Null: an ordinary text.
  */
-/** The only reaction that may accept an offer: 👍 (any skin tone). Other positive emojis are ambiguous (the agent asks). */
-const ACCEPTING_REACTION = /^👍[🏻-🏿]?$/u;
 /** The platform-written last line of a reaction to the latest message: the emoji and the respond step it reacts to. */
 const REACTION_LAST_LINE = new RegExp(`\\n«([^»\\n]{1,16})» ${REACTION_STEP_MARK} ([0-9A-Za-z-]{8,64})\\s*$`, 'u');
 
 /**
- * A reaction is an acceptance only as a 👍 bound to the step it reacts to; the binding is then checked against the offer
- * by quote.create (locateConfirmation). A reaction framed without that binding (written before it existed) never accepts.
+ * (Owner decision 2026-11-12, semantic confirmation) Which emoji accepts is the agent's reading of the conversation:
+ * there is no list of accepting emojis. The platform only refuses a rejection or doubt emoji (the same list as written
+ * replies) and a reaction not bound to the step it reacts to (one framed before the binding existed); the binding is
+ * then checked against the offer by quote.create (locateConfirmation), from recorded rows the model cannot change.
  */
 export function mediaReplyBody(text: string): string | false | null | { readonly reaction: string; readonly stepId: string } {
   const t = text.trimStart();
   if (!t.startsWith('[r4:')) return null;
   if (t.startsWith(`${MEDIA_TEXT_HEADERS.reactionToLatest} `)) {
     const last = REACTION_LAST_LINE.exec(t);
-    return last && ACCEPTING_REACTION.test(last[1]!) ? { reaction: last[1]!, stepId: last[2]! } : false;
+    return last && !NEGATIVE_EMOJI.test(last[1]!) ? { reaction: last[1]!, stepId: last[2]! } : false;
   }
   if (!t.startsWith(`${MEDIA_TEXT_HEADERS.audio} `)) return false;
   const body = /\n«([\s\S]*)»\s*$/.exec(t)?.[1];

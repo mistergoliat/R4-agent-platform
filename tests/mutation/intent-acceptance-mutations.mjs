@@ -65,13 +65,13 @@ const MUTATIONS = [
     tests: [[REACTIONS, 'bound to an older offer'], [REACTIONS, 'after the quantities changed']],
   },
   {
-    name: 'IA-M9 ambiguous positive reactions (❤️, 🔥, ✅…) authorize issuance',
-    edits: [{ file: GRAMMAR, from: 'const ACCEPTING_REACTION = /^👍[🏻-🏿]?$/u;', to: 'const ACCEPTING_REACTION = /^(?:👍[🏻-🏿]?|❤️?|😍|👌|✅|🔥|🙏)$/u;' }],
-    tests: [[REACTIONS, 'never an acceptance: an ambiguous']],
+    name: 'IA-M9 a rejection or doubt reaction (👎, 🤔) reaches issuance',
+    edits: [{ file: GRAMMAR, from: '    return last && !NEGATIVE_EMOJI.test(last[1]!) ? { reaction: last[1]!, stepId: last[2]! } : false;', to: '    return last ? { reaction: last[1]!, stepId: last[2]! } : false;' }],
+    tests: [[REACTIONS, 'never an acceptance: a rejection']],
   },
   {
     name: 'IA-M10 a reaction framed without its step binding still accepts',
-    edits: [{ file: GRAMMAR, from: "    return last && ACCEPTING_REACTION.test(last[1]!) ? { reaction: last[1]!, stepId: last[2]! } : false;", to: "    const any = /\\n«([^»\\n]{1,16})»/u.exec(t);\n    return any && ACCEPTING_REACTION.test(any[1]!) ? { reaction: any[1]!, stepId: last?.[2] ?? 'unbound' } : false;" }],
+    edits: [{ file: GRAMMAR, from: '    return last && !NEGATIVE_EMOJI.test(last[1]!) ? { reaction: last[1]!, stepId: last[2]! } : false;', to: "    const any = /\\n«([^»\\n]{1,16})»/u.exec(t);\n    return any && !NEGATIVE_EMOJI.test(any[1]!) ? { reaction: any[1]!, stepId: last?.[2] ?? 'unbound' } : false;" }],
     tests: [[REACTIONS, 'without its step binding']],
   },
 ];
