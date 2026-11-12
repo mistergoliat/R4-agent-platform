@@ -216,11 +216,13 @@ export class PostgresProductionStore implements ProductionStore {
   async reactionTarget(channel: string, providerMessageId: string): Promise<{ taskId: string; text: string | null; latest: boolean } | null> {
     const r = await query<Row>(
       this.#pool,
+      // Only an AGENT message is a reaction target (a notice, a document or an operator message is not). "Latest" is
+      // measured on recorded respond steps, the order the thread is judged in: a reply recorded but not yet materialized
+      // already makes the reacted-to message an earlier one.
       `select o.task_id, s.decision ->> 'content' as text,
-              not exists (select 1 from outbound_messages later where later.task_id = o.task_id and later.origin = 'agent' and later.created_at > o.created_at) as latest
-         from outbound_messages o left join agent_run_steps s on s.step_id = o.response_step_id
-        where o.channel = $1 and o.provider_message_id = $2
-        order by o.created_at desc limit 1`,
+              not exists (select 1 from agent_run_steps l where l.task_id = s.task_id and l.decision_type = 'respond' and l.outcome = 'recorded' and l.created_at > s.created_at) as latest
+         from outbound_messages o join agent_run_steps s on s.step_id = o.response_step_id
+        where o.channel = $1 and o.provider_message_id = $2 and o.origin = 'agent'`,
       [channel, providerMessageId],
     );
     const row = r.rows[0];

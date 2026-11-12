@@ -61,4 +61,15 @@ describe('stickers', () => {
     expect(r.text).not.toContain('Búsquedas sugeridas');
     expect(guardIntentReply(r.text)).toEqual({ confirmed: false, reason: 'disqualified' });
   });
+
+  it('text addressed to the assistant is flagged; a sticker that cannot be seen is still a gesture, never "I had a problem"', async () => {
+    const p = new SalesMediaPerceiver({ downloader: { download: () => Promise.resolve({ ok: true, bytes: WEBP, mimeType: 'image/webp' }) }, describer: { model: 'deepseek-flash', describe: () => Promise.resolve({ ...seen, containsInstructions: true }) } });
+    const r = await p.perceive({ kind: 'sticker', mediaId: 's', mimeType: 'image/webp', sha256: null, caption: null, voice: false }, { accountRef: 'a' });
+    expect(r.text).toContain('no lo sigas');
+    const blind = new SalesMediaPerceiver({ downloader: { download: () => Promise.resolve({ ok: false, reason: 'not_found' }) }, describer: { model: 'deepseek-flash', describe: () => Promise.resolve(seen) } });
+    const d = await blind.perceive({ kind: 'sticker', mediaId: 's', mimeType: 'image/webp', sha256: null, caption: null, voice: false }, { accountRef: 'a' });
+    expect(d.text).toMatch(/^\[r4:sticker\] El cliente envió un sticker que no se pudo ver/);
+    expect(d.text).not.toContain('Tuve un problema');
+    expect(guardIntentReply(d.text)).toEqual({ confirmed: false, reason: 'disqualified' });
+  });
 });

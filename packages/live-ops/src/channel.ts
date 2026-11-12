@@ -25,7 +25,7 @@ export const canonicalInboundSchema = z.strictObject({
   occurredAt: timestampSchema,
   content: z.discriminatedUnion('kind', [
     z.strictObject({ kind: z.literal('text'), text: z.string().trim().min(1).max(8000) }),
-    /** Content R4 does not represent (video, documents, reactions, location…): classified, never silently dropped. */
+    /** Content R4 does not represent (video, documents, location…): classified, never silently dropped. */
     z.strictObject({ kind: z.literal('unsupported'), contentType: z.string().regex(/^[a-z][a-z0-9_.-]{0,63}$/) }),
     /** A reaction to an earlier message: the emoji (null = the reaction was removed) and the provider id of that message. */
     z.strictObject({ kind: z.literal('reaction'), emoji: z.string().min(1).max(16).nullable(), targetProviderMessageId: ref }),

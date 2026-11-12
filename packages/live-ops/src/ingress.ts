@@ -211,7 +211,9 @@ export class ChannelIngress {
       : ec.kind === 'reaction' && !this.#perceivesMedia() ? { kind: 'unsupported' as const, contentType: 'reaction' }
       : ec;
     // A media item keeps only its provider reference until it is perceived (or held as unsupported); never bytes.
-    const text = c.kind === 'text' ? c.text : c.kind === 'reaction' ? reactionRefContent({ emoji: c.emoji, targetProviderMessageId: c.targetProviderMessageId }) : c.kind === 'media'
+    // A contact's text never starts with a platform header: "[r4:…" written by the contact is neutralized, so it can
+    // never pose as a perceived file or a reaction.
+    const text = c.kind === 'text' ? c.text.replace(/^(\s*)\[\s*r4\s*:/i, '$1[r4 :') : c.kind === 'reaction' ? reactionRefContent({ emoji: c.emoji, targetProviderMessageId: c.targetProviderMessageId }) : c.kind === 'media'
       ? mediaRefContent({ kind: c.mediaKind, mediaId: c.mediaId, mimeType: c.mimeType, sha256: c.sha256, caption: c.caption, voice: c.voice })
       : unsupportedContentMarker(c.contentType);
     const inbound = {
@@ -296,8 +298,9 @@ export class ChannelIngress {
     if (!held && !humanOwned && reaction && this.#perceivesMedia(profileLabel)) {
       // (Reactions) The agent learns which of its messages was reacted to, and whether it is its latest one (the offer).
       const target = await this.#o.store.reactionTarget(record.channel, reaction.targetProviderMessageId);
-      text = this.#o.media!.perception.frameReaction({ emoji: reaction.emoji, target: target && target.taskId === binding.taskId ? { text: target.text, latest: target.latest } : null });
-      emitTelemetry(this.#o.logger, 'inbound.media.perceived', { channel: record.channel, inboundId: record.inboundId, outcome: 'reaction', reason: target ? (target.latest ? 'latest_agent_message' : 'earlier_message') : 'unknown_message' });
+      const own = target && target.taskId === binding.taskId ? target : null;
+      text = this.#o.media!.perception.frameReaction({ emoji: reaction.emoji, target: own ? { text: own.text, latest: own.latest } : null });
+      emitTelemetry(this.#o.logger, 'inbound.media.perceived', { channel: record.channel, inboundId: record.inboundId, outcome: 'reaction', reason: own ? (own.latest ? 'latest_agent_message' : 'earlier_message') : 'unknown_message' });
     } else if (!held && !humanOwned && !(ref && this.#perceivesMedia(profileLabel, ref.kind)) && this.#perceivesMedia(profileLabel)) {
       // Not representable here (an album, a sticker, a kind without a provider…): the agent answers, nothing is downloaded.
       text = this.#o.media!.perception.frameUnsupported(record.contentType ?? 'unsupported');

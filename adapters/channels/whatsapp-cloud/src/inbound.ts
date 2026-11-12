@@ -136,7 +136,9 @@ export class WhatsAppInboundAdapter implements InboundChannelAdapter {
       const r = isObject(m.reaction) ? m.reaction : null;
       const target = r ? text(r.message_id) : null;
       const emoji = r ? text(r.emoji) : null;
-      if (target && target.length <= 256) return { ...base, content: { kind: 'reaction', emoji: emoji && emoji.length <= 16 ? emoji : null, targetProviderMessageId: target } };
+      // Only emoji characters are an emoji; anything else (a modified client) is an unknown reaction, never "removed".
+      const valid = emoji === null || (emoji.length <= 16 && /^(?:\p{Extended_Pictographic}|\p{Emoji_Component}|‍|️)+$/u.test(emoji));
+      if (target && target.length <= 256 && valid) return { ...base, content: { kind: 'reaction', emoji, targetProviderMessageId: target } };
     }
     // Content the Cloud API cannot represent keeps WHAT it was (`unsupported.type`, e.g. a view-once photo, an edit, a poll)
     // so it can be answered properly; never its content.
