@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo, Socket } from 'node:net';
 
@@ -45,10 +45,24 @@ export interface FakeUpload {
   readonly mediaId: string | null;
 }
 
+/** (Inbound multimodal v1) A file the fake serves for an inbound media id, and how it misbehaves. */
+export interface FakeHostedMedia {
+  readonly bytes: Buffer;
+  readonly mimeType: string;
+  /** The hash the media endpoint states (default: the real one; null: none). */
+  readonly sha256?: string | null;
+  /** The size the media endpoint states (default: the real one). */
+  readonly fileSize?: number;
+  readonly behaviour?: 'ok' | 'meta_500' | 'foreign_url' | 'redirect' | 'hang' | 'no_length';
+}
+
 export class FakeWhatsAppProvider {
   readonly sends: FakeSend[] = [];
   readonly signals: FakeWorkingSignal[] = [];
   readonly uploads: FakeUpload[] = [];
+  /** Inbound media requests (metadata and file), in order: what was asked, and whether with the token. */
+  readonly mediaRequests: { readonly kind: 'meta' | 'file'; readonly mediaId: string; readonly authorized: boolean }[] = [];
+  readonly #hosted = new Map<string, FakeHostedMedia>();
   #script: FakeSendBehaviour[] = [];
   #mediaScript: FakeSendBehaviour[] = [];
   #server: Server | null = null;
@@ -68,6 +82,11 @@ export class FakeWhatsAppProvider {
   /** Behaviour of the next "upload media" calls, in order; afterwards: accept. */
   scriptMedia(...behaviours: FakeSendBehaviour[]): void {
     this.#mediaScript.push(...behaviours);
+  }
+
+  /** Serves `file` for an inbound media id (what a contact sent). */
+  hostMedia(mediaId: string, file: FakeHostedMedia): void {
+    this.#hosted.set(mediaId, file);
   }
 
   /** The bytes uploaded under a media id (what the contact receives). */
@@ -102,6 +121,10 @@ export class FakeWhatsAppProvider {
     const authorized = req.headers.authorization === `Bearer ${this.#accessToken}`;
     if (req.method === 'POST' && /^\/v\d+\.\d+\/(\d+)\/media$/.test(req.url ?? '')) {
       await this.#upload(req, res, Buffer.concat(chunks), authorized);
+      return;
+    }
+    if (req.method === 'GET') {
+      this.#inboundMedia(req, res, authorized);
       return;
     }
     const match = /^\/v\d+\.\d+\/(\d+)\/messages$/.exec(req.url ?? '');
@@ -145,6 +168,44 @@ export class FakeWhatsAppProvider {
     }
   }
 
+  #inboundMedia(req: IncomingMessage, res: ServerResponse, authorized: boolean): void {
+    const url = new URL(req.url ?? '/', 'http://fake.local');
+    const meta = /^\/v\d+\.\d+\/([^/]+)$/.exec(url.pathname);
+    const fileMatch = /^\/inbound-media\/([^/]+)$/.exec(url.pathname);
+    const mediaId = decodeURIComponent((meta ?? fileMatch)?.[1] ?? '');
+    const hosted = this.#hosted.get(mediaId);
+    if (!meta && !fileMatch) {
+      res.writeHead(404).end();
+      return;
+    }
+    this.mediaRequests.push({ kind: meta ? 'meta' : 'file', mediaId, authorized });
+    if (!authorized) {
+      res.writeHead(401, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { code: 190 } }));
+      return;
+    }
+    if (!hosted) {
+      res.writeHead(404, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { code: 100 } }));
+      return;
+    }
+    const behaviour = hosted.behaviour ?? 'ok';
+    if (meta) {
+      if (behaviour === 'meta_500') {
+        res.writeHead(500).end();
+        return;
+      }
+      const fileUrl = behaviour === 'foreign_url' ? 'https://evil.example/steal' : `${this.baseUrl}/inbound-media/${encodeURIComponent(mediaId)}`;
+      const sha256 = hosted.sha256 === undefined ? createHash('sha256').update(hosted.bytes).digest('hex') : hosted.sha256;
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ messaging_product: 'whatsapp', url: fileUrl, mime_type: hosted.mimeType, ...(sha256 ? { sha256 } : {}), file_size: hosted.fileSize ?? hosted.bytes.length, id: mediaId }));
+      return;
+    }
+    if (behaviour === 'redirect') {
+      res.writeHead(302, { location: 'https://evil.example/steal' }).end();
+      return;
+    }
+    if (behaviour === 'hang') return;
+    res.writeHead(200, { 'content-type': hosted.mimeType, ...(behaviour === 'no_length' ? { 'transfer-encoding': 'chunked' } : { 'content-length': String(hosted.bytes.length) }) }).end(hosted.bytes);
+  }
+
   async #upload(req: IncomingMessage, res: ServerResponse, raw: Buffer, authorized: boolean): Promise<void> {
     const form = await new Request('http://fake.local/media', { method: 'POST', headers: { 'content-type': req.headers['content-type'] ?? '' }, body: raw }).formData();
     const file = form.get('file');
@@ -185,6 +246,8 @@ export interface NotificationMessage {
   readonly timestamp?: number;
   readonly text?: string;
   readonly type?: string;
+  /** (image/audio) The media object as the provider sends it (default: `{ id: media-<id>, mime_type: image/jpeg }`). */
+  readonly media?: { readonly id?: string; readonly mimeType?: string; readonly sha256?: string; readonly caption?: string; readonly voice?: boolean };
 }
 
 export interface NotificationStatus {
@@ -214,7 +277,13 @@ export function notification(phoneNumberId: string, items: { messages?: readonly
                 const type = m.type ?? 'text';
                 return type === 'text'
                   ? { from: m.from, id: m.id, timestamp: String(m.timestamp ?? now), type, text: { body: m.text ?? '' } }
-                  : { from: m.from, id: m.id, timestamp: String(m.timestamp ?? now), type, [type]: { id: `media-${m.id}`, mime_type: 'image/jpeg' } };
+                  : {
+                      from: m.from, id: m.id, timestamp: String(m.timestamp ?? now), type,
+                      [type]: {
+                        id: m.media?.id ?? `media-${m.id}`, mime_type: m.media?.mimeType ?? 'image/jpeg',
+                        ...(m.media?.sha256 ? { sha256: m.media.sha256 } : {}), ...(m.media?.caption ? { caption: m.media.caption } : {}), ...(m.media?.voice !== undefined ? { voice: m.media.voice } : {}),
+                      },
+                    };
               }),
               statuses: (items.statuses ?? []).map((s) => ({
                 id: s.id, status: s.status, timestamp: String(s.timestamp ?? now), recipient_id: s.recipientId,

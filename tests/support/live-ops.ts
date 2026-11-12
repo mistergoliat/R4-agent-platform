@@ -11,7 +11,7 @@ import { PostgresProductionStore, type Pool } from '@r4/persistence-postgres';
 import { conversationKey, loadProductionConfig, type ProductionConfig, type ProductionSecrets } from '@r4/live-ops';
 import { createWorkerPlatform, type WorkerAdmission, type WorkerCycle, type WorkerPlatform, type WorkerPresenceBinding } from '@r4/worker';
 import { SALES_AGENT_DIR, migrateSales } from '@r4-sales/agent';
-import { composeSalesGateway, composeSalesProductionWorker, runProductionBootstrap } from '@r4-sales/agent/production';
+import { SALES_IN_HOURS_REFERENCE, composeSalesGateway, composeSalesProductionWorker, runProductionBootstrap } from '@r4-sales/agent/production';
 import { identityVerificationInspection, migrateIdentityVerification, type IdentityVerificationInspectionOptions } from '@r4-adapters/identity-verification';
 import { FakeWhatsAppProvider, notification, signNotification, type NotificationMessage, type NotificationStatus } from '@r4-adapters/whatsapp-cloud/testing';
 import { createMigratedTestDatabase, openPool, type TestDatabase } from './database.js';
@@ -300,7 +300,8 @@ export class LiveOpsTestbed {
 }
 
 function startGateway(databaseUrl: string, pool: Pool, production: { config: ProductionConfig; secrets: ProductionSecrets }, env: Readonly<Record<string, string | undefined>>, identityVerification?: IdentityVerificationInspectionOptions, logger?: Logger, noticeProfiles?: readonly string[]): Promise<GatewayPlatform> {
-  const composed = composeSalesGateway({ pool, production, env }).bindings;
+  // Platform messages are worded by service hours: the bed pins a business-day noon (after-hours wording has its own tests).
+  const composed = composeSalesGateway({ pool, production, env, now: () => SALES_IN_HOURS_REFERENCE }).bindings;
   const bindings = noticeProfiles && composed.humanRequestNotice ? { ...composed, humanRequestNotice: { ...composed.humanRequestNotice, profiles: noticeProfiles } } : composed;
   // (SEC-OTP) The synthetic composition plugs the inspector in, as a deployment would; absent: exactly R4-I.
   const inspected = identityVerification ? { ...bindings, inspection: identityVerificationInspection(identityVerification) } : bindings;

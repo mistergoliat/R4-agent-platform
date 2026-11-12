@@ -14,6 +14,8 @@ import {
   assertProductionProfile,
   profileLabel,
   type ConversationLane,
+  type MediaPerception,
+  type NoticeText,
   type ConversationTaskFactory,
   type InboundChannelAdapter,
   type OutboundChannelAdapter,
@@ -37,11 +39,13 @@ export interface GatewayBindings {
   /** R4-I.1 (ADR-040): the single inbound inspector, by composition. Absent: exactly R4-I, refused while a protection window is open. */
   readonly inspection?: GatewayInspectionFactory;
   /** ADR-041: the agent pack's fallback notice for a run-failure handoff (absent: none is sent). */
-  readonly runFailureFallback?: { readonly text: string };
+  readonly runFailureFallback?: { readonly text: NoticeText };
   /** (ADR-041 extension, F-ADV-2) The pack's notice for a human request the agent opened without replying (absent: none). */
-  readonly humanRequestNotice?: { readonly text: string; readonly profiles: readonly string[] };
+  readonly humanRequestNotice?: { readonly text: NoticeText; readonly profiles: readonly string[] };
   /** ADR-045: one extra profile for an explicit, closed set of allowlisted conversations (absent: exactly R4-I). */
   readonly lane?: ConversationLane;
+  /** (Inbound multimodal v1) Image and voice-note perception (absent: media is held as unsupported, exactly as before). */
+  readonly media?: { readonly perception: MediaPerception; readonly profiles: readonly string[] };
 }
 
 export interface GatewayOverrides {
@@ -143,6 +147,7 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
       store, tasks, temporal, controls, adapters: bindings.inbound, delivery, config: production, secrets: bindings.production.secrets, profile, taskFactory: bindings.taskFactory, ids, logger,
       ...(inspection ? { inspector: inspection.inspector } : {}),
       ...(bindings.lane ? { lane: bindings.lane } : {}),
+      ...(bindings.media ? { media: bindings.media } : {}),
       ...(workingSignals ? { onAutonomousInput: (input: Parameters<WorkingSignals['started']>[0]) => workingSignals.started(input) } : {}),
     });
     const presence = new PostgresWorkerPresenceStore(pool);
