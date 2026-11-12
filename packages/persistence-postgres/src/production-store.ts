@@ -213,6 +213,20 @@ export class PostgresProductionStore implements ProductionStore {
     );
   }
 
+  async reactionTarget(channel: string, providerMessageId: string): Promise<{ taskId: string; text: string | null; latest: boolean } | null> {
+    const r = await query<Row>(
+      this.#pool,
+      `select o.task_id, s.decision ->> 'content' as text,
+              not exists (select 1 from outbound_messages later where later.task_id = o.task_id and later.origin = 'agent' and later.created_at > o.created_at) as latest
+         from outbound_messages o left join agent_run_steps s on s.step_id = o.response_step_id
+        where o.channel = $1 and o.provider_message_id = $2
+        order by o.created_at desc limit 1`,
+      [channel, providerMessageId],
+    );
+    const row = r.rows[0];
+    return row ? { taskId: row.task_id as string, text: (row.text as string | null) ?? null, latest: row.latest === true } : null;
+  }
+
   async inboundEvent(inboundId: string): Promise<InboundEventRecord | null> {
     const r = await query<Row>(this.#pool, 'select * from inbound_events where inbound_id = $1', [inboundId]);
     return r.rows[0] ? inboundFromRow(r.rows[0]) : null;

@@ -119,7 +119,7 @@ export class WhatsAppInboundAdapter implements InboundChannelAdapter {
     }
     // (Inbound multimodal v1) Images and audio: only the media REFERENCE; the file is fetched later, and only if the
     // conversation's input starts autonomous work (ingress). An item without a usable reference stays unsupported.
-    if (type === 'image' || type === 'audio') {
+    if (type === 'image' || type === 'audio' || type === 'sticker') {
       const media = isObject(m[type]) ? (m[type]) : null;
       const mediaId = media ? text(media.id) : null;
       const mimeType = media ? text(media.mime_type) : null;
@@ -130,6 +130,19 @@ export class WhatsAppInboundAdapter implements InboundChannelAdapter {
           content: { kind: 'media', mediaKind: type, mediaId, mimeType, sha256: mediaSha256(media!.sha256), caption: caption ? caption.slice(0, 1024) : null, voice: type === 'audio' && media!.voice === true },
         };
       }
+    }
+    // (Reactions) The emoji (absent: the reaction was removed) and the provider id of the message it reacts to.
+    if (type === 'reaction') {
+      const r = isObject(m.reaction) ? m.reaction : null;
+      const target = r ? text(r.message_id) : null;
+      const emoji = r ? text(r.emoji) : null;
+      if (target && target.length <= 256) return { ...base, content: { kind: 'reaction', emoji: emoji && emoji.length <= 16 ? emoji : null, targetProviderMessageId: target } };
+    }
+    // Content the Cloud API cannot represent keeps WHAT it was (`unsupported.type`, e.g. a view-once photo, an edit, a poll)
+    // so it can be answered properly; never its content.
+    if (type === 'unsupported') {
+      const sub = isObject(m.unsupported) && typeof m.unsupported.type === 'string' ? m.unsupported.type.toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 40) : null;
+      return { ...base, content: { kind: 'unsupported', contentType: sub ? `unsupported.${sub}` : 'unsupported' } };
     }
     return { ...base, content: { kind: 'unsupported', contentType: type.replace(/_/g, '-') } };
   }

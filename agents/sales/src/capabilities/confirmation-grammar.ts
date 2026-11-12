@@ -98,9 +98,16 @@ export type OfferDelivery = 'excluded' | 'selected';
  * confidence is never an acceptance ("a file is not an authorization"); a voice note is read as its transcript only when
  * no word of it was transcribed with doubt. Any other platform-style header is refused (false). Null: an ordinary text.
  */
-export function mediaReplyBody(text: string): string | false | null {
+/** Positive reactions the agent may take as acceptance of its latest message (👍 accepts; the others are its call). */
+const POSITIVE_REACTION = /^(?:👍[🏻-🏿]?|✅|👌[🏻-🏿]?|🙌[🏻-🏿]?|💯|🤝|🙏[🏻-🏿]?|🔥|💪[🏻-🏿]?|❤️?|🧡|💛|💚|💙|💜|🖤|🤍|💖|💗|😍|🥰|😊|🙂|😀|😃|😄|😁)$/u;
+
+export function mediaReplyBody(text: string): string | false | null | { readonly reaction: string } {
   const t = text.trimStart();
   if (!t.startsWith('[r4:')) return null;
+  if (t.startsWith(`${MEDIA_TEXT_HEADERS.reactionToLatest} `)) {
+    const emoji = /\n«([^»\n]{1,16})»\s*$/.exec(t)?.[1];
+    return emoji !== undefined && POSITIVE_REACTION.test(emoji) ? { reaction: emoji } : false;
+  }
   if (!t.startsWith(`${MEDIA_TEXT_HEADERS.audio} `)) return false;
   const body = /\n«([\s\S]*)»\s*$/.exec(t)?.[1];
   return body === undefined || body.includes(UNCERTAIN_OPEN) ? false : body;
@@ -110,6 +117,7 @@ export function mediaReplyBody(text: string): string | false | null {
 export function guardIntentReply(reply: string | null, delivery: OfferDelivery = 'excluded'): ConfirmationVerdict {
   const media = reply === null ? null : mediaReplyBody(reply);
   if (media === false) return { confirmed: false, reason: 'disqualified' };
+  if (media !== null && typeof media === 'object') return { confirmed: true, rule: `agent_interpreted;reaction=${media.reaction}` };
   const text = media ?? reply;
   if (text === null || text.trim() === '') return { confirmed: false, reason: 'empty' };
   if (text.length > INTENT_MAX_LENGTH) return { confirmed: false, reason: 'too_long' };

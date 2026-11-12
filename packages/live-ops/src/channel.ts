@@ -27,13 +27,15 @@ export const canonicalInboundSchema = z.strictObject({
     z.strictObject({ kind: z.literal('text'), text: z.string().trim().min(1).max(8000) }),
     /** Content R4 does not represent (video, documents, reactions, location…): classified, never silently dropped. */
     z.strictObject({ kind: z.literal('unsupported'), contentType: z.string().regex(/^[a-z][a-z0-9_.-]{0,63}$/) }),
+    /** A reaction to an earlier message: the emoji (null = the reaction was removed) and the provider id of that message. */
+    z.strictObject({ kind: z.literal('reaction'), emoji: z.string().min(1).max(16).nullable(), targetProviderMessageId: ref }),
     /**
      * (Inbound multimodal v1) An image or audio the contact sent: only the provider's REFERENCE, never the bytes. It is
      * downloaded and perceived only for autonomous work (media.ts); otherwise it is held exactly like `unsupported`.
      */
     z.strictObject({
       kind: z.literal('media'),
-      mediaKind: z.enum(['image', 'audio']),
+      mediaKind: z.enum(['image', 'audio', 'sticker']),
       mediaId: z.string().regex(/^[A-Za-z0-9._:-]{1,256}$/),
       mimeType: z.string().regex(/^[a-z]+\/[a-z0-9.+-]+(; ?[a-z0-9=._ -]+)*$/i).max(128),
       /** The provider's SHA-256 of the file (hex), when it states one. */

@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { PostgresProductionStore } from '@r4/persistence-postgres';
 import { mediaRefContent, type InboundMediaRef } from '@r4/live-ops';
-import { LiveOpsTestbed, keyOf } from '../support/live-ops.js';
+import { LiveOpsTestbed, keyOf, say, waitInput } from '../support/live-ops.js';
 
 /**
  * (Inbound multimodal v1) Images and voice notes through the REAL gateway composition (Sales), the real WhatsApp media
@@ -238,6 +238,36 @@ describe('inbound multimodal v1 (gateway)', { timeout: 60_000 }, () => {
     const after = await settled(bed, photo);
     expect(after).toMatchObject({ disposition: 'autonomous' });
     expect((await inputText(bed, after.input_id as string)).startsWith('[r4:imagen] ')).toBe(true);
+  });
+
+  it('(owner decision 2026-11-12) a 👍 reaction to the agent’s latest message reaches the agent with that message; a view-once photo asks for the gallery; a sticker is described', async () => {
+    const hello = nextId();
+    bed.next(say('Tu cotización: 2 barras Z por $39.980. ¿La emito?'), waitInput());
+    await bed.customer(ALLOWED, hello, 'hola, quiero 2 barras z');
+    await bed.runAgent();
+    await bed.deliver();
+    const sent = bed.provider.sends.at(-1)!;
+    expect(sent.text).toContain('¿La emito?');
+    const like = nextId();
+    await bed.customer(ALLOWED, like, '', { type: 'reaction', reaction: { messageId: sent.providerMessageId!, emoji: '👍' } });
+    const liked = await settled(bed, like);
+    expect(liked).toMatchObject({ content_kind: 'unsupported', content_type: 'reaction', disposition: 'autonomous' });
+    const likeText = await inputText(bed, liked.input_id as string);
+    expect(likeText).toMatch(/^\[r4:reaccion-a-tu-ultimo-mensaje\] El cliente reaccionó con «👍» a tu último mensaje: «Tu cotización: 2 barras Z por \$39\.980\. ¿La emito\?»/);
+    expect(likeText.endsWith('\n«👍»')).toBe(true);
+
+    const once = nextId();
+    await bed.customer(ALLOWED, once, '', { type: 'unsupported', unsupportedType: 'view_once' });
+    const viewOnce = await settled(bed, once);
+    expect(viewOnce).toMatchObject({ content_type: 'unsupported.view_once', disposition: 'autonomous' });
+    expect(await inputText(bed, viewOnce.input_id as string)).toContain('galería o la app Fotos');
+
+    const sticker = nextId();
+    const webp = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBPVP8 '), Buffer.alloc(200, 1)]);
+    bed.provider.hostMedia('sticker-1', { bytes: webp, mimeType: 'image/webp' });
+    await bed.customer(ALLOWED, sticker, '', { type: 'sticker', media: { id: 'sticker-1', mimeType: 'image/webp' } });
+    const stuck = await settled(bed, sticker);
+    expect((await inputText(bed, stuck.input_id as string)).startsWith('[r4:sticker] El cliente envió un sticker.')).toBe(true);
   });
 
   it('text is unchanged', async () => {

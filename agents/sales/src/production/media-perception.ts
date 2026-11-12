@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { InboundMediaDownloader, InboundMediaRef, MediaDownloadResult, MediaKind, MediaPerception, MediaPerceptionResult } from '@r4/live-ops';
+import type { InboundMediaDownloader, InboundMediaRef, MediaDownloadResult, MediaKind, MediaPerception, MediaPerceptionResult, ReactionTarget } from '@r4/live-ops';
 import { MEDIA_TEXT_HEADERS, UNCERTAIN_CLOSE, UNCERTAIN_OPEN } from '../capabilities/media-text.js';
 import { salesUnprocessableSentence } from './service-hours.js';
 
@@ -196,14 +196,38 @@ const REASON_ES: Readonly<Record<MediaDegradedReason, string>> = {
 const answerUnprocessable = (at: Date, sense: 'ver' | 'escuchar' = 'ver') =>
   `No sabes qué contiene: no supongas nada sobre su contenido. Responde por escrito con un mensaje como: «${salesUnprocessableSentence(at, sense)}» Si el cliente pide hablar con una persona, deriva la conversación.`;
 
+/** (Stickers) A sticker is a gesture or an emotion: described for the agent, never a product, an order or an acceptance. */
+export function frameSticker(p: ImagePerception): string {
+  const text = list(p.visibleText, 6, 120);
+  return [
+    `${MEDIA_TEXT_HEADERS.sticker} El cliente envió un sticker. Es un gesto o una emoción, no un producto, un pedido ni una aceptación: si corresponde, respóndelo con naturalidad y sigue la conversación.`,
+    `Descripción: ${clean(p.description, 300)}`,
+    ...(text.length > 0 ? [`Texto del sticker: ${text.map((t) => `«${t}»`).join(' · ')}`] : []),
+  ].join('\n');
+}
+
+/** (Reactions, owner decision 2026-11-12) What the agent is told about a reaction; only one to its latest message may accept. */
+export function frameReaction(reaction: { readonly emoji: string | null; readonly target: ReactionTarget | null }): string {
+  const quoted = (t: string | null) => (t ? ` «${clean(t, 300)}»` : '');
+  if (reaction.emoji === null) return `${MEDIA_TEXT_HEADERS.event} El cliente quitó una reacción que había puesto. No es un mensaje nuevo: no respondas solo por esto.`;
+  const emoji = clean(reaction.emoji, 16);
+  if (!reaction.target) return `${MEDIA_TEXT_HEADERS.reaction} El cliente reaccionó con «${emoji}» a un mensaje que no es uno tuyo de esta conversación. No es una aceptación: no respondas solo por esto.`;
+  if (!reaction.target.latest) return `${MEDIA_TEXT_HEADERS.reaction} El cliente reaccionó con «${emoji}» a un mensaje tuyo anterior:${quoted(reaction.target.text)}. No es una aceptación de nada posterior; si aporta contexto, tenlo en cuenta, y si no, no respondas solo por esto.`;
+  return [
+    `${MEDIA_TEXT_HEADERS.reactionToLatest} El cliente reaccionó con «${emoji}» a tu último mensaje:${quoted(reaction.target.text)}.`,
+    'Interprétalo en el contexto de ese mensaje: un 👍 a una oferta de cotización que presentaste es la aceptación de esa oferta tal como la presentaste. Otros emojis positivos (❤️, 😍, 🔥…) son ambiguos: si no está claro que acepta, pregúntale si quiere que emitas la cotización. Un emoji negativo o de duda nunca es una aceptación. Si tu mensaje no era una oferta, responde solo si la reacción aporta algo.',
+    `«${emoji}»`,
+  ].join('\n');
+}
+
 export function frameUnavailable(ref: InboundMediaRef, reason: MediaDegradedReason, at: Date = new Date()): string {
-  const what = ref.kind === 'image' ? 'una imagen' : ref.voice ? 'una nota de voz' : 'un audio';
+  const what = ref.kind === 'image' ? 'una imagen' : ref.kind === 'sticker' ? 'un sticker' : ref.voice ? 'una nota de voz' : 'un audio';
   return `${MEDIA_TEXT_HEADERS.unavailable} El cliente envió ${what} que no se pudo procesar (${REASON_ES[reason]}). ${answerUnprocessable(at, ref.kind === 'audio' ? 'escuchar' : 'ver')}${caption(ref)}`;
 }
 
 const UNSUPPORTED_ES: Readonly<Record<string, string>> = {
   unsupported: 'un mensaje que el canal no entrega a la plataforma (por ejemplo varias fotos juntas o una foto de «ver una vez»)',
-  audio: 'una nota de voz (la transcripción no está habilitada)', video: 'un video', document: 'un documento', sticker: 'un sticker',
+  audio: 'una nota de voz (la transcripción no está habilitada)', video: 'un video o un GIF (todavía no puedo verlos)', document: 'un documento', sticker: 'un sticker',
   location: 'una ubicación', contacts: 'un contacto', interactive: 'una respuesta interactiva', button: 'un botón', order: 'un pedido desde el catálogo del canal',
 };
 /** Not a message from the customer: never answered with "I had a problem". */
@@ -214,8 +238,14 @@ export function frameUnsupported(contentType: string, at: Date = new Date()): st
   if (Object.hasOwn(EVENTS_ES, contentType)) {
     return `${MEDIA_TEXT_HEADERS.event} El cliente ${EVENTS_ES[contentType]}. No es un mensaje nuevo ni una aceptación, y no hubo ningún problema: no respondas solo por esto; si no hay nada pendiente, espera su próximo mensaje.`;
   }
+  // (Owner decision 2026-11-12) A view-once photo or video never reaches the platform: ask for it from the gallery.
+  if (/^unsupported\.view_?once/.test(contentType)) {
+    return `${MEDIA_TEXT_HEADERS.unavailable} El cliente envió una foto o un video de «ver una vez», que el canal no entrega a la plataforma. No sabes qué contiene: no supongas nada. Pídele con amabilidad que la vuelva a enviar como foto normal, eligiéndola desde su galería o la app Fotos (sin la opción «ver una vez»).`;
+  }
+  if (contentType === 'unsupported.edit') return `${MEDIA_TEXT_HEADERS.event} El cliente editó un mensaje anterior y el canal no entrega el texto nuevo. Si lo editado podía cambiar algo importante (producto, cantidad, despacho), pídele que lo escriba de nuevo; si no, sigue la conversación.`;
+  if (/^unsupported\.poll/.test(contentType)) return `${MEDIA_TEXT_HEADERS.unavailable} El cliente envió o respondió una encuesta, que el canal no entrega a la plataforma. Pídele que te escriba su respuesta o su consulta.`;
   const what = Object.hasOwn(UNSUPPORTED_ES, contentType) ? UNSUPPORTED_ES[contentType] : 'un tipo de mensaje que la plataforma no puede procesar';
-  const album = contentType === 'unsupported' ? ' Si en la conversación llegan imágenes junto con este aviso, respóndelas a ellas: este aviso puede ser el contenedor de varias fotos.' : '';
+  const album = contentType === 'unsupported' || contentType.startsWith('unsupported.') ? ' Si en la conversación llegan imágenes junto con este aviso, respóndelas a ellas: este aviso puede ser el contenedor de varias fotos. Si era una foto de «ver una vez», pídele que la envíe como foto normal desde su galería o la app Fotos.' : '';
   return `${MEDIA_TEXT_HEADERS.unavailable} El cliente envió ${what}. ${answerUnprocessable(at, contentType === 'audio' ? 'escuchar' : 'ver')}${album}`;
 }
 
@@ -298,7 +328,7 @@ export class SalesMediaPerceiver implements MediaPerception {
   constructor(options: SalesMediaPerceiverOptions) {
     this.#o = options;
     this.#limits = { ...DEFAULT_MEDIA_LIMITS, ...options.limits };
-    this.kinds = new Set<MediaKind>([...(options.describer ? ['image' as const] : []), ...(options.transcriber ? ['audio' as const] : [])]);
+    this.kinds = new Set<MediaKind>([...(options.describer ? ['image' as const, 'sticker' as const] : []), ...(options.transcriber ? ['audio' as const] : [])]);
   }
 
   #now(): Date {
@@ -309,14 +339,18 @@ export class SalesMediaPerceiver implements MediaPerception {
     return frameUnsupported(contentType, this.#now());
   }
 
+  frameReaction(reaction: { readonly emoji: string | null; readonly target: ReactionTarget | null }): string {
+    return frameReaction(reaction);
+  }
+
   async perceive(ref: InboundMediaRef, context: { readonly accountRef: string }): Promise<SalesMediaPerceptionResult> {
     const L = this.#limits;
     let evidence: MediaPerceptionEvidence = { kind: ref.kind, format: null, byteLength: null, sha256: null, durationSeconds: null, model: null, uncertainWords: null, containsInstructions: null, downloadMs: null, perceptionMs: null };
     const degraded = (reason: MediaDegradedReason): SalesMediaPerceptionResult => ({ outcome: 'degraded', reason, text: frameUnavailable(ref, reason, this.#now()), evidence });
-    if (ref.kind === 'image' ? !this.#o.describer : !this.#o.transcriber) return degraded('not_configured');
+    if (ref.kind === 'audio' ? !this.#o.transcriber : !this.#o.describer) return degraded('not_configured');
 
     const t0 = Date.now();
-    const maxBytes = ref.kind === 'image' ? L.imageMaxBytes : L.audioMaxBytes;
+    const maxBytes = ref.kind === 'audio' ? L.audioMaxBytes : L.imageMaxBytes;
     let downloaded: MediaDownloadResult;
     try {
       downloaded = await withDeadline(() => this.#o.downloader.download(ref, { accountRef: context.accountRef, maxBytes, timeoutMs: L.downloadTimeoutMs }), L.downloadTimeoutMs + 1_000);
@@ -332,17 +366,17 @@ export class SalesMediaPerceiver implements MediaPerception {
     if (bytes.byteLength > maxBytes) return degraded('too_large');
     if (!format) return degraded('unsupported_format');
     const declared = DECLARED[ref.mimeType.split(';')[0]!.trim().toLowerCase()] ?? DECLARED[downloaded.mimeType.split(';')[0]!.trim().toLowerCase()];
-    if (FORMAT_KIND[format] !== ref.kind || !declared || !declared.includes(format)) return degraded('mime_mismatch');
+    if (FORMAT_KIND[format] !== (ref.kind === 'sticker' ? 'image' : ref.kind) || !declared || !declared.includes(format)) return degraded('mime_mismatch');
     if (!PERCEIVABLE.has(format)) return degraded('unsupported_format');
 
     const t1 = Date.now();
     try {
-      if (ref.kind === 'image') {
+      if (ref.kind !== 'audio') {
         const p = await withDeadline((signal) => this.#o.describer!.describe({ bytes, mimeType: `image/${format}` }, { timeoutMs: L.perceptionTimeoutMs, signal }), L.perceptionTimeoutMs + 1_000);
         evidence = { ...evidence, model: this.#o.describer!.model, containsInstructions: p.containsInstructions, perceptionMs: Date.now() - t1 };
         // A model that silently drops the image (observed: "[Unsupported Image]") must never pass for a perception.
         if (!p.imageVisible) return degraded('not_seen');
-        return { outcome: 'perceived', reason: null, text: frameImage(ref, p), evidence };
+        return { outcome: 'perceived', reason: null, text: ref.kind === 'sticker' ? frameSticker(p) : frameImage(ref, p), evidence };
       }
       const duration = format === 'ogg' ? oggOpusDurationSeconds(bytes) : null;
       evidence = { ...evidence, durationSeconds: duration === null ? null : Math.round(duration * 10) / 10 };

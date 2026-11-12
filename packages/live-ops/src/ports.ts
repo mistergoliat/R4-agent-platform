@@ -349,6 +349,11 @@ export interface ProductionStore {
    * before that text becomes an input; cleared at settlement like any inbound content. No-op once settled.
    */
   recordInboundPerception(inboundId: string, text: string): Promise<void>;
+  /**
+   * (Reactions) The outbound a provider message id names, with the text of the agent response it delivered and whether
+   * it is the latest agent outbound of its task. Null: not one of this deployment's outbound messages.
+   */
+  reactionTarget(channel: string, providerMessageId: string): Promise<{ readonly taskId: string; readonly text: string | null; readonly latest: boolean } | null>;
   /** One inbound event as it is now (null: unknown). */
   inboundEvent(inboundId: string): Promise<InboundEventRecord | null>;
   /** Received but never settled (a crash between persistence and ingestion). */
