@@ -15,6 +15,7 @@ import {
   SALES_WEB_PROFILE_V4,
   SALES_WEB_PROFILE_V5,
   SALES_WEB_PROFILE_V6,
+  SALES_WEB_PROFILE_V7,
   SALES_WEB_RUN_FAILURE_FALLBACK_TEXT,
   SALES_WEB_HUMAN_REQUEST_NOTICE_TEXT,
   composeSalesGateway,
@@ -189,5 +190,68 @@ describe('sales-web@6: an honest way to a person (nobody attends the web chat ye
       expect(text).toContain('[[nueva-conversacion]]');
       expect(text).not.toMatch(/Ya avisé|seguirá la conversación|llegará por este mismo chat/);
     }
+  });
+});
+
+describe('sales-web@7 (experimental, web QA): products already shown as sellable are provisional recommendations', () => {
+  // The exact sentences that change; everything else is sales-web@6.
+  const SWAPS: ReadonlyArray<readonly [string, string]> = [
+    [
+      'Use only keys of products verified with catalog.get_product_context in this conversation, at most 4 per reply',
+      'Use only keys of products that a catalog observation of this conversation showed as sellable (a catalog.get_product_context read, a catalog.search result or a catalog.discover candidate with OBSERVED commercial status), at most 4 per reply',
+    ],
+    [
+      'So verify each product you cite once per reply with catalog.get_product_context (it must exist and be sellable) and never read the same product twice in one reply: an observation you read while preparing this reply is current enough for it.',
+      'So a product you cite is a provisional recommendation: the card, not your text, states its price and stock, and the store decides what can be bought. What a product is and whether it fits the need does not expire; its price and stock do. Do not read a product again, or call catalog.discover again for the same need, only because the observation that showed it moved to the history section: read it with catalog.get_product_context only when you need its variants or specifications, when it was not shown as sellable, or when you are going to state its price or stock in the text, and never read the same product twice in one reply.',
+    ],
+    [
+      'found with catalog.discover or catalog.search and verified with catalog.get_product_context.',
+      'found with catalog.discover or catalog.search; a candidate or result shown as sellable needs no further read unless you need its variants.',
+    ],
+    [
+      'find products with catalog.search and verify them with catalog.get_product_context;',
+      'find products with catalog.search or catalog.discover and read them with catalog.get_product_context only for what those do not show (variants, specifications) or to state a current price or stock;',
+    ],
+    // catalog.discover@1 has no hint input (strict schema): @6 invited an argument the capability rejects.
+    ['only the constraints they stated; when the visitor is on a product page you may pass that product as a hint.', 'only the constraints they stated.'],
+    [
+      'Its prices are discovery evidence: verify with catalog.get_product_context before stating price or stock.',
+      'Its prices are evidence only while its observation is current: never state them once it is in the history section. Its candidates stay your options for that need: call catalog.discover again only for a new or changed need, when you need an attribute its candidates do not show, or when they are not enough.',
+    ],
+  ];
+
+  it('is sales-web@6 with exactly those sentences replaced, and no other change', () => {
+    expect(profileLabel(assertProductionProfile(SALES_WEB_PROFILE_V7))).toBe('sales-web@7');
+    expect(salesAgentOf(SALES_WEB_PROFILE_V7)).toEqual({ agentId: 'sales-web', version: 7 });
+    const v6 = loadSalesWebAgentDefinition(6);
+    const v7 = loadSalesWebAgentDefinition(7);
+    let expected = v6.instructions;
+    for (const [before, after] of SWAPS) {
+      expect(v6.instructions.split(before)).toHaveLength(2);
+      expect(v7.instructions).not.toContain(before);
+      expected = expected.replace(before, after);
+    }
+    expect(v7.instructions).toBe(expected);
+    expect({ ...v7, version: 6, description: '', instructions: '' }).toEqual({ ...v6, description: '', instructions: '' });
+  });
+
+  it('keeps every guard: evidence only, no invented keys, no repeated reads, no handoffs, no URLs', () => {
+    const v7 = loadSalesWebAgentDefinition(7);
+    for (const rule of [
+      /never read the same product twice in one reply/,
+      /Never invent or estimate them/,
+      /Never write URLs or links/,
+      /You are Don Pesín/,
+      /never claim or imply that you are a person/,
+      /Never use request_handoff or request_consultation on this website/,
+      /at most 4 per reply/,
+      // Expired commercial evidence never becomes current: prices and stock in the text still need a current read.
+      /Quote prices and stock only from current observations/,
+      /never state them once it is in the history section/,
+      /when you are going to state its price or stock in the text/,
+    ]) expect(v7.instructions).toMatch(rule);
+    expect(v7.instructions).not.toMatch(/as a hint/);
+    // Reads stay the same as @6: the change is which evidence counts, not which capabilities are reachable.
+    expect(v7.capabilityScopes).toEqual(loadSalesWebAgentDefinition(6).capabilityScopes);
   });
 });

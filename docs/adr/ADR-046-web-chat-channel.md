@@ -110,6 +110,44 @@ Cada versión es un perfil más, con su propia definición, sobre las mismas lec
    Todos se reconstruyen como claves de catálogo y cantidades enteras, con un máximo de 10 líneas cada uno. Nunca
    incluyen texto del navegador.
 
+## Recomendaciones provisionales (`sales-web@7`, experimental)
+
+Perfil candidato, solo para QA web. No es el perfil por defecto ni está aprobado para producción.
+
+Con `@4` a `@6`, el agente releía con `catalog.get_product_context` cada producto que iba a citar. Lo hacía aunque ya
+lo hubiera obtenido de `catalog.discover` o `catalog.search` con su precio y disponibilidad. Cuando esas lecturas
+vencían a mitad de la respuesta, volvía a leerlas, y un set de varios productos podía agotar el límite de llamadas sin
+responder.
+
+`@7` cambia seis frases de la definición de `@6`; nada más:
+
+1. Una ficha puede citar cualquier producto que una observación de catálogo de la conversación mostró como vendible:
+   una lectura de producto, un resultado de búsqueda o un candidato de Discover con estado comercial `OBSERVED`.
+2. Lo citado es una **recomendación provisional**.
+   - La ficha de la tienda, no el texto del agente, muestra el precio y el stock.
+   - La tienda decide qué se puede comprar.
+   - Lo que un producto es y si sirve para la necesidad no vence; su precio y su stock sí.
+3. El agente no relee un producto ni repite Discover para la misma necesidad solo porque la observación pasó a
+   `history`. Lee el producto solo:
+   - para variantes o especificaciones;
+   - si no se mostró vendible;
+   - si va a escribir su precio o su stock en el texto.
+4. Los precios y el stock escritos en el texto siguen exigiendo una observación vigente. La evidencia comercial vencida
+   nunca se presenta como actual.
+5. Discover se repite solo por una necesidad nueva o distinta, un atributo faltante o candidatos insuficientes.
+6. Se quita la invitación a pasar el producto de la página como «hint»: `catalog.discover@1` no tiene ese campo.
+
+Lo que no cambia:
+- **Capacidades:** las mismas lecturas y ninguna escritura.
+- **Código:** ningún cambio en Core ni en Catalog.
+- **Vigencias:** no se extiende ninguna; la ventana la sigue decidiendo el dueño del catálogo.
+- **Autoridad comercial:** sigue en la tienda (fichas, carrito y checkout).
+
+Activación: `R4_PROD_POLICY_PROFILE=sales-web@7` en la configuración del canal web.
+
+Rollback: volver a `sales-web@6`. Las conversaciones abiertas en `@7` quedan sin worker que las atienda y se retiran con
+`production:sales:control -- tasks cancel`.
+
 ## Avance mientras trabaja
 
 El worker de un perfil web informa al edge qué está leyendo: una búsqueda (con las palabras buscadas), Discover, el
