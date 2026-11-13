@@ -299,7 +299,7 @@ export class ChannelIngress {
       // (Reactions) The agent learns which of its messages was reacted to, and whether it is its latest one (the offer).
       const target = await this.#o.store.reactionTarget(record.channel, reaction.targetProviderMessageId);
       const own = target && target.taskId === binding.taskId ? target : null;
-      text = this.#o.media!.perception.frameReaction({ emoji: reaction.emoji, target: own ? { text: own.text, latest: own.latest } : null });
+      text = this.#o.media!.perception.frameReaction({ emoji: reaction.emoji, target: own ? { text: own.text, latest: own.latest, stepId: own.stepId } : null });
       emitTelemetry(this.#o.logger, 'inbound.media.perceived', { channel: record.channel, inboundId: record.inboundId, outcome: 'reaction', reason: own ? (own.latest ? 'latest_agent_message' : 'earlier_message') : 'unknown_message' });
     } else if (!held && !humanOwned && !(ref && this.#perceivesMedia(profileLabel, ref.kind)) && this.#perceivesMedia(profileLabel)) {
       // Not representable here (an album, a sticker, a kind without a provider…): the agent answers, nothing is downloaded.

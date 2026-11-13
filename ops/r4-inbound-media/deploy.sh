@@ -4,6 +4,10 @@
 # Order with no kill-switch hold window: workers stop first (the gateway keeps ingesting and delivering), the outbound
 # drains, the gateway stops (Meta retries webhooks), only then the kill switch. Any failure before the processes are
 # stopped leaves production running; after that, rollback.sh level 2 restores PREV.
+# Nothing is stopped before TARGET is proven deployable: a full 40-hex SHA that resolves to itself, the expected Core
+# head shipped in that tree, and a clean install + build of that exact tree in a staging directory outside production
+# (step 0b). A short or unknown SHA, a missing migration or a broken build stops here with production untouched.
+# CHECK_ONLY=1 runs steps 0 and 0b and exits: no backup, nothing stopped, no autonomy change (validates a candidate).
 set -euo pipefail
 umask 077
 : "${TARGET:?set TARGET=<full sha>}" "${PREV:?set PREV=<deployed short sha>}" "${LANE:?set LANE=<current lane profile>}" "${EXPECT_HEAD:?set EXPECT_HEAD=<core migration id>}"
@@ -16,14 +20,26 @@ autonomy() { envrun npm run -s production:sales:control -- autonomy status | gre
 STARTED=$(date -u +%FT%TZ)
 
 step "0. preconditions"
+[[ "$TARGET" =~ ^[0-9a-f]{40}$ ]] || { echo "TARGET must be the full 40-character SHA (got '$TARGET'): nothing was stopped"; exit 1; }
 [ "$(cd "$R" && git rev-parse --short HEAD)" = "$PREV" ] || { echo "deployed SHA is not $PREV"; exit 1; }
+PREV_FULL=$(cd "$R" && git rev-parse HEAD); echo "deployed: $PREV_FULL (rollback: PREV_FULL=$PREV_FULL bash rollback.sh 2)"
 [ -z "$(cd "$R" && git status --short)" ] || { echo "working tree not clean"; exit 1; }
 avail=$(df -B1M --output=avail / | tail -1 | tr -d ' '); [ "$avail" -ge 3000 ] || { echo "disk $avail MB"; exit 1; }
 grep -q "^R4_PROD_LANE_PROFILE=$LANE$" "$C/production.env" && grep -q "^R4_PROD_POLICY_PROFILE=$LANE$" "$C/production-lane.env" || { echo "lane is not $LANE"; exit 1; }
 curl -sf -m 5 127.0.0.1:8090/health >/dev/null
 [ "$(autonomy)" = '"autonomy": "enabled"' ] || { echo "autonomy was not enabled ($(autonomy)): stop"; exit 1; }
 [ "$(db "select count(*) from action_executions where status not in ('succeeded','failed','rejected')")" = 0 ] || { echo "an action is not settled"; exit 1; }
-(cd "$R" && git fetch -q origin && git cat-file -e "$TARGET^{commit}") || { echo "TARGET not found"; exit 1; }
+(cd "$R" && git fetch -q origin && [ "$(git rev-parse --verify -q "$TARGET^{commit}")" = "$TARGET" ]) || { echo "TARGET $TARGET is not a commit of this repository: nothing was stopped"; exit 1; }
+(cd "$R" && git cat-file -e "$TARGET:packages/persistence-postgres/migrations/$EXPECT_HEAD.sql") || { echo "TARGET does not ship migration $EXPECT_HEAD: nothing was stopped"; exit 1; }
+
+step "0b. install and build TARGET in a staging directory (production untouched)"
+STAGE=~/r4-deploy-stage/$TARGET; rm -rf "$STAGE"; mkdir -p "$STAGE"
+(cd "$R" && git archive "$TARGET") | tar -x -C "$STAGE"
+(cd "$STAGE" && npm ci --no-audit --no-fund > /tmp/r4-deploy-stage-npmci.log 2>&1) || { tail -5 /tmp/r4-deploy-stage-npmci.log; echo "staging install failed: nothing was stopped"; exit 1; }
+(cd "$STAGE" && npm run build > /tmp/r4-deploy-stage-build.log 2>&1) || { tail -5 /tmp/r4-deploy-stage-build.log; echo "staging build failed: nothing was stopped"; exit 1; }
+for f in agents/sales/dist/cli/production.js agents/sales/dist/cli/production-control.js apps/api/dist/migrate.js apps/scheduler/dist/main.js; do [ -e "$STAGE/$f" ] || { echo "staging build lacks $f: nothing was stopped"; exit 1; }; done
+echo "staging build of $TARGET OK"; rm -rf "$STAGE"
+if [ "${CHECK_ONLY:-0}" = 1 ]; then step "CHECK ONLY: $TARGET is deployable over $PREV_FULL; nothing was backed up or stopped"; exit 0; fi
 
 step "1. fresh backup (production running)"
 TS=$(date -u +%Y%m%dT%H%M%SZ); B=~/backups/r4-production/$TS; mkdir -p "$B"

@@ -213,20 +213,20 @@ export class PostgresProductionStore implements ProductionStore {
     );
   }
 
-  async reactionTarget(channel: string, providerMessageId: string): Promise<{ taskId: string; text: string | null; latest: boolean } | null> {
+  async reactionTarget(channel: string, providerMessageId: string): Promise<{ taskId: string; text: string | null; latest: boolean; stepId: string } | null> {
     const r = await query<Row>(
       this.#pool,
       // Only an AGENT message is a reaction target (a notice, a document or an operator message is not). "Latest" is
       // measured on recorded respond steps, the order the thread is judged in: a reply recorded but not yet materialized
       // already makes the reacted-to message an earlier one.
-      `select o.task_id, s.decision ->> 'content' as text,
+      `select o.task_id, s.step_id, s.decision ->> 'content' as text,
               not exists (select 1 from agent_run_steps l where l.task_id = s.task_id and l.decision_type = 'respond' and l.outcome = 'recorded' and l.created_at > s.created_at) as latest
          from outbound_messages o join agent_run_steps s on s.step_id = o.response_step_id
         where o.channel = $1 and o.provider_message_id = $2 and o.origin = 'agent'`,
       [channel, providerMessageId],
     );
     const row = r.rows[0];
-    return row ? { taskId: row.task_id as string, text: (row.text as string | null) ?? null, latest: row.latest === true } : null;
+    return row ? { taskId: row.task_id as string, text: (row.text as string | null) ?? null, latest: row.latest === true, stepId: row.step_id as string } : null;
   }
 
   async inboundEvent(inboundId: string): Promise<InboundEventRecord | null> {

@@ -219,6 +219,11 @@ export function locateConfirmation(thread: readonly ConversationThreadEntry[], r
   if (!offer || offer.kind !== 'agent') return refuse('customer_confirmation_without_offer', 'no agent offer precedes the customer\'s confirmation', trace);
   const offerRef = offer.refs.stepId ?? null;
   const offerTrace = { ...trace, offerRef };
+  // A reaction accepts only the exact message it reacts to (provider message id → outbound → respond step): that step
+  // must be this offer. Not on it (an earlier offer, a reply after it, another message): nothing is issued.
+  if (verdict.reactedStepId !== undefined && (offerRef === null || verdict.reactedStepId !== offerRef)) {
+    return refuse('reaction_not_on_offer', 'the customer reacted to a message that is not this offer: nothing was issued; if they want this quote, ask them to confirm it in writing', { ...offerTrace, reactedStepId: verdict.reactedStepId });
+  }
   if (contacts.some((c) => c.cursor > offer.cursor && c.cursor < confirmation.cursor)) {
     return refuse('customer_confirmation_not_immediate', 'the customer wrote something else between the offer and the confirmation: present the quote again and ask for a confirmation', offerTrace);
   }

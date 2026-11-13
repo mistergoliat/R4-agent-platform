@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { InboundMediaDownloader, InboundMediaRef, MediaDownloadResult, MediaKind, MediaPerception, MediaPerceptionResult, ReactionTarget } from '@r4/live-ops';
-import { MEDIA_TEXT_HEADERS, UNCERTAIN_CLOSE, UNCERTAIN_OPEN } from '../capabilities/media-text.js';
+import { MEDIA_TEXT_HEADERS, REACTION_STEP_MARK, UNCERTAIN_CLOSE, UNCERTAIN_OPEN } from '../capabilities/media-text.js';
 import { salesUnprocessableSentence } from './service-hours.js';
 
 /**
@@ -207,17 +207,23 @@ export function frameSticker(p: ImagePerception): string {
   ].join('\n');
 }
 
-/** (Reactions, owner decision 2026-11-12) What the agent is told about a reaction; only one to its latest message may accept. */
+/**
+ * (Reactions, owner decisions 2026-11-12) What the agent is told about a reaction. The agent interprets any emoji in
+ * context (asking when ambiguous); only a reaction to its latest message can accept, and only that message: the last
+ * line binds the emoji to the respond step the platform resolved (the guard and quote.create read it).
+ */
 export function frameReaction(reaction: { readonly emoji: string | null; readonly target: ReactionTarget | null }): string {
   const quoted = (t: string | null) => (t ? ` «${clean(t, 300)}»` : '');
   if (reaction.emoji === null) return `${MEDIA_TEXT_HEADERS.event} El cliente quitó una reacción que había puesto. No es un mensaje nuevo: no respondas solo por esto.`;
-  const emoji = clean(reaction.emoji, 16);
+  // Single-line fields: a line break from a non-WhatsApp adapter never adds a line to what the agent reads (review #76).
+  const oneLine = (s: string, max: number) => clean(s, max).replace(/\s+/g, ' ').trim();
+  const emoji = oneLine(reaction.emoji, 16);
   if (!reaction.target) return `${MEDIA_TEXT_HEADERS.reaction} El cliente reaccionó con «${emoji}» a un mensaje que no es uno tuyo de esta conversación. No es una aceptación: no respondas solo por esto.`;
   if (!reaction.target.latest) return `${MEDIA_TEXT_HEADERS.reaction} El cliente reaccionó con «${emoji}» a un mensaje tuyo anterior:${quoted(reaction.target.text)}. No es una aceptación de nada posterior; si aporta contexto, tenlo en cuenta, y si no, no respondas solo por esto.`;
   return [
     `${MEDIA_TEXT_HEADERS.reactionToLatest} El cliente reaccionó con «${emoji}» a tu último mensaje:${quoted(reaction.target.text)}.`,
-    'Interprétalo en el contexto de ese mensaje: un 👍 a una oferta de cotización que presentaste es la aceptación de esa oferta tal como la presentaste. Otros emojis positivos (❤️, 😍, 🔥…) son ambiguos: si no está claro que acepta, pregúntale si quiere que emitas la cotización. Un emoji negativo o de duda nunca es una aceptación. Si tu mensaje no era una oferta, responde solo si la reacción aporta algo.',
-    `«${emoji}»`,
+    'Interprétala según ese mensaje y la conversación: puede ser aceptación, interés, rechazo o duda. Un emoji positivo no es una aceptación automática. Si ese mensaje era una oferta de cotización que presentaste y el contexto deja inequívoco que el cliente la acepta tal como la presentaste, cualquier emoji puede serlo (👍, ✅, ❤️, 🔥…). Si no es inequívoco (puede ser solo agrado o interés), no emitas: pregúntale brevemente si quiere que emitas la cotización. Un emoji de rechazo o de duda nunca es una aceptación. Si tu mensaje no era una oferta, la reacción no autoriza ninguna cotización: responde solo si aporta algo.',
+    `«${emoji}» ${REACTION_STEP_MARK} ${oneLine(reaction.target.stepId, 64)}`,
   ].join('\n');
 }
 

@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { PostgresProductionStore } from '@r4/persistence-postgres';
 import { mediaRefContent, type InboundMediaRef } from '@r4/live-ops';
+import { guardIntentReply } from '@r4-sales/agent';
 import { LiveOpsTestbed, keyOf, say, waitInput } from '../support/live-ops.js';
 
 /**
@@ -254,7 +255,15 @@ describe('inbound multimodal v1 (gateway)', { timeout: 60_000 }, () => {
     expect(liked).toMatchObject({ content_kind: 'unsupported', content_type: 'reaction', disposition: 'autonomous' });
     const likeText = await inputText(bed, liked.input_id as string);
     expect(likeText).toMatch(/^\[r4:reaccion-a-tu-ultimo-mensaje\] El cliente reaccionó con «👍» a tu último mensaje: «Tu cotización: 2 barras Z por \$39\.980\. ¿La emito\?»/);
-    expect(likeText.endsWith('\n«👍»')).toBe(true);
+    // The last line binds the 👍 to the respond step that produced the reacted message (what quote.create checks).
+    const [offer] = await bed.rows<{ response_step_id: string }>('select response_step_id from outbound_messages where provider_message_id = $1', [sent.providerMessageId]);
+    expect(likeText.endsWith(`\n«👍» · mensaje ${offer!.response_step_id}`)).toBe(true);
+    expect(guardIntentReply(likeText)).toMatchObject({ confirmed: true, reactedStepId: offer!.response_step_id });
+
+    // The provider retries the same webhook (also after a restart): the reaction is ingested once, with the same text.
+    await bed.customer(ALLOWED, like, '', { type: 'reaction', reaction: { messageId: sent.providerMessageId!, emoji: '👍' } });
+    expect(await bed.rows('select inbound_id from inbound_events where provider_event_id = $1', [like])).toHaveLength(1);
+    expect(await inputText(bed, liked.input_id as string)).toBe(likeText);
 
     // Once the agent has recorded a newer reply (delivered or not), the same message is an earlier one: never an acceptance.
     bed.next(say('Otra opción: 3 barras Z por $59.970. ¿La emito?'), waitInput());

@@ -12,10 +12,25 @@ umask 077
 R=~/R4-agent-platform; C=~/.config/r4; S="$C/secrets/perception.env"; Q="$C/quote-v2-retail.env"; QB="$C/quote-v2-retail.env.pre-image-l3"
 TRIPWIRE='http://127.0.0.1:14999'
 db() { docker exec r4-production-postgres psql -U r4_production -d r4_production -At -c "$1"; }
-procenv() { local pid; pid=$(pgrep -P "$(pgrep -P "$(pm2 pid "$1")" | head -1)" | head -1 || true); [ -z "$pid" ] && pid=$(pgrep -P "$(pm2 pid "$1")" | head -1); tr '\0' '\n' < "/proc/$pid/environ"; }
+# The node process pm2 runs for an app (pm2 pid = the npm wrapper; node is a descendant at any depth). The previous
+# version took "the child of the child" and, when node had no child, asked `pgrep -P ""`: it could read another
+# process's (or an unreadable) environment and then reported Quote "real" without having looked.
+nodepid() {
+  local root; root=$(pm2 pid "$1"); [[ "$root" =~ ^[1-9][0-9]*$ ]] || return 1
+  ps -e -o pid=,ppid=,comm= | awk -v r="$root" '{ p[$1] = $2; c[$1] = $3 } END { for (x in p) { y = x; while ((y in p) && y != r && y > 1) y = p[y]; if (y == r && c[x] == "node") print x } }' | sort -n | head -1
+}
+# The environment of that node process; fails (no output, status 1) when it cannot be found or read.
+procenv() { local pid; pid=$(nodepid "$1") && [ -n "$pid" ] && [ -r "/proc/$pid/environ" ] && tr '\0' '\n' < "/proc/$pid/environ"; }
 show() {
-  echo "gateway perception: $(procenv r4-channel-gateway | grep -E '^R4_MEDIA_PERCEPTION(_PROFILES)?=' | paste -sd ' ') vision-key=$(procenv r4-channel-gateway | grep -q '^R4_PERCEPTION_VISION_API_KEY=.' && echo yes || echo no) stt-key=$(procenv r4-channel-gateway | grep -q '^R4_PERCEPTION_STT_API_KEY=.' && echo yes || echo no)"
-  echo "lane worker Quote: $(procenv r4-sales-worker-lane | grep -q "^R4_QUOTE_BASE_URL=$TRIPWIRE\$" && echo TRIPWIRE || echo real)"
+  local gw lane
+  gw=$(procenv r4-channel-gateway) || gw=''
+  lane=$(procenv r4-sales-worker-lane) || lane=''
+  if [ -z "$gw" ]; then echo "gateway perception: UNKNOWN (gateway node process not found or not readable)"; else
+    echo "gateway perception: $(grep -E '^R4_MEDIA_PERCEPTION(_PROFILES)?=' <<<"$gw" | paste -sd ' ') vision-key=$(grep -q '^R4_PERCEPTION_VISION_API_KEY=.' <<<"$gw" && echo yes || echo no) stt-key=$(grep -q '^R4_PERCEPTION_STT_API_KEY=.' <<<"$gw" && echo yes || echo no)"
+  fi
+  if [ -z "$lane" ]; then echo "lane worker Quote: UNKNOWN (lane worker node process not found or not readable)"
+  elif ! grep -q '^R4_QUOTE_BASE_URL=' <<<"$lane"; then echo "lane worker Quote: UNKNOWN (no R4_QUOTE_BASE_URL in the lane worker process)"
+  else echo "lane worker Quote: $(grep -q "^R4_QUOTE_BASE_URL=$TRIPWIRE\$" <<<"$lane" && echo TRIPWIRE || echo real)"; fi
   echo "tripwire port 14999: $( (exec 3<>/dev/tcp/127.0.0.1/14999) 2>/dev/null && echo OPEN || echo closed)"
 }
 health() { sleep 12; curl -sf -m 5 127.0.0.1:8090/health >/dev/null && echo "gateway /health 200"; pm2 jlist | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{for(const p of JSON.parse(s).filter(p=>["r4-channel-gateway","r4-sales-worker-lane"].includes(p.name)))console.log(p.name,p.pm2_env.status)})'; }
