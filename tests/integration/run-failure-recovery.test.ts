@@ -39,8 +39,14 @@ afterEach(async () => {
   await db?.drop();
 });
 
+/**
+ * A 60 s lease by default (a test that needs another passes its own). With the suite's 5 s default, a run whose event
+ * loop stalls longer than 5 s under full parallel load lost its lease mid-run: the next runOnce RESUMED that run instead
+ * of recovering from its failure, so one failure went uncounted and an expected platform handoff never existed
+ * (reproduced with a 6.5 s stall; a 3 s stall passes). A harness timing artifact, not a recovery defect.
+ */
 async function worker(options: Omit<TestWorkerOptions, 'workerId'> & { workerId?: string }): Promise<TestWorker> {
-  const w = await startTestWorker(db.url, { workerId: options.workerId ?? `recovery-worker-${workers.length}`, capabilities: actionCapabilities(platform.pool), ...options });
+  const w = await startTestWorker(db.url, { workerId: options.workerId ?? `recovery-worker-${workers.length}`, capabilities: actionCapabilities(platform.pool), leaseDurationMs: 60_000, heartbeatIntervalMs: 10_000, ...options });
   workers.push(w);
   return w;
 }
