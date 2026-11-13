@@ -213,7 +213,7 @@ describe('canary init and synthetic ingress', () => {
   it('marks, migrates, registers Sales and enables autonomy only in the canary database; re-init is a no-op', async () => {
     const canary = loadCanaryEnvironment(canaryEnv(canaryDb));
     const first = await initCanary(canary, logger);
-    expect(first).toMatchObject({ markerCreated: true, autonomy: 'enabled', migrations: { sales: ['0006_sales_reference_application', '0007_sales_quote_v2_issuance', '0008_sales_autonomous_quote_decisions', '0009_sales_quote_intent_evidence', '0010_sales_checkout_requests'] } });
+    expect(first).toMatchObject({ markerCreated: true, autonomy: 'enabled', migrations: { sales: ['0006_sales_reference_application', '0007_sales_quote_v2_issuance', '0008_sales_autonomous_quote_decisions', '0009_sales_quote_intent_evidence', '0010_sales_checkout_requests', '0011_sales_quote_send_validation'] } });
     expect(first.definitions.registered.length).toBeGreaterThan(0);
     expect(first.migrations.core.length).toBeGreaterThan(0);
     const again = await initCanary(canary, logger);

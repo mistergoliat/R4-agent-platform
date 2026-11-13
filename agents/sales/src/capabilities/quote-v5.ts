@@ -119,6 +119,8 @@ export function quoteCreateV5Capability(deps: QuoteV5CapabilityDeps): WriteCapab
     async execute(input, context) {
       const admit = () => deps.admission.admit().catch(() => ({ admitted: false, reason: 'autonomy_controls_unavailable' }));
       let record = await store.quoteV2Request(context.executionKey);
+      /** Decided in this very call (no wait since the decision validated it against Catalog). */
+      let decidedNow = false;
       if (!record) {
         // Before any decision: a stopped issuance leaves no authorization behind, so it can be proposed again once released.
         const gate = await admit();
@@ -127,11 +129,16 @@ export function quoteCreateV5Capability(deps: QuoteV5CapabilityDeps): WriteCapab
         if (decided.status !== 'authorized') return decided.result;
         record = await store.quoteV2Request(context.executionKey);
         if (!record) throw new Error(`authorized quote ${context.executionKey} has no frozen request`);
+        decidedNow = true;
       }
       // Authorized and frozen: from here a stop is held on this key, never failed (it would strand the authorization).
       const gate = await admit();
       if (!gate.admitted) return sendHeld(gate.reason);
-      await store.recordQuoteV2Send(context.executionKey);
+      // (F1-COMMERCIAL-POLICY-v3) A promotional body is validated again immediately before this send, after any wait
+      // (kill-switch hold, owner unavailable, restart and reconciliation): never sent once it stopped being true.
+      const check = await promotionalSendCheck(deps, record, context, decidedNow, now());
+      if (check.status !== 'send') return check.result;
+      await store.recordQuoteV2Send(context.executionKey, check.validation);
       let result: QuoteV2CreateResult;
       try {
         result = await quotes.createAndIssue(record.request, context.executionKey, { signal: context.signal, correlationId: context.execution.correlationId });
@@ -146,6 +153,69 @@ export function quoteCreateV5Capability(deps: QuoteV5CapabilityDeps): WriteCapab
     },
     reconcile: (context) => reconcileQuoteV2Command(deps, context, { strict: true, documents: deps.documents ?? null }),
   };
+}
+
+/** (v3) The promotional lines of a snapshot, as validated now: null when the quote has none (every regular quote). */
+function promotionEvidenceOf(built: Extract<Awaited<ReturnType<typeof buildCommercialSnapshot>>, { status: 'ready' }>, policyVersion: string | null, validatedAt: Date): object | null {
+  const lines = built.snapshot.lines.flatMap((line, index) => {
+    const ev = built.evidence.lines[index];
+    if (!ev?.promotionEndsAt) return [];
+    return [{
+      itemKey: line.itemKey,
+      productRef: line.productRef,
+      variantRef: line.variantRef,
+      quantity: line.quantity,
+      unitGross: line.unitPrice.amount,
+      promotionEndsAt: ev.promotionEndsAt,
+      // Catalog V2 does not identify a promotion: its provenance is the owner's pricing reference and answer instant.
+      promotionRef: null,
+      pricingReference: ev.pricingReference,
+      catalogAsOf: ev.asOf,
+    }];
+  });
+  return lines.length === 0 ? null : { policyVersion, validatedAt: validatedAt.toISOString(), previewId: built.previewId, lines };
+}
+
+type SendCheck = { readonly status: 'send'; readonly validation: object | null } | { readonly status: 'stop'; readonly result: WriteExecutionResult<QuoteCreateV2Output> };
+
+/** Code of a promotional quote that is no longer what the customer accepted: settled, nothing sent, nothing re-issued. */
+export const PROMOTIONAL_QUOTE_NO_LONGER_VALID = 'promotional_quote_no_longer_valid';
+
+/**
+ * (F1-COMMERCIAL-POLICY-v3, owner order «promotional quotes hardening») Immediately before each send of a frozen body
+ * that carries a promotional price. A regular quote (no promotion evidence in its decision) is sent exactly as before,
+ * with no extra read. Decided in this very call: the decision's own validation is recorded. Otherwise (a replay after
+ * a kill-switch hold, an unavailable owner, a restart and its reconciliation) the same snapshot is rebuilt from Catalog
+ * and Shipping NOW, through the same eligibility (no second engine, no other price source), and must be ready and
+ * produce the SAME previewId: price, variant, quantity, stock, shipping and the promotion's end (the 60-minute quote
+ * plus 15 minutes, from now) all as accepted. Otherwise the command is settled `failed` before anything reaches Quote:
+ * the authorization is spent and no other quote is created in its place. When Catalog cannot answer, it stays held.
+ */
+async function promotionalSendCheck(deps: QuoteV5CapabilityDeps, record: { readonly taskId: string; readonly request: unknown }, context: WriteHandlerContext, decidedNow: boolean, now: Date): Promise<SendCheck> {
+  const decision = await deps.store.autonomousDecision(context.executionKey);
+  const promotion = (decision?.quoteRequest as { promotion?: { previewId?: string; lines?: unknown[] } } | null)?.promotion;
+  if (!decision || !promotion) return { status: 'send', validation: null };
+  if (decidedNow) return { status: 'send', validation: { ...promotion, source: 'decision' } };
+  let built: Awaited<ReturnType<typeof buildCommercialSnapshot>>;
+  try {
+    const workspace = await deps.store.workspace(record.taskId);
+    built = await buildCommercialSnapshot(deps, workspace, { signal: context.signal, correlationId: context.execution.correlationId }, now);
+  } catch (error) {
+    if (!(error instanceof DomainError)) throw error;
+    return { status: 'stop', result: { status: 'unknown', message: `the promotional quote could not be validated again before its send (${error.code}): nothing was sent; it is held on this execution key and validated again before any send` } };
+  }
+  const stop = (reason: string, details: Readonly<Record<string, string | number | boolean | null>> = {}): SendCheck => ({
+    status: 'stop',
+    // (review #79) The authorization stays counted (single use, F1 per-conversation limit): a new offer in this
+    // conversation could not be issued autonomously either, so the agent is told to hand over, not to re-offer.
+    result: { status: 'failed', code: PROMOTIONAL_QUOTE_NO_LONGER_VALID, message: `the accepted quote can no longer be issued as the customer accepted it (${reason}): nothing was sent to the quote owner and no other quote was issued. Tell the customer plainly that this quote could not be issued because the offer changed before it went out, and offer a person from the team; do not present a new offer for an autonomous quote in this conversation`, details: { reason, retryable: false, ...details } },
+  });
+  if (built.status !== 'ready') return stop(built.blockers[0]?.code ?? 'blocked', { blockers: built.blockers.map((b) => b.code).join(',') });
+  // (review #79) Not only the promotion: price, variant, quantity, stock, shipping or parity drift give another preview.
+  if (built.previewId !== decision.previewId) return stop('offer_changed', { currentPreviewId: built.previewId });
+  const revalidated = promotionEvidenceOf(built, deps.eligibility?.policyVersion ?? null, now);
+  // Same snapshot without a promotional line (Catalog dropped the promotion at the same price): recorded as such.
+  return { status: 'send', validation: { ...(revalidated ?? { policyVersion: deps.eligibility?.policyVersion ?? null, validatedAt: now.toISOString(), previewId: built.previewId, lines: [] }), source: 'revalidated' } };
 }
 
 function writesBlocked(reason: string): WriteExecutionResult<QuoteCreateV2Output> {
@@ -229,7 +299,10 @@ async function decide(deps: QuoteV5CapabilityDeps, input: QuoteCreateV3Input, co
       { snapshot: built.snapshot, confirmation: { ...offer, offerRef: evidence.offerRef, confirmationInputId: evidence.confirmationInputId } },
     );
   }
-  const confirmation = { source: 'conversation_thread', ...offer, offerRef: evidence.offerRef, confirmationInputId: evidence.confirmationInputId, grammarVersion: evidence.grammarVersion, grammarRule: evidence.grammarRule };
+  // (F1-COMMERCIAL-POLICY-v3) A promotional quote keeps, with its decision, what its promotional lines were validated
+  // against; every later send of the frozen body is validated again against Catalog (promotionalSendCheck).
+  const promotion = promotionEvidenceOf(built, deps.eligibility?.policyVersion ?? null, now);
+  const confirmation = { source: 'conversation_thread', ...offer, offerRef: evidence.offerRef, confirmationInputId: evidence.confirmationInputId, grammarVersion: evidence.grammarVersion, grammarRule: evidence.grammarRule, ...(promotion ? { promotion } : {}) };
 
   // 5. The decision (single use, duplicates, frequency), with the frozen request and the evidence, in one transaction.
   const body = quoteRequestOf(built.snapshot, built.evidence, { ...QUOTE_V2_CORRELATION, externalReference: taskId });

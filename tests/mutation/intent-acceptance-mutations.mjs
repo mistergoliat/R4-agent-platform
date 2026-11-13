@@ -18,8 +18,29 @@ const ELIGIBILITY = { project: 'unit', file: 'tests/unit/sales/commercial-eligib
 const LOCATE = 'agents/sales/src/capabilities/quote-v4.ts';
 const REACTIONS = { project: 'unit', file: 'tests/unit/sales/reactions-stickers.test.ts' };
 const PROMO = 'agents/sales/src/capabilities/promotion-policy.ts';
+const PROMO_IT = { project: 'integration', file: 'tests/integration/sales-promotional-quote.test.ts' };
 
 const MUTATIONS = [
+  {
+    name: 'PH-1 a held promotional quote is sent without being validated again (the frozen body after a long wait)',
+    edits: [{ file: CREATE, from: '      if (check.status !== \'send\') return check.result;', to: '      if (false) return check.result;' }],
+    tests: [[PROMO_IT, 'owner unavailable, then 2 hours pass'], [PROMO_IT, 'held by the kill switch for 2 hours']],
+  },
+  {
+    name: 'PH-2 the revalidation accepts a different commercial snapshot (cancelled promotion, changed price)',
+    edits: [{ file: CREATE, from: '  if (built.previewId !== decision.previewId) return stop(\'offer_changed\', { currentPreviewId: built.previewId });', to: '' }],
+    tests: [[PROMO_IT, 'held, then the promotion is cancelled']],
+  },
+  {
+    name: 'PH-3 the promotion evidence is not persisted with the decision',
+    edits: [{ file: CREATE, from: ', ...(promotion ? { promotion } : {}) };', to: ' };' }],
+    tests: [[PROMO_IT, 'more than 75 minutes left']],
+  },
+  {
+    name: 'PH-4 a revalidated send records no validation evidence',
+    edits: [{ file: CREATE, from: "  return { status: 'send', validation: { ...(revalidated ?? { policyVersion: deps.eligibility?.policyVersion ?? null, validatedAt: now.toISOString(), previewId: built.previewId, lines: [] }), source: 'revalidated' } };", to: "  return { status: 'send', validation: null };" }],
+    tests: [[PROMO_IT, 'promotion still 2 h away']],
+  },
   {
     name: 'PM-1 a promotion only has to outlast the 60-minute quote (the 15-minute margin is dropped)',
     edits: [{ file: PROMO, from: '  if (end - now.getTime() < F1_QUOTE_VALIDITY_MS + F1_PROMOTION_MARGIN_MS) {', to: '  if (end - now.getTime() < F1_QUOTE_VALIDITY_MS) {' }],
