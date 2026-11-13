@@ -277,7 +277,7 @@ describe('promotional quotes: validation immediately before every send of the fr
   });
 
   it('held, then the promotion is cancelled, the price changes or stock runs short: the replay is refused before any send', async () => {
-    for (const [change, reason] of [[{}, 'commercial_change'], [{ endsAt: at(180), finalGross: 1 }, 'commercial_change'], [{ endsAt: at(180), available: 1 }, 'insufficient_stock'], [{ endsAt: null }, 'price_promotional_unbounded']] as const) {
+    for (const [change, reason] of [[{}, 'offer_changed'], [{ endsAt: at(180), finalGross: 1 }, 'offer_changed'], [{ endsAt: at(180), available: 1 }, 'insufficient_stock'], [{ endsAt: null }, 'price_promotional_unbounded']] as const) {
       const w = world();
       const { p, key } = await heldAfterAuthorization(w);
       w.promo.current = change;

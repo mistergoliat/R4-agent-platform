@@ -206,12 +206,16 @@ async function promotionalSendCheck(deps: QuoteV5CapabilityDeps, record: { reado
   }
   const stop = (reason: string, details: Readonly<Record<string, string | number | boolean | null>> = {}): SendCheck => ({
     status: 'stop',
-    result: { status: 'failed', code: PROMOTIONAL_QUOTE_NO_LONGER_VALID, message: `the accepted promotional quote is no longer valid (${reason}): nothing was sent to the quote owner and no other quote was issued; tell the customer, and present a new offer only if they still want one`, details: { reason, retryable: false, ...details } },
+    // (review #79) The authorization stays counted (single use, F1 per-conversation limit): a new offer in this
+    // conversation could not be issued autonomously either, so the agent is told to hand over, not to re-offer.
+    result: { status: 'failed', code: PROMOTIONAL_QUOTE_NO_LONGER_VALID, message: `the accepted quote can no longer be issued as the customer accepted it (${reason}): nothing was sent to the quote owner and no other quote was issued. Tell the customer plainly that this quote could not be issued because the offer changed before it went out, and offer a person from the team; do not present a new offer for an autonomous quote in this conversation`, details: { reason, retryable: false, ...details } },
   });
   if (built.status !== 'ready') return stop(built.blockers[0]?.code ?? 'blocked', { blockers: built.blockers.map((b) => b.code).join(',') });
-  if (built.previewId !== decision.previewId) return stop('commercial_change', { currentPreviewId: built.previewId });
+  // (review #79) Not only the promotion: price, variant, quantity, stock, shipping or parity drift give another preview.
+  if (built.previewId !== decision.previewId) return stop('offer_changed', { currentPreviewId: built.previewId });
   const revalidated = promotionEvidenceOf(built, deps.eligibility?.policyVersion ?? null, now);
-  return { status: 'send', validation: { ...(revalidated ?? promotion), source: 'revalidated' } };
+  // Same snapshot without a promotional line (Catalog dropped the promotion at the same price): recorded as such.
+  return { status: 'send', validation: { ...(revalidated ?? { policyVersion: deps.eligibility?.policyVersion ?? null, validatedAt: now.toISOString(), previewId: built.previewId, lines: [] }), source: 'revalidated' } };
 }
 
 function writesBlocked(reason: string): WriteExecutionResult<QuoteCreateV2Output> {

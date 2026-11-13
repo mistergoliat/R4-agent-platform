@@ -51,6 +51,10 @@ Con la política v3 activa, una línea promocional se cotiza si `pricing.promoti
   - **con la decisión** (`quote_autonomous_decisions.quote_request.promotion`): por cada línea promocional, producto, variante, cantidad, precio unitario validado, fin de la promoción, referencia de precio y momento de la respuesta de Catalog, más el `previewId` y el momento de la validación. Catalog V2 no identifica las promociones, por eso `promotionRef` queda nulo;
   - **con cada intento de envío** (`quote_v2_sends.validation`, migración Sales `0011`, columna nueva que admite nulo): la validación usada, de la decisión o revalidada. Las cotizaciones regulares no cambian: no se revalidan y su fila no lleva validación;
   - la cotización y la clave idempotente se relacionan por la `execution_key` de esas filas.
+- **Si un envío reanudado se rechaza:** la autorización sigue contando para el límite F1 de la conversación. Por eso se le indica al agente que explique que la cotización no se pudo emitir porque la oferta cambió y que ofrezca una persona, no que presente una oferta nueva.
+- **Precondición de despliegue y de rollback.** El código anterior a esta corrección (main `97f6931` y anteriores) no revalida antes de enviar ni guarda evidencia de la promoción.
+  - **Nunca** se debe activar `R4_F1_PROMOTIONAL_QUOTES` con ese código.
+  - Antes de volver a ese código, verificar que no haya decisiones autorizadas sin aceptación de Quote cuyo `quote_request` incluya `promotion`. Si las hay, el rollback esperaría a que se asienten o se cancelen.
 - **Lo que el agente ve antes de ofrecer:** cuando lee un producto con descuento, la misma regla le indica si puede emitir una cotización formal a ese precio. Así nunca ofrece como cotizable una promoción que la plataforma rechazará. Si no se puede, ofrece comprar al precio promocional en la tienda o derivar a una persona.
 - **Lo que no cambia:** la revalidación de precio, variante, cantidad y stock; la oferta exacta aceptada; los límites F1; la idempotencia. Ninguna cotización reserva stock.
 

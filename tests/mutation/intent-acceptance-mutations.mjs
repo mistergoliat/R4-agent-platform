@@ -28,7 +28,7 @@ const MUTATIONS = [
   },
   {
     name: 'PH-2 the revalidation accepts a different commercial snapshot (cancelled promotion, changed price)',
-    edits: [{ file: CREATE, from: '  if (built.previewId !== decision.previewId) return stop(\'commercial_change\', { currentPreviewId: built.previewId });', to: '' }],
+    edits: [{ file: CREATE, from: '  if (built.previewId !== decision.previewId) return stop(\'offer_changed\', { currentPreviewId: built.previewId });', to: '' }],
     tests: [[PROMO_IT, 'held, then the promotion is cancelled']],
   },
   {
@@ -38,7 +38,7 @@ const MUTATIONS = [
   },
   {
     name: 'PH-4 a revalidated send records no validation evidence',
-    edits: [{ file: CREATE, from: '  return { status: \'send\', validation: { ...(revalidated ?? promotion), source: \'revalidated\' } };', to: '  return { status: \'send\', validation: null };' }],
+    edits: [{ file: CREATE, from: "  return { status: 'send', validation: { ...(revalidated ?? { policyVersion: deps.eligibility?.policyVersion ?? null, validatedAt: now.toISOString(), previewId: built.previewId, lines: [] }), source: 'revalidated' } };", to: "  return { status: 'send', validation: null };" }],
     tests: [[PROMO_IT, 'promotion still 2 h away']],
   },
   {
