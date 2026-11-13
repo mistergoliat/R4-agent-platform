@@ -75,10 +75,23 @@ export const SALES_WEB_PROFILE_V6: ProductionProfile = Object.freeze({
   description: 'sales-web@5 without handoffs (store contact instead) and with the chosen option, cart and Mi gym set as context; no writes.',
 } satisfies ProductionProfile);
 
-export const SALES_WEB_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_WEB_PROFILE_V1, SALES_WEB_PROFILE_V2, SALES_WEB_PROFILE_V3, SALES_WEB_PROFILE_V4, SALES_WEB_PROFILE_V5, SALES_WEB_PROFILE_V6]);
+/**
+ * Experimental, web QA only (owner decision 2026-11-13, F1). sales-web@6 whose cards may cite any product a catalog
+ * observation of the conversation showed as sellable (a Discover candidate with OBSERVED commercial status or a search
+ * result counts) as a provisional recommendation, without re-reading it or repeating Discover only because its price
+ * and stock expired. Prices and stock stated in the text still need a current observation; the store card stays the
+ * authority for price, stock and what can be bought. Same reads; no write.
+ */
+export const SALES_WEB_PROFILE_V7: ProductionProfile = Object.freeze({
+  ...SALES_WEB_PROFILE_V1,
+  version: 7,
+  description: 'sales-web@6 citing products already shown as sellable as provisional recommendations, without re-reading them only because their price and stock expired; no writes.',
+} satisfies ProductionProfile);
+
+export const SALES_WEB_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_WEB_PROFILE_V1, SALES_WEB_PROFILE_V2, SALES_WEB_PROFILE_V3, SALES_WEB_PROFILE_V4, SALES_WEB_PROFILE_V5, SALES_WEB_PROFILE_V6, SALES_WEB_PROFILE_V7]);
 
 /** The sales-web definition version each web profile pins. */
-const SALES_WEB_AGENT_VERSIONS: Readonly<Record<string, number>> = Object.freeze({ 'sales-web@1': 1, 'sales-web@2': 2, 'sales-web@3': 3, 'sales-web@4': 4, 'sales-web@5': 5, 'sales-web@6': 6 });
+const SALES_WEB_AGENT_VERSIONS: Readonly<Record<string, number>> = Object.freeze({ 'sales-web@1': 1, 'sales-web@2': 2, 'sales-web@3': 3, 'sales-web@4': 4, 'sales-web@5': 5, 'sales-web@6': 6, 'sales-web@7': 7 });
 
 export function salesWebProfile(label: string): ProductionProfile | null {
   return SALES_WEB_PROFILES.find((p) => profileLabel(p) === label) ?? null;
