@@ -73,18 +73,18 @@ const SHIPPING_STEPS = [
 ] as ScriptedStep[];
 
 /** One confirmed issuance under `profile`; what the owner issued, the R4 rows and what the delivery owner captured. */
-async function issueOnce(profile: string, quotes: FixtureQuoteV2Service, reply = 'Sí, emítela.', steps: readonly ScriptedStep[] = STEPS, ask = 'Quiero 2 barras Z, sin despacho') {
+async function issueOnce(profile: string, quotes: FixtureQuoteV2Service, reply = 'Sí, emítela.', steps: readonly ScriptedStep[] = STEPS, ask = 'Quiero 2 barras Z, sin despacho', world: { readonly catalog?: FixtureCatalog; readonly env?: Record<string, string> } = {}) {
   db = await createTestDatabase('r4_it_intent_canary');
   const dir = mkdtempSync(join(tmpdir(), 'r4-intent-'));
   const capture = join(dir, 'capture.jsonl');
-  const canary: CanaryEnvironment = loadCanaryEnvironment(canaryEnv(db.url, profile));
+  const canary: CanaryEnvironment = loadCanaryEnvironment({ ...canaryEnv(db.url, profile), ...world.env });
   await initCanary(canary, logger);
   const router = new Router();
   let ownerCalls = 0;
   const issue = quotes.createAndIssue.bind(quotes);
   quotes.createAndIssue = (...a: Parameters<typeof issue>) => ((ownerCalls += 1), issue(...a));
   const runtime: CanaryRuntime = await startCanaryRuntime(canary, {
-    modelProvider: new FakeModelProvider(router.script), catalog: http(new FixtureCatalog()), catalogDiscover: discover, shipping: http(new FixtureShipping()), quotes: http(quotes),
+    modelProvider: new FakeModelProvider(router.script), catalog: http(world.catalog ?? new FixtureCatalog()), catalogDiscover: discover, shipping: http(new FixtureShipping()), quotes: http(quotes),
     worker: {
       databaseUrl: db.url, logLevel: 'silent', dbPoolMax: 3, workerId: 'intent', leaseDurationMs: 60_000, heartbeatIntervalMs: 10_000, pollIntervalMs: 20, maxRunRecoveries: 3, maxRunFailureRecoveries: 1,
       execution: { maxIterations: 20, maxModelCalls: 20, maxReadCapabilityCalls: 20, maxRunDurationMs: 60_000, modelCallTimeoutMs: 10_000, maxWriteActions: 6 },
@@ -120,7 +120,8 @@ async function issueOnce(profile: string, quotes: FixtureQuoteV2Service, reply =
     const refusals = (await pool.query(`select error_code, error_details->>'reason' as reason from action_receipts where capability_id = 'quote.create' and status = 'rejected'`)).rows as { error_code: string; reason: string | null }[];
     const grammar = (await pool.query('select grammar_version from sales.quote_intent_evidence')).rows.map((r: { grammar_version: string }) => r.grammar_version);
     const offers = captured.filter((c) => c.text.startsWith('Cotización lista para emitir')).map((c) => c.text.split('\n').at(-1));
-    return { ownerCalls, issued, documents, captured, delivery, decisions, refusals, grammar, offers };
+    const previewBlockers = (await pool.query(`select payload->'blockers' as b from observations where capability_id = 'quote.preview' order by observed_at`)).rows.flatMap((r: { b: { code: string }[] | null }) => (r.b ?? []).map((x) => x.code));
+    return { ownerCalls, issued, documents, captured, delivery, decisions, refusals, grammar, offers, previewBlockers };
   } finally {
     await pool.end();
   }
@@ -175,5 +176,54 @@ describe('acceptance interpreted in natural language (@19)', { timeout: 150_000 
     expect(r.ownerCalls).toBe(0);
     expect(r.refusals).toEqual([{ error_code: 'customer_confirmation_not_explicit', reason: 'not_a_confirmation' }]);
     expect(r.offers).toEqual(['¿Emito esta cotización? Puedes responder: Sí, emítela.']);
+  });
+});
+
+/**
+ * F1-COMMERCIAL-POLICY-v3 (owner decision 2026-11-13; activated only once the Quote owner accepts it): with
+ * R4_F1_PROMOTIONAL_QUOTES=enabled, @19 quotes a promotional price whose end (Catalog's own promotion.validUntil)
+ * outlasts the 60-minute quote plus 15 minutes; otherwise, and by default, nothing reaches the Quote owner.
+ */
+describe('promotional quotes (@19, F1-COMMERCIAL-POLICY-v3)', { timeout: 150_000 }, () => {
+  /** The fixture Catalog whose item contexts carry Catalog's own promotion field, ending at `validUntil`. */
+  const promotional = (validUntil: string | null): FixtureCatalog => {
+    const base = new FixtureCatalog();
+    return new Proxy(base, {
+      get: (target, key) => {
+        if (key === 'getItemContext') {
+          return async (...a: Parameters<FixtureCatalog['getItemContext']>) => {
+            const item = await target.getItemContext(...a);
+            return item.status === 'found' && item.pricing.status === 'available' ? { ...item, pricing: { ...item.pricing, promotion: { type: 'percentage', percentOff: 0.1, amountOffGross: null, validUntil } } } : item;
+          };
+        }
+        const value = Reflect.get(target, key) as unknown;
+        return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(target) : value;
+      },
+    });
+  };
+  const inMinutes = (m: number) => new Date(Date.now() + m * 60_000).toISOString();
+  const ENABLED = { R4_F1_PROMOTIONAL_QUOTES: 'enabled' };
+  const NOT_PRESENTED = [ws([{ op: 'add_item', productId: 'BAR-EZ', quantity: 2 }]), ws([{ op: 'exclude_shipping' }]), read(AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview, {}), respond('No puedo emitir una cotización formal a ese precio promocional.')] as ScriptedStep[];
+
+  it('issues exactly one quote at a promotional price that ends 3 hours from now', async () => {
+    const r = await issueOnce('sales-production@19', new FixtureQuoteV2Service(), 'dale', STEPS, 'Quiero 2 barras Z, sin despacho', { catalog: promotional(inMinutes(180)), env: ENABLED });
+    expect(r.previewBlockers).toEqual([]);
+    expect(r.ownerCalls).toBe(1);
+    expect(r.issued).toHaveLength(1);
+  });
+
+  it('never reaches the Quote owner for a promotion ending within 75 minutes, an open-ended one, or when not enabled', async () => {
+    for (const [catalog, env, code] of [
+      [promotional(inMinutes(30)), ENABLED, 'price_promotional_ending'],
+      [promotional(null), ENABLED, 'price_promotional_unbounded'],
+      [promotional(inMinutes(180)), {}, 'price_promotional_excluded'],
+    ] as const) {
+      const r = await issueOnce('sales-production@19', new FixtureQuoteV2Service(), 'dale', NOT_PRESENTED, 'Quiero 2 barras Z, sin despacho', { catalog, env });
+      expect(r.previewBlockers).toEqual([code]);
+      expect(r.ownerCalls).toBe(0);
+      expect(r.issued).toEqual([]);
+      await db?.drop();
+      db = null;
+    }
   });
 });

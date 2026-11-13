@@ -17,8 +17,24 @@ const SNAPSHOT = 'agents/sales/src/capabilities/commercial-snapshot.ts';
 const ELIGIBILITY = { project: 'unit', file: 'tests/unit/sales/commercial-eligibility.test.ts' };
 const LOCATE = 'agents/sales/src/capabilities/quote-v4.ts';
 const REACTIONS = { project: 'unit', file: 'tests/unit/sales/reactions-stickers.test.ts' };
+const PROMO = 'agents/sales/src/capabilities/promotion-policy.ts';
 
 const MUTATIONS = [
+  {
+    name: 'PM-1 a promotion only has to outlast the 60-minute quote (the 15-minute margin is dropped)',
+    edits: [{ file: PROMO, from: '  if (end - now.getTime() < F1_QUOTE_VALIDITY_MS + F1_PROMOTION_MARGIN_MS) {', to: '  if (end - now.getTime() < F1_QUOTE_VALIDITY_MS) {' }],
+    tests: [[ELIGIBILITY, 'refuses a promotion ending sooner']],
+  },
+  {
+    name: 'PM-2 an open-ended or unknown promotion end is quoted',
+    edits: [{ file: PROMO, from: '  if (endsAt === null || !Number.isFinite(end)) {', to: '  if (false) {' }],
+    tests: [[ELIGIBILITY, 'refuses a promotion ending sooner'], [IT, 'never reaches the Quote owner for a promotion']],
+  },
+  {
+    name: 'PM-3 promotional prices are quoted without the R4_F1_PROMOTIONAL_QUOTES switch',
+    edits: [{ file: PROMO, from: '  if (eligibility.promotionsAllowed !== true) {', to: '  if (false) {' }],
+    tests: [[ELIGIBILITY, 'refuses a promotion ending sooner'], [IT, 'never reaches the Quote owner for a promotion']],
+  },
   {
     name: 'IA-M1 the guard ignores question marks and negative emojis',
     edits: [{ file: GRAMMAR, from: "  if (/[?¿？]/u.test(text) || NEGATIVE_EMOJI.test(text)) return { confirmed: false, reason: 'disqualified' };", to: '' }],
@@ -51,7 +67,7 @@ const MUTATIONS = [
   },
   {
     name: 'IA-M6 @19 keeps the v1 policy (delivery blocked although the owner allowed it)',
-    edits: [{ file: SALES, from: '  return SALES_F1_SHIPPING_PROFILES.has(profileLabel(profile)) ? { policyVersion: F1_COMMERCIAL_POLICY_V2_VERSION, shippingAllowed: true } : { policyVersion: F1_COMMERCIAL_POLICY_VERSION };', to: '  return { policyVersion: F1_COMMERCIAL_POLICY_VERSION };' }],
+    edits: [{ file: SALES, from: '  if (!SALES_F1_SHIPPING_PROFILES.has(label)) return { policyVersion: F1_COMMERCIAL_POLICY_VERSION };', to: '  if (true) return { policyVersion: F1_COMMERCIAL_POLICY_VERSION };' }],
     tests: [[IT, 'issues a quote with the delivery offer the customer chose'], [ELIGIBILITY, 'F1-COMMERCIAL-POLICY-v2']],
   },
   {
