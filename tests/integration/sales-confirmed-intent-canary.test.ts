@@ -112,7 +112,7 @@ beforeAll(async () => {
   captureDir = mkdtempSync(join(tmpdir(), 'r4-confirmed-intent-canary-'));
   canaryDb = await createTestDatabase('r4_it_confirmed_intent_canary');
   const init = await initCanary(loadCanaryEnvironment(canaryEnv()), logger);
-  expect(init.migrations.sales).toEqual(['0006_sales_reference_application', '0007_sales_quote_v2_issuance', '0008_sales_autonomous_quote_decisions', '0009_sales_quote_intent_evidence', '0010_sales_checkout_requests']);
+  expect(init.migrations.sales).toEqual(['0006_sales_reference_application', '0007_sales_quote_v2_issuance', '0008_sales_autonomous_quote_decisions', '0009_sales_quote_intent_evidence', '0010_sales_checkout_requests', '0011_sales_quote_send_validation']);
   expect(init.definitions.registered).toEqual(expect.arrayContaining(['sales@5', 'sales@6']));
 });
 
