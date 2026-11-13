@@ -45,6 +45,7 @@ import { configuredMediaPerception } from '../model.js';
 import { catalogCapabilities } from '../capabilities/catalog.js';
 import { withWebProgress, type WebProgressReporter } from './web-progress.js';
 import { F1_COMMERCIAL_POLICY_V2_VERSION, F1_COMMERCIAL_POLICY_VERSION, type CommercialEligibility } from '../capabilities/commercial-snapshot.js';
+import { F1_COMMERCIAL_POLICY_V3_VERSION } from '../capabilities/promotion-policy.js';
 import { shippingCapability } from '../capabilities/shipping.js';
 import { quoteCreateV2Capability } from '../capabilities/quote-v2.js';
 import { quoteCreateV3Capability } from '../capabilities/quote-v3.js';
@@ -115,6 +116,8 @@ export interface SalesProductionWorkerOptions {
   readonly autonomousQuoteLimits?: AutonomousQuoteLimits | AutonomousQuoteLimitsV6;
   /** (R4-J5 F1, P-1) The parity-verified SKU set for autonomous quotes (R4_QUOTE_PARITY_*); applied to the deterministic-offer path (v7 lineage) when given. The F1 profile gate must require it. */
   readonly quoteParity?: QuoteParityGuard | null;
+  /** (F1-COMMERCIAL-POLICY-v3) Promotional prices that outlast the quote may be quoted (@19 only; default off). */
+  readonly promotionalQuotes?: boolean;
   /** (R4-J5 F1) Set only by the isolated canary runtime: it may also compose canary-only profiles (@12). A production worker never sets it. */
   readonly canary?: boolean;
   /** (R4 Checkout, R-1) The Checkout sandbox-purchase binding (CheckoutHttpClient); required when the selected profile composes Checkout (@15). */
@@ -186,7 +189,9 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
   }
   if (catalogReal) {
     // READ capabilities offered to the model; they execute through the CapabilityInvoker only.
-    const [catalogSearch, productContext] = catalogCapabilities(catalog, { variantAvailability: SALES_VARIANT_AVAILABILITY_PROFILES.has(profileLabel(profile)) || isSalesWebProfile(profile) });
+    // (F1-COMMERCIAL-POLICY-v3) Under an F1 policy, a discounted product says whether its promotional price can be quoted.
+    const commercial = salesCommercialEligibility(profile, options.promotionalQuotes === true);
+    const [catalogSearch, productContext] = catalogCapabilities(catalog, { variantAvailability: SALES_VARIANT_AVAILABILITY_PROFILES.has(profileLabel(profile)) || isSalesWebProfile(profile), promotions: commercial ? { eligibility: commercial, now: () => clock.now() } : null });
     capabilities.register(progress(catalogSearch));
     capabilities.register(progress(productContext));
   }
@@ -232,8 +237,8 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
           // (R4-J5 F1) The F1 canary, and the quote lane @14, run within the owner-approved canary limits, never looser.
           if (isF1CanaryProfile(profile) || isQuoteLaneProfile(profile)) assertF1CanaryLimits(limits, profileLabel(profile));
           if (options.quoteParity) options.logger.info({ quoteParity: { profile: profileLabel(profile), fingerprint: options.quoteParity.fingerprint, items: options.quoteParity.items, maxAgeSeconds: options.quoteParity.maxAgeSeconds } }, 'sales quote parity evidence configured');
-          if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV3Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now(), parity: options.quoteParity ?? null, eligibility: salesCommercialEligibility(profile), naturalAcceptance: SALES_INTENT_ACCEPTANCE_PROFILES.has(profileLabel(profile)) }));
-          if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV5Capability({ store: sales, quotes, catalog, shipping: options.shipping, limits, conversation: options.store, admission: controls, now: () => clock.now(), parity: options.quoteParity ?? null, eligibility: salesCommercialEligibility(profile), documents: SALES_QUOTE_DOCUMENT_PROFILES.has(profileLabel(profile)) ? quoteDocumentDelivery(options.store, options.logger) : null, naturalAcceptance: SALES_INTENT_ACCEPTANCE_PROFILES.has(profileLabel(profile)) }));
+          if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV3Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now(), parity: options.quoteParity ?? null, eligibility: salesCommercialEligibility(profile, options.promotionalQuotes === true), naturalAcceptance: SALES_INTENT_ACCEPTANCE_PROFILES.has(profileLabel(profile)) }));
+          if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV5Capability({ store: sales, quotes, catalog, shipping: options.shipping, limits, conversation: options.store, admission: controls, now: () => clock.now(), parity: options.quoteParity ?? null, eligibility: salesCommercialEligibility(profile, options.promotionalQuotes === true), documents: SALES_QUOTE_DOCUMENT_PROFILES.has(profileLabel(profile)) ? quoteDocumentDelivery(options.store, options.logger) : null, naturalAcceptance: SALES_INTENT_ACCEPTANCE_PROFILES.has(profileLabel(profile)) }));
         } else {
           if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV2Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now() }));
           if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV4Capability({ store: sales, quotes: options.quotes, catalog, shipping: options.shipping, limits, conversation: options.store, now: () => clock.now() }));
@@ -503,11 +508,25 @@ export function killSwitchGuardedQuotes(quotes: QuoteV2Service, controls: Autono
   return guardProductionWrites(port, { domain: SALES_DOMAINS.quote, writeOperations: ['createAndIssue'], controls, logger, blocked: () => quoteWritesBlockedError() });
 }
 
-/** (F1 commercial eligibility) The policy the F1 candidate @17 enforces at quote.preview and quote.create; null elsewhere. */
-export function salesCommercialEligibility(profile: ProductionProfile): CommercialEligibility | null {
-  if (!SALES_VARIANT_AVAILABILITY_PROFILES.has(profileLabel(profile))) return null;
+/**
+ * (F1 commercial eligibility) The policy the F1 candidate @17 enforces at quote.preview and quote.create; null elsewhere.
+ * `promotionalQuotes` (R4_F1_PROMOTIONAL_QUOTES=enabled, default off; owner decision 2026-11-13, activated only after the
+ * Quote owner accepts it) selects v3 for @19 alone; asking for it under any other profile refuses the composition.
+ */
+export function salesCommercialEligibility(profile: ProductionProfile, promotionalQuotes = false): CommercialEligibility | null {
+  const label = profileLabel(profile);
+  if (promotionalQuotes && !SALES_F1_SHIPPING_PROFILES.has(label)) throw new Error(`refusing production composition: promotional quotes (R4_F1_PROMOTIONAL_QUOTES) are defined only for ${[...SALES_F1_SHIPPING_PROFILES].join(', ')}, not ${label}`);
+  if (!SALES_VARIANT_AVAILABILITY_PROFILES.has(label)) return null;
   // (owner decision 2026-11-10) @19: F1 policy v2, delivery at the Shipping owner price; @17/@18 keep v1 (no delivery).
-  return SALES_F1_SHIPPING_PROFILES.has(profileLabel(profile)) ? { policyVersion: F1_COMMERCIAL_POLICY_V2_VERSION, shippingAllowed: true } : { policyVersion: F1_COMMERCIAL_POLICY_VERSION };
+  if (!SALES_F1_SHIPPING_PROFILES.has(label)) return { policyVersion: F1_COMMERCIAL_POLICY_VERSION };
+  return promotionalQuotes ? { policyVersion: F1_COMMERCIAL_POLICY_V3_VERSION, shippingAllowed: true, promotionsAllowed: true } : { policyVersion: F1_COMMERCIAL_POLICY_V2_VERSION, shippingAllowed: true };
+}
+
+/** (F1-COMMERCIAL-POLICY-v3) R4_F1_PROMOTIONAL_QUOTES: `enabled` | `disabled` (default). Anything else refuses (fail closed). */
+export function loadPromotionalQuotes(env: Readonly<Record<string, string | undefined>>): boolean {
+  const value = (env.R4_F1_PROMOTIONAL_QUOTES ?? 'disabled').trim();
+  if (value !== 'enabled' && value !== 'disabled') throw new Error('R4_F1_PROMOTIONAL_QUOTES must be enabled or disabled');
+  return value === 'enabled';
 }
 
 /** The Quote V2 port quote.create@5 uses: behind the kill switch; for the F1 profiles also single-flight (see below). */

@@ -31,6 +31,23 @@ No hay motores de precio, catálogos, políticas de stock ni sistemas de elegibi
 
 **Promociones:** solo se cotizarán después de que el owner comercial y el owner de Quote autoricen explícitamente honrar el monto emitido durante los 60 minutos. Hasta entonces, una línea con `pricing.promotion` de Catalog se rechaza (`price_promotional_excluded`). Ese es un campo del propio owner; no se usa ninguna clasificación heurística.
 
+**Promociones con fin verificable (F1-COMMERCIAL-POLICY-v3).**
+
+- **Decisión:** el owner comercial la tomó el 2026-11-13.
+- **Activación:** solo con `R4_F1_PROMOTIONAL_QUOTES=enabled`, solo en `@19`, y solo después de que el owner de Quote la acepte (issue Quote #34). Por defecto queda apagada y rige el párrafo anterior.
+
+Con la política v3 activa, una línea promocional se cotiza si `pricing.promotion.validUntil` (fecha de fin de PrestaShop, que entrega Catalog V2) es conocida y termina al menos **75 minutos** después del momento de decidir: 60 de vigencia de la cotización más 15 de margen.
+
+- **Cuándo se verifica:**
+  - en `quote.preview`;
+  - **otra vez** en `quote.create`, justo antes de llamar a Quote.
+- **Qué rechaza:**
+  - fin desconocido o indefinido: `price_promotional_unbounded`;
+  - fin dentro de los 75 minutos: `price_promotional_ending`.
+- **Evidencia:** la fecha de fin de cada línea promocional se guarda en la evidencia de la cotización.
+- **Lo que el agente ve antes de ofrecer:** cuando lee un producto con descuento, la misma regla le indica si puede emitir una cotización formal a ese precio. Así nunca ofrece como cotizable una promoción que la plataforma rechazará. Si no se puede, ofrece comprar al precio promocional en la tienda o derivar a una persona.
+- **Lo que no cambia:** la revalidación de precio, variante, cantidad y stock; la oferta exacta aceptada; los límites F1; la idempotencia. Ninguna cotización reserva stock.
+
 **Sin dependencias adicionales de Catalog:** no se requiere un archivo P-1 estático por SKU ni una clasificación de precio regular, promocional o desconocido (#54 y #57 dejan de bloquear F1).
 
 ## 2. Presentación al cliente

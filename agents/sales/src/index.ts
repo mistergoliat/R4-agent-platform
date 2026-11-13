@@ -15,6 +15,7 @@ export * from './capabilities/shipping-basis.js';
 export * from './capabilities/workspace.js';
 export * from './capabilities/workspace-v2.js';
 export * from './capabilities/commercial-snapshot.js';
+export * from './capabilities/promotion-policy.js';
 export * from './capabilities/autonomy-limits.js';
 export * from './capabilities/parity-guard.js';
 export * from './capabilities/quote-preview.js';

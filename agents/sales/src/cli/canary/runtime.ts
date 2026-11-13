@@ -29,7 +29,7 @@ import { createWorkerPlatform, type WorkerConfig, type WorkerPlatform } from '@r
 import { SALES_AGENT_DIR, SALES_MIGRATIONS_DIR, isSalesCandidateDefinition, loadSalesAgentDefinition } from '../../definition.js';
 import { SALES_AGENT_ID } from '../../ids.js';
 import { migrateSales } from '../../migrate.js';
-import { SALES_HUMAN_REQUEST_NOTICE_PROFILES, SALES_HUMAN_REQUEST_NOTICE_TEXT, SALES_RUN_FAILURE_FALLBACK_TEXT, composeSalesProductionWorker, salesConversationTaskFactory, type SalesProductionWorkerOptions } from '../../production/composition.js';
+import { SALES_HUMAN_REQUEST_NOTICE_PROFILES, SALES_HUMAN_REQUEST_NOTICE_TEXT, SALES_RUN_FAILURE_FALLBACK_TEXT, composeSalesProductionWorker, loadPromotionalQuotes, salesConversationTaskFactory, type SalesProductionWorkerOptions } from '../../production/composition.js';
 import { SALES_PRODUCTION_PROFILE_V4 } from '../../production/profile-v4.js';
 import { SALES_PRODUCTION_PROFILE_V5, isAutonomousQuoteProfile } from '../../production/profile-v5.js';
 import { SALES_PRODUCTION_PROFILE_V6, isConfirmedIntentProfile } from '../../production/profile-v6.js';
@@ -74,6 +74,8 @@ export interface CanaryEnvironment {
   readonly autonomousQuoteLimits: AutonomousQuoteLimits | AutonomousQuoteLimitsV6 | null;
   /** (R4-J5 F1, P-1) The parity-verified SKU set (R4_QUOTE_PARITY_*), or null when not configured; @12 refuses to compose without it. */
   readonly quoteParity: QuoteParityGuard | null;
+  /** (F1-COMMERCIAL-POLICY-v3) R4_F1_PROMOTIONAL_QUOTES=enabled (default off). */
+  readonly promotionalQuotes: boolean;
   /**
    * (R4-J4-R5 preparation) R4_CANARY_CONTEXT_EXPIRED_EVIDENCE: the expired-evidence policy every canary worker of this
    * environment must run (null: not declared, the worker's own). Required and `exclude` for @8 (owner decision: the J4
@@ -135,7 +137,7 @@ export function loadCanaryEnvironment(env: Readonly<Record<string, string | unde
   } else if (testHosts.length > 0) {
     throw new ProductionConfigError('invalid_production_config', `R4_CANARY_TEST_HOSTS is for the Customer and identity owners of sales-production@8; ${profileLabel(profile)} has none`);
   }
-  return { databaseUrl, production, profile, autonomousQuoteLimits, quoteParity, contextExpiredEvidence, testHosts };
+  return { databaseUrl, production, profile, autonomousQuoteLimits, quoteParity, promotionalQuotes: loadPromotionalQuotes(env), contextExpiredEvidence, testHosts };
 }
 
 function canaryPool(canary: CanaryEnvironment, logger: Logger, name: string): Pool {
@@ -321,7 +323,7 @@ export async function startCanaryRuntime(canary: CanaryEnvironment, options: Can
       await assertUninspectedCanaryAllowed(pool);
     }
     const store = new PostgresProductionStore(pool);
-    const composed = composeSalesProductionWorker({ canary: true, pool, store, production: canary.production, modelProvider: options.modelProvider, logger, catalog: options.catalog, ...(isSalesLaneProfile(canary.profile) && options.catalogDiscover ? { catalogDiscover: options.catalogDiscover } : {}), shipping: options.shipping, quotes: options.quotes, ...(canary.autonomousQuoteLimits ? { autonomousQuoteLimits: canary.autonomousQuoteLimits } : {}), ...(canary.quoteParity ? { quoteParity: canary.quoteParity } : {}), ...(options.customer ? { customer: { ...options.customer, allowedHosts: canary.testHosts } } : {}) });
+    const composed = composeSalesProductionWorker({ canary: true, pool, store, production: canary.production, modelProvider: options.modelProvider, logger, catalog: options.catalog, ...(isSalesLaneProfile(canary.profile) && options.catalogDiscover ? { catalogDiscover: options.catalogDiscover } : {}), shipping: options.shipping, quotes: options.quotes, ...(canary.autonomousQuoteLimits ? { autonomousQuoteLimits: canary.autonomousQuoteLimits } : {}), ...(canary.quoteParity ? { quoteParity: canary.quoteParity } : {}), ...(canary.promotionalQuotes ? { promotionalQuotes: true } : {}), ...(options.customer ? { customer: { ...options.customer, allowedHosts: canary.testHosts } } : {}) });
     worker = await createWorkerPlatform(options.worker, { ...composed.bindings, admission: new CanaryAdmission(pool, composed.controls) }, { logger });
     scheduler = options.scheduler ? await createSchedulerPlatform(options.scheduler, { logger }) : null;
     const capture = new CaptureOutboundAdapter(typeof options.captureFile === 'string' ? options.captureFile : options.captureFile(canaryId));
