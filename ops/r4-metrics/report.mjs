@@ -1,17 +1,20 @@
 #!/usr/bin/env node
-// R4 commercial baseline (M1): turns the facts exported by baseline.sql into a comparable report — by agent version,
-// profile, model and segment (testers = allowlisted conversations; commercial = rollout cohort), never mixing them.
+// R4 commercial baseline (M1): turns the facts exported by baseline.sql into a comparable report, by segment
+// (testers = allowlisted conversations; commercial = rollout cohort), profile, agent version and model, never mixing them.
 //
 //   node ops/r4-metrics/report.mjs facts.json [--models models.json] [--measured provider-usage.jsonl] [--json out.json]
 //
-// Model attribution: R4's database does not record which model served a call (the provider telemetry does, in the
-// logs), so a models file maps time windows (and optionally agents) to a model and its prices; a window not covered is
-// reported as "unattributed". Prices are per million tokens; cost is an UPPER BOUND (every input token priced as not
-// cached: the database keeps no cache counts). That is the ESTIMATED cost. The MEASURED cost comes from the provider:
-// --measured takes the usage snapshots the provider budget monitor appends ({"at", "accountUsageUsd"} per line) and
-// reports the account's spend between the first and last snapshot inside the window; it covers the whole provider
-// account (every worker, web QA and perception included), so it bounds the estimate, it is never a per-turn figure.
-// Output: text report on stdout; --json also writes the aggregates.
+// Units: a CONVERSATION is one customer on one channel (opaque per export); a TASK is one episode of it (a new task
+// opens when the previous one ended); a TURN is one run (kind 'input' when a customer input started it, 'continuation'
+// for wake-ups, consultation answers and recoveries, which have no customer latency).
+//
+// Cost. ESTIMATED = tokens recorded in the database × the price of the model window in --models (R4 keeps no model id
+// per call, so a window not covered is 'unattributed' and gets no cost). It is an upper bound for the calls R4 records:
+// every input token is priced as not cached (the database keeps no cache counts); perception (vision, speech) calls are
+// not in it. MEASURED = the provider's own account usage: --measured takes the snapshots the provider budget monitor
+// (ops/r4-provider-budget) appends, {"at", "accountUsageUsd"} per line, and reports the spend between the first and the
+// last snapshot inside the window. It covers the whole provider account (every worker, web QA and perception), and it is
+// wrong across a usage-counter reset (a new account). Output: text on stdout; --json also writes the aggregates.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 
@@ -20,6 +23,9 @@ if (!positionals[0]) throw new Error('usage: report.mjs facts.json [--models mod
 const facts = JSON.parse(readFileSync(positionals[0], 'utf8'));
 const models = args.models ? JSON.parse(readFileSync(args.models, 'utf8')) : [];
 
+// Object.groupBy needs Node 21; the repository supports Node 20.
+const groupBy = (xs, key) => { const g = {}; for (const x of xs) (g[key(x)] ??= []).push(x); return g; };
+const countBy = (xs) => Object.fromEntries(Object.entries(groupBy(xs, (x) => x)).map(([k, v]) => [k, v.length]));
 const ms = (a, b) => (a && b ? Date.parse(b) - Date.parse(a) : null);
 const pct = (xs, p) => {
   const s = xs.filter((x) => x !== null && Number.isFinite(x)).sort((a, b) => a - b);
@@ -27,6 +33,7 @@ const pct = (xs, p) => {
 };
 const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 const sum = (xs) => xs.reduce((a, b) => a + (b ?? 0), 0);
+const sumOrNull = (xs) => (xs.some((x) => x === null) ? null : sum(xs));
 // live-ops rollout eligibility: allowlisted = named testers; cohort = the rollout percentage (real commercial traffic).
 const segmentOf = (reason) => (reason === 'allowlisted' ? 'testers' : reason === 'cohort' ? 'commercial' : reason ? `other:${reason}` : 'unbound');
 const agentOf = (r) => `${r.agent_id}@${r.agent_version}`;
@@ -35,92 +42,96 @@ const modelOf = (r) => {
   return models.find((m) => at >= Date.parse(m.from) && at < Date.parse(m.to ?? '2999-01-01') && (!m.agents || m.agents.includes(agentOf(r)))) ?? null;
 };
 const costOf = (model, input, output) => (model ? ((input ?? 0) * model.priceInPerM + (output ?? 0) * model.priceOutPerM) / 1e6 : null);
+const seconds = (xs) => xs.map((x) => (x === null ? null : x / 1000));
+const merge = (counts) => { const m = {}; for (const c of counts) for (const [k, n] of Object.entries(c)) m[k] = (m[k] ?? 0) + n; return m; };
 
-// ---- runs (turns) -------------------------------------------------------------------------------------------------
-const stepsByRun = new Map();
-for (const s of facts.steps) (stepsByRun.get(s.run_id) ?? stepsByRun.set(s.run_id, []).get(s.run_id)).push(s);
-const ERROR_OUTCOMES = new Set(['invalid', 'model_failed', 'failed', 'rejected']);
+// ---- turns (runs) ------------------------------------------------------------------------------------------------
+const stepsByRun = groupBy(facts.steps, (s) => s.run_id);
 const turns = facts.runs.map((r) => {
-  const steps = (stepsByRun.get(r.run_id) ?? []).filter((s) => s.origin === 'model');
-  const catalog = steps.filter((s) => String(s.capability ?? '').startsWith('catalog.'));
+  const steps = (stepsByRun[r.run_id] ?? []).filter((s) => s.origin === 'model');
+  // A Catalog read is a step the platform executed (observed); its key is the exact arguments, filters included.
+  const catalog = steps.filter((s) => String(s.capability ?? '').startsWith('catalog.') && s.outcome === 'observed');
   const seen = new Set();
   let repeats = 0;
   for (const s of catalog) {
-    const k = `${s.capability}|${s.target ?? ''}`;
+    const k = `${s.capability}|${s.arguments_digest}`;
     if (seen.has(k)) repeats += 1;
     seen.add(k);
   }
   const model = modelOf(r);
   return {
-    run: r.run_id, task: r.task_id, profile: r.profile ?? 'unbound', agent: agentOf(r), model: model?.label ?? 'unattributed', segment: segmentOf(r.eligibility_reason),
+    run: r.run_id, task: r.task_id, kind: r.trigger_at ? 'input' : 'continuation', profile: r.profile ?? 'unbound', agent: agentOf(r),
+    model: model?.label ?? 'unattributed', segment: segmentOf(r.eligibility_reason),
     status: r.status, ending: r.termination_reason, modelCalls: r.model_calls ?? steps.length, input: r.input_tokens, output: r.output_tokens,
     cost: costOf(model, r.input_tokens, r.output_tokens),
-    latencyMs: ms(r.trigger_at, r.answer_at), deliveredMs: ms(r.trigger_at, r.answer_delivered_at), answered: r.answer_at !== null,
+    answered: r.answer_at !== null, latencyMs: ms(r.trigger_at, r.answer_at), deliveredMs: ms(r.trigger_at, r.answer_delivered_at),
     catalogReads: catalog.length, catalogRepeats: repeats,
-    errors: steps.filter((s) => ERROR_OUTCOMES.has(s.outcome) || s.observation_outcome === 'failed').length,
+    // Decisions the platform refused or could not parse, and failed model calls; executed actions rejected or failed.
+    decisionErrors: countBy(steps.filter((s) => ['refused', 'invalid', 'model_failed'].includes(s.outcome)).map((s) => s.outcome)),
+    actionErrors: countBy(steps.filter((s) => ['rejected', 'failed'].includes(s.observation_outcome)).map((s) => s.observation_outcome)),
     sequence: steps.map((s) => (s.capability ?? s.decision_type ?? s.outcome).replace('catalog.', '').replace('get_product_context', 'ctx')),
   };
 });
 
 function groupTurns(key) {
-  const groups = new Map();
-  for (const t of turns) (groups.get(key(t)) ?? groups.set(key(t), []).get(key(t))).push(t);
-  return [...groups].map(([k, ts]) => {
-    const answered = ts.filter((t) => t.latencyMs !== null);
+  return Object.entries(groupBy(turns, key)).map(([k, ts]) => {
+    const timed = seconds(ts.map((t) => t.latencyMs));
+    const delivered = seconds(ts.map((t) => t.deliveredMs));
     return {
-      key: k, turns: ts.length, answered: answered.length,
-      latencyS: { p50: pct(answered.map((t) => t.latencyMs / 1000), 0.5), p90: pct(answered.map((t) => t.latencyMs / 1000), 0.9), p95: pct(answered.map((t) => t.latencyMs / 1000), 0.95) },
+      key: k, turns: ts.length, inputTurns: ts.filter((t) => t.kind === 'input').length, continuations: ts.filter((t) => t.kind === 'continuation').length,
+      answered: ts.filter((t) => t.answered).length,
+      latencyS: { p50: pct(timed, 0.5), p90: pct(timed, 0.9), p95: pct(timed, 0.95) },
+      deliveredS: { p50: pct(delivered, 0.5), p90: pct(delivered, 0.9) },
       modelCallsPerTurn: { mean: mean(ts.map((t) => t.modelCalls)), p90: pct(ts.map((t) => t.modelCalls), 0.9) },
       turnsOver5Calls: ts.filter((t) => t.modelCalls > 5).length,
       tokensPerTurn: { input: mean(ts.map((t) => t.input ?? 0)), output: mean(ts.map((t) => t.output ?? 0)) },
-      costUsd: ts.some((t) => t.cost === null) ? null : sum(ts.map((t) => t.cost)),
+      estimatedCostUsd: sumOrNull(ts.map((t) => t.cost)),
       catalogReadsPerTurn: mean(ts.map((t) => t.catalogReads)), catalogRepeatsPerTurn: mean(ts.map((t) => t.catalogRepeats)),
-      errorsPerTurn: mean(ts.map((t) => t.errors)),
-      endings: Object.fromEntries(Object.entries(Object.groupBy(ts, (t) => t.ending ?? t.status)).map(([e, xs]) => [e, xs.length])),
+      decisionErrors: merge(ts.map((t) => t.decisionErrors)), actionErrors: merge(ts.map((t) => t.actionErrors)),
+      endings: countBy(ts.map((t) => t.ending ?? t.status)),
     };
   });
 }
 
-// ---- tasks (conversation episodes) and quotes --------------------------------------------------------------------
-const quotesByTask = Object.groupBy(facts.quotes, (q) => q.task_id);
-const turnsByTask = Object.groupBy(turns, (t) => t.task);
+// ---- tasks (conversation episodes) and quotes ---------------------------------------------------------------------
+// One receipt per governed execution (its idempotency key). obtained_via never overlaps: execute = settled by the first
+// attempt; replay = R4 sent the same key again after an unknown outcome; reconcile = settled by reading the owner.
+// replayed = the owner said it had already applied that key (deduplicated). attempts − 1 = extra attempts.
+const quotesByTask = groupBy(facts.quotes, (q) => q.task_id);
+const turnsByTask = groupBy(turns, (t) => t.task);
 const tasks = facts.tasks.map((t) => {
   const qs = quotesByTask[t.task_id] ?? [];
   const issued = qs.filter((q) => q.status === 'succeeded');
   const tt = turnsByTask[t.task_id] ?? [];
   const firstIssued = issued.map((q) => q.executed_at ?? q.recorded_at).sort()[0] ?? null;
   return {
-    task: t.task_id, segment: segmentOf(t.eligibility_reason), channel: t.channel, binding: t.binding_id, inputs: t.inputs, turns: tt.length,
-    cost: tt.some((x) => x.cost === null) ? null : sum(tt.map((x) => x.cost)),
+    task: t.task_id, segment: segmentOf(t.eligibility_reason), profile: t.profile ?? 'unbound', agent: agentOf(t), conversation: t.conversation_no ?? null,
+    inputs: t.inputs, turns: tt.length, cost: sumOrNull(tt.map((x) => x.cost)),
+    offers: t.distinct_ready_previews ?? 0, previews: t.previews ?? 0,
     quotesIssued: issued.length, quotesIssuedPromotional: issued.filter((q) => q.promotional).length,
-    quotesRefused: qs.filter((q) => q.status !== 'succeeded').length,
-    refusalCodes: qs.filter((q) => q.status !== 'succeeded').map((q) => q.error_code ?? q.reason_code),
-    // One receipt per governed execution (its idempotency key): a retry is a further attempt of the same execution, a
-    // replay is the owner answering an already-applied request idempotently, a reconcile settles an unknown outcome.
-    retried: qs.filter((q) => (q.attempts ?? 1) > 1).length,
-    idempotentReplays: qs.filter((q) => q.replayed || q.obtained_via === 'replay').length,
-    reconciled: qs.filter((q) => q.obtained_via === 'reconcile').length,
-    distinctOffers: t.distinct_ready_previews, previews: t.previews,
+    notIssued: qs.filter((q) => q.status !== 'succeeded').map((q) => `${q.status}:${q.error_code ?? q.reason_code ?? '-'}`),
+    settledBy: qs.map((q) => q.obtained_via), ownerDeduplicated: qs.filter((q) => q.replayed).length,
+    extraAttempts: sum(qs.map((q) => Math.max(0, (q.attempts ?? 1) - 1))),
     interestToIssueMs: ms(t.first_input_at, firstIssued),
-    handoffs: t.handoffs, agentMessages: t.agent_messages, agentMessagesDelivered: t.agent_messages_delivered, outboundFailed: t.outbound_failed,
+    handoffs: t.handoffs ?? {}, agentMessages: t.agent_messages ?? 0, delivered: t.agent_messages_delivered ?? 0, cancelled: t.agent_messages_cancelled ?? 0, failed: t.agent_messages_failed ?? 0,
   };
 });
 
 function groupTasks(key) {
-  return Object.entries(Object.groupBy(tasks, key)).map(([k, ts]) => {
+  return Object.entries(groupBy(tasks, key)).map(([k, ts]) => {
     const issued = sum(ts.map((t) => t.quotesIssued));
-    const cost = ts.some((t) => t.cost === null) ? null : sum(ts.map((t) => t.cost));
+    const cost = sumOrNull(ts.map((t) => t.cost));
     return {
-      key: k, tasks: ts.length, conversations: new Set(ts.map((t) => t.binding).filter(Boolean)).size,
+      key: k, conversations: new Set(ts.map((t) => t.conversation).filter((c) => c !== null)).size, tasks: ts.length,
+      offers: sum(ts.map((t) => t.offers)), multiOfferTasks: ts.filter((t) => t.offers > 1).length,
       quotesIssued: issued, quotesIssuedPromotional: sum(ts.map((t) => t.quotesIssuedPromotional)),
       tasksWithQuote: ts.filter((t) => t.quotesIssued > 0).length, quotesPerQuotingTask: mean(ts.filter((t) => t.quotesIssued > 0).map((t) => t.quotesIssued)),
-      offers: sum(ts.map((t) => t.distinctOffers)), multiOfferTasks: ts.filter((t) => t.distinctOffers > 1).length,
-      quotesRefused: sum(ts.map((t) => t.quotesRefused)), refusalCodes: Object.fromEntries(Object.entries(Object.groupBy(ts.flatMap((t) => t.refusalCodes), (c) => c)).map(([c, xs]) => [c, xs.length])),
-      retried: sum(ts.map((t) => t.retried)), idempotentReplays: sum(ts.map((t) => t.idempotentReplays)), reconciled: sum(ts.map((t) => t.reconciled)),
-      interestToIssueS: { p50: pct(ts.map((t) => (t.interestToIssueMs === null ? null : t.interestToIssueMs / 1000)), 0.5), p90: pct(ts.map((t) => (t.interestToIssueMs === null ? null : t.interestToIssueMs / 1000)), 0.9) },
-      handoffs: sum(ts.map((t) => t.handoffs)), tasksWithHandoff: ts.filter((t) => t.handoffs > 0).length,
-      agentMessages: sum(ts.map((t) => t.agentMessages)), delivered: sum(ts.map((t) => t.agentMessagesDelivered)), outboundFailed: sum(ts.map((t) => t.outboundFailed)),
-      costUsd: cost, costPerTask: cost === null ? null : cost / ts.length, costPerIssuedQuote: cost === null || issued === 0 ? null : cost / issued,
+      notIssued: countBy(ts.flatMap((t) => t.notIssued)),
+      settledBy: countBy(ts.flatMap((t) => t.settledBy)), ownerDeduplicated: sum(ts.map((t) => t.ownerDeduplicated)), extraAttempts: sum(ts.map((t) => t.extraAttempts)),
+      interestToIssueS: { p50: pct(seconds(ts.map((t) => t.interestToIssueMs)), 0.5), p90: pct(seconds(ts.map((t) => t.interestToIssueMs)), 0.9) },
+      handoffs: merge(ts.map((t) => t.handoffs)), tasksWithHandoff: ts.filter((t) => Object.keys(t.handoffs).length > 0).length,
+      agentMessages: sum(ts.map((t) => t.agentMessages)), delivered: sum(ts.map((t) => t.delivered)), cancelled: sum(ts.map((t) => t.cancelled)), failed: sum(ts.map((t) => t.failed)),
+      estimatedCostUsd: cost, costPerTask: cost === null ? null : cost / ts.length, costPerIssuedQuote: cost === null || issued === 0 ? null : cost / issued,
     };
   });
 }
@@ -134,26 +145,34 @@ const measured = (() => {
   const [first, last] = [inWindow[0], inWindow.at(-1)];
   return { usd: last.accountUsageUsd - first.accountUsageUsd, from: first.at, to: last.at, scope: 'whole provider account' };
 })();
+
 const report = {
-  generatedAt: facts.generatedAt, since: facts.since, costBasis: 'upper bound: every input token priced as not cached',
-  costs: { estimatedUsd: turns.some((t) => t.cost === null) ? null : sum(turns.map((t) => t.cost)), measured },
-  bySegmentAgentModel: groupTurns((t) => `${t.segment} | ${t.profile} | ${t.agent} | ${t.model}`),
-  bySegmentModel: groupTurns((t) => `${t.segment} | ${t.model}`),
+  generatedAt: facts.generatedAt, since: facts.since,
+  costs: { estimatedUsd: sumOrNull(turns.map((t) => t.cost)), estimateBasis: 'recorded calls, input priced as not cached', measured },
+  turnsBySegmentProfileModel: groupTurns((t) => `${t.segment} | ${t.profile} | ${t.agent} | ${t.model}`),
+  turnsBySegmentModel: groupTurns((t) => `${t.segment} | ${t.model}`),
+  tasksBySegmentProfile: groupTasks((t) => `${t.segment} | ${t.profile} | ${t.agent}`),
   tasksBySegment: groupTasks((t) => t.segment),
   longTurns: turns.filter((t) => t.modelCalls > 5).sort((a, b) => b.modelCalls - a.modelCalls).slice(0, 25).map((t) => ({ run: t.run, agent: t.agent, model: t.model, calls: t.modelCalls, latencyS: t.latencyMs === null ? null : Math.round(t.latencyMs / 1000), catalogRepeats: t.catalogRepeats, sequence: t.sequence.join(' > ') })),
 };
 
 const f = (x, d = 1) => (x === null || x === undefined ? '–' : typeof x === 'number' ? x.toFixed(d) : String(x));
+const j = (o) => JSON.stringify(o);
 const out = (l) => process.stdout.write(`${l}\n`);
-out(`R4 commercial baseline — facts since ${report.since}, generated ${report.generatedAt}; cost = ${report.costBasis}`);
-out(`cost: estimated US$ ${f(report.costs.estimatedUsd, 3)} (every turn in the export); measured US$ ${measured === null ? '– (no --measured)' : measured.usd === null ? `– (${measured.note})` : `${f(measured.usd, 3)} (${measured.scope}, ${measured.from} → ${measured.to})`}`);
-out('\nTURNS by segment | profile | agent | model');
-out('key | turns | answered | latency s p50/p90/p95 | calls/turn mean (p90) | turns>5 calls | in/out tokens per turn | est. cost US$ | catalog reads (repeats)/turn | errors/turn');
-for (const g of report.bySegmentAgentModel) out(`${g.key} | ${g.turns} | ${g.answered} | ${f(g.latencyS.p50)}/${f(g.latencyS.p90)}/${f(g.latencyS.p95)} | ${f(g.modelCallsPerTurn.mean, 2)} (${f(g.modelCallsPerTurn.p90, 0)}) | ${g.turnsOver5Calls} | ${f(g.tokensPerTurn.input, 0)}/${f(g.tokensPerTurn.output, 0)} | ${f(g.costUsd, 3)} | ${f(g.catalogReadsPerTurn, 2)} (${f(g.catalogRepeatsPerTurn, 2)}) | ${f(g.errorsPerTurn, 2)}`);
-out('\nCONVERSATION EPISODES (tasks) by segment');
-for (const g of report.tasksBySegment) {
-  out(`${g.key}: tasks ${g.tasks}, conversations ${g.conversations}; quotes issued ${g.quotesIssued} (promotional ${g.quotesIssuedPromotional}) in ${g.tasksWithQuote} tasks, ${f(g.quotesPerQuotingTask, 2)} per quoting task; offers ${g.offers} (tasks with >1 offer ${g.multiOfferTasks}); refused ${g.quotesRefused} ${JSON.stringify(g.refusalCodes)}; retried ${g.retried}, idempotent replays ${g.idempotentReplays}, reconciled ${g.reconciled}`);
-  out(`   interest→issue s p50/p90 ${f(g.interestToIssueS.p50, 0)}/${f(g.interestToIssueS.p90, 0)}; handoffs ${g.handoffs} (${g.tasksWithHandoff} tasks); agent messages ${g.agentMessages}, delivered/read ${g.delivered}, failed ${g.outboundFailed}; est. cost US$ ${f(g.costUsd, 3)}, per task ${f(g.costPerTask, 4)}, per issued quote ${f(g.costPerIssuedQuote, 4)}`);
+out(`R4 commercial baseline — facts since ${report.since}, generated ${report.generatedAt}`);
+out(`cost: estimated US$ ${f(report.costs.estimatedUsd, 3)} (${report.costs.estimateBasis}); measured US$ ${measured === null ? '– (no --measured)' : measured.usd === null ? `– (${measured.note})` : `${f(measured.usd, 3)} (${measured.scope}, ${measured.from} → ${measured.to})`}`);
+for (const [title, groups] of [['segment | profile | agent | model', report.turnsBySegmentProfileModel], ['segment | model', report.turnsBySegmentModel]]) {
+  out(`\nTURNS by ${title}`);
+  out('key | turns (input/continuation) | answered | latency s p50/p90/p95 | to delivery p50/p90 | calls/turn mean (p90) | turns>5 calls | in/out tokens/turn | est. US$ | catalog reads (repeats)/turn | decision errors | action errors');
+  for (const g of groups) out(`${g.key} | ${g.turns} (${g.inputTurns}/${g.continuations}) | ${g.answered} | ${f(g.latencyS.p50)}/${f(g.latencyS.p90)}/${f(g.latencyS.p95)} | ${f(g.deliveredS.p50)}/${f(g.deliveredS.p90)} | ${f(g.modelCallsPerTurn.mean, 2)} (${f(g.modelCallsPerTurn.p90, 0)}) | ${g.turnsOver5Calls} | ${f(g.tokensPerTurn.input, 0)}/${f(g.tokensPerTurn.output, 0)} | ${f(g.estimatedCostUsd, 3)} | ${f(g.catalogReadsPerTurn, 2)} (${f(g.catalogRepeatsPerTurn, 2)}) | ${j(g.decisionErrors)} | ${j(g.actionErrors)}`);
+}
+for (const [title, groups] of [['segment | profile | agent', report.tasksBySegmentProfile], ['segment', report.tasksBySegment]]) {
+  out(`\nCONVERSATIONS AND TASKS by ${title}`);
+  for (const g of groups) {
+    out(`${g.key}: conversations ${g.conversations}, tasks ${g.tasks}; offers ${g.offers} (tasks with >1 offer ${g.multiOfferTasks}); quotes issued ${g.quotesIssued} (promotional ${g.quotesIssuedPromotional}) in ${g.tasksWithQuote} tasks, ${f(g.quotesPerQuotingTask, 2)} per quoting task`);
+    out(`   not issued ${j(g.notIssued)}; settled by ${j(g.settledBy)}, owner-deduplicated ${g.ownerDeduplicated}, extra attempts ${g.extraAttempts}; interest→issue s p50/p90 ${f(g.interestToIssueS.p50, 0)}/${f(g.interestToIssueS.p90, 0)}`);
+    out(`   handoffs ${j(g.handoffs)} (${g.tasksWithHandoff} tasks); agent messages ${g.agentMessages}, delivered/read ${g.delivered}, cancelled ${g.cancelled}, failed ${g.failed}; est. US$ ${f(g.estimatedCostUsd, 3)}, per task ${f(g.costPerTask, 4)}, per issued quote ${f(g.costPerIssuedQuote, 4)}`);
+  }
 }
 out('\nLONGEST TURNS (> 5 model calls)');
 for (const t of report.longTurns) out(`${t.run.slice(0, 13)} ${t.agent} ${t.model} calls=${t.calls} latency=${f(t.latencyS, 0)}s repeats=${t.catalogRepeats}: ${t.sequence}`);
