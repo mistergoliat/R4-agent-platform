@@ -307,9 +307,22 @@ export class PostgresSalesStore {
     return row ? { executionKey: row.execution_key, taskId: row.task_id, workspaceVersion: row.workspace_version, request: row.request, requestSha256: row.request_sha256, recordedAt: row.recorded_at.toISOString() } : null;
   }
 
-  /** Logged before every POST of the frozen body. */
-  async recordQuoteV2Send(executionKey: string): Promise<void> {
-    await this.#pool.query('insert into sales.quote_v2_sends (execution_key) values ($1) on conflict do nothing', [executionKey]);
+  /**
+   * Logged before every POST of the frozen body. `validation` (0011, promotional quotes only): what the send was
+   * validated against immediately before it; null for every regular quote (the row is as before).
+   */
+  async recordQuoteV2Send(executionKey: string, validation: object | null = null): Promise<void> {
+    if (validation === null) {
+      await this.#pool.query('insert into sales.quote_v2_sends (execution_key) values ($1) on conflict do nothing', [executionKey]);
+      return;
+    }
+    await this.#pool.query('insert into sales.quote_v2_sends (execution_key, validation) values ($1, $2) on conflict do nothing', [executionKey, JSON.stringify(validation)]);
+  }
+
+  /** (0011) The validations recorded with this key's send attempts, oldest first (promotional quotes only). */
+  async quoteV2SendValidations(executionKey: string): Promise<object[]> {
+    const r = await this.#pool.query<{ validation: object }>('select validation from sales.quote_v2_sends where execution_key = $1 and validation is not null order by sent_at', [executionKey]);
+    return r.rows.map((row) => row.validation);
   }
 
   /** Milliseconds since the latest POST of this key started (database clock), or null when it was never sent. */

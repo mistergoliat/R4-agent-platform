@@ -44,7 +44,7 @@ const setAutonomy = (enabled: boolean) => controls.set({ scope: 'global', autono
 beforeAll(async () => {
   db = await createMigratedTestDatabase();
   pool = openPool(db.url);
-  expect((await migrateSales(pool)).applied).toEqual(['0006_sales_reference_application', '0007_sales_quote_v2_issuance', '0008_sales_autonomous_quote_decisions', '0009_sales_quote_intent_evidence', '0010_sales_checkout_requests']);
+  expect((await migrateSales(pool)).applied).toEqual(['0006_sales_reference_application', '0007_sales_quote_v2_issuance', '0008_sales_autonomous_quote_decisions', '0009_sales_quote_intent_evidence', '0010_sales_checkout_requests', '0011_sales_quote_send_validation']);
   controls = new AutonomyControls({ store: new PostgresProductionStore(pool), logger });
   // A fresh deployment is autonomous for nobody (global DISABLED): the matrix runs with autonomy enabled unless a case engages the switch.
   expect((await controls.admit()).admitted).toBe(false);
