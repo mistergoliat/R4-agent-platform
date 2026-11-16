@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { ModelRequest } from '@r4/model-gateway';
 import { DefaultModelGateway } from '@r4/model-gateway';
 import { createSilentLogger } from '@r4/observability';
-import { ONE_DOCUMENT_REMINDER, ONE_DOCUMENT_RULE, OpenAICompatibleModelProvider, describeModelConfig, estimateTokens, loadOpenAICompatibleConfig, renderMessages, type FetchLike, type OpenAICompatibleConfig } from '@r4-adapters/openai-compatible';
+import { CONTEXT_SECTIONS } from '@r4/contracts';
+import { ONE_DOCUMENT_REMINDER, ONE_DOCUMENT_RULE, OpenAICompatibleModelProvider, RENDER_SECTION_ORDER, describeModelConfig, estimateTokens, loadOpenAICompatibleConfig, renderContext, renderMessages, type FetchLike, type OpenAICompatibleConfig } from '@r4-adapters/openai-compatible';
 import { captureLogs } from '../../support/logs.js';
 
 const KEY = 'sk-test-DO-NOT-LEAK-0123456789abcdef';
@@ -212,6 +213,34 @@ describe('OpenAICompatibleModelProvider', () => {
     expect(last.content.endsWith(`\n${ONE_DOCUMENT_REMINDER}`)).toBe(true);
     // Agent-neutral: the adapter never names a decision type of the R4 protocol.
     expect(`${ONE_DOCUMENT_RULE} ${ONE_DOCUMENT_REMINDER}`).not.toMatch(/read_capability|respond|propose_action/);
+  });
+
+  it('lays the context out from stable to variable so consecutive calls share a cacheable prefix, dropping nothing', () => {
+    // Every section of the contract, exactly once: a new section can never be left out of the rendered context.
+    expect([...RENDER_SECTION_ORDER].sort()).toEqual([...CONTEXT_SECTIONS].sort());
+    const item = (itemId: string, content: unknown) => ({ itemId, content, provenance: { derivedFromCount: 0 }, assertions: [], sensitivity: 'NORMAL' });
+    // Sections in the compiler's order, as a stored snapshot has them; only the fields the renderer reads.
+    const build = (iteration: number, asOf: string, observations: string[]) => {
+      const sections: Record<string, unknown[]> = Object.fromEntries(CONTEXT_SECTIONS.map((s) => [s, []]));
+      Object.assign(sections, {
+        agent: [item('agent', { instructions: 'definition' })],
+        task: [item('task', { iteration, status: 'running' })],
+        capabilities: [item('cap', { capabilityId: 'catalog.search' })],
+        observations: observations.map((o) => item(o, { payload: o })),
+        conversation: [item('m1', { text: 'hola' })],
+      });
+      return { schemaVersion: 1, asOf, scope: { iteration }, conflicts: [], omissions: {}, sections } as unknown as NonNullable<ModelRequest['context']>;
+    };
+    const first = renderContext(build(1, '2026-11-12T18:00:00.000Z', ['o1']));
+    const second = renderContext(build(2, '2026-11-12T18:00:09.000Z', ['o1', 'o2']));
+    const doc = JSON.parse(first.slice(first.indexOf('\n') + 1)) as Record<string, object>;
+    expect(Object.keys(doc.sections!)).toEqual(['agent', 'capabilities', 'conversation', 'observations', 'task']);
+    expect(Object.keys(doc).slice(-2)).toEqual(['asOf', 'iteration']);
+    // The next call repeats everything up to the newest observation: definition, capabilities, conversation, o1.
+    let shared = 0;
+    while (first[shared] === second[shared]) shared += 1;
+    expect(first.slice(0, shared)).toContain('"o1"');
+    expect(first.slice(0, shared)).not.toContain('"running"');
   });
 
   it('leaves non-JSON output for the platform parser to reject (no silent repair)', async () => {

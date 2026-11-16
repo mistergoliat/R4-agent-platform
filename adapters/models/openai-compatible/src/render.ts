@@ -1,4 +1,4 @@
-import type { CompiledContext, CompiledContextItem } from '@r4/contracts';
+import type { CompiledContext, CompiledContextItem, ContextSection } from '@r4/contracts';
 import type { ModelRequest } from '@r4/model-gateway';
 
 export interface ChatMessage {
@@ -11,8 +11,8 @@ export interface ChatMessage {
  * The kernel's messages keep their roles; the CompiledContext travels as one
  * JSON document — the same structure the ContextSnapshot recorded, with only
  * default-valued fields left out (empty sections and assertions, NORMAL
- * sensitivity, a zero derivation count). Nothing is summarized, reordered
- * or truncated here.
+ * sensitivity, a zero derivation count). Nothing is summarized or
+ * truncated here; sections are only laid out in RENDER_SECTION_ORDER.
  */
 export function renderMessages(request: ModelRequest): ChatMessage[] {
   const messages: ChatMessage[] = request.messages.map((m) => ({ role: m.role === 'tool' ? 'user' : m.role, content: m.content }));
@@ -34,15 +34,32 @@ export const ONE_DOCUMENT_RULE =
   'One answer carries one document, never two or more. When several pieces of information or several steps are needed, return only the first one now; its result arrives in the next turn. Write nothing before or after the document: no prose, no notes, no code fences.';
 export const ONE_DOCUMENT_REMINDER = 'Answer with exactly one JSON document and nothing else. If you need several steps, return only the first one.';
 
+/**
+ * Sections from the most stable to the most variable, so consecutive calls share the longest identical prefix and
+ * the provider's prompt cache serves it: the agent definition and capabilities do not change inside a task, the
+ * conversation and observations grow at their end, the task's counters change on every call. The call's asOf and
+ * iteration close the document for the same reason. Every CompiledContext section appears exactly once (a unit test
+ * holds this list to CONTEXT_SECTIONS).
+ */
+export const RENDER_SECTION_ORDER = [
+  'agent', 'capabilities', 'conversation', 'episodicMemory', 'derivedMemory', 'workingMemory',
+  'history', 'observations', 'authoritativeState', 'goals', 'task',
+] as const satisfies readonly ContextSection[];
+
 export function renderContext(context: CompiledContext): string {
-  const sections = Object.fromEntries(Object.entries(context.sections).filter(([, items]) => items.length > 0).map(([name, items]) => [name, items.map(renderItem)]));
+  const sections = Object.fromEntries(
+    RENDER_SECTION_ORDER.flatMap((name) => {
+      const items = context.sections[name] ?? [];
+      return items.length > 0 ? [[name, items.map(renderItem)]] : [];
+    }),
+  );
   const document = {
     schemaVersion: context.schemaVersion,
-    asOf: context.asOf,
-    iteration: context.scope.iteration,
     sections,
     ...(context.conflicts.length > 0 ? { conflicts: context.conflicts } : {}),
     ...(Object.keys(context.omissions).length > 0 ? { omissions: context.omissions } : {}),
+    asOf: context.asOf,
+    iteration: context.scope.iteration,
   };
   return `Structured context (compiled by the platform; authority and freshness per item). Decide the next step.\n${JSON.stringify(document)}`;
 }
