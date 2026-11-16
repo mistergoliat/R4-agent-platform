@@ -55,7 +55,7 @@ describe('Core stays Sales-free', () => {
     const core = files(join(ROOT, 'packages/persistence-postgres/migrations'), '.sql').map((f) => readFileSync(f, 'utf8')).join('\n');
     expect(core).not.toMatch(/\bsales\b/i);
     const pack = files(join(ROOT, 'agents/sales/migrations'), '.sql');
-    expect(pack.map(rel)).toEqual(['agents/sales/migrations/0006_sales_reference_application.sql', 'agents/sales/migrations/0007_sales_quote_v2_issuance.sql', 'agents/sales/migrations/0008_sales_autonomous_quote_decisions.sql', 'agents/sales/migrations/0009_sales_quote_intent_evidence.sql', 'agents/sales/migrations/0010_sales_checkout_requests.sql']);
+    expect(pack.map(rel)).toEqual(['agents/sales/migrations/0006_sales_reference_application.sql', 'agents/sales/migrations/0007_sales_quote_v2_issuance.sql', 'agents/sales/migrations/0008_sales_autonomous_quote_decisions.sql', 'agents/sales/migrations/0009_sales_quote_intent_evidence.sql', 'agents/sales/migrations/0010_sales_checkout_requests.sql', 'agents/sales/migrations/0011_sales_quote_send_validation.sql']);
     const sql = readFileSync(pack[0]!, 'utf8');
     // Sales tables are in their own schema and never reference an R4 runtime table.
     expect(sql).not.toMatch(/references\s+(public\.)?(agent_tasks|agent_runs|observations|action_\w+|goals|memory_entries)/i);
