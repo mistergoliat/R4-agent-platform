@@ -11,6 +11,7 @@ import {
   type EvaluationDefinition,
 } from '@r4/evaluation';
 import { SalesClaimVerifier } from './claims.js';
+import { SalesCatalogEvidenceEvaluator } from './catalog-evidence.js';
 import { SalesCorrectionEvaluator, SalesQuoteEvaluator, operationClaimDetector, quoteClaimDetector, salesKnownState, salesQuestionClassifier, salesWorkspaceHistories } from './evaluators.js';
 import { salesDomainView } from './projection.js';
 import { SALES_CLAIM_EXTRACTION_RUBRIC, SALES_DS1_RUBRIC, SALES_OBJECTIVE_RUBRIC, SALES_QUESTION_RUBRIC } from './rubrics.js';
@@ -18,7 +19,7 @@ import { salesTaxonomy } from './taxonomy.js';
 
 export const SALES_EVALUATION_ID = 'sales.reference';
 /** 2: DS-1 operation-claim evaluator (`operation_claim_without_receipt`). 3: DS-1 semantic rubric (judge only). */
-export const SALES_EVALUATION_VERSION = 3;
+export const SALES_EVALUATION_VERSION = 4;
 
 /**
  * The Sales evaluation definition (R4-G): the generic deterministic
@@ -39,6 +40,8 @@ export function salesEvaluationDefinition(): EvaluationDefinition {
       // DS-1: offline measurement only; it does not prevent a wrong promise in production (D7-3).
       new ReceiptBackedClaimEvaluator({ ref: { id: 'sales.operation_claims', version: 1 }, detector: operationClaimDetector, code: 'operation_claim_without_receipt' }),
       new SalesQuoteEvaluator(),
+      // sales-web@7 regressions: re-read loop, repeated Discover, expired amounts, cards without sellable evidence.
+      new SalesCatalogEvidenceEvaluator(),
       new StateContinuityEvaluator({ ref: { id: 'sales.workspace_continuity', version: 1 }, accessors: [salesWorkspaceHistories] }),
       new SalesCorrectionEvaluator(),
       new KnownInformationQuestionEvaluator({ ref: { id: 'sales.known_questions', version: 1 }, classifier: salesQuestionClassifier, state: salesKnownState }),
