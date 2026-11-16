@@ -231,8 +231,8 @@ describe('OpenAICompatibleModelProvider', () => {
       });
       return { schemaVersion: 1, asOf, scope: { iteration }, conflicts: [], omissions: {}, sections } as unknown as NonNullable<ModelRequest['context']>;
     };
-    const first = renderContext(build(1, '2026-11-12T18:00:00.000Z', ['o1']));
-    const second = renderContext(build(2, '2026-11-12T18:00:09.000Z', ['o1', 'o2']));
+    const first = renderContext(build(1, '2026-11-12T18:00:00.000Z', ['o1']), 'cache');
+    const second = renderContext(build(2, '2026-11-12T18:00:09.000Z', ['o1', 'o2']), 'cache');
     const doc = JSON.parse(first.slice(first.indexOf('\n') + 1)) as Record<string, object>;
     expect(Object.keys(doc.sections!)).toEqual(['agent', 'capabilities', 'conversation', 'observations', 'task']);
     expect(Object.keys(doc).slice(-2)).toEqual(['asOf', 'iteration']);
@@ -241,6 +241,25 @@ describe('OpenAICompatibleModelProvider', () => {
     while (first[shared] === second[shared]) shared += 1;
     expect(first.slice(0, shared)).toContain('"o1"');
     expect(first.slice(0, shared)).not.toContain('"running"');
+    expect(Object.isFrozen(RENDER_SECTION_ORDER)).toBe(true);
+    // The default stays the compiled layout every definition was evaluated with: asOf and iteration first, compiler order.
+    const compiled = JSON.parse(renderContext(build(1, '2026-11-12T18:00:00.000Z', ['o1'])).split('\n')[1]!) as Record<string, object>;
+    expect(Object.keys(compiled).slice(0, 3)).toEqual(['schemaVersion', 'asOf', 'iteration']);
+    expect(Object.keys(compiled.sections!)).toEqual(CONTEXT_SECTIONS.filter((s) => ['agent', 'capabilities', 'conversation', 'observations', 'task'].includes(s)));
+  });
+
+  it('R4_MODEL_RENDER_ORDER selects the layout: compiled by default, cache only when set, anything else refused', () => {
+    const base = { R4_MODEL_PROVIDER: 'openai_compatible', R4_MODEL_BASE_URL: 'https://example.test/v1', R4_MODEL_NAME: 'm', R4_MODEL_CONTEXT_WINDOW_TOKENS: '64000' };
+    expect(loadOpenAICompatibleConfig(base)?.renderOrder).toBe('compiled');
+    expect(loadOpenAICompatibleConfig({ ...base, R4_MODEL_RENDER_ORDER: '' })?.renderOrder).toBe('compiled');
+    expect(loadOpenAICompatibleConfig({ ...base, R4_MODEL_RENDER_ORDER: 'cache' })?.renderOrder).toBe('cache');
+    expect(() => loadOpenAICompatibleConfig({ ...base, R4_MODEL_RENDER_ORDER: 'fast' })).toThrow();
+  });
+
+  it('a token count past the safe-integer range is dropped, never failing the call', async () => {
+    const { fetch } = fakeFetch(() => ({ status: 200, body: { ...completion('{"type":"respond","content":"hola"}'), usage: { prompt_tokens: 10, completion_tokens: 2, prompt_tokens_details: { cached_tokens: 1e20 } } } }));
+    const result = await new DefaultModelGateway({ provider: new OpenAICompatibleModelProvider(CONFIG, { fetch }), logger: createSilentLogger() }).generate(request());
+    expect(result.ok).toBe(true);
   });
 
   it('leaves non-JSON output for the platform parser to reject (no silent repair)', async () => {

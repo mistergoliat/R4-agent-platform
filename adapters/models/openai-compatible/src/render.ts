@@ -11,16 +11,17 @@ export interface ChatMessage {
  * The kernel's messages keep their roles; the CompiledContext travels as one
  * JSON document — the same structure the ContextSnapshot recorded, with only
  * default-valued fields left out (empty sections and assertions, NORMAL
- * sensitivity, a zero derivation count). Nothing is summarized or
- * truncated here; sections are only laid out in RENDER_SECTION_ORDER.
+ * sensitivity, a zero derivation count). Nothing is summarized, reordered
+ * or truncated here, except that the 'cache' render order lays the sections
+ * out in RENDER_SECTION_ORDER (R4_MODEL_RENDER_ORDER; 'compiled' is the default).
  */
-export function renderMessages(request: ModelRequest): ChatMessage[] {
+export function renderMessages(request: ModelRequest, order: RenderOrder = 'compiled'): ChatMessage[] {
   const messages: ChatMessage[] = request.messages.map((m) => ({ role: m.role === 'tool' ? 'user' : m.role, content: m.content }));
   const json = request.outputContract.kind === 'json';
   if (json) {
     messages.push({ role: 'system', content: `Output: exactly one JSON document matching the "${request.outputContract.name}" JSON Schema below. ${ONE_DOCUMENT_RULE}\n${JSON.stringify(request.outputContract.schema)}` });
   }
-  if (request.context) messages.push({ role: 'user', content: `${renderContext(request.context)}${json ? `\n${ONE_DOCUMENT_REMINDER}` : ''}` });
+  if (request.context) messages.push({ role: 'user', content: `${renderContext(request.context, order)}${json ? `\n${ONE_DOCUMENT_REMINDER}` : ''}` });
   return messages;
 }
 
@@ -41,12 +42,31 @@ export const ONE_DOCUMENT_REMINDER = 'Answer with exactly one JSON document and 
  * iteration close the document for the same reason. Every CompiledContext section appears exactly once (a unit test
  * holds this list to CONTEXT_SECTIONS).
  */
-export const RENDER_SECTION_ORDER = [
+export const RENDER_SECTION_ORDER: readonly ContextSection[] = Object.freeze([
   'agent', 'capabilities', 'conversation', 'episodicMemory', 'derivedMemory', 'workingMemory',
   'history', 'observations', 'authoritativeState', 'goals', 'task',
-] as const satisfies readonly ContextSection[];
+] as const satisfies readonly ContextSection[]);
 
-export function renderContext(context: CompiledContext): string {
+/**
+ * 'compiled': the sections in the compiler's order with asOf and iteration first (the layout every definition was
+ * evaluated with). 'cache': RENDER_SECTION_ORDER with asOf and iteration last: the same content and a provider-cacheable
+ * prefix, but the newest customer message is no longer near the end, so it ships behind a flag and a model evaluation.
+ */
+export type RenderOrder = 'compiled' | 'cache';
+
+export function renderContext(context: CompiledContext, order: RenderOrder = 'compiled'): string {
+  if (order === 'compiled') {
+    const sections = Object.fromEntries(Object.entries(context.sections).filter(([, items]) => items.length > 0).map(([name, items]) => [name, items.map(renderItem)]));
+    const document = {
+      schemaVersion: context.schemaVersion,
+      asOf: context.asOf,
+      iteration: context.scope.iteration,
+      sections,
+      ...(context.conflicts.length > 0 ? { conflicts: context.conflicts } : {}),
+      ...(Object.keys(context.omissions).length > 0 ? { omissions: context.omissions } : {}),
+    };
+    return `Structured context (compiled by the platform; authority and freshness per item). Decide the next step.\n${JSON.stringify(document)}`;
+  }
   const sections = Object.fromEntries(
     RENDER_SECTION_ORDER.flatMap((name) => {
       const items = context.sections[name] ?? [];

@@ -71,7 +71,7 @@ export class OpenAICompatibleModelProvider implements ModelProvider {
 
   async invoke(request: ModelRequest, signal: AbortSignal): Promise<ProviderResponse> {
     const config = this.#config;
-    const messages = renderMessages(request);
+    const messages = renderMessages(request, config.renderOrder ?? 'compiled');
     const maxTokens = outputCeiling(request.limits.maxOutputTokens, config.maxOutputTokens);
     const estimated = estimateTokens(messages);
     if (estimated + (maxTokens ?? 0) > config.contextWindowTokens) {
@@ -141,7 +141,7 @@ export class OpenAICompatibleModelProvider implements ModelProvider {
 
 /** A token count a server may report, or null when it is absent or not a non-negative integer. */
 function count(value: unknown): number | null {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
 
 function classifyStatus(status: number, body: string, config: OpenAICompatibleConfig): ModelProviderError {
