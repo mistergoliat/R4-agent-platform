@@ -53,13 +53,15 @@ export interface TestbedOptions {
   readonly gatewayLogger?: Logger;
   /** (ADR-045) wa_ids served by the lane profile sales-production@13 (each must also be allowlisted). Absent: no lane. */
   readonly lane?: readonly string[];
+  /** (ADR-045 amendment 1) The lane profile (default sales-production@13); a percentage > 0 requires sales-production@19. */
+  readonly laneProfile?: string;
   /** (F-ADV-2) Profiles whose agent-opened human requests get the pack notice (default: the composition's own scope). */
   readonly humanRequestNoticeProfiles?: readonly string[];
 }
 
 /** (ADR-045) The gateway environment of a lane (or its absence). */
-export function laneEnv(lane: readonly string[] | undefined): Record<string, string> {
-  return lane ? { R4_PROD_LANE_PROFILE: 'sales-production@13', R4_PROD_LANE_ALLOWLIST: lane.map(keyOf).join(',') } : {};
+export function laneEnv(lane: readonly string[] | undefined, profile = 'sales-production@13'): Record<string, string> {
+  return lane ? { R4_PROD_LANE_PROFILE: profile, R4_PROD_LANE_ALLOWLIST: lane.map(keyOf).join(',') } : {};
 }
 
 /**
@@ -85,6 +87,7 @@ export class LiveOpsTestbed {
   #workers: WorkerPlatform[] = [];
   readonly #catalog: (CatalogPort & { readonly bindingKind: string }) | undefined;
   #identityVerification: IdentityVerificationInspectionOptions | undefined;
+  #laneProfile: string | undefined;
   #gatewayLogger: Logger | undefined;
   #timestamp = Math.floor(Date.now() / 1000) - 600;
 
@@ -125,14 +128,14 @@ export class LiveOpsTestbed {
       R4_WHATSAPP_ACCESS_TOKEN: ACCESS_TOKEN,
       R4_WHATSAPP_PHONE_NUMBER_ID: CANARY_PHONE_ID,
       R4_WHATSAPP_GRAPH_BASE_URL: provider.baseUrl,
-      ...laneEnv(options.lane),
+      ...laneEnv(options.lane, options.laneProfile),
       ...options.env,
     };
     const production = loadProductionConfig(env);
     const logger = createSilentLogger();
     const api = await createPlatform({ databaseUrl: db.url, host: '127.0.0.1', port: 0, logLevel: 'silent', agentDefinitionsDir: options.agentDefinitionsDir ?? SALES_AGENT_DIR, dbPoolMax: 4 }, { logger, humanContext: () => OPERATOR });
     // (ADR-045) As a deployment: the lane definition is registered before a gateway with a lane starts.
-    if (options.lane) await registerLaneDefinition({ ...env, R4_DATABASE_URL: db.url });
+    if (options.lane) await registerLaneDefinition({ ...env, R4_DATABASE_URL: db.url }, options.laneProfile);
     const gateway = await startGateway(db.url, pool, production, env, options.identityVerification, options.gatewayLogger, options.humanRequestNoticeProfiles);
     const queue: QueuedStep[] = [];
     const model = new FakeModelProvider((request, index) => {
@@ -143,6 +146,7 @@ export class LiveOpsTestbed {
     const bed = new LiveOpsTestbed({ db, pool, api, gateway, provider, production, model, queue, env: { ...env, R4_DATABASE_URL: db.url }, ...(options.catalog ? { catalog: options.catalog } : {}) });
     bed.#identityVerification = options.identityVerification;
     bed.#gatewayLogger = options.gatewayLogger;
+    bed.#laneProfile = options.laneProfile;
     if (options.autonomy) await bed.setAutonomy(true);
     return bed;
   }
@@ -155,7 +159,7 @@ export class LiveOpsTestbed {
   async redeployGateway(rollout: { readonly allowlist: readonly string[]; readonly lane?: readonly string[]; readonly percent?: number }): Promise<void> {
     const { R4_PROD_LANE_PROFILE: _p, R4_PROD_LANE_ALLOWLIST: _a, ...rest } = this.env;
     const env = {
-      ...rest, R4_PROD_ROLLOUT_ALLOWLIST: rollout.allowlist.map(keyOf).join(','), ...laneEnv(rollout.lane),
+      ...rest, R4_PROD_ROLLOUT_ALLOWLIST: rollout.allowlist.map(keyOf).join(','), ...laneEnv(rollout.lane, this.#laneProfile),
       ...(rollout.percent === undefined ? {} : { R4_PROD_ROLLOUT_PERCENT: String(rollout.percent) }),
     };
     const production = loadProductionConfig(env);
@@ -332,10 +336,10 @@ export const complete = (summary = 'conversation ended') => ({ type: 'structured
 /** An invalid decision (schema violation): ADR-008 invalid step, ADR-028 recoverable run failure. */
 export const invalid = () => ({ type: 'structured' as const, data: { type: 'respond' } });
 
-/** (ADR-045) `production:sales:bootstrap --lane`, as a deployment runs it before the lane is configured: registers v13 only. */
-export async function registerLaneDefinition(env: Readonly<Record<string, string | undefined>>): Promise<string[]> {
+/** (ADR-045) `production:sales:bootstrap --lane`, as a deployment runs it before the lane is configured: registers the lane definition only (v13 by default). */
+export async function registerLaneDefinition(env: Readonly<Record<string, string | undefined>>, profile = 'sales-production@13'): Promise<string[]> {
   const lines: string[] = [];
-  const code = await runProductionBootstrap({ ...env, R4_PROD_POLICY_PROFILE: 'sales-production@13' }, { out: (l) => lines.push(l), err: (l) => lines.push(l) }, { lane: true });
+  const code = await runProductionBootstrap({ ...env, R4_PROD_POLICY_PROFILE: profile }, { out: (l) => lines.push(l), err: (l) => lines.push(l) }, { lane: true });
   if (code !== 0) throw new Error(`lane bootstrap failed: ${lines.join(' | ')}`);
   return lines;
 }

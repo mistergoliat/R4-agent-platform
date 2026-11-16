@@ -59,7 +59,7 @@ import { SALES_CANARY_ONLY_PROFILES, assertF1CanaryLimits, isF1CanaryProfile } f
 import { SALES_LANE_PROFILES, isCheckoutLaneProfile, isQuoteLaneProfile, isSalesLaneProfile } from './profile-v15.js';
 import { SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_VARIANT_AVAILABILITY_PROFILES } from './profile-v17.js';
 import { SALES_QUOTE_DOCUMENT_PROFILES, SALES_QUOTE_LANE_V18_PROFILE_LABEL } from './profile-v18.js';
-import { SALES_F1_SHIPPING_PROFILES, SALES_INTENT_ACCEPTANCE_PROFILES } from './profile-v19.js';
+import { SALES_F1_SHIPPING_PROFILES, SALES_INTENT_ACCEPTANCE_PROFILES, SALES_QUOTE_LANE_V19_PROFILE_LABEL } from './profile-v19.js';
 import { quoteDocumentDelivery } from '../capabilities/quote-document.js';
 import { catalogDiscoverCapability } from '../capabilities/catalog-discover.js';
 import type { CatalogDiscoverPort } from '@r4-adapters/catalog-http';
@@ -394,6 +394,8 @@ export const SALES_WEB_HUMAN_REQUEST_NOTICE_TEXT =
 export function composeSalesGateway(options: SalesGatewayOptions): { bindings: GatewayBindings; whatsapp: WhatsAppCloudConfig; describe: Record<string, string | boolean> } {
   const config = assertProductionMode(options.production.config);
   const profile = selectedSalesProductionProfile(config);
+  const lane = salesGatewayLane(options.env, options.pool);
+  assertSalesGatewayCohort(config.rollout.percent, lane);
   const whatsapp = loadWhatsAppCloudConfig(options.env, { allowNetwork: config.allowNetwork });
   const now = options.now ?? (() => new Date());
   const media = salesMediaPerception(options.env, whatsapp, config.allowNetwork, isCustomerIdentityProfile(profile), now);
@@ -409,7 +411,7 @@ export function composeSalesGateway(options: SalesGatewayOptions): { bindings: G
       // (Owner decision 2026-11-12) Worded by the team's service hours at the moment each notice is created.
       runFailureFallback: { text: () => salesRunFailureNotice(now()) },
       humanRequestNotice: { text: () => salesHumanRequestNotice(now()), profiles: SALES_HUMAN_REQUEST_NOTICE_PROFILES },
-      ...laneOf(salesGatewayLane(options.env, options.pool)),
+      ...laneOf(lane),
       ...(media.perception ? { media: media.perception } : {}),
       // (R4-J4-R4) v8 never runs without the inbound inspector, requested in full (ADR-040).
       ...(isCustomerIdentityProfile(profile) ? { inspection: salesGatewayInspection(profile, options.env, { transport: options.identityFetch, allowedHosts: options.allowedHosts }) } : {}),
@@ -483,6 +485,24 @@ export function salesGatewayLane(env: Readonly<Record<string, string | undefined
   const keys = [...new Set(raw.split(/[\s,]+/).map((k) => k.trim().toLowerCase()).filter(Boolean))];
   if (keys.some((k) => !/^[0-9a-f]{64}$/.test(k))) throw new Error('refusing the gateway lane: R4_PROD_LANE_ALLOWLIST must list 64-hex conversation keys (--identity-key)');
   return { conversationKeys: keys, profile, taskFactory: salesConversationTaskFactory(pool, salesProductionAgentVersion(profile)) };
+}
+
+/**
+ * (ADR-045 amendment 1) The lane profiles the owner approved to serve the rollout cohort, i.e. real customers. A code
+ * constant on purpose: adding a profile is a reviewed change, never a variable.
+ */
+export const SALES_COHORT_LANE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V19_PROFILE_LABEL]);
+
+/**
+ * (ADR-045 amendment 1) With R4_PROD_ROLLOUT_PERCENT > 0 the WhatsApp gateway serves the cohort only through an
+ * owner-approved lane profile: without a lane the cohort would open, autonomous, on the main profile; with another lane
+ * profile (@13–@18) real customers would get a profile never approved for them. At 0 % nothing is required (as before).
+ */
+export function assertSalesGatewayCohort(percent: number, lane: ConversationLane | undefined): void {
+  if (percent <= 0) return;
+  if (!lane) throw new Error(`refusing the gateway: R4_PROD_ROLLOUT_PERCENT=${percent} without a lane would serve the cohort with the main profile; compose ${SALES_LANE_ENV.join(' and ')} with ${SALES_COHORT_LANE_PROFILES.join(', ')}, or keep the percentage at 0`);
+  const label = profileLabel(lane.profile);
+  if (!SALES_COHORT_LANE_PROFILES.includes(label)) throw new Error(`refusing the gateway: R4_PROD_ROLLOUT_PERCENT=${percent} with the lane profile ${label}, which is not approved for the rollout cohort (${SALES_COHORT_LANE_PROFILES.join(', ')})`);
 }
 
 function laneOf(lane: ConversationLane | undefined): { lane?: ConversationLane } {

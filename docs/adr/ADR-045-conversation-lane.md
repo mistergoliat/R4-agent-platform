@@ -105,36 +105,61 @@ no daba a clientes reales el perfil probado. Resuelve el prerrequisito P1 de `R4
 
 1. **Regla** (`laneRoute`, `packages/live-ops/src/rollout.ts`, pura): con carril compuesto, un binding NUEVO abre con
    el perfil del carril si su clave está en `R4_PROD_LANE_ALLOWLIST` o si su elegibilidad es `cohort`; si no, con el
-   perfil principal. Sin carril, todo es exactamente como antes (la cohorte va al principal). La precedencia del
-   rollout no cambia (deny > allowlist > porcentaje) y el bucket es el mismo (`rolloutBucket`, derivado de la clave):
-   determinista y auditable, y `eligibility_reason` sigue registrando `allowlisted` o `cohort`.
-2. **Sin variable nueva.** El porcentaje es el opt-in: en `0 %` (hoy) nada cambia. Una segunda variable («el carril toma
-   la cohorte») agregaría justo el estado que el owner quiere evitar (porcentaje > 0 con la cohorte en `@3`). El
-   carril sigue sin ampliar la autonomía: la cohorte ya es elegible por el rollout, y una conversación denegada nunca
-   es `cohort`.
-3. **Estabilidad.** Igual que en la decisión 2: la asignación se decide sólo al abrir el binding y se persiste
+   perfil principal. La precedencia del rollout no cambia (deny > allowlist > porcentaje) y el bucket es el mismo
+   (`rolloutBucket`, derivado de la clave): determinista y auditable. `eligibility_reason` sigue registrando
+   `allowlisted` o `cohort`, y `rollout_fingerprint` la configuración con que se abrió el binding.
+2. **Sin variable nueva; el porcentaje es el opt-in.** En `0 %` (hoy) nada cambia. Una segunda variable («el carril
+   toma la cohorte») agregaría justo el estado que el owner quiere evitar (porcentaje > 0 con la cohorte en `@3`).
+3. **Composición que se niega** (`assertSalesGatewayCohort`, gateway de WhatsApp de Sales). Con
+   `R4_PROD_ROLLOUT_PERCENT > 0` el gateway no arranca:
+   - **sin carril**: la cohorte abriría autónoma en el perfil principal;
+   - **con un perfil de carril fuera de `SALES_COHORT_LANE_PROFILES`**, que hoy es sólo `sales-production@19`.
+     `salesGatewayLane` acepta @13–@19 (por ejemplo @16, con F-ADV-1, o @15, el carril de Checkout), y ninguno de esos
+     está aprobado para clientes reales. La lista es una constante en código: agregar un perfil es un cambio revisado.
+
+   En `0 %` no se exige nada, con o sin carril (exactamente como antes). El gateway web (ADR-046) no cambia.
+4. **Estabilidad.** Igual que en la decisión 2: la asignación se decide sólo al abrir el binding y se persiste
    (`profile`, `autonomy`, `eligibility_reason`, `rollout_fingerprint`). Cambiar el porcentaje no mueve un binding
-   abierto: sigue con su perfil y su autonomía hasta que su tarea termina (completada, cancelada o fallida). Las
-   conversaciones nuevas siguen el porcentaje vigente. Un binding no puede cambiar de perfil con la tarea viva sin
-   partir la conversación en dos tareas, y eso es lo que este modelo evita.
-4. **Sin doble proceso.** La tarea de un binding del carril se fija a la versión de la definición del carril, y sólo
+   abierto ni le quita la autonomía: sigue con su perfil hasta que su tarea termina (completada, cancelada o fallida).
+   Las conversaciones nuevas siguen el porcentaje vigente. Mover un binding con la tarea viva partiría la conversación
+   en dos tareas fijadas a dos definiciones, y eso es lo que este modelo evita.
+5. **Sin doble proceso.** La tarea de un binding del carril se fija a la versión de la definición del carril, y sólo
    el worker del carril (`servedAgents`) la toma. El índice único de bindings abiertos y la clave de creación
    `conversation-<bindingId>` dan un binding y una tarea por conversación también con primeros mensajes concurrentes.
-5. **Rollback.** Bajar `R4_PROD_ROLLOUT_PERCENT` (o a `0`) y reiniciar el gateway. Ninguna conversación nueva entra a
-   la cohorte. Las abiertas de la cohorte **siguen atendidas por el carril** hasta que su tarea termina, así que el
-   worker del carril debe seguir en marcha; no quedan tareas huérfanas. Para cortar ya: denylist (por clave) o
-   interruptor de autonomía (todo). Para devolverlas al perfil principal: cancelar sus tareas (`tasks cancel`); el
-   siguiente mensaje abre con la asignación vigente. Quitar el carril entero sigue el runbook de la decisión 7.
+6. **Rollback y su alcance real.** Bajar `R4_PROD_ROLLOUT_PERCENT` (o a `0`) y reiniciar el gateway corta la
+   **entrada**: ninguna conversación nueva entra a la cohorte. **No revoca** la autonomía de los bindings de cohorte ya
+   abiertos. Las tareas de conversación de Sales rara vez terminan solas, así que «hasta que su tarea termina» suele
+   significar indefinidamente. El worker del carril debe seguir en marcha mientras existan, y no quedan tareas
+   huérfanas. Para cortarlas:
+   - **dirigido**: listar los bindings abiertos con `eligibility_reason = 'cohort'` (y, si hace falta, los de un
+     `rollout_fingerprint` anterior) y cancelar cada tarea con `tasks cancel`. Advertencia de la decisión 7.2: cancelar
+     descarta las entradas aún no procesadas, así que primero se deja que el worker del carril las responda. El
+     siguiente mensaje de esa conversación abre con la asignación vigente;
+   - **por clave**: denylist (retiene esas conversaciones para una persona);
+   - **total**: interruptor de autonomía global.
+
+   Seguimiento recomendado, **no implementado**: un comando de control que retenga (hold) o drene los bindings de
+   cohorte cuyo `rollout_fingerprint` ya no es el vigente.
+7. **Clientes que vuelven.** Un cliente con un binding `@3` abierto desde antes de subir el porcentaje no entra a la
+   cohorte hasta que esa tarea termina. Los clientes recurrentes quedan sub-representados en la cohorte respecto de los
+   nuevos, y las métricas por etapa deben leerse con ese sesgo.
+8. **Clave de identidad.** Rotar `R4_PROD_IDENTITY_HASH_KEY` cambia todas las claves de conversación y, con ellas, los
+   buckets. Las conversaciones abiertas dejan de encontrar su binding. La rotación pendiente se hace **antes** de subir
+   el porcentaje, nunca durante la etapa 2.
 
 Evidencia: `tests/unit/live-ops/mode-profile-rollout.test.ts` (regla: allowlist, cohorte, denegada, fuera de
-cohorte, sin carril) y `tests/integration/conversation-lane-cohort.test.ts`:
+cohorte, sin carril), `tests/unit/sales/gateway-cohort.test.ts` y `tests/contract/sales-gateway-cohort.test.ts`
+(composiciones que se niegan), y `tests/integration/conversation-lane-cohort.test.ts`, con el carril `@19`:
 
 | Prueba | Qué cubre |
 |---|---|
-| C1 | `0 %` no cambia nada; a `20 %` la cohorte abre en el carril con `cohort`; el binding abierto antes no se mueve |
-| C2 | Sin carril, la cohorte la atiende el perfil principal, como antes |
-| C3 | Primeros mensajes concurrentes y reentregas: un binding, una tarea v13, una ejecución, sólo del worker del carril |
+| C1 | `0 %` no cambia nada; a `20 %` la cohorte abre en el carril con `cohort` y la huella vigente; el binding abierto antes conserva perfil, elegibilidad y huella |
+| C2 | Porcentaje > 0 rechazado sin carril y con `@13`; `0 %` sin carril arranca como antes; un redespliegue no entra al estado rechazado |
+| C3 | Primeros mensajes concurrentes y reentregas: un binding y una tarea fijada a v19; el worker principal no la toma |
 | C4 | Reentrega y reinicios del gateway (también con otro porcentaje): sin re-ruteo ni duplicados |
-| C5 | Cambio de porcentaje con la tarea viva, conversaciones nuevas según el nuevo porcentaje, rollback a `0 %` |
+| C5 | Cambio de porcentaje con la tarea viva; conversaciones nuevas según el nuevo porcentaje; rollback a `0 %` sin revocar la autonomía abierta; cancelación → ruteo de hoy |
+
+El worker del carril (sólo su definición fijada, drenaje tras un cambio de configuración) ya está cubierto por L2, L3
+y L6 sobre `@13`: la forma en que se ruteó el binding no cambia cómo se reclaman las tareas.
 
 Mutación manual «el carril no toma la cohorte»: fallan C1, C3, C4 y C5.

@@ -36,7 +36,7 @@ let bed: LiveOpsTestbed;
 let store: IdentityVerificationStore;
 
 beforeAll(async () => {
-  bed = await LiveOpsTestbed.start({ identityVerification: { requested: 'full', codeKeys: KEYS, confirm: NOT_STARTED }, autonomy: true, percent: 100 });
+  bed = await LiveOpsTestbed.start({ identityVerification: { requested: 'full', codeKeys: KEYS, confirm: NOT_STARTED }, autonomy: true, allowlist: Array.from({ length: 500 }, (_, i) => `5691500${String(i + 1).padStart(4, '0')}`) });
   store = new IdentityVerificationStore(bed.pool);
 }, 120_000);
 
