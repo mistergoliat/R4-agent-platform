@@ -22,7 +22,16 @@ const completionSchema = z.object({
       }),
     )
     .min(1),
-  usage: z.object({ prompt_tokens: z.number().int().nonnegative(), completion_tokens: z.number().int().nonnegative() }).optional(),
+  // The detail fields are read leniently (see `count`): a server that omits or mangles them never fails the call.
+  usage: z
+    .object({
+      prompt_tokens: z.number().int().nonnegative(),
+      completion_tokens: z.number().int().nonnegative(),
+      prompt_cache_hit_tokens: z.unknown().optional(),
+      prompt_tokens_details: z.object({ cached_tokens: z.unknown().optional() }).nullable().optional().catch(undefined),
+      completion_tokens_details: z.object({ reasoning_tokens: z.unknown().optional() }).nullable().optional().catch(undefined),
+    })
+    .optional(),
 });
 
 const MAX_ERROR_TEXT = 300;
@@ -116,12 +125,23 @@ export class OpenAICompatibleModelProvider implements ModelProvider {
       content,
       toolCalls: [],
       ...(structured === undefined ? {} : { structuredData: structured }),
-      usage: { inputTokens: parsed.usage?.prompt_tokens ?? 0, outputTokens: parsed.usage?.completion_tokens ?? 0 },
+      usage: {
+        inputTokens: parsed.usage?.prompt_tokens ?? 0,
+        outputTokens: parsed.usage?.completion_tokens ?? 0,
+        // Counts only (telemetry): where the latency and the cost of a call come from. The reasoning text is still never kept.
+        cachedInputTokens: count(parsed.usage?.prompt_tokens_details?.cached_tokens) ?? count(parsed.usage?.prompt_cache_hit_tokens),
+        reasoningTokens: count(parsed.usage?.completion_tokens_details?.reasoning_tokens),
+      },
       finishReason: finishReasonOf(choice.finish_reason ?? null),
       modelId: parsed.model ?? config.model,
       requestId: parsed.id ?? response.headers.get('x-request-id'),
     };
   }
+}
+
+/** A token count a server may report, or null when it is absent or not a non-negative integer. */
+function count(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
 }
 
 function classifyStatus(status: number, body: string, config: OpenAICompatibleConfig): ModelProviderError {

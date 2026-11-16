@@ -307,4 +307,24 @@ describe('OpenAICompatibleModelProvider', () => {
     expect(logs.events('model.call.completed')[0]).toMatchObject({ providerId: 'openai-compatible.test', modelId: 'some-model-2026', inputTokens: 120, outputTokens: 30, finishReason: 'stop' });
     for (const secret of [KEY, 'secret-prompt-marker', 'secret-answer-marker']) expect(raw).not.toContain(secret);
   });
+
+  it('reports cached-input and reasoning token counts in telemetry only, and tolerates their absence or a malformed detail', async () => {
+    const generate = async (usage: Record<string, unknown>) => {
+      const logs = captureLogs();
+      const { fetch } = fakeFetch(() => ({ status: 200, body: completion('{"type":"respond","content":"ok"}', { usage: { prompt_tokens: 120, completion_tokens: 30, ...usage } }) }));
+      const result = await new DefaultModelGateway({ provider: new OpenAICompatibleModelProvider(CONFIG, { fetch }), logger: logs.logger }).generate(request());
+      return { result, event: logs.events('model.call.completed')[0] };
+    };
+
+    const reported = await generate({ prompt_cache_hit_tokens: 90, prompt_tokens_details: { cached_tokens: 100 }, completion_tokens_details: { reasoning_tokens: 25 } });
+    expect(reported.event).toMatchObject({ inputTokens: 120, outputTokens: 30, cachedInputTokens: 100, reasoningTokens: 25 });
+    // ModelUsage — what the kernel records on a step — keeps exactly its two counters.
+    expect(reported.result.ok && reported.result.response.usage).toEqual({ inputTokens: 120, outputTokens: 30 });
+
+    expect((await generate({ prompt_cache_hit_tokens: 90 })).event).toMatchObject({ cachedInputTokens: 90, reasoningTokens: null });
+    expect((await generate({})).event).toMatchObject({ cachedInputTokens: null, reasoningTokens: null });
+    const malformed = await generate({ prompt_tokens_details: 'n/a', completion_tokens_details: { reasoning_tokens: -1 } });
+    expect(malformed.result.ok).toBe(true);
+    expect(malformed.event).toMatchObject({ cachedInputTokens: null, reasoningTokens: null });
+  });
 });
