@@ -62,8 +62,9 @@ Reglas:
 1. Quote V2 manda: el estado mostrado es el de `getQuote` en el momento de compilar el contexto; si el dueño no responde
    se muestra lo registrado por R4 y `stillValid` es `null` (desconocido) antes del vencimiento registrado y `false`
    después (expirada o anulada; ambas terminales). Nunca se supone vigencia.
-2. Varias propuestas legítimas por cliente: se muestran las 3 más recientes de la conversación (30 días), más nuevas primero,
-   con `olderQuotesOmitted`.
+2. Varias propuestas legítimas por cliente: se muestran las 3 más recientes de la conversación, más nuevas primero,
+   con `olderQuotesOmitted`, emitidas dentro de la ventana `R4_PROD_PRIOR_CONVERSATION_DAYS` (la misma de la
+   continuidad entre tasks; 30 días por defecto).
 3. Reintentos nunca duplican: la recuperación es sólo lectura; una cotización nueva usa la ruta normal (clave de ejecución
    = `Idempotency-Key`, cuerpo congelado en 0007, reconciliación por `lookupIdempotency`). Nunca se reemite
    automáticamente ni se reutiliza número, total o validez de otra cotización.
@@ -79,7 +80,11 @@ Reglas:
   `earlierConversationTurns`);
 - registros: `PostgresSalesStore.conversationQuotes(taskIds, { since, limit })` (sólo esquema `sales`);
 - estado actual: `QuoteV2Service.getQuote` por cotización mostrada, con plazo de 2 s y memoria **por run** (el contexto se
-  compila en cada iteración);
+  compila en cada iteración). La respuesta guardada se reproyecta con el reloj de cada compilación, como hace el dueño
+  (T9): una `issued` cuyo `validUntilExclusive` pasó durante el run se muestra `expired`, `stillValid: false`;
+- visibilidad: `getQuote` sólo ve las cotizaciones del principal creador (o con `quotes:read:any`). Si cambia el principal
+  Quote de R4, las anteriores responden 404 y se muestran `unknown` (`stateFrom: r4_record`; seguro por defecto). El L3
+  previo a la activación debe confirmar la visibilidad;
 - un item `state` AUTHORITATIVE `live` `sales_quotes:<task>` con, por cotización: `quoteNumber`, `issuedAt`, `earlierTask`,
   `state`, `stateFrom` (`quote_owner` | `r4_record`), `stillValid`, `meaning`, `validThroughLocalDate`,
   `validUntilExclusive`, `totalGrossClp` (sólo del dueño), `items` (`itemKey` cuando hubo instantánea autónoma), `delivery`;

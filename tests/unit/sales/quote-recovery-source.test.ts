@@ -69,6 +69,14 @@ describe('SalesQuoteRecoveryContextSource (M3)', () => {
     expect(w.asked).toEqual([{ taskIds: [CURRENT, EARLIER], since: '2026-10-11T15:00:00.000Z', limit: 4 }]);
   });
 
+  it('an owner answer cached as issued reads as expired once the validity ends within the same run', async () => {
+    const w = await world(1);
+    expect((await w.view('run-1')).quotes[0]).toMatchObject({ state: 'issued', stillValid: true });
+    w.at('2026-11-15T03:00:00.000Z');
+    expect((await w.view('run-1')).quotes[0]).toMatchObject({ state: 'expired', stillValid: false, stateFrom: 'quote_owner' });
+    expect(w.reads()).toBe(1);
+  });
+
   it('after the validity ends the owner reports it expired: no longer valid (a new run reads the owner again)', async () => {
     const w = await world(1);
     expect((await w.view('run-1')).quotes[0]).toMatchObject({ state: 'issued', stillValid: true });

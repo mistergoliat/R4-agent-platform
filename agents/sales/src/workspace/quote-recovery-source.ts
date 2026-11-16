@@ -110,15 +110,17 @@ export function quoteView(r: ConversationQuoteRecord, owner: OwnerRead, currentT
   const validThroughLocalDate = quote?.validity?.validThroughLocalDate ?? r.validThroughLocalDate;
   // Without the owner: past R4's recorded validity the quote is expired or cancelled (both terminal), never valid again.
   const pastValidity = now.getTime() >= Date.parse(validUntilExclusive);
-  const state = quote ? quote.status : 'unknown';
+  // The owner's own projection (state machine T9), at THIS compilation's clock: an answer cached earlier in the run
+  // as issued reads as expired once its validity ends.
+  const status = quote ? (quote.status === 'issued' && pastValidity ? 'expired' : quote.status) : null;
   return {
     quoteNumber: r.quoteNumber,
     issuedAt: r.issuedAt,
     earlierTask: r.taskId !== currentTaskId,
-    state,
+    state: status ?? 'unknown',
     stateFrom: quote ? 'quote_owner' : 'r4_record',
-    stillValid: quote ? quote.status === 'issued' : pastValidity ? false : null,
-    meaning: quote ? (MEANING[quote.status] ?? quote.status) : pastValidity ? 'no longer valid (its recorded validity ended); the quote owner could not be read now' : `the quote owner could not be read now (${'error' in owner ? owner.error : ''}): its current state is unknown`,
+    stillValid: status ? status === 'issued' : pastValidity ? false : null,
+    meaning: status ? (MEANING[status] ?? status) : pastValidity ? 'no longer valid (its recorded validity ended); the quote owner could not be read now' : `the quote owner could not be read now (${'error' in owner ? owner.error : ''}): its current state is unknown`,
     validThroughLocalDate,
     validUntilExclusive,
     ...(quote ? { totalGrossClp: quote.totals.gross } : {}),

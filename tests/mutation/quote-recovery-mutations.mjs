@@ -28,7 +28,7 @@ const MUTATIONS = [
   },
   {
     name: 'QR-M3 an expired quote is shown as still valid',
-    edits: [{ file: SOURCE, from: "stillValid: quote ? quote.status === 'issued'", to: "stillValid: quote ? quote.status !== 'cancelled'" }],
+    edits: [{ file: SOURCE, from: "stillValid: status ? status === 'issued'", to: "stillValid: status ? status !== 'cancelled'" }],
     tests: [[UNIT, 'after the validity ends'], [IT, MAIN]],
   },
   {
@@ -49,12 +49,18 @@ const MUTATIONS = [
   {
     name: 'QR-M7 an owner answer outlives its run (a later run sees a stale state)',
     edits: [{ file: SOURCE, from: 'const key = `${runId}|${quoteId}`;', to: 'const key = quoteId;' }],
-    tests: [[UNIT, 'after the validity ends'], [UNIT, 'reads the owner once per quote per run']],
+    // The re-projection at each compilation's clock already expires a stale `issued` answer, so only the read count tells.
+    tests: [[UNIT, 'reads the owner once per quote per run']],
   },
   {
     name: 'QR-M8 composed without R4_SALES_QUOTE_RECOVERY=enabled',
     edits: [{ file: SALES, from: 'options.quoteRecovery === true && quoteReal', to: 'quoteReal' }],
     tests: [[IT, 'is off by default']],
+  },
+  {
+    name: 'QR-M9 an owner answer cached as issued stays valid after its validity ends within the run',
+    edits: [{ file: SOURCE, from: "quote ? (quote.status === 'issued' && pastValidity ? 'expired' : quote.status) : null", to: 'quote ? quote.status : null' }],
+    tests: [[UNIT, 'reads as expired once the validity ends within the same run']],
   },
 ];
 
