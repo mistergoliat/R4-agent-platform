@@ -23,7 +23,8 @@ const pct = (xs, p) => {
 };
 const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 const sum = (xs) => xs.reduce((a, b) => a + (b ?? 0), 0);
-const segmentOf = (reason) => (reason === 'allowlisted' ? 'testers' : reason === 'rollout' || reason === 'rollout_percent' ? 'commercial' : reason ? `other:${reason}` : 'unbound');
+// live-ops rollout eligibility: allowlisted = named testers; cohort = the rollout percentage (real commercial traffic).
+const segmentOf = (reason) => (reason === 'allowlisted' ? 'testers' : reason === 'cohort' ? 'commercial' : reason ? `other:${reason}` : 'unbound');
 const agentOf = (r) => `${r.agent_id}@${r.agent_version}`;
 const modelOf = (r) => {
   const at = Date.parse(r.started_at);

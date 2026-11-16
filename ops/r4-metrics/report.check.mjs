@@ -14,7 +14,7 @@ const run = (id, task, reason, at, calls, answerAfterS) => ({
 });
 const facts = {
   generatedAt: '2026-11-16T00:00:00Z', since: '2026-11-01T00:00:00Z',
-  runs: [run('r1', 't1', 'allowlisted', '2026-11-10T00:00:00Z', 2, 10), run('r2', 't1', 'allowlisted', '2026-11-10T01:00:00Z', 7, 30), run('r3', 't2', 'rollout', '2026-11-17T00:00:00Z', 1, null)],
+  runs: [run('r1', 't1', 'allowlisted', '2026-11-10T00:00:00Z', 2, 10), run('r2', 't1', 'allowlisted', '2026-11-10T01:00:00Z', 7, 30), run('r3', 't2', 'cohort', '2026-11-17T00:00:00Z', 1, null)],
   steps: [
     { run_id: 'r2', origin: 'model', capability: 'catalog.search', target: 'disco' },
     { run_id: 'r2', origin: 'model', capability: 'catalog.search', target: 'disco' },
@@ -23,7 +23,7 @@ const facts = {
   quotes: [{ task_id: 't1', status: 'succeeded', attempts: 1, obtained_via: 'execute', executed_at: '2026-11-10T01:00:40Z', promotional: true }],
   tasks: [
     { task_id: 't1', eligibility_reason: 'allowlisted', binding_id: 'b-t1', first_input_at: '2026-11-10T00:00:00Z', inputs: 2, handoffs: 0, agent_messages: 2, agent_messages_delivered: 2, outbound_failed: 0, previews: 2, distinct_ready_previews: 2 },
-    { task_id: 't2', eligibility_reason: 'rollout', binding_id: 'b-t2', first_input_at: '2026-11-17T00:00:00Z', inputs: 1, handoffs: 1, agent_messages: 0, agent_messages_delivered: 0, outbound_failed: 0, previews: 0, distinct_ready_previews: 0 },
+    { task_id: 't2', eligibility_reason: 'cohort', binding_id: 'b-t2', first_input_at: '2026-11-17T00:00:00Z', inputs: 1, handoffs: 1, agent_messages: 0, agent_messages_delivered: 0, outbound_failed: 0, previews: 0, distinct_ready_previews: 0 },
   ],
 };
 const models = [{ label: 'm-old', from: '2026-01-01T00:00:00Z', to: '2026-11-16T00:00:00Z', priceInPerM: 1, priceOutPerM: 10 }];
