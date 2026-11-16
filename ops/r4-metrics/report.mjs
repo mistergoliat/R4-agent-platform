@@ -1,18 +1,22 @@
 #!/usr/bin/env node
 // R4 commercial baseline (M1): turns the facts exported by baseline.sql into a comparable report — by agent version,
-// model and segment (testers = allowlisted conversations; commercial = rollout), never mixing them.
+// profile, model and segment (testers = allowlisted conversations; commercial = rollout cohort), never mixing them.
 //
-//   node ops/r4-metrics/report.mjs facts.json [--models models.json] [--json out.json]
+//   node ops/r4-metrics/report.mjs facts.json [--models models.json] [--measured provider-usage.jsonl] [--json out.json]
 //
 // Model attribution: R4's database does not record which model served a call (the provider telemetry does, in the
 // logs), so a models file maps time windows (and optionally agents) to a model and its prices; a window not covered is
 // reported as "unattributed". Prices are per million tokens; cost is an UPPER BOUND (every input token priced as not
-// cached: the database keeps no cache counts). Output: text report on stdout; --json also writes the aggregates.
+// cached: the database keeps no cache counts). That is the ESTIMATED cost. The MEASURED cost comes from the provider:
+// --measured takes the usage snapshots the provider budget monitor appends ({"at", "accountUsageUsd"} per line) and
+// reports the account's spend between the first and last snapshot inside the window; it covers the whole provider
+// account (every worker, web QA and perception included), so it bounds the estimate, it is never a per-turn figure.
+// Output: text report on stdout; --json also writes the aggregates.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 
-const { values: args, positionals } = parseArgs({ allowPositionals: true, options: { models: { type: 'string' }, json: { type: 'string' } } });
-if (!positionals[0]) throw new Error('usage: report.mjs facts.json [--models models.json] [--json out.json]');
+const { values: args, positionals } = parseArgs({ allowPositionals: true, options: { models: { type: 'string' }, measured: { type: 'string' }, json: { type: 'string' } } });
+if (!positionals[0]) throw new Error('usage: report.mjs facts.json [--models models.json] [--measured provider-usage.jsonl] [--json out.json]');
 const facts = JSON.parse(readFileSync(positionals[0], 'utf8'));
 const models = args.models ? JSON.parse(readFileSync(args.models, 'utf8')) : [];
 
@@ -48,7 +52,7 @@ const turns = facts.runs.map((r) => {
   }
   const model = modelOf(r);
   return {
-    run: r.run_id, task: r.task_id, agent: agentOf(r), model: model?.label ?? 'unattributed', segment: segmentOf(r.eligibility_reason),
+    run: r.run_id, task: r.task_id, profile: r.profile ?? 'unbound', agent: agentOf(r), model: model?.label ?? 'unattributed', segment: segmentOf(r.eligibility_reason),
     status: r.status, ending: r.termination_reason, modelCalls: r.model_calls ?? steps.length, input: r.input_tokens, output: r.output_tokens,
     cost: costOf(model, r.input_tokens, r.output_tokens),
     latencyMs: ms(r.trigger_at, r.answer_at), deliveredMs: ms(r.trigger_at, r.answer_delivered_at), answered: r.answer_at !== null,
@@ -91,7 +95,11 @@ const tasks = facts.tasks.map((t) => {
     quotesIssued: issued.length, quotesIssuedPromotional: issued.filter((q) => q.promotional).length,
     quotesRefused: qs.filter((q) => q.status !== 'succeeded').length,
     refusalCodes: qs.filter((q) => q.status !== 'succeeded').map((q) => q.error_code ?? q.reason_code),
-    replayedOrRetried: qs.filter((q) => q.replayed || (q.attempts ?? 1) > 1 || q.obtained_via !== 'execute').length,
+    // One receipt per governed execution (its idempotency key): a retry is a further attempt of the same execution, a
+    // replay is the owner answering an already-applied request idempotently, a reconcile settles an unknown outcome.
+    retried: qs.filter((q) => (q.attempts ?? 1) > 1).length,
+    idempotentReplays: qs.filter((q) => q.replayed || q.obtained_via === 'replay').length,
+    reconciled: qs.filter((q) => q.obtained_via === 'reconcile').length,
     distinctOffers: t.distinct_ready_previews, previews: t.previews,
     interestToIssueMs: ms(t.first_input_at, firstIssued),
     handoffs: t.handoffs, agentMessages: t.agent_messages, agentMessagesDelivered: t.agent_messages_delivered, outboundFailed: t.outbound_failed,
@@ -106,9 +114,9 @@ function groupTasks(key) {
       key: k, tasks: ts.length, conversations: new Set(ts.map((t) => t.binding).filter(Boolean)).size,
       quotesIssued: issued, quotesIssuedPromotional: sum(ts.map((t) => t.quotesIssuedPromotional)),
       tasksWithQuote: ts.filter((t) => t.quotesIssued > 0).length, quotesPerQuotingTask: mean(ts.filter((t) => t.quotesIssued > 0).map((t) => t.quotesIssued)),
-      multiOfferTasks: ts.filter((t) => t.distinctOffers > 1).length,
+      offers: sum(ts.map((t) => t.distinctOffers)), multiOfferTasks: ts.filter((t) => t.distinctOffers > 1).length,
       quotesRefused: sum(ts.map((t) => t.quotesRefused)), refusalCodes: Object.fromEntries(Object.entries(Object.groupBy(ts.flatMap((t) => t.refusalCodes), (c) => c)).map(([c, xs]) => [c, xs.length])),
-      replayedOrRetried: sum(ts.map((t) => t.replayedOrRetried)),
+      retried: sum(ts.map((t) => t.retried)), idempotentReplays: sum(ts.map((t) => t.idempotentReplays)), reconciled: sum(ts.map((t) => t.reconciled)),
       interestToIssueS: { p50: pct(ts.map((t) => (t.interestToIssueMs === null ? null : t.interestToIssueMs / 1000)), 0.5), p90: pct(ts.map((t) => (t.interestToIssueMs === null ? null : t.interestToIssueMs / 1000)), 0.9) },
       handoffs: sum(ts.map((t) => t.handoffs)), tasksWithHandoff: ts.filter((t) => t.handoffs > 0).length,
       agentMessages: sum(ts.map((t) => t.agentMessages)), delivered: sum(ts.map((t) => t.agentMessagesDelivered)), outboundFailed: sum(ts.map((t) => t.outboundFailed)),
@@ -117,9 +125,19 @@ function groupTasks(key) {
   });
 }
 
+const measured = (() => {
+  if (!args.measured) return null;
+  const inWindow = readFileSync(args.measured, 'utf8').split(/\r?\n/).filter(Boolean).map((l) => JSON.parse(l))
+    .filter((p) => Number.isFinite(p.accountUsageUsd) && Date.parse(p.at) >= Date.parse(facts.since) && Date.parse(p.at) <= Date.parse(facts.generatedAt))
+    .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  if (inWindow.length < 2) return { usd: null, note: 'fewer than two provider snapshots in the window' };
+  const [first, last] = [inWindow[0], inWindow.at(-1)];
+  return { usd: last.accountUsageUsd - first.accountUsageUsd, from: first.at, to: last.at, scope: 'whole provider account' };
+})();
 const report = {
   generatedAt: facts.generatedAt, since: facts.since, costBasis: 'upper bound: every input token priced as not cached',
-  bySegmentAgentModel: groupTurns((t) => `${t.segment} | ${t.agent} | ${t.model}`),
+  costs: { estimatedUsd: turns.some((t) => t.cost === null) ? null : sum(turns.map((t) => t.cost)), measured },
+  bySegmentAgentModel: groupTurns((t) => `${t.segment} | ${t.profile} | ${t.agent} | ${t.model}`),
   bySegmentModel: groupTurns((t) => `${t.segment} | ${t.model}`),
   tasksBySegment: groupTasks((t) => t.segment),
   longTurns: turns.filter((t) => t.modelCalls > 5).sort((a, b) => b.modelCalls - a.modelCalls).slice(0, 25).map((t) => ({ run: t.run, agent: t.agent, model: t.model, calls: t.modelCalls, latencyS: t.latencyMs === null ? null : Math.round(t.latencyMs / 1000), catalogRepeats: t.catalogRepeats, sequence: t.sequence.join(' > ') })),
@@ -128,13 +146,14 @@ const report = {
 const f = (x, d = 1) => (x === null || x === undefined ? '–' : typeof x === 'number' ? x.toFixed(d) : String(x));
 const out = (l) => process.stdout.write(`${l}\n`);
 out(`R4 commercial baseline — facts since ${report.since}, generated ${report.generatedAt}; cost = ${report.costBasis}`);
-out('\nTURNS by segment | agent | model');
-out('key | turns | answered | latency s p50/p90/p95 | calls/turn mean (p90) | turns>5 calls | in/out tokens per turn | cost US$ | catalog reads (repeats)/turn | errors/turn');
+out(`cost: estimated US$ ${f(report.costs.estimatedUsd, 3)} (every turn in the export); measured US$ ${measured === null ? '– (no --measured)' : measured.usd === null ? `– (${measured.note})` : `${f(measured.usd, 3)} (${measured.scope}, ${measured.from} → ${measured.to})`}`);
+out('\nTURNS by segment | profile | agent | model');
+out('key | turns | answered | latency s p50/p90/p95 | calls/turn mean (p90) | turns>5 calls | in/out tokens per turn | est. cost US$ | catalog reads (repeats)/turn | errors/turn');
 for (const g of report.bySegmentAgentModel) out(`${g.key} | ${g.turns} | ${g.answered} | ${f(g.latencyS.p50)}/${f(g.latencyS.p90)}/${f(g.latencyS.p95)} | ${f(g.modelCallsPerTurn.mean, 2)} (${f(g.modelCallsPerTurn.p90, 0)}) | ${g.turnsOver5Calls} | ${f(g.tokensPerTurn.input, 0)}/${f(g.tokensPerTurn.output, 0)} | ${f(g.costUsd, 3)} | ${f(g.catalogReadsPerTurn, 2)} (${f(g.catalogRepeatsPerTurn, 2)}) | ${f(g.errorsPerTurn, 2)}`);
 out('\nCONVERSATION EPISODES (tasks) by segment');
 for (const g of report.tasksBySegment) {
-  out(`${g.key}: tasks ${g.tasks}, conversations ${g.conversations}; quotes issued ${g.quotesIssued} (promotional ${g.quotesIssuedPromotional}) in ${g.tasksWithQuote} tasks, ${f(g.quotesPerQuotingTask, 2)} per quoting task; tasks with >1 offer ${g.multiOfferTasks}; refused ${g.quotesRefused} ${JSON.stringify(g.refusalCodes)}; replays/retries ${g.replayedOrRetried}`);
-  out(`   interest→issue s p50/p90 ${f(g.interestToIssueS.p50, 0)}/${f(g.interestToIssueS.p90, 0)}; handoffs ${g.handoffs} (${g.tasksWithHandoff} tasks); agent messages ${g.agentMessages}, delivered/read ${g.delivered}, failed ${g.outboundFailed}; cost US$ ${f(g.costUsd, 3)}, per task ${f(g.costPerTask, 4)}, per issued quote ${f(g.costPerIssuedQuote, 4)}`);
+  out(`${g.key}: tasks ${g.tasks}, conversations ${g.conversations}; quotes issued ${g.quotesIssued} (promotional ${g.quotesIssuedPromotional}) in ${g.tasksWithQuote} tasks, ${f(g.quotesPerQuotingTask, 2)} per quoting task; offers ${g.offers} (tasks with >1 offer ${g.multiOfferTasks}); refused ${g.quotesRefused} ${JSON.stringify(g.refusalCodes)}; retried ${g.retried}, idempotent replays ${g.idempotentReplays}, reconciled ${g.reconciled}`);
+  out(`   interest→issue s p50/p90 ${f(g.interestToIssueS.p50, 0)}/${f(g.interestToIssueS.p90, 0)}; handoffs ${g.handoffs} (${g.tasksWithHandoff} tasks); agent messages ${g.agentMessages}, delivered/read ${g.delivered}, failed ${g.outboundFailed}; est. cost US$ ${f(g.costUsd, 3)}, per task ${f(g.costPerTask, 4)}, per issued quote ${f(g.costPerIssuedQuote, 4)}`);
 }
 out('\nLONGEST TURNS (> 5 model calls)');
 for (const t of report.longTurns) out(`${t.run.slice(0, 13)} ${t.agent} ${t.model} calls=${t.calls} latency=${f(t.latencyS, 0)}s repeats=${t.catalogRepeats}: ${t.sequence}`);
