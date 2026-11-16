@@ -12,9 +12,10 @@
 // per call, so a window not covered is 'unattributed' and gets no cost). It is an upper bound for the calls R4 records:
 // every input token is priced as not cached (the database keeps no cache counts); perception (vision, speech) calls are
 // not in it. MEASURED = the provider's own account usage: --measured takes the snapshots the provider budget monitor
-// (ops/r4-provider-budget) appends, {"at", "accountUsageUsd"} per line, and reports the spend between the first and the
+// (ops/r4-provider-budget, its own PR) appends, {"at", "accountUsageUsd"} per line, and reports the spend between the first and the
 // last snapshot inside the window. It covers the whole provider account (every worker, web QA and perception), and it is
-// wrong across a usage-counter reset (a new account). Output: text on stdout; --json also writes the aggregates.
+// wrong across a usage-counter reset (a new account). Not visible here: quote executions still held, with no receipt yet.
+// TURN tables cover the runs started in the window; TASK tables cover each task of the population whole. Output: text on stdout; --json also writes the aggregates.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 
@@ -47,7 +48,17 @@ const merge = (counts) => { const m = {}; for (const c of counts) for (const [k,
 
 // ---- turns (runs) ------------------------------------------------------------------------------------------------
 const stepsByRun = groupBy(facts.steps, (s) => s.run_id);
-const turns = facts.runs.map((r) => {
+// A recovery (a continuation right after a failed run that never answered) answers that run's input: it inherits its trigger.
+const triggers = new Map();
+for (const runs of Object.values(groupBy([...facts.runs].sort((a, b) => Date.parse(a.started_at) - Date.parse(b.started_at)), (r) => r.task_id))) {
+  let previous = null;
+  for (const r of runs) {
+    const inherited = !r.trigger_at && previous && previous.status === 'failed' && previous.answer_at === null ? triggers.get(previous.run_id) : null;
+    triggers.set(r.run_id, r.trigger_at ?? inherited ?? null);
+    previous = r;
+  }
+}
+const allTurns = facts.runs.map((r) => {
   const steps = (stepsByRun[r.run_id] ?? []).filter((s) => s.origin === 'model');
   // A Catalog read is a step the platform executed (observed); its key is the exact arguments, filters included.
   const catalog = steps.filter((s) => String(s.capability ?? '').startsWith('catalog.') && s.outcome === 'observed');
@@ -60,11 +71,11 @@ const turns = facts.runs.map((r) => {
   }
   const model = modelOf(r);
   return {
-    run: r.run_id, task: r.task_id, kind: r.trigger_at ? 'input' : 'continuation', profile: r.profile ?? 'unbound', agent: agentOf(r),
+    run: r.run_id, task: r.task_id, started: r.started_at, inWindow: r.in_window !== false, kind: r.trigger_at ? 'input' : triggers.get(r.run_id) ? 'recovery' : 'continuation', profile: r.profile ?? 'unbound', agent: agentOf(r),
     model: model?.label ?? 'unattributed', segment: segmentOf(r.eligibility_reason),
     status: r.status, ending: r.termination_reason, modelCalls: r.model_calls ?? steps.length, input: r.input_tokens, output: r.output_tokens,
     cost: costOf(model, r.input_tokens, r.output_tokens),
-    answered: r.answer_at !== null, latencyMs: ms(r.trigger_at, r.answer_at), deliveredMs: ms(r.trigger_at, r.answer_delivered_at),
+    answered: r.answer_at !== null, latencyMs: ms(triggers.get(r.run_id), r.answer_at), deliveredMs: ms(triggers.get(r.run_id), r.answer_delivered_at),
     catalogReads: catalog.length, catalogRepeats: repeats,
     // Decisions the platform refused or could not parse, and failed model calls; executed actions rejected or failed.
     decisionErrors: countBy(steps.filter((s) => ['refused', 'invalid', 'model_failed'].includes(s.outcome)).map((s) => s.outcome)),
@@ -72,13 +83,16 @@ const turns = facts.runs.map((r) => {
     sequence: steps.map((s) => (s.capability ?? s.decision_type ?? s.outcome).replace('catalog.', '').replace('get_product_context', 'ctx')),
   };
 });
+const turns = allTurns.filter((t) => t.inWindow);
 
 function groupTurns(key) {
   return Object.entries(groupBy(turns, key)).map(([k, ts]) => {
     const timed = seconds(ts.map((t) => t.latencyMs));
     const delivered = seconds(ts.map((t) => t.deliveredMs));
     return {
-      key: k, turns: ts.length, inputTurns: ts.filter((t) => t.kind === 'input').length, continuations: ts.filter((t) => t.kind === 'continuation').length,
+      key: k, turns: ts.length, inputTurns: ts.filter((t) => t.kind === 'input').length, recoveries: ts.filter((t) => t.kind === 'recovery').length, continuations: ts.filter((t) => t.kind === 'continuation').length,
+      // input turns that never got an answer, neither from their own run nor from a recovery
+      unansweredInputs: ts.filter((t) => t.kind === 'input' && !t.answered && !allTurns.some((u) => u.kind === 'recovery' && u.answered && u.task === t.task && Date.parse(u.started) > Date.parse(t.started))).length,
       answered: ts.filter((t) => t.answered).length,
       latencyS: { p50: pct(timed, 0.5), p90: pct(timed, 0.9), p95: pct(timed, 0.95) },
       deliveredS: { p50: pct(delivered, 0.5), p90: pct(delivered, 0.9) },
@@ -98,7 +112,7 @@ function groupTurns(key) {
 // attempt; replay = R4 sent the same key again after an unknown outcome; reconcile = settled by reading the owner.
 // replayed = the owner said it had already applied that key (deduplicated). attempts − 1 = extra attempts.
 const quotesByTask = groupBy(facts.quotes, (q) => q.task_id);
-const turnsByTask = groupBy(turns, (t) => t.task);
+const turnsByTask = groupBy(allTurns, (t) => t.task);
 const tasks = facts.tasks.map((t) => {
   const qs = quotesByTask[t.task_id] ?? [];
   const issued = qs.filter((q) => q.status === 'succeeded');
@@ -163,8 +177,8 @@ out(`R4 commercial baseline — facts since ${report.since}, generated ${report.
 out(`cost: estimated US$ ${f(report.costs.estimatedUsd, 3)} (${report.costs.estimateBasis}); measured US$ ${measured === null ? '– (no --measured)' : measured.usd === null ? `– (${measured.note})` : `${f(measured.usd, 3)} (${measured.scope}, ${measured.from} → ${measured.to})`}`);
 for (const [title, groups] of [['segment | profile | agent | model', report.turnsBySegmentProfileModel], ['segment | model', report.turnsBySegmentModel]]) {
   out(`\nTURNS by ${title}`);
-  out('key | turns (input/continuation) | answered | latency s p50/p90/p95 | to delivery p50/p90 | calls/turn mean (p90) | turns>5 calls | in/out tokens/turn | est. US$ | catalog reads (repeats)/turn | decision errors | action errors');
-  for (const g of groups) out(`${g.key} | ${g.turns} (${g.inputTurns}/${g.continuations}) | ${g.answered} | ${f(g.latencyS.p50)}/${f(g.latencyS.p90)}/${f(g.latencyS.p95)} | ${f(g.deliveredS.p50)}/${f(g.deliveredS.p90)} | ${f(g.modelCallsPerTurn.mean, 2)} (${f(g.modelCallsPerTurn.p90, 0)}) | ${g.turnsOver5Calls} | ${f(g.tokensPerTurn.input, 0)}/${f(g.tokensPerTurn.output, 0)} | ${f(g.estimatedCostUsd, 3)} | ${f(g.catalogReadsPerTurn, 2)} (${f(g.catalogRepeatsPerTurn, 2)}) | ${j(g.decisionErrors)} | ${j(g.actionErrors)}`);
+  out('key | turns (input/recovery/continuation) | answered (inputs never answered) | latency s p50/p90/p95 | to delivery p50/p90 | calls/turn mean (p90) | turns>5 calls | in/out tokens/turn | est. US$ | catalog reads (repeats)/turn | decision errors | action errors');
+  for (const g of groups) out(`${g.key} | ${g.turns} (${g.inputTurns}/${g.recoveries}/${g.continuations}) | ${g.answered} (${g.unansweredInputs}) | ${f(g.latencyS.p50)}/${f(g.latencyS.p90)}/${f(g.latencyS.p95)} | ${f(g.deliveredS.p50)}/${f(g.deliveredS.p90)} | ${f(g.modelCallsPerTurn.mean, 2)} (${f(g.modelCallsPerTurn.p90, 0)}) | ${g.turnsOver5Calls} | ${f(g.tokensPerTurn.input, 0)}/${f(g.tokensPerTurn.output, 0)} | ${f(g.estimatedCostUsd, 3)} | ${f(g.catalogReadsPerTurn, 2)} (${f(g.catalogRepeatsPerTurn, 2)}) | ${j(g.decisionErrors)} | ${j(g.actionErrors)}`);
 }
 for (const [title, groups] of [['segment | profile | agent', report.tasksBySegmentProfile], ['segment', report.tasksBySegment]]) {
   out(`\nCONVERSATIONS AND TASKS by ${title}`);
