@@ -149,12 +149,15 @@ export class LiveOpsTestbed {
 
   /**
    * A rollout configuration change: the gateway is redeployed over the same
-   * database with another allowlist (everything else unchanged). Open
-   * bindings keep the eligibility they were opened with.
+   * database with another allowlist (and, if given, another percentage;
+   * everything else unchanged). Open bindings keep the eligibility they were opened with.
    */
-  async redeployGateway(rollout: { readonly allowlist: readonly string[]; readonly lane?: readonly string[] }): Promise<void> {
+  async redeployGateway(rollout: { readonly allowlist: readonly string[]; readonly lane?: readonly string[]; readonly percent?: number }): Promise<void> {
     const { R4_PROD_LANE_PROFILE: _p, R4_PROD_LANE_ALLOWLIST: _a, ...rest } = this.env;
-    const env = { ...rest, R4_PROD_ROLLOUT_ALLOWLIST: rollout.allowlist.map(keyOf).join(','), ...laneEnv(rollout.lane) };
+    const env = {
+      ...rest, R4_PROD_ROLLOUT_ALLOWLIST: rollout.allowlist.map(keyOf).join(','), ...laneEnv(rollout.lane),
+      ...(rollout.percent === undefined ? {} : { R4_PROD_ROLLOUT_PERCENT: String(rollout.percent) }),
+    };
     const production = loadProductionConfig(env);
     // A gateway that refused to start left the previous (closed) one in place.
     await this.gateway.close().catch(() => undefined);

@@ -96,3 +96,45 @@ Mutaciones manuales:
 - «la fábrica sigue a la configuración»: falla L5;
 - «sin adopción de la tarea huérfana»: falla L5c;
 - «sin chequeo de la definición al arrancar»: falla L7b.
+
+## Enmienda 1 — el carril atiende también la cohorte del rollout (2026-11-16)
+
+Mandato del owner: **allowlist del carril O cohorte del rollout → perfil del carril**. Antes, una conversación
+elegible como `cohort` (`R4_PROD_ROLLOUT_PERCENT`) la atendía el perfil principal (`@3`), así que subir el porcentaje
+no daba a clientes reales el perfil probado. Resuelve el prerrequisito P1 de `R4_CONTROLLED_ROLLOUT_PLAN.md` (opción a).
+
+1. **Regla** (`laneRoute`, `packages/live-ops/src/rollout.ts`, pura): con carril compuesto, un binding NUEVO abre con
+   el perfil del carril si su clave está en `R4_PROD_LANE_ALLOWLIST` o si su elegibilidad es `cohort`; si no, con el
+   perfil principal. Sin carril, todo es exactamente como antes (la cohorte va al principal). La precedencia del
+   rollout no cambia (deny > allowlist > porcentaje) y el bucket es el mismo (`rolloutBucket`, derivado de la clave):
+   determinista y auditable, y `eligibility_reason` sigue registrando `allowlisted` o `cohort`.
+2. **Sin variable nueva.** El porcentaje es el opt-in: en `0 %` (hoy) nada cambia. Una segunda variable («el carril toma
+   la cohorte») agregaría justo el estado que el owner quiere evitar (porcentaje > 0 con la cohorte en `@3`). El
+   carril sigue sin ampliar la autonomía: la cohorte ya es elegible por el rollout, y una conversación denegada nunca
+   es `cohort`.
+3. **Estabilidad.** Igual que en la decisión 2: la asignación se decide sólo al abrir el binding y se persiste
+   (`profile`, `autonomy`, `eligibility_reason`, `rollout_fingerprint`). Cambiar el porcentaje no mueve un binding
+   abierto: sigue con su perfil y su autonomía hasta que su tarea termina (completada, cancelada o fallida). Las
+   conversaciones nuevas siguen el porcentaje vigente. Un binding no puede cambiar de perfil con la tarea viva sin
+   partir la conversación en dos tareas, y eso es lo que este modelo evita.
+4. **Sin doble proceso.** La tarea de un binding del carril se fija a la versión de la definición del carril, y sólo
+   el worker del carril (`servedAgents`) la toma. El índice único de bindings abiertos y la clave de creación
+   `conversation-<bindingId>` dan un binding y una tarea por conversación también con primeros mensajes concurrentes.
+5. **Rollback.** Bajar `R4_PROD_ROLLOUT_PERCENT` (o a `0`) y reiniciar el gateway. Ninguna conversación nueva entra a
+   la cohorte. Las abiertas de la cohorte **siguen atendidas por el carril** hasta que su tarea termina, así que el
+   worker del carril debe seguir en marcha; no quedan tareas huérfanas. Para cortar ya: denylist (por clave) o
+   interruptor de autonomía (todo). Para devolverlas al perfil principal: cancelar sus tareas (`tasks cancel`); el
+   siguiente mensaje abre con la asignación vigente. Quitar el carril entero sigue el runbook de la decisión 7.
+
+Evidencia: `tests/unit/live-ops/mode-profile-rollout.test.ts` (regla: allowlist, cohorte, denegada, fuera de
+cohorte, sin carril) y `tests/integration/conversation-lane-cohort.test.ts`:
+
+| Prueba | Qué cubre |
+|---|---|
+| C1 | `0 %` no cambia nada; a `20 %` la cohorte abre en el carril con `cohort`; el binding abierto antes no se mueve |
+| C2 | Sin carril, la cohorte la atiende el perfil principal, como antes |
+| C3 | Primeros mensajes concurrentes y reentregas: un binding, una tarea v13, una ejecución, sólo del worker del carril |
+| C4 | Reentrega y reinicios del gateway (también con otro porcentaje): sin re-ruteo ni duplicados |
+| C5 | Cambio de porcentaje con la tarea viva, conversaciones nuevas según el nuevo porcentaje, rollback a `0 %` |
+
+Mutación manual «el carril no toma la cohorte»: fallan C1, C3, C4 y C5.

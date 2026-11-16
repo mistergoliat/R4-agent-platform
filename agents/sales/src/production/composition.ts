@@ -470,7 +470,8 @@ export const SALES_LANE_ENV = ['R4_PROD_LANE_PROFILE', 'R4_PROD_LANE_ALLOWLIST']
 
 /**
  * (ADR-045) The gateway's lane: a lane profile (sales-production@13) for an explicit list of conversation keys, each
- * of which ChannelIngress also requires to be allowlisted in the rollout. Refuses partial or malformed configuration.
+ * of which ChannelIngress also requires to be allowlisted in the rollout, and for the rollout cohort
+ * (R4_PROD_ROLLOUT_PERCENT; `laneRoute`). Refuses partial or malformed configuration.
  */
 export function salesGatewayLane(env: Readonly<Record<string, string | undefined>>, pool: pg.Pool): ConversationLane | undefined {
   const label = env.R4_PROD_LANE_PROFILE?.trim() ?? '';

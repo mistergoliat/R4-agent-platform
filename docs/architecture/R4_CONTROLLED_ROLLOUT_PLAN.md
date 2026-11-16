@@ -28,6 +28,8 @@ Opciones, que se deciden con revisión de arquitectura antes de la etapa 2:
 
 La recomendación es la **a**: menos superficie, y el rollback sigue siendo bajar el porcentaje.
 
+**Implementada la opción a** (ADR-045, enmienda 1; pendiente de revisión y merge, no desplegada): con el carril compuesto, la cohorte del rollout abre en el perfil del carril. En `R4_PROD_ROLLOUT_PERCENT=0` nada cambia.
+
 **P2. No hay alerta de saldo del proveedor.**
 
 El 2026-11-13 el saldo directo de DeepSeek llegó a cero y cada turno terminó en `provider_error` y derivación humana. Ninguna alerta lo advirtió. Antes de clientes reales, el observador debe consultar el saldo de OpenRouter (`GET /api/v1/credits`, solo lectura) y avisar bajo un umbral expresado en días de gasto. El gasto diario sale del reporte M1.
@@ -93,7 +95,7 @@ CloudWatch y SNS siguen diferidos. Las alertas viven en el observador de solo le
 
 | Situación | Acción | Tiempo |
 |---|---|---|
-| Fallo grave en etapa 2 o 3 | `R4_PROD_ROLLOUT_PERCENT` al escalón anterior, o a 0, y reinicio del gateway. Las conversaciones abiertas de la cohorte quedan `rollout_excluded` (sin respuesta del agente) | Minutos |
+| Fallo grave en etapa 2 o 3 | `R4_PROD_ROLLOUT_PERCENT` al escalón anterior, o a 0, y reinicio del gateway. Ninguna conversación nueva entra a la cohorte. Las abiertas de la cohorte siguen en el carril, con su autonomía, hasta que su tarea termina (el worker del carril sigue en marcha). Para cortarlas ya: denylist o interruptor de autonomía; para pasarlas al perfil principal: `tasks cancel` (ADR-045, enmienda 1) | Minutos |
 | Fallo grave atribuible al agente | Interruptor de autonomía (`production:sales:control -- autonomy off`). Las lecturas siguen y las escrituras se rechazan con «definitivamente no enviado» | Segundos |
 | Fallo de promociones | `R4_F1_PROMOTIONAL_QUOTES` apagado en el entorno del carril. Antes de apagarlo se revisan las decisiones promocionales retenidas (precondición del PR #79) | Minutos |
 | Regresión de código | `rollback.sh 2` con el SHA anterior completo (procedimiento de despliegue por SHA) | ~1 minuto |
