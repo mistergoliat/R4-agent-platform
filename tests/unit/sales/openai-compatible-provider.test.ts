@@ -3,7 +3,7 @@ import type { ModelRequest } from '@r4/model-gateway';
 import { DefaultModelGateway } from '@r4/model-gateway';
 import { createSilentLogger } from '@r4/observability';
 import { CONTEXT_SECTIONS } from '@r4/contracts';
-import { ONE_DOCUMENT_REMINDER, ONE_DOCUMENT_RULE, OpenAICompatibleModelProvider, RENDER_SECTION_ORDER, describeModelConfig, estimateTokens, loadOpenAICompatibleConfig, renderContext, renderMessages, type FetchLike, type OpenAICompatibleConfig } from '@r4-adapters/openai-compatible';
+import { ONE_DOCUMENT_REMINDER, ONE_DOCUMENT_RULE, OpenAICompatibleModelProvider, RENDER_SECTION_ORDER, describeModelConfig, estimateTokens, loadOpenAICompatibleConfig, renderContext, renderContextParts, renderMessages, type FetchLike, type OpenAICompatibleConfig } from '@r4-adapters/openai-compatible';
 import { captureLogs } from '../../support/logs.js';
 
 const KEY = 'sk-test-DO-NOT-LEAK-0123456789abcdef';
@@ -246,6 +246,41 @@ describe('OpenAICompatibleModelProvider', () => {
     const compiled = JSON.parse(renderContext(build(1, '2026-11-12T18:00:00.000Z', ['o1'])).split('\n')[1]!) as Record<string, object>;
     expect(Object.keys(compiled).slice(0, 3)).toEqual(['schemaVersion', 'asOf', 'iteration']);
     expect(Object.keys(compiled.sections!)).toEqual(CONTEXT_SECTIONS.filter((s) => ['agent', 'capabilities', 'conversation', 'observations', 'task'].includes(s)));
+  });
+
+  it('split sends the context as stable, conversation and current messages: same items, each part identical while its content is', () => {
+    const item = (itemId: string, content: unknown) => ({ itemId, content, provenance: { derivedFromCount: 0 }, assertions: [], sensitivity: 'NORMAL' });
+    const build = (iteration: number, asOf: string, observations: string[], turns = ['hola']) => {
+      const sections: Record<string, unknown[]> = Object.fromEntries(CONTEXT_SECTIONS.map((s) => [s, []]));
+      Object.assign(sections, {
+        agent: [item('agent', { instructions: 'definition' })],
+        task: [item('task', { iteration, status: 'running' })],
+        capabilities: [item('cap', { capabilityId: 'catalog.search' })],
+        observations: observations.map((o) => item(o, { payload: o })),
+        conversation: turns.map((t, i) => item(`m${i}`, { text: t })),
+      });
+      return { schemaVersion: 1, asOf, scope: { iteration }, conflicts: [], omissions: {}, sections } as unknown as NonNullable<ModelRequest['context']>;
+    };
+    const first = renderMessages(request({ context: build(1, '2026-11-16T23:07:59.000Z', ['o1']) }), 'split');
+    const second = renderMessages(request({ context: build(2, '2026-11-16T23:08:04.000Z', ['o1', 'o2']) }), 'split');
+    const nextTurn = renderMessages(request({ context: build(3, '2026-11-16T23:10:00.000Z', ['o1', 'o2'], ['hola', 'y para brazos?']) }), 'split');
+    const users = (ms: typeof first) => ms.filter((m) => m.role === 'user').map((m) => m.content);
+    // The system messages come first and are unchanged; then exactly three context messages.
+    expect(first.slice(0, -3).every((m) => m.role === 'system')).toBe(true);
+    expect(users(first)).toHaveLength(3);
+    // Part 1 is identical across the calls of the task, part 2 within the run, the last part changes.
+    expect(users(second)[0]).toBe(users(first)[0]);
+    expect(users(second)[1]).toBe(users(first)[1]);
+    expect(users(second)[2]).not.toBe(users(first)[2]);
+    expect(users(nextTurn)[0]).toBe(users(first)[0]);
+    expect(users(nextTurn)[1]).not.toBe(users(first)[1]);
+    // The reminder closes the last message only; asOf and iteration travel in it.
+    expect(users(first)[2]!.endsWith(ONE_DOCUMENT_REMINDER)).toBe(true);
+    expect(users(first).slice(0, 2).some((c) => c.includes(ONE_DOCUMENT_REMINDER) || c.includes('2026-11-16T23:07:59'))).toBe(false);
+    // Every non-empty section exactly once across the parts: nothing dropped, nothing duplicated.
+    const sectionsOf = (c: string) => Object.keys((JSON.parse(c.slice(c.indexOf('\n') + 1).replace(`\n${ONE_DOCUMENT_REMINDER}`, '')) as { sections: object }).sections);
+    expect(renderContextParts(build(1, '2026-11-16T23:07:59.000Z', ['o1'])).flatMap(sectionsOf).sort()).toEqual(['agent', 'capabilities', 'conversation', 'observations', 'task'].sort());
+    expect(loadOpenAICompatibleConfig({ R4_MODEL_PROVIDER: 'openai_compatible', R4_MODEL_BASE_URL: 'https://example.test/v1', R4_MODEL_NAME: 'm', R4_MODEL_CONTEXT_WINDOW_TOKENS: '64000', R4_MODEL_RENDER_ORDER: 'split' })?.renderOrder).toBe('split');
   });
 
   it('R4_MODEL_RENDER_ORDER selects the layout: compiled by default, cache only when set, anything else refused', () => {

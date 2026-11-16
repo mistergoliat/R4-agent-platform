@@ -73,7 +73,7 @@ const envSchema = z.object({
   R4_MODEL_RESPONSE_FORMAT: z.enum(['json_object', 'none']).default('json_object'),
   R4_MODEL_TEMPERATURE: z.coerce.number().min(0).max(2).optional(),
   R4_MODEL_EXTRA_BODY: extraBodySchema.optional(),
-  R4_MODEL_RENDER_ORDER: z.preprocess((v) => (v === '' ? undefined : v), z.enum(['compiled', 'cache']).default('compiled')),
+  R4_MODEL_RENDER_ORDER: z.preprocess((v) => (v === '' ? undefined : v), z.enum(['compiled', 'cache', 'split']).default('compiled')),
 });
 
 /**

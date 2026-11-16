@@ -13,7 +13,8 @@ export interface ChatMessage {
  * default-valued fields left out (empty sections and assertions, NORMAL
  * sensitivity, a zero derivation count). Nothing is summarized, reordered
  * or truncated here, except that the 'cache' render order lays the sections
- * out in RENDER_SECTION_ORDER (R4_MODEL_RENDER_ORDER; 'compiled' is the default).
+ * out in RENDER_SECTION_ORDER and the 'split' order sends the context as three
+ * messages (R4_MODEL_RENDER_ORDER; 'compiled' is the default).
  */
 export function renderMessages(request: ModelRequest, order: RenderOrder = 'compiled'): ChatMessage[] {
   const messages: ChatMessage[] = request.messages.map((m) => ({ role: m.role === 'tool' ? 'user' : m.role, content: m.content }));
@@ -21,7 +22,10 @@ export function renderMessages(request: ModelRequest, order: RenderOrder = 'comp
   if (json) {
     messages.push({ role: 'system', content: `Output: exactly one JSON document matching the "${request.outputContract.name}" JSON Schema below. ${ONE_DOCUMENT_RULE}\n${JSON.stringify(request.outputContract.schema)}` });
   }
-  if (request.context) messages.push({ role: 'user', content: `${renderContext(request.context, order)}${json ? `\n${ONE_DOCUMENT_REMINDER}` : ''}` });
+  if (request.context && order === 'split') {
+    const parts = renderContextParts(request.context);
+    parts.forEach((content, i) => messages.push({ role: 'user', content: i === parts.length - 1 && json ? `${content}\n${ONE_DOCUMENT_REMINDER}` : content }));
+  } else if (request.context) messages.push({ role: 'user', content: `${renderContext(request.context, order)}${json ? `\n${ONE_DOCUMENT_REMINDER}` : ''}` });
   return messages;
 }
 
@@ -52,7 +56,39 @@ export const RENDER_SECTION_ORDER: readonly ContextSection[] = Object.freeze([
  * evaluated with). 'cache': RENDER_SECTION_ORDER with asOf and iteration last: the same content and a provider-cacheable
  * prefix, but the newest customer message is no longer near the end, so it ships behind a flag and a model evaluation.
  */
-export type RenderOrder = 'compiled' | 'cache';
+export type RenderOrder = 'compiled' | 'cache' | 'split';
+
+/**
+ * 'split' (measured 2026-11-16: GPT-6 Luna through OpenRouter reuses its prompt cache for whole identical messages
+ * only, so one context message that changes on every call is never reused). The context travels as up to three user
+ * messages, each identical for as long as its content is: (1) the agent and its capabilities, fixed for the task;
+ * (2) the conversation, fixed within a run; (3) everything else in the compiler's order, with asOf and iteration,
+ * closed by the reminder. Same items, same rendering, nothing dropped: only where the messages break.
+ */
+export const SPLIT_STABLE_SECTIONS: readonly ContextSection[] = Object.freeze(['agent', 'capabilities'] as const satisfies readonly ContextSection[]);
+export const SPLIT_CONVERSATION_SECTIONS: readonly ContextSection[] = Object.freeze(['conversation'] as const satisfies readonly ContextSection[]);
+
+export function renderContextParts(context: CompiledContext): string[] {
+  const pick = (names: readonly ContextSection[]) => Object.fromEntries(names.flatMap((name) => {
+    const items = context.sections[name] ?? [];
+    return items.length > 0 ? [[name, items.map(renderItem)]] : [];
+  }));
+  const moved = new Set<string>([...SPLIT_STABLE_SECTIONS, ...SPLIT_CONVERSATION_SECTIONS]);
+  const stable = pick(SPLIT_STABLE_SECTIONS);
+  const conversation = pick(SPLIT_CONVERSATION_SECTIONS);
+  const current = Object.fromEntries(Object.entries(context.sections).filter(([name, items]) => !moved.has(name) && items.length > 0).map(([name, items]) => [name, items.map(renderItem)]));
+  const parts: string[] = [];
+  if (Object.keys(stable).length > 0) parts.push(`Structured context, part 1: the agent and its capabilities (compiled by the platform; authority and freshness per item).\n${JSON.stringify({ schemaVersion: context.schemaVersion, sections: stable })}`);
+  if (Object.keys(conversation).length > 0) parts.push(`Structured context, part 2: the conversation so far.\n${JSON.stringify({ sections: conversation })}`);
+  parts.push(`Structured context, last part: the current state. Decide the next step using every part.\n${JSON.stringify({
+    asOf: context.asOf,
+    iteration: context.scope.iteration,
+    sections: current,
+    ...(context.conflicts.length > 0 ? { conflicts: context.conflicts } : {}),
+    ...(Object.keys(context.omissions).length > 0 ? { omissions: context.omissions } : {}),
+  })}`);
+  return parts;
+}
 
 export function renderContext(context: CompiledContext, order: RenderOrder = 'compiled'): string {
   if (order === 'compiled') {
