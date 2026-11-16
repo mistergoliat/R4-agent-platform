@@ -425,6 +425,8 @@ export interface ProductionStore {
    * after `since`. The window applies to each turn's own time, never to when a task or binding ended.
    */
   earlierConversationTurns(taskId: string, options: { readonly since: string; readonly limit: number; readonly maxTasks: number }): Promise<{ readonly turns: ThreadEntry[]; readonly earlierTasks: number }>;
+  /** (M3) The earlier tasks of `taskId`'s channel conversation (same lineage as `earlierConversationTurns`), newest first, at most `maxTasks`. */
+  earlierConversationTasks(taskId: string, maxTasks: number): Promise<string[]>;
   conversations(limit: number): Promise<ConversationSummary[]>;
   attention(): Promise<ProductionAttention>;
   metrics(): Promise<ProductionMetrics>;

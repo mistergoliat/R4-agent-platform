@@ -31,6 +31,7 @@ import { workspaceCapability } from '../capabilities/workspace.js';
 import { SALES_AGENT_ID, SALES_TASK_TYPE, AUTONOMOUS_QUOTE_CAPABILITY_IDS, CAPABILITY_IDS } from '../ids.js';
 import { SALES_ROOT_GOAL } from '../goal.js';
 import { SalesWorkspaceContextSource } from '../workspace/context-source.js';
+import { SalesQuoteRecoveryContextSource } from '../workspace/quote-recovery-source.js';
 import { PostgresSalesStore } from '../workspace/store.js';
 import { SALES_DOMAINS } from './profile.js';
 import { isAutonomousQuoteProfile } from './profile-v5.js';
@@ -118,6 +119,8 @@ export interface SalesProductionWorkerOptions {
   readonly quoteParity?: QuoteParityGuard | null;
   /** (F1-COMMERCIAL-POLICY-v3) Promotional prices that outlast the quote may be quoted (@19 only; default off). */
   readonly promotionalQuotes?: boolean;
+  /** (M3) R4_SALES_QUOTE_RECOVERY=enabled: the conversation's earlier quotes with their current Quote V2 state enter the context (profiles with a REAL Quote; default off). */
+  readonly quoteRecovery?: boolean;
   /** (R4-J5 F1) Set only by the isolated canary runtime: it may also compose canary-only profiles (@12). A production worker never sets it. */
   readonly canary?: boolean;
   /** (R4 Checkout, R-1) The Checkout sandbox-purchase binding (CheckoutHttpClient); required when the selected profile composes Checkout (@15). */
@@ -286,7 +289,13 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
     bindings: {
       modelProvider: options.modelProvider,
       capabilities,
-      contextSources: [new SalesWorkspaceContextSource(sales), new DeliveryStateContextSource(options.store), new PriorConversationContextSource(options.store, { windowDays: config.priorConversationDays })],
+      contextSources: [
+        new SalesWorkspaceContextSource(sales),
+        new DeliveryStateContextSource(options.store),
+        new PriorConversationContextSource(options.store, { windowDays: config.priorConversationDays }),
+        // (M3) Read-only; only where Quote V2 is REAL (the composition refused above otherwise), and only when enabled.
+        ...(options.quoteRecovery === true && quoteReal ? [new SalesQuoteRecoveryContextSource({ conversation: options.store, sales, quotes: options.quotes!, windowDays: config.priorConversationDays })] : []),
+      ],
       actionPolicy: salesActionPolicyFor(profile),
       admission: controls,
       presence: { executionMode: 'production', runtimeProfile: profileLabel(profile) },
@@ -526,6 +535,13 @@ export function salesCommercialEligibility(profile: ProductionProfile, promotion
 export function loadPromotionalQuotes(env: Readonly<Record<string, string | undefined>>): boolean {
   const value = (env.R4_F1_PROMOTIONAL_QUOTES ?? 'disabled').trim();
   if (value !== 'enabled' && value !== 'disabled') throw new Error('R4_F1_PROMOTIONAL_QUOTES must be enabled or disabled');
+  return value === 'enabled';
+}
+
+/** (M3) R4_SALES_QUOTE_RECOVERY: `enabled` | `disabled` (default). Anything else refuses (fail closed). */
+export function loadQuoteRecovery(env: Readonly<Record<string, string | undefined>>): boolean {
+  const value = (env.R4_SALES_QUOTE_RECOVERY ?? 'disabled').trim();
+  if (value !== 'enabled' && value !== 'disabled') throw new Error('R4_SALES_QUOTE_RECOVERY must be enabled or disabled');
   return value === 'enabled';
 }
 

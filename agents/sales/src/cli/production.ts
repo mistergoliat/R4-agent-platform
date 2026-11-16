@@ -23,7 +23,7 @@ import { CheckoutHttpClient, SandboxConsentDirectory, loadCheckoutHttpConfig, sa
 import { describeWhatsAppConfig, loadWhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
 import { adminDatabaseUrl } from '../harness/database.js';
 import { configuredModelProvider } from '../model.js';
-import { assertSalesProductionPrerequisites, composeSalesGateway, composeSalesProductionWorker, composeSalesWebGateway, loadPromotionalQuotes, salesAgentOf, selectedSalesProductionProfile } from '../production/composition.js';
+import { assertSalesProductionPrerequisites, composeSalesGateway, composeSalesProductionWorker, composeSalesWebGateway, loadPromotionalQuotes, loadQuoteRecovery, salesAgentOf, selectedSalesProductionProfile } from '../production/composition.js';
 import { isSalesWebProfile } from '../production/profile-web.js';
 import { webProgressReporter } from '../production/web-progress.js';
 import { WebOutboundAdapter, loadWebChannelConfig } from '@r4-adapters/web';
@@ -312,7 +312,7 @@ async function worker(production: ReturnType<typeof loadProductionConfig>): Prom
   const catalog = productionCatalog(production, logger);
   const shipping = productionShipping(production, logger);
   const quotes = productionQuotes(production, logger);
-  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...webProgressOf(production, pool), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production, logger) });
+  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...webProgressOf(production, pool), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production, logger), quoteRecovery: loadQuoteRecovery(process.env) });
   await assertSalesProductionPrerequisites(workerProfile(production), pool);
   logger.info({ event: 'service.composed', profile: composed.report.profile, profileFingerprint: composed.report.profileFingerprint }, 'production worker composed');
   await runWorkerProcess(config, composed.bindings, { logger });
