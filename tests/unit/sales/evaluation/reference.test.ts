@@ -12,6 +12,9 @@ describe('reference offline benchmark (S02, S03, S04, S11, CENTRAL; fixture prod
     expect(overall.technicalCompletion).toMatchObject({ numerator: 14, denominator: 15 });
     expect(overall.findingsByCode).toEqual({
       nonexistent_product_or_category_claim: { occurrences: 3, runsAffected: 3 },
+      // CENTRAL's proposal states $129.990 30 min after its only catalog read (valid 5 min): sales.catalog_evidence_use
+      // reports it (the claim verifier only rejects evidence already expired when it was observed).
+      price_from_expired_evidence: { occurrences: 3, runsAffected: 3 },
       trailing_non_protocol_output: { occurrences: 1, runsAffected: 1 },
       unsupported_relationship: { occurrences: 3, runsAffected: 3 },
     });
@@ -35,6 +38,7 @@ describe('reference offline experiment (baseline vs grounded candidate)', () => 
     expect(comparison.axes.filter((a) => a.differs).map((a) => a.axis)).toEqual(['configuration.trajectorySet']);
     expect(comparison.findings).toEqual([
       { code: 'nonexistent_product_or_category_claim', baseline: 3, candidate: 0, delta: -3, runsAffectedBaseline: 3, runsAffectedCandidate: 0 },
+      { code: 'price_from_expired_evidence', baseline: 3, candidate: 3, delta: 0, runsAffectedBaseline: 3, runsAffectedCandidate: 3 },
       { code: 'trailing_non_protocol_output', baseline: 1, candidate: 1, delta: 0, runsAffectedBaseline: 1, runsAffectedCandidate: 1 },
       { code: 'unsupported_relationship', baseline: 3, candidate: 0, delta: -3, runsAffectedBaseline: 3, runsAffectedCandidate: 0 },
     ]);

@@ -2,6 +2,7 @@ export * from './taxonomy.js';
 export * from './projection.js';
 export * from './claims.js';
 export * from './evaluators.js';
+export * from './catalog-evidence.js';
 export * from './rubrics.js';
 export * from './definition.js';
 export * from './regressions.js';

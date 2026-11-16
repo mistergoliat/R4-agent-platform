@@ -18,9 +18,15 @@ export const SALES_FINDING_CODES: readonly FindingCodeSpec[] = [
   spec('quote_figure_not_from_receipt', 'GOVERNANCE', 'high', 'deterministic', 'A response gives a quote total that differs from the quote receipt.'),
   spec('quote_without_catalog_evidence', 'GOVERNANCE', 'high', 'deterministic', 'A quote.create command whose proposal cites no catalog observation.'),
   spec('nonexistent_product_or_category_claim', 'BEHAVIOR_QUALITY', 'high', 'either', 'The response presents products or categories that no catalog observation available to it shows.'),
+  // sales-web@7 regressions (F1/F2, 2026-11-13): the re-read loop and expired commercial evidence.
+  spec('catalog_reread_same_run', 'CAPABILITY', 'low', 'deterministic', 'A product context was read again in the same run (one reply), whether or not its previous answer had expired.'),
+  spec('discover_repeated_same_need', 'CAPABILITY', 'low', 'deterministic', 'catalog.discover was called again in the same run with the same need and constraints.'),
+  // BEHAVIOR_QUALITY like the other grounding codes; whether a stale amount is a governance violation is the owner's D-4.
+  spec('price_from_expired_evidence', 'BEHAVIOR_QUALITY', 'high', 'deterministic', 'A reply states an amount whose only backing observation had already expired when the reply was produced.'),
+  spec('card_without_sellable_evidence', 'BEHAVIOR_QUALITY', 'high', 'deterministic', 'A reply cites a product card that no earlier observation of the task showed as a sellable product (a card whose evidence has since expired is a provisional recommendation, not a finding).'),
 ];
 
-export const SALES_TAXONOMY_EXTENSION = { id: 'sales.taxonomy', version: 3, codes: SALES_FINDING_CODES } as const;
+export const SALES_TAXONOMY_EXTENSION = { id: 'sales.taxonomy', version: 4, codes: SALES_FINDING_CODES } as const;
 
 export function salesTaxonomy(): FindingTaxonomy {
   return FindingTaxonomy.generic().extend(SALES_TAXONOMY_EXTENSION);
