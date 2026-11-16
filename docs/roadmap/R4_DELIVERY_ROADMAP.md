@@ -27,7 +27,7 @@ requiere autorización explícita (AGENTS.md).
 | R4-I | Governed Production | **En progreso** — implementado sobre R4 POST-H RECOVERY BASELINE `dd06a68`; pendiente de auditoría (§3.11) |
 | R4-J | Sales Autonomy | **En progreso**: J3 cerrado (2026-10-15, `main` `b5fd288`); J4 en progreso, prioridad P0 (`main` `4c97ba0`, 2026-10-26); R7-4 cerrado y J5 activo (owner, 2026-11-05); hitos en §1.1 |
 | R4-K | Platform Generalization Test (Marketing Analyst) | No iniciado |
-| R4-L | Extended Platform | No iniciado |
+| R4-L | Extended Platform | **Iniciado: solo integración sandbox** (owner, 2026-11-10: «Iniciar R4-L exclusivamente como integración sandbox.»; sin pagos, órdenes ni carritos productivos) |
 
 **Post-H Architecture Gap Review** (gate humano, **no** una fase): GAP-H-001
 confirmado y **resuelto** (ADR-028, §3.10; publicado en `dd06a68`). No se abrió
