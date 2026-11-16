@@ -246,6 +246,19 @@ describe('OpenAICompatibleModelProvider', () => {
     expect(JSON.stringify(result)).not.toContain(KEY);
   });
 
+  it.each([
+    [402, 'Insufficient Balance', 'quota_exhausted', false],
+    [402, 'This request requires more credits', 'quota_exhausted', false],
+    [403, 'Key limit exceeded (total limit). Manage it using the settings page', 'quota_exhausted', false],
+    [429, 'Your account has insufficient credits', 'quota_exhausted', false],
+    [429, 'Rate limit exceeded, retry shortly', 'rate_limited', true],
+    [403, 'Forbidden', 'provider_error', false],
+  ] as const)('maps HTTP %i "%s" to %s (retryable=%s): a refusal for money is never retried', async (status, message, kind, retryable) => {
+    const { fetch } = fakeFetch(() => ({ status, body: { error: { message } } }));
+    const result = await new DefaultModelGateway({ provider: new OpenAICompatibleModelProvider(CONFIG, { fetch }), logger: createSilentLogger() }).generate(request());
+    expect(result).toMatchObject({ ok: false, error: { kind, retryable } });
+  });
+
   it('maps a server-side context-length refusal to the envelope error', async () => {
     const { fetch } = fakeFetch(() => ({ status: 400, body: { error: { message: "This model's maximum context length is 8192 tokens" } } }));
     const result = await new DefaultModelGateway({ provider: new OpenAICompatibleModelProvider(CONFIG, { fetch }), logger: createSilentLogger() }).generate(request());

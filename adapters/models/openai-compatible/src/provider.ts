@@ -124,8 +124,16 @@ export class OpenAICompatibleModelProvider implements ModelProvider {
   }
 }
 
+const QUOTA_REFUSAL = /credit|insufficient|balance|quota|key limit|spend limit|budget/i;
+
 function classifyStatus(status: number, body: string, config: OpenAICompatibleConfig): ModelProviderError {
   const detail = providerMessage(body, config);
+  // 402 is always money (DeepSeek "Insufficient Balance", OpenRouter "insufficient credits"); a 403 or 429 is money only
+  // when the server says so (OpenRouter "Key limit exceeded"). Retrying cannot help, so the run goes to a person at
+  // once instead of being retried as recoverable.
+  if (status === 402 || ((status === 403 || status === 429) && QUOTA_REFUSAL.test(body))) {
+    return new ModelProviderError('quota_exhausted', `profile ${config.profile}: the provider refused for balance or spend limit (HTTP ${status})${detail}`, false);
+  }
   if (status === 429) return new ModelProviderError('rate_limited', `profile ${config.profile}: rate limited (HTTP 429)${detail}`, true);
   if (status === 408 || status === 504) return new ModelProviderError('timeout', `profile ${config.profile}: upstream timeout (HTTP ${status})${detail}`, true);
   if (status === 400 && /context|maximum.*tokens|too long|max_tokens/i.test(body)) {

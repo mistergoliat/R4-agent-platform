@@ -97,4 +97,4 @@ assert.equal(recovered.recoveries, 1);
 assert.deepEqual(recovered.latencyS, { p50: 130, p90: 130, p95: 130 }); // measured from the failed turn's input
 assert.equal(recovered.unansweredInputs, 0);
 assert.equal(r.tasksBySegment.find((g) => g.key === 'other:denied').estimatedCostUsd, 6); // but the task's cost covers its whole life
-console.log('report.mjs self-check: OK');
+process.stdout.write('report.mjs self-check: OK\n');
