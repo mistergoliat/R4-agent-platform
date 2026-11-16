@@ -15,8 +15,8 @@ describe('reactions', () => {
       expect(guardIntentReply(frameReaction({ emoji, target: latest() })), emoji).toEqual({ confirmed: true, rule: `agent_interpreted;reaction=${emoji};bound_to=reacted_step`, reactedStepId: STEP });
     }
     const text = frameReaction({ emoji: '❤️', target: latest() });
-    expect(text).toContain('Un emoji positivo no es una aceptación automática');
-    expect(text).toContain('no emitas: pregúntale brevemente si quiere que emitas la cotización');
+    expect(text).toContain('una reacción positiva (👍, ❤️, ✅, 🔥, 👌…) es la aceptación de esa oferta tal como la presentaste: emítela sin volver a preguntar');
+    expect(text).toContain('no hagas una pregunta suelta: vuelve a enviar la oferta tal cual');
     expect(text).toContain('Si tu mensaje no era una oferta, la reacción no autoriza ninguna cotización');
     expect(text.endsWith(`\n«❤️» · mensaje ${STEP}`)).toBe(true);
   });

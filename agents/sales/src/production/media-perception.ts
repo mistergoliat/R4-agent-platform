@@ -208,9 +208,11 @@ export function frameSticker(p: ImagePerception): string {
 }
 
 /**
- * (Reactions, owner decisions 2026-11-12) What the agent is told about a reaction. The agent interprets any emoji in
- * context (asking when ambiguous); only a reaction to its latest message can accept, and only that message: the last
- * line binds the emoji to the respond step the platform resolved (the guard and quote.create read it).
+ * (Reactions, owner decisions 2026-11-12 and 2026-11-16) What the agent is told about a reaction. A positive reaction
+ * to the offer issues it unless the conversation clearly says otherwise; to confirm, the agent re-sends the offer (never
+ * a separate question, which a reaction could not accept: the loop seen on 2026-11-16). Only a reaction to its latest
+ * message can accept, and only that message: the last line binds the emoji to the respond step the platform resolved
+ * (the guard and quote.create read it).
  */
 export function frameReaction(reaction: { readonly emoji: string | null; readonly target: ReactionTarget | null }): string {
   const quoted = (t: string | null) => (t ? ` «${clean(t, 300)}»` : '');
@@ -222,7 +224,7 @@ export function frameReaction(reaction: { readonly emoji: string | null; readonl
   if (!reaction.target.latest) return `${MEDIA_TEXT_HEADERS.reaction} El cliente reaccionó con «${emoji}» a un mensaje tuyo anterior:${quoted(reaction.target.text)}. No es una aceptación de nada posterior; si aporta contexto, tenlo en cuenta, y si no, no respondas solo por esto.`;
   return [
     `${MEDIA_TEXT_HEADERS.reactionToLatest} El cliente reaccionó con «${emoji}» a tu último mensaje:${quoted(reaction.target.text)}.`,
-    'Interprétala según ese mensaje y la conversación: puede ser aceptación, interés, rechazo o duda. Un emoji positivo no es una aceptación automática. Si ese mensaje era una oferta de cotización que presentaste y el contexto deja inequívoco que el cliente la acepta tal como la presentaste, cualquier emoji puede serlo (👍, ✅, ❤️, 🔥…). Si no es inequívoco (puede ser solo agrado o interés), no emitas: pregúntale brevemente si quiere que emitas la cotización. Un emoji de rechazo o de duda nunca es una aceptación. Si tu mensaje no era una oferta, la reacción no autoriza ninguna cotización: responde solo si aporta algo.',
+    'Interprétala según ese mensaje y la conversación. Si ese mensaje era una oferta de cotización que presentaste, una reacción positiva (👍, ❤️, ✅, 🔥, 👌…) es la aceptación de esa oferta tal como la presentaste: emítela sin volver a preguntar, salvo que la conversación diga claramente lo contrario (el cliente dijo que solo está comparando, dejó una pregunta sin responder o pidió un cambio). Si de verdad necesitas confirmar, no hagas una pregunta suelta: vuelve a enviar la oferta tal cual, porque solo una reacción a la oferta puede emitirla. Un emoji de rechazo o de duda nunca es una aceptación. Si tu mensaje no era una oferta, la reacción no autoriza ninguna cotización: si el cliente parece querer la cotización, vuelve a enviar la oferta; si no, responde solo si aporta algo.',
     `«${emoji}» ${REACTION_STEP_MARK} ${oneLine(reaction.target.stepId, 64)}`,
   ].join('\n');
 }

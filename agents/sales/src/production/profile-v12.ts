@@ -35,14 +35,19 @@ export function isF1CanaryProfile(profile: ProductionProfile): boolean {
 /**
  * The owner-approved limits of the FIRST authorized F1 canary (decision C, 2026-11-05; the J3E owner values). They
  * are ceilings for that canary only — never production defaults: the configuration may be stricter, never looser.
+ *
+ * (Owner decision 2026-11-16, measurement phase) The NUMBER of quotes is not limited for now: the per-conversation and
+ * per-hour ceilings are the configuration schema's maxima (100 and 10 000), so real use shows how often customers
+ * quote before a brake is set. Every other ceiling (amount, lines, units, confirmation window) is unchanged, and an
+ * identical quote in the same conversation is still never issued twice (duplicate_quote).
  */
 export const SALES_F1_CANARY_LIMITS: Readonly<AutonomousQuoteLimitsV6> = Object.freeze({
   maxGrossClp: 250_000,
   maxLines: 3,
   maxUnitsPerLine: 5,
   maxTotalUnits: 5,
-  maxQuotesPerConversation: 1,
-  maxQuotesPerHour: 2,
+  maxQuotesPerConversation: 100,
+  maxQuotesPerHour: 10_000,
   confirmationWindowSeconds: 900,
 });
 
