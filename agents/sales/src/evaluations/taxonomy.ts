@@ -24,9 +24,11 @@ export const SALES_FINDING_CODES: readonly FindingCodeSpec[] = [
   // BEHAVIOR_QUALITY like the other grounding codes; whether a stale amount is a governance violation is the owner's D-4.
   spec('price_from_expired_evidence', 'BEHAVIOR_QUALITY', 'high', 'deterministic', 'A reply states an amount whose only backing observation had already expired when the reply was produced.'),
   spec('card_without_sellable_evidence', 'BEHAVIOR_QUALITY', 'high', 'deterministic', 'A reply cites a product card that no earlier observation of the task showed as a sellable product (a card whose evidence has since expired is a provisional recommendation, not a finding).'),
+  // Home Gym sets (2026-11-16): judged only against the Catalog owner's compatibility verdicts, never by R4 rules.
+  spec('set_with_demonstrated_incompatibility', 'BEHAVIOR_QUALITY', 'high', 'deterministic', 'A reply proposes products (or pairs them with what the visitor already has) that the catalog owner assessed INCOMPATIBLE by an approved rule before the reply.'),
 ];
 
-export const SALES_TAXONOMY_EXTENSION = { id: 'sales.taxonomy', version: 4, codes: SALES_FINDING_CODES } as const;
+export const SALES_TAXONOMY_EXTENSION = { id: 'sales.taxonomy', version: 5, codes: SALES_FINDING_CODES } as const;
 
 export function salesTaxonomy(): FindingTaxonomy {
   return FindingTaxonomy.generic().extend(SALES_TAXONOMY_EXTENSION);
