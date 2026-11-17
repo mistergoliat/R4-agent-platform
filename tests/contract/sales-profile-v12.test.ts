@@ -87,7 +87,7 @@ describe('B. the F1 gate is enforced in code', () => {
   });
 
   it('the approved values are the J3E owner values (decision C), the write ceiling 6', () => {
-    expect(SALES_F1_CANARY_LIMITS).toEqual({ maxGrossClp: 250_000, maxLines: 3, maxUnitsPerLine: 5, maxTotalUnits: 5, maxQuotesPerConversation: 100, maxQuotesPerHour: 10_000, confirmationWindowSeconds: 900 });
+    expect(SALES_F1_CANARY_LIMITS).toEqual({ maxGrossClp: 2_000_000, maxLines: 10, maxUnitsPerLine: 20, maxTotalUnits: 50, maxQuotesPerConversation: 100, maxQuotesPerHour: 10_000, confirmationWindowSeconds: 900 });
     expect(SALES_F1_CANARY_MAX_WRITE_ACTIONS).toBe(200);
     for (const ok of [1, 6, 200]) expect(() => assertF1CanaryWriteCeiling(ok)).not.toThrow();
     for (const bad of [0, 201, 1.5, Number.NaN]) expect(() => assertF1CanaryWriteCeiling(bad), String(bad)).toThrow(/between 1 and 200/);

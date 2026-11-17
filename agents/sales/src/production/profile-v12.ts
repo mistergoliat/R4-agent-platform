@@ -41,11 +41,14 @@ export function isF1CanaryProfile(profile: ProductionProfile): boolean {
  * quote before a brake is set. Every other ceiling (amount, lines, units, confirmation window) is unchanged, and an
  * identical quote in the same conversation is still never issued twice (duplicate_quote).
  */
+// Owner decision 2026-11-17 (measurement phase): the first-canary ceilings ($250.000, 3 lines, 5 units per line, 5 units)
+// blocked ordinary home-gym quotes (a $352.795 rack; a rack + bar + 6 plates). Raised to measure real demand; still a
+// guard against a gross model error or abuse. To be re-tuned from the M1 baseline.
 export const SALES_F1_CANARY_LIMITS: Readonly<AutonomousQuoteLimitsV6> = Object.freeze({
-  maxGrossClp: 250_000,
-  maxLines: 3,
-  maxUnitsPerLine: 5,
-  maxTotalUnits: 5,
+  maxGrossClp: 2_000_000,
+  maxLines: 10,
+  maxUnitsPerLine: 20,
+  maxTotalUnits: 50,
   maxQuotesPerConversation: 100,
   maxQuotesPerHour: 10_000,
   confirmationWindowSeconds: 900,
