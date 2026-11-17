@@ -171,9 +171,9 @@ describe('acceptance interpreted in natural language (@19)', { timeout: 150_000 
     expect(r.refusals).toEqual([{ error_code: 'customer_confirmation_not_explicit', reason: 'disqualified' }]);
   });
 
-  it('@20 (= @19 on definition v20) issues one quote with the chosen delivery, the intent guard, template v2 and the PDF', async () => {
+  it.each(['sales-production@20', 'sales-production@21'])('%s (= @19 on its own definition) issues one quote with the chosen delivery, the intent guard, template v2 and the PDF', async (profile) => {
     const quotes = new FixtureQuoteV2Service();
-    const r = await issueOnce('sales-production@20', quotes, 'dale', SHIPPING_STEPS, 'Quiero 2 barras Z con despacho a Ñuñoa');
+    const r = await issueOnce(profile, quotes, 'dale', SHIPPING_STEPS, 'Quiero 2 barras Z con despacho a Ñuñoa');
     expect(quotes.quotes[0]!.shipping?.amounts.net ?? 0).toBeGreaterThan(0);
     expect(r.ownerCalls).toBe(1);
     expect(r.issued).toHaveLength(1);
@@ -182,8 +182,8 @@ describe('acceptance interpreted in natural language (@19)', { timeout: 150_000 
     expect(r.captured.filter((c) => c.document)).toHaveLength(1);
   });
 
-  it('@20 never issues when the reply is a question, even if the agent proposes it', async () => {
-    const r = await issueOnce('sales-production@20', new FixtureQuoteV2Service(), '¿incluye despacho?');
+  it.each(['sales-production@20', 'sales-production@21'])('%s never issues when the reply is a question, even if the agent proposes it', async (profile) => {
+    const r = await issueOnce(profile, new FixtureQuoteV2Service(), '¿incluye despacho?');
     expect(r.ownerCalls).toBe(0);
     expect(r.issued).toEqual([]);
     expect(r.refusals).toEqual([{ error_code: 'customer_confirmation_not_explicit', reason: 'disqualified' }]);
