@@ -147,6 +147,8 @@ export const SALES_PRODUCTION_AGENT_VERSIONS: Readonly<Record<string, SalesAgent
   'sales-production@19': 19,
   // (owner decision 2026-11-17) @20 = @19 pinned to definition v20 (v19 plus the Don Pesín voice); @19 stays the rollback.
   'sales-production@20': 20,
+  // (owner feedback 2026-11-17) @21 = @20 pinned to definition v21 (v20 plus the feedback edits); @20 stays the rollback.
+  'sales-production@21': 21,
   // (R4 Checkout integration) The E3 checkout sandbox lane profile: a lane profile only.
   'sales-production@15': 15,
 });
