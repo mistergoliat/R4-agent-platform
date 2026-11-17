@@ -52,3 +52,26 @@ Los ítems de `@19`, salvo su registro y su autorización, más:
 | 5 | «su precio promocional no se puede cotizar formalmente» | Interaction: nunca mostrar términos de plataforma o de política; decirlo en palabras del cliente (por ejemplo, que está en promoción pero esa oferta no se puede dejar en una cotización ahora). La regla de promociones no cambia |
 
 `@21` está en los mismos conjuntos que `@20` (§2). Su gate es el de `@20` (sin su registro ni su autorización) más `feedback-l3` (replay de los cinco casos con el modelo real), `profile-21-registered` y `explicit-authorization` con `@20` como rollback. La activación es la de §4, cambiando `@20` por `@21` y `@19` por `@20`: worker de `@21` junto al de `@20`, `R4_PROD_LANE_PROFILE=sales-production@21`, y `R4_MEDIA_PERCEPTION_PROFILES` con `sales-production@21` (y `@20` mientras drenan sus conversaciones).
+
+## 6. v22 / `@22`: feedback del owner sobre `@21` en vivo (2026-11-17)
+
+`@22` es `@21` fijado a la **definición v22**, que es v21 más las ediciones de abajo. v21 y `@21` no cambian, y `@21` queda como rollback. El contrato `tests/contract/sales-profile-v22.test.ts` reconstruye v22 desde v21 con exactamente estas ediciones. No se agrega ni se quita ninguna línea: se extienden tres viñetas.
+
+| # | Caso observado con `@21` | Edición en v22 |
+|---|---|---|
+| 1 | En una conversación anterior, que aparecía en el contexto, el cliente dijo que pesa 150 kg y tiene $100.000 de presupuesto. En la tarea nueva, el agente usó el presupuesto, pero recomendó una barra de máximo 150 kg sin advertir. Solo advirtió cuando el cliente repitió su peso | Interaction («Before asking…»): lo que el cliente dijo antes, incluso en conversaciones anteriores del contexto (peso, presupuesto, espacio, objetivos, experiencia), sigue valiendo para toda recomendación, incluida la regla de capacidad y margen. Solo se confirma brevemente si pudo haber cambiado |
+| 2 | Después de dar el precio de $1, el agente dijo «No es despacho gratis.» | Promoción Despacho Directo: se mantiene la regla de no llamarlo nunca gratis, pero esas reglas son para el agente, no frases para el cliente. Nunca decirle al cliente que no es gratis ni que no es un error de precio: basta el precio de $1 y el rango de la promoción |
+| 3 | Ante `limitBreaches`, el agente dijo «no puedo emitir esa cotización sin que la revise una persona del equipo» y solo ofreció alternativas | quote.preview: decirlo en palabras del cliente y ofrecer conectarlo con una persona del equipo. Si acepta, usar `request_handoff` en ese turno, con un resumen y sin escribir antes una respuesta. La plataforma le envía al cliente el aviso fijo F-ADV-2: una persona sigue por este mismo chat. Nunca decir ni insinuar que alguien fue avisado si no se pidió el handoff |
+
+**Por qué `request_handoff` y no `request_consultation`:** las dos son decisiones del kernel. `request_consultation` hace una pregunta a una persona y el agente conserva la tarea; v21 la reserva para conocimiento que ninguna capacidad entrega. `request_handoff` transfiere la tarea a una persona: la tarea queda bloqueada (`human_handoff`) y el run se suspende, así que en ese run no hay respuesta propia del agente. En `@19`–`@22` (`SALES_HUMAN_REQUEST_NOTICE_PROFILES`), la plataforma envía el aviso fijo, una sola vez. Una cotización sobre los límites autónomos solo la puede preparar una persona, así que corresponde un handoff.
+
+`@22` está en los mismos conjuntos que `@21`. Su gate es el de `@21` (sin su registro ni su autorización) más `feedback-2-l3` (replay de los tres casos con el modelo real), `profile-22-registered` y `explicit-authorization` con `@21` como rollback.
+
+### Activación de `@22` (no autorizada en este PR)
+
+Es la de §4, desplazada en uno: worker de `@22` junto al de `@21`, `R4_PROD_LANE_PROFILE=sales-production@22`, y `R4_MEDIA_PERCEPTION_PROFILES` con `sales-production@22` (y `@21` mientras drenan sus conversaciones). Rollback: volver a `sales-production@21`.
+
+Dos puntos de operación que no están en este repo:
+
+- **Observador.** El observador de solo lectura del host (`r4-f1-observe-v2`) tiene su propia lista fija de perfiles con despacho. Hay que agregar `sales-production@22` junto a `@21` (y a los anteriores) antes del cambio de carril. Si no, sus chequeos no cuentan las conversaciones de `@22`.
+- **Autonomía a mano.** La copia del script de cambio de carril en el host (`~/r4-lane-switch-v2.sh`) se detiene antes del paso de autonomía, porque los procesos F2 están detenidos a propósito. Después de verificar el gateway y el worker de `@22`, hay que activar la autonomía a mano con `npm run production:sales:control -- autonomy on --reason "<motivo>"`, y confirmarla con `npm run production:sales:control -- autonomy status`. Activar la autonomía no libera tareas retenidas: cada una se libera con `holds release`.

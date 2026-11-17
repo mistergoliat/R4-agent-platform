@@ -48,6 +48,7 @@ import { SALES_PRODUCTION_PROFILE_V18 } from '../../production/profile-v18.js';
 import { SALES_PRODUCTION_PROFILE_V19 } from '../../production/profile-v19.js';
 import { SALES_PRODUCTION_PROFILE_V20 } from '../../production/profile-v20.js';
 import { SALES_PRODUCTION_PROFILE_V21 } from '../../production/profile-v21.js';
+import { SALES_PRODUCTION_PROFILE_V22 } from '../../production/profile-v22.js';
 import { isQuoteLaneProfile, isSalesLaneProfile } from '../../production/profile-v15.js';
 import type { CatalogDiscoverPort } from '@r4-adapters/catalog-http';
 import { openApprovalInspection } from '../approval-inspection.js';
@@ -62,7 +63,7 @@ export const CANARY_PROFILE: ProductionProfile = SALES_PRODUCTION_PROFILE_V4;
  * v7 (deterministic offer, R4-J3E-C1) and v8 (Customer and identity verification, R4-J4-R4; prepared for J4-R5, not run).
  * Never one a production worker runs today.
  */
-export const CANARY_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_PRODUCTION_PROFILE_V4, SALES_PRODUCTION_PROFILE_V5, SALES_PRODUCTION_PROFILE_V6, SALES_PRODUCTION_PROFILE_V7, SALES_PRODUCTION_PROFILE_V8, SALES_PRODUCTION_PROFILE_V12, SALES_PRODUCTION_PROFILE_V14, SALES_PRODUCTION_PROFILE_V16, SALES_PRODUCTION_PROFILE_V17, SALES_PRODUCTION_PROFILE_V18, SALES_PRODUCTION_PROFILE_V19, SALES_PRODUCTION_PROFILE_V20, SALES_PRODUCTION_PROFILE_V21]);
+export const CANARY_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_PRODUCTION_PROFILE_V4, SALES_PRODUCTION_PROFILE_V5, SALES_PRODUCTION_PROFILE_V6, SALES_PRODUCTION_PROFILE_V7, SALES_PRODUCTION_PROFILE_V8, SALES_PRODUCTION_PROFILE_V12, SALES_PRODUCTION_PROFILE_V14, SALES_PRODUCTION_PROFILE_V16, SALES_PRODUCTION_PROFILE_V17, SALES_PRODUCTION_PROFILE_V18, SALES_PRODUCTION_PROFILE_V19, SALES_PRODUCTION_PROFILE_V20, SALES_PRODUCTION_PROFILE_V21, SALES_PRODUCTION_PROFILE_V22]);
 
 const DATABASE_URL = /^postgres(ql)?:\/\//;
 
