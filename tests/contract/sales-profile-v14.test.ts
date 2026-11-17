@@ -102,9 +102,9 @@ describe('B. the lane worker composition', () => {
     }
   });
 
-  it('the worker write ceiling is 1..6 for @14 too (0 cannot issue a quote)', () => {
-    for (const ok of [1, 6]) expect(() => assertF1CanaryWriteCeiling(ok, 'sales-production@14')).not.toThrow();
-    for (const bad of [0, 7]) expect(() => assertF1CanaryWriteCeiling(bad, 'sales-production@14')).toThrow(/sales-production@14 runs with maxWriteActions between 1 and 6/);
+  it('the worker write ceiling is 1..200 for @14 too (0 cannot issue a quote)', () => {
+    for (const ok of [1, 6, 200]) expect(() => assertF1CanaryWriteCeiling(ok, 'sales-production@14')).not.toThrow();
+    for (const bad of [0, 201]) expect(() => assertF1CanaryWriteCeiling(bad, 'sales-production@14')).toThrow(/sales-production@14 runs with maxWriteActions between 1 and 200/);
   });
 });
 

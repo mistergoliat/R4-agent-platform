@@ -305,7 +305,7 @@ async function worker(production: ReturnType<typeof loadProductionConfig>): Prom
   if (!model) throw new Error('refusing: no model provider configured (R4_MODEL_*)');
   if (!production.config.allowNetwork) throw new Error('refusing: a real model call requires R4_PROD_ALLOW_NETWORK=true');
   const config = loadWorkerConfig(process.env);
-  // (R4 Quote E2E) The quote lane worker issues quotes within the owner-approved write ceiling (1..6; 0 cannot issue).
+  // (R4 Quote E2E) The quote lane worker issues quotes within the owner-approved write ceiling (1..SALES_F1_CANARY_MAX_WRITE_ACTIONS; 0 cannot issue).
   if (isQuoteLaneProfile(workerProfile(production))) assertF1CanaryWriteCeiling(config.execution.maxWriteActions, profileLabel(workerProfile(production)));
   const logger = createLogger({ service: 'r4-worker', level: config.logLevel });
   const pool = createPool({ connectionString: config.databaseUrl, logger, applicationName: 'r4-worker-bindings', max: 2 });
