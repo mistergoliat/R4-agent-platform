@@ -10,6 +10,7 @@ import {
   type ClaimOutboundCommand,
   type ConversationBindingRecord,
   type ConversationSummary,
+  type IdleConversation,
   type DeliveryAttemptRecord,
   type DeliveryEventRecord,
   type DispatchClaim,
@@ -283,6 +284,26 @@ export class PostgresProductionStore implements ProductionStore {
   async bindingByTask(taskId: string): Promise<ConversationBindingRecord | null> {
     const r = await query<Row>(this.#pool, 'select * from channel_conversation_bindings where task_id = $1', [taskId]);
     return r.rows[0] ? bindingFromRow(r.rows[0]) : null;
+  }
+
+  async idleConversations(command: { readonly channel: string; readonly idleForMs: number; readonly limit: number }): Promise<IdleConversation[]> {
+    // Time is the temporal clock, the clock of task_inputs.received_at (and of the Temporal Runtime's own check).
+    const r = await query<Row>(
+      this.#pool,
+      `select b.binding_id, b.channel, b.task_id, t.status
+         from channel_conversation_bindings b join agent_tasks t on t.task_id = b.task_id
+        where b.status = 'open' and b.channel = $3 and (
+              (t.status = 'cancelled' and t.status_reason = 'idle_timeout')
+           or (t.status = 'waiting'
+               and exists (select 1 from task_waits w where w.task_id = t.task_id and w.status = 'waiting' and w.kind = 'WAIT_FOR_INPUT')
+               and coalesce((select max(i.received_at) from task_inputs i where i.task_id = t.task_id), b.created_at) <= r4_now() - $1::double precision * interval '1 millisecond'
+               and not exists (select 1 from outbound_messages o where o.task_id = t.task_id and o.status in ('pending', 'dispatching', 'unknown'))
+               and not exists (select 1 from human_requests h where h.task_id = t.task_id and h.status in ('requested', 'active'))
+               and not exists (select 1 from action_executions e where e.task_id = t.task_id and e.status not in ('succeeded', 'rejected', 'failed'))))
+        order by b.created_at, b.binding_id limit $2`,
+      [command.idleForMs, command.limit, command.channel],
+    );
+    return r.rows.map((row) => ({ bindingId: row.binding_id as string, channel: row.channel as string, taskId: row.task_id as string, taskStatus: row.status as string }));
   }
 
   async taskState(taskId: string): Promise<TaskStateFacts | null> {
@@ -777,6 +798,7 @@ export class PostgresProductionStore implements ProductionStore {
     // never a binding by its closing time: an earlier task can still get a turn after its binding closed (an operator
     // reply on a task whose closing was pending, R7-4 IR-1), and closing times come from another clock than turn times.
     // `earlier` is an index range scan over the one conversation (migration 0013_conversation_binding_history, R-9).
+    // A message cancelled before sending was never said: it is not a turn (the operator `thread` still shows it).
     const r = await query<Row>(
       this.#pool,
       `with cur as (select channel, conversation_key, created_at from channel_conversation_bindings where task_id = $1),
@@ -793,10 +815,11 @@ export class PostgresProductionStore implements ProductionStore {
          select 'agent', s.step_id::text, s.created_at, s.decision->>'content', s.task_id, o.outbound_id, o.status, o.hold_reason, o.cancel_reason, o.provider_message_id
            from agent_run_steps s left join outbound_messages o on o.response_step_id = s.step_id
           where s.task_id in (select task_id from earlier) and s.decision_type = 'respond' and s.outcome = 'recorded' and s.created_at >= $2
+            and o.status is distinct from 'cancelled'
          union all
          select 'operator', o.outbound_id::text, o.created_at, o.body, o.task_id, o.outbound_id, o.status, o.hold_reason, o.cancel_reason, o.provider_message_id
            from outbound_messages o
-          where o.task_id in (select task_id from earlier) and o.origin = 'operator' and o.created_at >= $2),
+          where o.task_id in (select task_id from earlier) and o.origin = 'operator' and o.created_at >= $2 and o.status <> 'cancelled'),
        shown as (select * from turns where text is not null)
        select t.*, (select count(distinct task_id) from shown)::int as earlier_tasks from shown t
         order by t.at desc, t.id desc limit $3`,
@@ -885,14 +908,14 @@ export class PostgresProductionStore implements ProductionStore {
 
 async function taskStateOf(db: Db, taskId: string): Promise<TaskStateFacts | null> {
   const r = await db.query<Row>(
-    `select t.status,
+    `select t.status, t.status_reason,
             exists (select 1 from task_terminal_intents i where i.task_id = t.task_id) as terminal_intent,
             exists (select 1 from human_requests h where h.task_id = t.task_id and h.kind = 'handoff' and h.status in ('requested', 'active')) as human_owned
        from agent_tasks t where t.task_id = $1`,
     [taskId],
   );
   const row = r.rows[0];
-  return row ? { status: row.status as string, terminalIntent: row.terminal_intent === true, humanOwned: row.human_owned === true } : null;
+  return row ? { status: row.status as string, statusReason: (row.status_reason as string | null) ?? null, terminalIntent: row.terminal_intent === true, humanOwned: row.human_owned === true } : null;
 }
 
 function entry(at: string, id: string, kind: ThreadEntry['kind'], text: string | null, refs: Record<string, string | null>, deliveryState: ThreadEntry['delivery']): ThreadEntry {

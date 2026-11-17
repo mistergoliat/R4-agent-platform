@@ -16,7 +16,7 @@ const SAID = [
   turn('2026-11-01T10:00:00.000Z', '01a19ddb-0000-7000-8000-00000000a001', 'contact', 'Busco un banco regulable'),
   turn('2026-11-01T10:00:05.000Z', '01a19ddb-0000-7000-8000-00000000a002', 'agent', 'Tenemos el banco Atlas a $89.990.', 'read'),
   turn('2026-11-01T12:00:00.000Z', '01a19ddb-0000-7000-8000-00000000b001', 'contact', 'Hola de nuevo'),
-  turn('2026-11-01T12:00:05.000Z', '01a19ddb-0000-7000-8000-00000000b002', 'agent', 'Hola, ¿en qué te ayudo?', 'cancelled'),
+  turn('2026-11-01T12:00:05.000Z', '01a19ddb-0000-7000-8000-00000000b002', 'agent', 'Hola, ¿en qué te ayudo?', 'failed'),
   turn('2026-11-01T12:00:09.000Z', '01a19ddb-0000-7000-8000-00000000b003', 'operator', 'Te escribo yo, soy Ana.', 'delivered'),
 ];
 
@@ -59,7 +59,7 @@ describe('PriorConversationContextSource', () => {
       ['participant', undefined],
       ['agent', 'the contact received it'],
       ['participant', undefined],
-      ['agent', 'it was NOT sent'],
+      ['agent', 'the contact did NOT receive it'],
       ['operator', 'the contact received it'],
     ]);
   });

@@ -10,7 +10,7 @@ const MEANING: Readonly<Record<string, string>> = {
   dispatching: 'being sent right now',
   unknown: 'it is NOT known whether the contact received it (the provider did not confirm; it will not be re-sent automatically)',
   failed: 'the contact did NOT receive it',
-  cancelled: 'it was NOT sent',
+  cancelled: 'it was NOT sent: the contact never saw it, so it is not part of the conversation; do not refer to it as said',
 };
 
 /**

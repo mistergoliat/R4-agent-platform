@@ -108,6 +108,22 @@ describe('interaction projection (platform.interaction)', () => {
     expect(result.compiled.sections.episodicMemory.find((i) => i.itemId.startsWith('wait:'))?.content).toMatchObject({ statedReason: 'nothing to add' });
   });
 
+  it('never projects a withdrawn response (delivery cancelled before sending) as said — of an earlier run or of this run', async () => {
+    const sent = step(EARLIER_RUN, 1, { type: 'respond', content: 'Sent reply.' }, at(MINUTE));
+    const cancelled = step(EARLIER_RUN, 2, { type: 'respond', content: 'Cancelled draft.' }, at(2 * MINUTE));
+    const current = step(RUN.runId, 1, { type: 'respond', content: 'Superseded draft of this run.' }, at(3 * MINUTE));
+    const base = request();
+    const facts: InteractionFacts = { steps: [sent, cancelled, current], humans: [], responses: [], waits: [], withdrawnResponses: [cancelled.stepId, current.stepId] };
+    const withResponses: ContextCompileRequest = { ...base, execution: { ...base.execution, responses: [{ stepId: current.stepId, iteration: 1, content: 'Superseded draft of this run.', recordedAt: current.createdAt }] } };
+    const result = compiled(await compiler().compile(withFacts(withResponses, { interactions: facts })));
+    const said = result.compiled.sections.conversation.map((i) => (i.content as { text: string }).text);
+    expect(said).toEqual(['Sent reply.']);
+    expect(result.decisions.map((d) => d.itemId)).not.toContain(`response:${cancelled.stepId}`);
+    // Without the fact (no delivery owner), every recorded response is said, as before.
+    const unaware = compiled(await compiler().compile(withFacts(withResponses, { interactions: { ...facts, withdrawnResponses: [] } })));
+    expect(unaware.compiled.sections.conversation.map((i) => (i.content as { text: string }).text)).toEqual(['Sent reply.', 'Cancelled draft.', 'Superseded draft of this run.']);
+  });
+
   it('is deterministic: the same records yield the same items and fingerprint', async () => {
     const facts = conversationFacts(3);
     const a = compiled(await compiler().compile(withFacts(request(), { interactions: facts })));

@@ -20,6 +20,12 @@ export interface InteractionRecords {
   readonly waits: readonly TaskWait[];
   /** (R4-J4-R7-2) `turn.closure.reconsider` events: the platform asked the agent to reconsider a silent closing. */
   readonly closures: readonly TemporalEvent[];
+  /**
+   * Recorded `respond` steps the participant will never receive: their delivery was cancelled before sending, or it
+   * is still pending but causally superseded (an input exists that the response's context never evaluated, so the
+   * delivery gate can only hold or cancel it). Empty where nothing delivers responses.
+   */
+  readonly withdrawnResponses: readonly string[];
 }
 
 /** (R4-J4-R7-2) A conversational input (`actor_kind = 'user'`), as the turn guard names it. */
@@ -100,6 +106,8 @@ export interface TemporalPersistence {
   events(taskId: string): Promise<TemporalEvent[]>;
 
   input(taskId: string, sourceRef: string, externalKey: string): Promise<{ inputId: string; requestHash: string } | null>;
+  /** (Case idle close) When the task's newest input was received (temporal clock); null when it has none. */
+  latestInputAt(taskId: string): Promise<string | null>;
   insertInput(input: { inputId: string; taskId: string; sourceRef: string; externalKey: string; requestHash: string; memoryEntryId: string; actorKind: string; actorRef: string; receivedAt: string; correlationId: string }): Promise<void>;
   /**
    * Whether the task has an input whose memory entry the given snapshot never evaluated. It decides waking, where

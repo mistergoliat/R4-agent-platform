@@ -181,6 +181,11 @@ export class PostgresTemporalPersistence implements TemporalPersistence {
     return r.rows[0] ? { inputId: r.rows[0].input_id, requestHash: r.rows[0].request_hash } : null;
   }
 
+  async latestInputAt(taskId: string): Promise<string | null> {
+    const r = await this.client.query<{ at: Date | null }>('select max(received_at) as at from task_inputs where task_id = $1', [taskId]);
+    return r.rows[0]?.at ? iso(r.rows[0].at) : null;
+  }
+
   async insertInput(i: Parameters<TemporalPersistence['insertInput']>[0]): Promise<void> {
     await this.client.query(
       'insert into task_inputs (input_id, task_id, external_key, source_ref, actor_kind, actor_ref, request_hash, memory_entry_id, received_at, correlation_id) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
@@ -294,12 +299,24 @@ export class PostgresTemporalPersistence implements TemporalPersistence {
     const closures = obligation.reconsider && !obligation.covered
       ? await this.client.query<Row>('select * from temporal_events where event_id = $1', [obligation.reconsider.eventId])
       : { rows: [] as Row[] };
+    // A response the participant will never receive: cancelled before sending (any reason), or pending and causally
+    // superseded — the delivery gate's own rule (claimNextOutbound), under which it can only be held or cancelled.
+    const withdrawn = await this.client.query<{ step_id: string }>(
+      `select s.step_id from agent_run_steps s join outbound_messages o on o.response_step_id = s.step_id
+        where s.task_id = $1 and s.decision_type = 'respond' and s.outcome = 'recorded'
+          and (o.status = 'cancelled' or (o.status = 'pending' and s.context_snapshot_id is not null and exists (
+                select 1 from task_inputs i where i.task_id = $1 and not exists (
+                  select 1 from context_snapshot_items ci where ci.snapshot_id = s.context_snapshot_id and ci.item_id = 'memory:' || i.memory_entry_id::text))))
+        order by s.created_at, s.step_id`,
+      [taskId],
+    );
     return {
       steps: steps.rows.map(stepFromRow),
       humans: await this.listHumans(taskId),
       responses: responses.rows.map(eventFromRow),
       waits: await this.listWaits(taskId),
       closures: closures.rows.map(eventFromRow),
+      withdrawnResponses: withdrawn.rows.map((r) => r.step_id),
     };
   }
 }
