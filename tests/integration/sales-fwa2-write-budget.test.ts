@@ -174,7 +174,7 @@ describe('F-WA-2: the F1 quote canary (@16) with a budget of 6 writes per task',
 
   it('6 is the ceiling (7 is refused before the canary starts), and the F1 commercial limits are the approved ones, unchanged by the budget', async () => {
     const canary = loadCanaryEnvironment(canaryEnv());
-    await expect(runtimeOf(canary, new Router(), 7, new FixtureQuoteV2Service())).rejects.toThrow(/sales-production@16 runs with maxWriteActions between 1 and 6/);
+    await expect(runtimeOf(canary, new Router(), 201, new FixtureQuoteV2Service())).rejects.toThrow(/sales-production@16 runs with maxWriteActions between 1 and 200/);
     expect(canary.autonomousQuoteLimits).toEqual(SALES_F1_CANARY_LIMITS);
   });
 });

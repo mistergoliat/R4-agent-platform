@@ -52,7 +52,11 @@ export const SALES_F1_CANARY_LIMITS: Readonly<AutonomousQuoteLimitsV6> = Object.
 });
 
 /** The owner-approved write ceiling per task for the first F1 canary (D7-5; J3E ran @5 with 6). */
-export const SALES_F1_CANARY_MAX_WRITE_ACTIONS = 6;
+// Owner decision 2026-11-17 (measurement phase, no quote limits): the write ceiling is task-scoped (execution-runtime
+// writeActions), and a Sales conversation task rarely ends, so 6 became a hidden per-conversation limit that also
+// counted internal workspace notes. It now matches the task budget (maxWrites 200); within a run every write still
+// needs its own model call, so the run's model-call budget bounds it.
+export const SALES_F1_CANARY_MAX_WRITE_ACTIONS = 200;
 
 /** Throws when a configured autonomous limit is looser than the approved canary ceiling. */
 export function assertF1CanaryLimits(limits: AutonomousQuoteLimitsV6, label: string = SALES_F1_CANARY_PROFILE_LABEL): void {

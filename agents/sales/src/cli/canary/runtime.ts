@@ -304,7 +304,7 @@ export async function startCanaryRuntime(canary: CanaryEnvironment, options: Can
     throw new PlatformError('precondition', 'canary_database_mismatch', 'the canary worker and scheduler must use the canary database');
   }
   const { logger } = options;
-  // (R4-J5 F1) The F1 canary worker runs with the owner-approved write ceiling (1..6), never 0 and never looser.
+  // (R4-J5 F1) The F1 canary worker runs with the owner-approved write ceiling (1..SALES_F1_CANARY_MAX_WRITE_ACTIONS), never 0 and never looser.
   if (isF1CanaryProfile(canary.profile) || isQuoteLaneProfile(canary.profile)) assertF1CanaryWriteCeiling(options.worker.execution.maxWriteActions, profileLabel(canary.profile));
   const pool = canaryPool(canary, logger, 'composition');
   let worker: WorkerPlatform | null = null;

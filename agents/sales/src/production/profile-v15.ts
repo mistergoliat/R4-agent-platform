@@ -80,7 +80,7 @@ export function isSalesLaneProfile(profile: ProductionProfile): boolean {
   return SALES_LANE_PROFILES.some((p) => profileLabel(p) === profileLabel(profile));
 }
 
-/** Lane profiles that issue quotes (@14, @15, @16, @17, @18, @19): F1 ceilings, parity, write ceiling 1..6. */
+/** Lane profiles that issue quotes (@14, @15, @16, @17, @18, @19): F1 ceilings, parity, write ceiling 1..SALES_F1_CANARY_MAX_WRITE_ACTIONS. */
 export function isQuoteLaneProfile(profile: ProductionProfile): boolean {
   return [SALES_QUOTE_LANE_PROFILE_LABEL, SALES_CHECKOUT_LANE_PROFILE_LABEL, SALES_QUOTE_LANE_V16_PROFILE_LABEL, SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_QUOTE_LANE_V18_PROFILE_LABEL, SALES_QUOTE_LANE_V19_PROFILE_LABEL].includes(profileLabel(profile));
 }
