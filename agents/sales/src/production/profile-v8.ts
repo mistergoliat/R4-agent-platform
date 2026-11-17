@@ -145,6 +145,8 @@ export const SALES_PRODUCTION_AGENT_VERSIONS: Readonly<Record<string, SalesAgent
   'sales-production@18': 17,
   // (F1) @19 = @18 + delivery at the Shipping owner price (F1 policy v2) + acceptance in natural language; definition v19 (v17 + offer, acceptance and validity rules). v18 is pinned by no profile.
   'sales-production@19': 19,
+  // (owner decision 2026-11-17) @20 = @19 pinned to definition v20 (v19 plus the Don Pesín voice); @19 stays the rollback.
+  'sales-production@20': 20,
   // (R4 Checkout integration) The E3 checkout sandbox lane profile: a lane profile only.
   'sales-production@15': 15,
 });

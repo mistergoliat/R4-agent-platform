@@ -34,7 +34,7 @@ No hay motores de precio, catálogos, políticas de stock ni sistemas de elegibi
 **Promociones con fin verificable (F1-COMMERCIAL-POLICY-v3).**
 
 - **Decisión:** el owner comercial la tomó el 2026-11-13.
-- **Activación:** solo con `R4_F1_PROMOTIONAL_QUOTES=enabled`, solo en `@19`, y solo después de que el owner de Quote la acepte (issue Quote #34). Por defecto queda apagada y rige el párrafo anterior.
+- **Activación:** solo con `R4_F1_PROMOTIONAL_QUOTES=enabled`, solo en `@19` y su sucesor `@20`, y solo después de que el owner de Quote la acepte (issue Quote #34). Por defecto queda apagada y rige el párrafo anterior.
 
 Con la política v3 activa, una línea promocional se cotiza si `pricing.promotion.validUntil` (fecha de fin de PrestaShop, que entrega Catalog V2) es conocida y termina al menos **75 minutos** después del momento de decidir: 60 de vigencia de la cotización más 15 de margen.
 
@@ -71,13 +71,13 @@ Con la política v3 activa, una línea promocional se cotiza si `pricing.promoti
 - La autorización del owner de Quote para usar `r4-sales-retail-session` con tráfico real (Quote #33).
 - La aprobación final del owner sobre el SHA exacto.
 
-## 4. F1-COMMERCIAL-POLICY-v2 (`sales-production@19`, decisión del owner del 2026-11-10)
+## 4. F1-COMMERCIAL-POLICY-v2 (`sales-production@19` y `@20`, decisión del owner del 2026-11-10)
 
 > «los precios de shipping pc-carrier se alteran según el producto y la comuna, siempre son vigentes. El precio que arrojen es el que debemos respetar. Quitemos la política para 19»
 
 | Cambio respecto de v1 | Control |
 |---|---|
-| Se elimina la regla 7: la cotización **puede llevar despacho** al precio que devuelve el owner de Shipping (pc-carrier) para los productos y la comuna, incluida la promoción Despacho Directo tal como venga | `F1-COMMERCIAL-POLICY-v2` (`shippingAllowed`) solo en `@19` |
+| Se elimina la regla 7: la cotización **puede llevar despacho** al precio que devuelve el owner de Shipping (pc-carrier) para los productos y la comuna, incluida la promoción Despacho Directo tal como venga | `F1-COMMERCIAL-POLICY-v2` (`shippingAllowed`) solo en `@19` y `@20` |
 | El precio de despacho se respeta tal cual, pero se vuelve a cotizar al emitir, como todo hecho del snapshot. Si la oferta cambió o ya no está, no se emite (`shipping_offer_changed`, `shipping_offer_unavailable`): el cliente vuelve a elegir entre las ofertas actuales (`select_shipping_offer`) y el agente presenta la oferta nueva | Snapshot (existente: oferta elegida por el cliente, mismo destino, monto exacto) |
 | El retiro en tienda solo se ofrece si una oferta devuelta lo confirma | Definición v19 (regla de v17) |
 
