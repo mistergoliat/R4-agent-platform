@@ -11,7 +11,7 @@ import { IDLE_TIMEOUT } from './idle-close.js';
 import type { OutboundDeliveryRuntime } from './outbound.js';
 import type { ConversationBindingRecord, InboundEventRecord, ProductionStore } from './ports.js';
 import { profileFingerprint, profileLabel, type ProductionProfile } from './profile.js';
-import { conversationKey, rolloutEligibility, rolloutFingerprint } from './rollout.js';
+import { conversationKey, laneRoute, rolloutEligibility, rolloutFingerprint, type RolloutEligibility } from './rollout.js';
 
 /**
  * How a pack opens the durable task that serves a new channel conversation.
@@ -25,10 +25,11 @@ export interface ConversationTaskFactory {
 }
 
 /**
- * (ADR-045) One extra profile the same gateway serves for an explicit, closed set of conversations (keyed
- * hashes, never addresses). The lane is decided only when a binding is OPENED and persisted on it
- * (`binding.profile`); everything after that follows the binding, never the current configuration. Every lane
- * conversation must also be allowlisted in the rollout: a lane never widens who gets autonomy.
+ * (ADR-045) One extra profile the same gateway serves for an explicit set of conversations (keyed hashes, never
+ * addresses) AND for the rollout percentage cohort (`laneRoute`). The lane is decided only when a binding is OPENED
+ * and persisted on it (`binding.profile`); everything after that follows the binding, never the current
+ * configuration. Every named lane conversation must also be allowlisted in the rollout, and the cohort is eligible
+ * by the rollout itself: a lane never widens who gets autonomy.
  */
 export interface ConversationLane {
   readonly conversationKeys: readonly string[];
@@ -138,8 +139,8 @@ export class ChannelIngress {
   }
 
   /** The profile a NEW binding of this conversation is opened with. */
-  #assign(key: string): ServedProfile {
-    return this.#lane?.keys.has(key) ? this.#lane : this.#main;
+  #assign(key: string, eligibility: RolloutEligibility): ServedProfile {
+    return this.#lane && laneRoute(eligibility, key, this.#lane.keys) === 'lane' ? this.#lane : this.#main;
   }
 
   /** The composed profile an existing binding was opened with (null: none of this gateway's). */
@@ -366,7 +367,7 @@ export class ChannelIngress {
         }
         if (!binding) {
           const eligibility = rolloutEligibility(config.rollout, record.conversationKey);
-          const assigned = this.#assign(record.conversationKey);
+          const assigned = this.#assign(record.conversationKey, eligibility);
           binding = await store.openBinding({
             bindingId: this.#o.ids.next(), channel: record.channel, conversationKey: record.conversationKey, accountRef: record.accountRef, recipientRef: record.conversationRef,
             autonomy: eligibility.eligible ? 'autonomous' : 'excluded', eligibilityReason: eligibility.reason, rolloutFingerprint: this.#rolloutFingerprint,

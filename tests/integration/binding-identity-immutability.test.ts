@@ -84,7 +84,7 @@ function barrier() {
 }
 
 beforeAll(async () => {
-  bed = await LiveOpsTestbed.start({ identityVerification: { requested: 'full', codeKeys: KEYS, confirm: NOT_STARTED }, autonomy: true, percent: 100 });
+  bed = await LiveOpsTestbed.start({ identityVerification: { requested: 'full', codeKeys: KEYS, confirm: NOT_STARTED }, autonomy: true, allowlist: Array.from({ length: 500 }, (_, i) => `5691400${String(i + 1).padStart(4, '0')}`) });
 }, 120_000);
 
 afterAll(async () => {
