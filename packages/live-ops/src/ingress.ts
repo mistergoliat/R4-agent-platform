@@ -7,6 +7,7 @@ import type { AutonomyControls } from './controls.js';
 import type { ProductionConfig, ProductionSecrets } from './mode.js';
 import type { InboundInspector } from './inspection.js';
 import { mediaRefContent, parseMediaRefContent, parseReactionRefContent, reactionRefContent, type MediaKind, type MediaPerception } from './media.js';
+import { IDLE_TIMEOUT } from './idle-close.js';
 import type { OutboundDeliveryRuntime } from './outbound.js';
 import type { ConversationBindingRecord, InboundEventRecord, ProductionStore } from './ports.js';
 import { profileFingerprint, profileLabel, type ProductionProfile } from './profile.js';
@@ -343,7 +344,8 @@ export class ChannelIngress {
           const state = await store.taskState(binding.taskId);
           // Truly terminal work is never revived: a new contact opens a new task (no cross-task memory).
           if (!state || state.terminalIntent || state.status === 'completed' || state.status === 'cancelled' || state.status === 'failed') {
-            await store.closeBinding(binding.bindingId, state ? `task_${state.terminalIntent ? 'terminal_intent' : state.status}` : 'task_missing');
+            // A case the idle close ended keeps its reason whichever process closes the binding first.
+            await store.closeBinding(binding.bindingId, state?.statusReason === IDLE_TIMEOUT ? IDLE_TIMEOUT : state ? `task_${state.terminalIntent ? 'terminal_intent' : state.status}` : 'task_missing');
             emitTelemetry(logger, 'conversation.binding.closed', { channel: record.channel, bindingId: binding.bindingId, taskId: binding.taskId, reason: state?.status ?? 'task_missing' });
             binding = null;
           }
@@ -435,7 +437,8 @@ export class ChannelIngress {
         } catch (error) {
           // The task became terminal between the check and the submission: close the binding and open a new one once.
           if (attempt === 0 && error instanceof PlatformError && (error.code === 'task_not_accepting_input' || error.code === 'task_terminal') && binding.taskId) {
-            await store.closeBinding(binding.bindingId, 'task_terminal_race');
+            const ended = await store.taskState(binding.taskId);
+            await store.closeBinding(binding.bindingId, ended?.statusReason === IDLE_TIMEOUT ? IDLE_TIMEOUT : 'task_terminal_race');
             continue;
           }
           throw error;

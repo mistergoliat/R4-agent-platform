@@ -133,6 +133,20 @@ export interface TaskStateFacts {
   readonly terminalIntent: boolean;
   /** A handoff is requested or active (humans own the task). */
   readonly humanOwned: boolean;
+  /** The task's status reason (e.g. `idle_timeout`); absent where the store does not read it. */
+  readonly statusReason?: string | null;
+}
+
+/**
+ * (Case idle close) An open binding whose task may have gone idle (the sweep's pre-selection; the Temporal Runtime
+ * decides under the task lock), or whose task the sweep already closed while the binding stayed open (a crash
+ * between the two).
+ */
+export interface IdleConversation {
+  readonly bindingId: string;
+  readonly channel: string;
+  readonly taskId: string;
+  readonly taskStatus: string;
 }
 
 export interface OutboundRecord {
@@ -365,9 +379,17 @@ export interface ProductionStore {
   /** Inserts, or returns the open binding a concurrent writer created first. */
   openBinding(binding: NewConversationBinding): Promise<ConversationBindingRecord>;
   attachTask(bindingId: string, taskId: string): Promise<ConversationBindingRecord>;
-  closeBinding(bindingId: string, reason: string): Promise<void>;
+  /** Closes an open binding once (`closed_reason` is final); false when it was already closed. */
+  closeBinding(bindingId: string, reason: string): Promise<boolean>;
   touchBinding(bindingId: string, at: string): Promise<void>;
   bindingByTask(taskId: string): Promise<ConversationBindingRecord | null>;
+  /**
+   * (Case idle close) Open bindings of `channel` whose task is waiting for input with no input for `idleForMs` (temporal clock;
+   * no input: the binding's creation), no outbound pending, dispatching or unknown, no open human request, no
+   * unsettled action execution, no terminal intent, no approval outcome to carry out and no inbound message still
+   * being ingested — plus open bindings whose task already ended `idle_timeout`. Oldest first, at most `limit`.
+   */
+  idleConversations(command: { readonly channel: string; readonly idleForMs: number; readonly limit: number }): Promise<IdleConversation[]>;
   taskState(taskId: string): Promise<TaskStateFacts | null>;
   /** (ADR-045) The task created with this creation idempotency key, if any (a crash may leave it unattached to its binding). */
   taskByCreationKey(idempotencyKey: string): Promise<string | null>;

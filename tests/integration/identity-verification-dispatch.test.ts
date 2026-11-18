@@ -348,7 +348,7 @@ describe('AT-31: retryable versus definitive answers, and the credential breaker
 describe('RR-1 inside the dispatcher (RR1-T07, RR1-T08)', () => {
   it('RR1-T07: the binding is no longer current before the claim → no confirm; cancelled (binding_not_current), code erased', async () => {
     const cases: [string, (conv: Conversation) => Promise<void>][] = [
-      ['binding closed', (conv) => bed.store.closeBinding(conv.bindingId, 'test_closed')],
+      ['binding closed', (conv) => bed.store.closeBinding(conv.bindingId, 'test_closed').then(() => undefined)],
       ['task cancelled (binding still open)', (conv) => bed.api.temporal.cancelTask(conv.taskId, OPERATOR).then(() => undefined)],
       ['human-owned (OA-09)', (conv) => bed.api.temporal.takeOver(conv.taskId, { responseKey: `takeover-${conv.wa}`, note: 'a human takes over' }, OPERATOR).then(() => undefined)],
     ];
