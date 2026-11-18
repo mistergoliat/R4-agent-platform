@@ -62,8 +62,10 @@ export type RenderOrder = 'compiled' | 'cache' | 'split';
  * 'split' (measured 2026-11-16: GPT-6 Luna through OpenRouter reuses its prompt cache for whole identical messages
  * only, so one context message that changes on every call is never reused). The context travels as up to three user
  * messages, each identical for as long as its content is: (1) the agent and its capabilities, fixed for the task;
- * (2) the conversation, fixed within a run; (3) everything else in the compiler's order, with asOf and iteration,
- * closed by the reminder. Same items, same rendering, nothing dropped: only where the messages break.
+ * (2) the conversation, fixed within a run; (3) everything else in the compiler's order (task, goals, state,
+ * observations, memory and the expired history), with asOf and iteration, closed by the reminder. schemaVersion
+ * travels in the first and the last part, so it is present even when part 1 is empty. Same items, same rendering,
+ * nothing dropped: only where the messages break.
  */
 export const SPLIT_STABLE_SECTIONS: readonly ContextSection[] = Object.freeze(['agent', 'capabilities'] as const satisfies readonly ContextSection[]);
 export const SPLIT_CONVERSATION_SECTIONS: readonly ContextSection[] = Object.freeze(['conversation'] as const satisfies readonly ContextSection[]);
@@ -80,7 +82,8 @@ export function renderContextParts(context: CompiledContext): string[] {
   const parts: string[] = [];
   if (Object.keys(stable).length > 0) parts.push(`Structured context, part 1: the agent and its capabilities (compiled by the platform; authority and freshness per item).\n${JSON.stringify({ schemaVersion: context.schemaVersion, sections: stable })}`);
   if (Object.keys(conversation).length > 0) parts.push(`Structured context, part 2: the conversation so far.\n${JSON.stringify({ sections: conversation })}`);
-  parts.push(`Structured context, last part: the current state. Decide the next step using every part.\n${JSON.stringify({
+  parts.push(`Structured context, last part: everything else (task, goals, state, observations, memory, expired history) as of asOf. Decide the next step using every part.\n${JSON.stringify({
+    schemaVersion: context.schemaVersion,
     asOf: context.asOf,
     iteration: context.scope.iteration,
     sections: current,

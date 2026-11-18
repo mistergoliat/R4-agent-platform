@@ -4,7 +4,9 @@ import { DefaultModelGateway } from '@r4/model-gateway';
 import { createSilentLogger } from '@r4/observability';
 import { CONTEXT_SECTIONS } from '@r4/contracts';
 import { ONE_DOCUMENT_REMINDER, ONE_DOCUMENT_RULE, OpenAICompatibleModelProvider, RENDER_SECTION_ORDER, describeModelConfig, estimateTokens, loadOpenAICompatibleConfig, renderContext, renderContextParts, renderMessages, type FetchLike, type OpenAICompatibleConfig } from '@r4-adapters/openai-compatible';
+import { DeliveryStateContextSource, PriorConversationContextSource, type OutboundRecord, type ThreadEntry } from '@r4/live-ops';
 import { captureLogs } from '../../support/logs.js';
+import { FixtureMemory, HOUR, MINUTE, at, compiler, observation, request as fixtureRequest } from '../../fixtures/context/builders.js';
 
 const KEY = 'sk-test-DO-NOT-LEAK-0123456789abcdef';
 const CONFIG: OpenAICompatibleConfig = {
@@ -281,6 +283,96 @@ describe('OpenAICompatibleModelProvider', () => {
     const sectionsOf = (c: string) => Object.keys((JSON.parse(c.slice(c.indexOf('\n') + 1).replace(`\n${ONE_DOCUMENT_REMINDER}`, '')) as { sections: object }).sections);
     expect(renderContextParts(build(1, '2026-11-16T23:07:59.000Z', ['o1'])).flatMap(sectionsOf).sort()).toEqual(['agent', 'capabilities', 'conversation', 'observations', 'task'].sort());
     expect(loadOpenAICompatibleConfig({ R4_MODEL_PROVIDER: 'openai_compatible', R4_MODEL_BASE_URL: 'https://example.test/v1', R4_MODEL_NAME: 'm', R4_MODEL_CONTEXT_WINDOW_TOKENS: '64000', R4_MODEL_RENDER_ORDER: 'split' })?.renderOrder).toBe('split');
+  });
+
+  it('split round-trips: the parts rebuild exactly the compiled document (items, fields, conflicts, omissions, schemaVersion, asOf, iteration), over randomized contexts', () => {
+    // Deterministic PRNG (mulberry32): a failure reproduces.
+    let seed = 91;
+    const rnd = () => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const pick = <T,>(xs: readonly T[]): T => xs[Math.floor(rnd() * xs.length)]!;
+    const TEXTS = ['hola', 'línea 1\nlínea 2', 'comillas "dobles" y \\ barra', '', '¿y para brazos? 👍', 'Structured context, part 2: x\n{"sections":{}}'];
+    const TIMES = [null, '2026-11-16T23:00:00.000Z', '2026-11-16T23:08:04.123Z'];
+    const item = (section: string, i: number) => ({
+      itemId: `${section}:${i}`,
+      sourceId: pick(['platform.task', 'production.delivery', 'platform.memory']),
+      kind: pick(['task', 'observation', 'conversation_turn', 'episode', 'state']),
+      authority: pick(['AUTHORITATIVE', 'OBSERVED', 'CONVERSATIONAL', 'DERIVED', 'COGNITIVE']),
+      freshness: pick(['fresh', 'stale', 'unknown', 'expired']),
+      sensitivity: pick(['NORMAL', 'SENSITIVE']),
+      content: rnd() < 0.5 ? { text: pick(TEXTS), n: Math.floor(rnd() * 1000) } : [pick(TEXTS), null, true, { nested: { a: pick(TEXTS) } }],
+      assertions: rnd() < 0.6 ? [] : [{ subject: `s${i}`, value: pick(TEXTS) }],
+      createdAt: '2026-11-16T22:59:00.000Z',
+      observedAt: pick(TIMES),
+      validUntil: pick(TIMES),
+      provenance: { recordType: 'r', recordId: `id${i}`, recordVersion: pick([null, '1', 'pending:2026']), producedBy: pick([null, 'delivery']), derivedFromCount: rnd() < 0.7 ? 0 : 1 + Math.floor(rnd() * 5) },
+    });
+    const randomContext = () => {
+      const sections = Object.fromEntries(CONTEXT_SECTIONS.map((s) => [s, rnd() < 0.4 ? [] : Array.from({ length: 1 + Math.floor(rnd() * 3) }, (_, i) => item(s, i))]));
+      const conflicts = Array.from({ length: Math.floor(rnd() * 3) }, (_, i) => ({ subject: `s${i}`, positions: [{ itemId: 'a', authority: 'OBSERVED', value: 1 }, { itemId: 'b', authority: 'CONVERSATIONAL', value: pick(TEXTS) }], authoritativeItemId: pick([null, 'a']) }));
+      const omissions = rnd() < 0.5 ? {} : { over_budget: 1 + Math.floor(rnd() * 9), ...(rnd() < 0.5 ? { superseded: 2 } : {}) };
+      return { schemaVersion: 1, asOf: '2026-11-16T23:08:04.000Z', scope: { iteration: 1 + Math.floor(rnd() * 20) }, conflicts, omissions, sections } as unknown as NonNullable<ModelRequest['context']>;
+    };
+    type Doc = { sections: Record<string, unknown[]> } & Record<string, unknown>;
+    const body = (part: string) => JSON.parse(part.slice(part.indexOf('\n') + 1)) as Doc;
+    let withoutPart1 = 0;
+    for (let n = 0; n < 300; n += 1) {
+      const context = randomContext();
+      const parts = renderContextParts(context);
+      const docs = parts.map(body);
+      const sectionNames = docs.flatMap((d) => Object.keys(d.sections));
+      // No section split across or repeated in two parts.
+      expect(new Set(sectionNames).size).toBe(sectionNames.length);
+      const rebuilt = { ...docs.at(-1)!, sections: Object.assign({}, ...docs.map((d) => d.sections)) as Doc['sections'] };
+      expect(rebuilt).toEqual(body(renderContext(context, 'compiled')));
+      // And what renderMessages sends is exactly those parts, the reminder closing the last one.
+      expect(renderMessages(request({ context }), 'split').filter((m) => m.role === 'user').map((m) => m.content)).toEqual(parts.map((p, i) => (i === parts.length - 1 ? `${p}\n${ONE_DOCUMENT_REMINDER}` : p)));
+      if (!('agent' in docs[0]!.sections) && !('capabilities' in docs[0]!.sections)) withoutPart1 += 1;
+    }
+    // The schemaVersion case of an empty part 1 was exercised (the rebuilt document still carries it).
+    expect(withoutPart1).toBeGreaterThan(0);
+  });
+
+  it('split over the real compiler (platform + live-ops sources): parts 1 and 2 are byte-identical across the iterations of a run; part 2 changes on a new customer input', async () => {
+    const memory = new FixtureMemory();
+    memory.turn(at(0), 'hola, busco un banco regulable', { role: 'participant' });
+    memory.turn(at(MINUTE), 'Tenemos el banco Atlas.', { role: 'agent' });
+    const delivery = new DeliveryStateContextSource({
+      outboundForTask: () => Promise.resolve([{ outboundId: '0190e7a4-0000-7000-8000-000000000001', origin: 'agent', responseStepId: '0190e7a4-0000-7000-8000-000000000002', status: 'failed', noticeKey: null, cancelReason: null, holdReason: null, errorClass: 'provider_rejected', createdAt: at(MINUTE), updatedAt: at(2 * MINUTE) } as unknown as OutboundRecord]),
+    });
+    const earlier: ThreadEntry[] = [
+      { cursor: `${at(-HOUR)}|0190e7a5-0000-7000-8000-000000000001`, at: at(-HOUR), kind: 'contact', text: 'Busco mancuernas', refs: {}, delivery: null },
+      { cursor: `${at(-HOUR + 5_000)}|0190e7a5-0000-7000-8000-000000000002`, at: at(-HOUR + 5_000), kind: 'agent', text: 'Tenemos mancuernas de 10 kg.', refs: {}, delivery: { outboundId: 'x', status: 'read', holdReason: null, cancelReason: null, providerMessageId: null } as unknown as ThreadEntry['delivery'] },
+    ];
+    const prior = new PriorConversationContextSource({ earlierConversationTurns: () => Promise.resolve({ turns: earlier, earlierTasks: 1 }) });
+    const compilerWithLiveOps = compiler({ memory, sources: [delivery, prior] });
+    const parts = async (iteration: number, now: string, observations: ReturnType<typeof observation>[]) => {
+      const outcome = await compilerWithLiveOps.compile(fixtureRequest({ iteration, now, observations }));
+      if (outcome.kind !== 'compiled') throw new Error(`expected a compiled context, got ${outcome.kind}`);
+      return renderContextParts(outcome.compiled);
+    };
+    // Iteration 1 reads; iteration 2 sees the read's observation, a later clock and fewer remaining calls.
+    const first = await parts(1, at(HOUR), []);
+    const second = await parts(2, at(HOUR + 5_000), [observation(1, at(HOUR + 3_000), { validUntil: at(HOUR + 15_000) })]);
+    expect(first).toHaveLength(3);
+    expect(second).toHaveLength(3);
+    expect(second[0]).toBe(first[0]);
+    expect(second[1]).toBe(first[1]);
+    expect(second[2]).not.toBe(first[2]);
+    // The live-ops sources are really in play: the earlier task's turns in part 2, the delivery episode in the last part.
+    expect(first[1]).toContain('Tenemos mancuernas de 10 kg.');
+    expect(first[1]).toContain('hola, busco un banco regulable');
+    expect(first[2]).toContain('delivery:0190e7a4-0000-7000-8000-000000000001');
+    // A new customer message: part 1 unchanged, part 2 changes and carries it.
+    memory.turn(at(HOUR + 10_000), 'y para brazos?', { role: 'participant' });
+    const third = await parts(3, at(HOUR + 12_000), [observation(1, at(HOUR + 3_000), { validUntil: at(HOUR + 15_000) })]);
+    expect(third[0]).toBe(first[0]);
+    expect(third[1]).not.toBe(first[1]);
+    expect(third[1]).toContain('y para brazos?');
   });
 
   it('R4_MODEL_RENDER_ORDER selects the layout: compiled by default, cache only when set, anything else refused', () => {
