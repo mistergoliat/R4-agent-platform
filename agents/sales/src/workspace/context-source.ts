@@ -2,6 +2,7 @@ import type { ContextContributionInput, JsonValue, Observation } from '@r4/contr
 import type { ContextSource, ContextSourceRequest } from '@r4/context-compiler';
 import { catalogEvidenceValidUntil } from '../capabilities/catalog.js';
 import { CAPABILITY_IDS, SALES_TASK_TYPE, WORKSPACE_SOURCE_ID } from '../ids.js';
+import { catalogDescriptiveItems } from './catalog-descriptive.js';
 import { selectionOf, type Workspace } from './model.js';
 import type { ConversationBinding, PostgresSalesStore, QuoteReference, WorkspaceTransition } from './store.js';
 
@@ -29,9 +30,12 @@ export type WorkspaceReader = Pick<PostgresSalesStore, 'workspace' | 'conversati
 export class SalesWorkspaceContextSource implements ContextSource {
   readonly id = WORKSPACE_SOURCE_ID;
   readonly #reader: WorkspaceReader;
+  readonly #catalogDescriptiveWindowMs: number | null;
 
-  constructor(reader: WorkspaceReader) {
+  /** `catalogDescriptiveWindowMs` (R4_SALES_CATALOG_DESCRIPTIVE_WINDOW_SECONDS): null or absent = off; see catalog-descriptive.ts. */
+  constructor(reader: WorkspaceReader, options: { readonly catalogDescriptiveWindowMs?: number | null } = {}) {
     this.#reader = reader;
+    this.#catalogDescriptiveWindowMs = options.catalogDescriptiveWindowMs ?? null;
   }
 
   async load(request: ContextSourceRequest): Promise<readonly ContextContributionInput[]> {
@@ -56,6 +60,7 @@ export class SalesWorkspaceContextSource implements ContextSource {
         taskId: task.taskId,
         required: true,
       },
+      ...(this.#catalogDescriptiveWindowMs !== null ? catalogDescriptiveItems(observations, request.now, this.#catalogDescriptiveWindowMs) : []),
     ];
   }
 }

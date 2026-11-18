@@ -116,6 +116,8 @@ export interface SalesProductionWorkerOptions {
   readonly autonomousQuoteLimits?: AutonomousQuoteLimits | AutonomousQuoteLimitsV6;
   /** (R4-J5 F1, P-1) The parity-verified SKU set for autonomous quotes (R4_QUOTE_PARITY_*); applied to the deterministic-offer path (v7 lineage) when given. The F1 profile gate must require it. */
   readonly quoteParity?: QuoteParityGuard | null;
+  /** Catalog descriptive freshness (R4_SALES_CATALOG_DESCRIPTIVE_WINDOW_SECONDS): null or absent = off; see workspace/catalog-descriptive.ts. */
+  readonly catalogDescriptiveWindowMs?: number | null;
   /** (F1-COMMERCIAL-POLICY-v3) Promotional prices that outlast the quote may be quoted (@19, @20, @21 and @22 only; default off). */
   readonly promotionalQuotes?: boolean;
   /** (R4-J5 F1) Set only by the isolated canary runtime: it may also compose canary-only profiles (@12). A production worker never sets it. */
@@ -280,13 +282,14 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
     ],
     capabilities.list().map((c) => c.capabilityId),
   );
+  if (options.catalogDescriptiveWindowMs) options.logger.info({ catalogDescriptiveWindowMs: options.catalogDescriptiveWindowMs }, 'sales catalog descriptive freshness on (price and stock keep the owner validity)');
   return {
     report,
     controls,
     bindings: {
       modelProvider: options.modelProvider,
       capabilities,
-      contextSources: [new SalesWorkspaceContextSource(sales), new DeliveryStateContextSource(options.store), new PriorConversationContextSource(options.store, { windowDays: config.priorConversationDays })],
+      contextSources: [new SalesWorkspaceContextSource(sales, { catalogDescriptiveWindowMs: options.catalogDescriptiveWindowMs ?? null }), new DeliveryStateContextSource(options.store), new PriorConversationContextSource(options.store, { windowDays: config.priorConversationDays })],
       actionPolicy: salesActionPolicyFor(profile),
       admission: controls,
       presence: { executionMode: 'production', runtimeProfile: profileLabel(profile) },
