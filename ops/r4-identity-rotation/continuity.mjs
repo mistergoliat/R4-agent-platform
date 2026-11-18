@@ -20,10 +20,10 @@
 
 import { createHash, createHmac } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import pg from 'pg';
 import { keyListsOf, parseEnvFile } from './rotation.mjs';
 
 const MAX_TASKS = 50;
@@ -56,7 +56,8 @@ const lists = keyListsOf(env);
 const keyOf = (b) => createHmac('sha256', key).update(`${b.channel}\u0000${b.account_ref}\u0000${b.recipient_ref}`, 'utf8').digest('hex');
 const listsOf = (k) => Object.keys(lists).filter((name) => lists[name].includes(k));
 
-// The deployed code's own queries (never a copy of their SQL).
+// pg and the lineage queries come from the deployed repository, never a copy of their SQL (the tool may run from a backup copy).
+const pg = createRequire(join(args.repo, 'package.json'))('pg');
 const { PostgresProductionStore } = await import(pathToFileURL(join(args.repo, 'packages/persistence-postgres/dist/index.js')).href);
 const { PostgresSalesStore } = await import(pathToFileURL(join(args.repo, 'agents/sales/dist/workspace/store.js')).href);
 const pool = new pg.Pool({ connectionString: process.env.R4_ROTATION_DATABASE_URL || env.R4_DATABASE_URL, max: 2, application_name: 'r4-identity-continuity' });

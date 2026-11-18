@@ -14,8 +14,12 @@
 // message only (never a database error detail, which could carry a derived key).
 
 import { readFileSync, writeFileSync } from 'node:fs';
-import pg from 'pg';
+import { createRequire } from 'node:module';
+import { join } from 'node:path';
 import { MANAGED_VARS, applyRotation, envShapeProblems, installEnv, keyListsOf, parseEnvFile, planRotation, verifyRotation } from './rotation.mjs';
+
+// pg from the deployment's own node_modules when the tool runs from a backup copy (R4_REPO), else next to the tool.
+const pg = createRequire(process.env.R4_REPO ? join(process.env.R4_REPO, 'package.json') : import.meta.url)('pg');
 
 const print = (stream, value) => stream.write(`${typeof value === 'string' ? value : JSON.stringify(value, null, 2)}\n`);
 const fail = (message, code = 2) => {

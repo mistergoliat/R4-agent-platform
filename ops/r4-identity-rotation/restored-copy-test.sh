@@ -31,7 +31,7 @@ checksums() { for t in $(tables); do echo "$t $(copy "select md5(coalesce(string
 checksums > "$T/before.sums"
 echo "tables checksummed: $(wc -l < "$T/before.sums")"
 
-TOOL="$T/tool"; mkdir -p "$TOOL"; cp "$HERE/rotation.mjs" "$HERE/rotate.mjs" "$TOOL/"; ln -s "$R/node_modules" "$TOOL/node_modules"
+TOOL="$T/tool"; mkdir -p "$TOOL"; cp "$HERE/rotation.mjs" "$HERE/rotate.mjs" "$HERE/continuity.mjs" "$TOOL/"; export R4_REPO=$R
 cp "$C/production.env" "$T/production.env"; cp "$C/production-lane.env" "$T/production-lane.env"
 ENVS=(--env-file "$T/production.env" --env-file "$T/production-lane.env")
 node "$TOOL/rotate.mjs" export-key "${ENVS[@]}" --out "$T/old.key" >/dev/null
@@ -40,6 +40,7 @@ export R4_ROTATION_DATABASE_URL="postgres://r4_production:$PW@127.0.0.1:$PORT/r4
 
 step "2. plan (read-only)"
 node "$TOOL/rotate.mjs" plan "${ENVS[@]}" --new-key-file "$T/new.key" || { echo "FAIL plan blocked"; exit 1; }
+node "$TOOL/continuity.mjs" snapshot "${ENVS[@]}" --repo "$R" --out "$T/continuity.json"
 
 step "3. apply on the copy"
 node "$TOOL/rotate.mjs" apply "${ENVS[@]}" --new-key-file "$T/new.key" --out "$T/lists.env"
@@ -48,6 +49,7 @@ step "4. install into COPIES of the env files, then verify under the key they ho
 cp "$T/production.env" "$T/production.env.orig"
 node "$TOOL/rotate.mjs" install "${ENVS[@]}" --new-key-file "$T/new.key" --lists "$T/lists.env" --old-env-file "$T/production.env.orig"
 node "$TOOL/rotate.mjs" verify "${ENVS[@]}" --key-from-env
+node "$TOOL/continuity.mjs" check "${ENVS[@]}" --repo "$R" --snapshot "$T/continuity.json" || { echo "FAIL continuity after the rotation"; exit 1; }
 check "old key left in the env copies" "$(cat "$T/production.env" "$T/production-lane.env" | grep -cF -f "$T/old.key" || true)" 0
 check "lines of the env copies other than the managed ones unchanged" "$(diff <(grep -vE '^R4_PROD_(IDENTITY_HASH_KEY|ROLLOUT_ALLOWLIST|ROLLOUT_DENYLIST|LANE_ALLOWLIST)=' "$T/production.env.orig") <(grep -vE '^R4_PROD_(IDENTITY_HASH_KEY|ROLLOUT_ALLOWLIST|ROLLOUT_DENYLIST|LANE_ALLOWLIST)=' "$T/production.env") | grep -c . || true)" 0
 
@@ -62,6 +64,7 @@ check "an ordinary key update is refused again" "$(docker exec "$NAME" psql -U r
 step "6. rollback rehearsal (keys swapped) -> every table identical to the original"
 { echo "R4_PROD_IDENTITY_HASH_KEY='$(cat "$T/new.key")'"; sed "s/^\([A-Z0-9_]*\)=\(.*\)$/\1='\2'/" "$T/lists.env"; grep -E '^R4_PROD_ROLLOUT_PERCENT=' "$T/production.env.orig"; } > "$T/rotated.env"
 node "$TOOL/rotate.mjs" apply --env-file "$T/rotated.env" --new-key-file "$T/old.key" --out "$T/back.env" >/dev/null
+node "$TOOL/continuity.mjs" check --env-file "$T/production.env.orig" --env-file "$C/production-lane.env" --repo "$R" --snapshot "$T/continuity.json" >/dev/null || { echo "FAIL continuity after the rollback"; exit 1; }
 checksums > "$T/back.sums"
 check "every table identical to the original after rollback" "$(diff -q "$T/before.sums" "$T/back.sums" >/dev/null && echo yes || echo no)" yes
 check "rollback lists identical to the original lists" "$(node --input-type=module -e "

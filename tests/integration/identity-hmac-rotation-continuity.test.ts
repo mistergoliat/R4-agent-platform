@@ -255,12 +255,15 @@ describe('identity HMAC rotation keeps today\'s conversation continuity (sales-p
     expect(lastJson(later.stdout)).toMatchObject({ ok: true });
     await c.close();
 
-    // Rollback (keys swapped), env files restored from the backup: the same continuity under the old key.
+    // Rollback as rollback-production.sh does it (keys swapped; the old key and lists back into the env files, other
+    // lines untouched): the same continuity under the old key, and the files equal the originals.
     const rotated = join(dir, 'rotated.env');
     writeFileSync(rotated, `R4_PROD_IDENTITY_HASH_KEY='${NEW}'\nR4_PROD_ROLLOUT_PERCENT=0\n${readFileSync(lists, 'utf8').replace(/^([A-Z0-9_]+)=(.*)$/gm, "$1='$2'")}`);
     expect(lastJson((await tool(ROTATE, ['apply', '--env-file', rotated, '--new-key-file', join(dir, 'old.key'), '--out', join(dir, 'back.env')])).stdout)).toMatchObject({ rewritten: 5 });
-    writeFileSync(prod, readFileSync(join(dir, 'production.env.backup'), 'utf8'));
-    writeFileSync(lane, readFileSync(join(dir, 'production-lane.env.backup'), 'utf8'));
+    writeFileSync(join(dir, 'production.env.rotated'), readFileSync(prod, 'utf8'));
+    expect((await tool(ROTATE, ['install', ...envs, '--new-key-file', join(dir, 'old.key'), '--lists', join(dir, 'back.env'), '--old-env-file', join(dir, 'production.env.rotated')])).code).toBe(0);
+    expect(readFileSync(prod, 'utf8')).toBe(readFileSync(join(dir, 'production.env.backup'), 'utf8'));
+    expect(readFileSync(lane, 'utf8')).toBe(readFileSync(join(dir, 'production-lane.env.backup'), 'utf8'));
     expect(lastJson((await tool(ROTATE, ['verify', ...envs, '--key-from-env'])).stdout)).toMatchObject({ ok: true, rewrittenVerified: 5 });
     expect(lastJson((await tool(CONTINUITY, ['check', ...envs, '--snapshot', snap, '--repo', process.cwd()])).stdout)).toMatchObject({ ok: true });
 
