@@ -22,7 +22,16 @@ const completionSchema = z.object({
       }),
     )
     .min(1),
-  usage: z.object({ prompt_tokens: z.number().int().nonnegative(), completion_tokens: z.number().int().nonnegative() }).optional(),
+  // The detail fields are read leniently (see `count`): a server that omits or mangles them never fails the call.
+  usage: z
+    .object({
+      prompt_tokens: z.number().int().nonnegative(),
+      completion_tokens: z.number().int().nonnegative(),
+      prompt_cache_hit_tokens: z.unknown().optional(),
+      prompt_tokens_details: z.object({ cached_tokens: z.unknown().optional() }).nullable().optional().catch(undefined),
+      completion_tokens_details: z.object({ reasoning_tokens: z.unknown().optional() }).nullable().optional().catch(undefined),
+    })
+    .optional(),
 });
 
 const MAX_ERROR_TEXT = 300;
@@ -62,7 +71,7 @@ export class OpenAICompatibleModelProvider implements ModelProvider {
 
   async invoke(request: ModelRequest, signal: AbortSignal): Promise<ProviderResponse> {
     const config = this.#config;
-    const messages = renderMessages(request);
+    const messages = renderMessages(request, config.renderOrder ?? 'compiled');
     const maxTokens = outputCeiling(request.limits.maxOutputTokens, config.maxOutputTokens);
     const estimated = estimateTokens(messages);
     if (estimated + (maxTokens ?? 0) > config.contextWindowTokens) {
@@ -116,7 +125,13 @@ export class OpenAICompatibleModelProvider implements ModelProvider {
       content,
       toolCalls: [],
       ...(structured === undefined ? {} : { structuredData: structured }),
-      usage: { inputTokens: parsed.usage?.prompt_tokens ?? 0, outputTokens: parsed.usage?.completion_tokens ?? 0 },
+      usage: {
+        inputTokens: parsed.usage?.prompt_tokens ?? 0,
+        outputTokens: parsed.usage?.completion_tokens ?? 0,
+        // Counts only (telemetry): where the latency and the cost of a call come from. The reasoning text is still never kept.
+        cachedInputTokens: count(parsed.usage?.prompt_tokens_details?.cached_tokens) ?? count(parsed.usage?.prompt_cache_hit_tokens),
+        reasoningTokens: count(parsed.usage?.completion_tokens_details?.reasoning_tokens),
+      },
       finishReason: finishReasonOf(choice.finish_reason ?? null),
       modelId: parsed.model ?? config.model,
       requestId: parsed.id ?? response.headers.get('x-request-id'),
@@ -124,8 +139,28 @@ export class OpenAICompatibleModelProvider implements ModelProvider {
   }
 }
 
+/** A token count a server may report, or null when it is absent or not a non-negative integer. */
+function count(value: unknown): number | null {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+// Provider refusals, told apart by the server's own words. A rate limit is load (retryable); the other two are money.
+const RATE_SATURATION = /rate.?limit|requests per (minute|second|day)|\brpm\b|too many requests/i;
+const SPEND_LIMIT = /key limit|spend(ing)? limit|budget|usage limit/i;
+const NO_BALANCE = /credit|balance|funds|quota/i; // not a bare "insufficient": "insufficient permissions" is auth
+
 function classifyStatus(status: number, body: string, config: OpenAICompatibleConfig): ModelProviderError {
   const detail = providerMessage(body, config);
+  // Retrying cannot cure a refusal for money, so the run goes to a person at once instead of being retried as
+  // recoverable. 402 is always money; a 403 or 429 only when the server says so, and a 429 that names a rate limit is
+  // load even if it also mentions credits or quota.
+  const money = status === 402 || status === 403 || (status === 429 && !RATE_SATURATION.test(body));
+  if (money && SPEND_LIMIT.test(body)) {
+    return new ModelProviderError('spend_limit_reached', `profile ${config.profile}: the provider refused for a key or budget spend limit (HTTP ${status})${detail}`, false);
+  }
+  if (money && (status === 402 || NO_BALANCE.test(body))) {
+    return new ModelProviderError('insufficient_balance', `profile ${config.profile}: the provider refused for insufficient balance (HTTP ${status})${detail}`, false);
+  }
   if (status === 429) return new ModelProviderError('rate_limited', `profile ${config.profile}: rate limited (HTTP 429)${detail}`, true);
   if (status === 408 || status === 504) return new ModelProviderError('timeout', `profile ${config.profile}: upstream timeout (HTTP ${status})${detail}`, true);
   if (status === 400 && /context|maximum.*tokens|too long|max_tokens/i.test(body)) {

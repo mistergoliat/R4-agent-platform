@@ -7,6 +7,7 @@ import { createLogger } from '@r4/observability';
 import { PostgresAgentDefinitionStore, PostgresExecutionStore, PostgresProductionStore, PostgresTaskRuntimeStore, PostgresWorkerPresenceStore, checkDatabaseReadiness, coreSchemaHead, createPool, migrationStatus, type Pool } from '@r4/persistence-postgres';
 import {
   AutonomyControls,
+  CaseIdleCloser,
   ChannelIngress,
   DeliveryDispatcher,
   OutboundDeliveryRuntime,
@@ -14,6 +15,8 @@ import {
   assertProductionProfile,
   profileLabel,
   type ConversationLane,
+  type MediaPerception,
+  type NoticeText,
   type ConversationTaskFactory,
   type InboundChannelAdapter,
   type OutboundChannelAdapter,
@@ -37,11 +40,13 @@ export interface GatewayBindings {
   /** R4-I.1 (ADR-040): the single inbound inspector, by composition. Absent: exactly R4-I, refused while a protection window is open. */
   readonly inspection?: GatewayInspectionFactory;
   /** ADR-041: the agent pack's fallback notice for a run-failure handoff (absent: none is sent). */
-  readonly runFailureFallback?: { readonly text: string };
+  readonly runFailureFallback?: { readonly text: NoticeText };
   /** (ADR-041 extension, F-ADV-2) The pack's notice for a human request the agent opened without replying (absent: none). */
-  readonly humanRequestNotice?: { readonly text: string; readonly profiles: readonly string[] };
+  readonly humanRequestNotice?: { readonly text: NoticeText; readonly profiles: readonly string[] };
   /** ADR-045: one extra profile for an explicit, closed set of allowlisted conversations (absent: exactly R4-I). */
   readonly lane?: ConversationLane;
+  /** (Inbound multimodal v1) Image and voice-note perception (absent: media is held as unsupported, exactly as before). */
+  readonly media?: { readonly perception: MediaPerception; readonly profiles: readonly string[] };
 }
 
 export interface GatewayOverrides {
@@ -61,13 +66,17 @@ export interface GatewayPlatform {
   readonly inspection: GatewayInspection | null;
   /** Cosmetic working signal (read receipt + typing) while autonomous turns run; null when R4_GATEWAY_WORKING_SIGNAL is off. */
   readonly workingSignals: WorkingSignals | null;
-  /** Starts the dispatcher (if configured) and the unsettled-inbound resume timer. */
+  /** (Case idle close) The idle-case sweep; null when R4_PROD_CASE_IDLE_CLOSE_HOURS is unset or 0 (off). */
+  readonly idleClose: CaseIdleCloser | null;
+  /** Starts the dispatcher (if configured), the unsettled-inbound resume timer and (when on) the idle-case sweep. */
   start(): void;
   /** Graceful: stop claiming, finish the submission in flight, close the server and connections. */
   close(): Promise<void>;
 }
 
 const MAX_WEBHOOK_BYTES = 1024 * 1024;
+/** Pacing of the idle-case sweep only: which cases are idle is decided on the database temporal clock. */
+const IDLE_SWEEP_MS = 60_000;
 
 /**
  * Composition root of the channel gateway (R4-I) — the only process that talks
@@ -139,10 +148,12 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
       ...(bindings.humanRequestNotice ? { humanRequestNotice: bindings.humanRequestNotice } : {}),
     });
     const workingSignals = config.workingSignal ? new WorkingSignals({ adapters: bindings.outbound, store, logger }) : null;
+    const idleClose = production.caseIdleCloseHours ? new CaseIdleCloser({ store, temporal, channel: profile.channel.id, idleForMs: production.caseIdleCloseHours * 3_600_000, logger }) : null;
     const ingress = new ChannelIngress({
       store, tasks, temporal, controls, adapters: bindings.inbound, delivery, config: production, secrets: bindings.production.secrets, profile, taskFactory: bindings.taskFactory, ids, logger,
       ...(inspection ? { inspector: inspection.inspector } : {}),
       ...(bindings.lane ? { lane: bindings.lane } : {}),
+      ...(bindings.media ? { media: bindings.media } : {}),
       ...(workingSignals ? { onAutonomousInput: (input: Parameters<WorkingSignals['started']>[0]) => workingSignals.started(input) } : {}),
     });
     const presence = new PostgresWorkerPresenceStore(pool);
@@ -175,6 +186,7 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
           lane: bindings.lane ? { profile: profileLabel(bindings.lane.profile), conversations: bindings.lane.conversationKeys.length } : null,
           dispatcher: config.dispatch,
           workingSignal: workingSignals !== null,
+          caseIdleCloseHours: production.caseIdleCloseHours ?? null,
           inspection: inspection ? { id: inspection.inspector.id, version: inspection.inspector.version, mode: inspection.mode, degradedReason: inspection.degradedReason } : null,
         },
       };
@@ -216,9 +228,10 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
 
     let resumeTimer: NodeJS.Timeout | null = null;
     let signalTimer: NodeJS.Timeout | null = null;
+    let idleTimer: NodeJS.Timeout | null = null;
     let started = false;
     return {
-      app, pool, ingress, delivery, controls, logger, inspection, workingSignals,
+      app, pool, ingress, delivery, controls, logger, inspection, workingSignals, idleClose,
       start() {
         if (started) return;
         started = true;
@@ -228,9 +241,21 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
           void ingress.resumeUnsettled(config.resumeAfterMs).catch((error: unknown) => logger.warn({ err: error instanceof Error ? error.message : String(error) }, 'inbound resume failed'));
         }, Math.max(1000, Math.floor(config.resumeAfterMs / 2)));
         if (workingSignals) signalTimer = setInterval(() => void workingSignals.tick().catch(() => undefined), 5_000);
+        if (idleClose) {
+          // One sweep at a time in this process (a slow sweep is never overlapped by the next tick).
+          let sweeping = false;
+          idleTimer = setInterval(() => {
+            if (sweeping) return;
+            sweeping = true;
+            idleClose.sweep()
+              .catch((error: unknown) => logger.warn({ err: error instanceof Error ? error.message : String(error) }, 'idle-case sweep failed'))
+              .finally(() => (sweeping = false));
+          }, IDLE_SWEEP_MS);
+        }
       },
       async close() {
         if (resumeTimer) clearInterval(resumeTimer);
+        if (idleTimer) clearInterval(idleTimer);
         if (signalTimer) clearInterval(signalTimer);
         if (started && config.dispatch) await dispatcher.stop();
         await inspection?.stop();

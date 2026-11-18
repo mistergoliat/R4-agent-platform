@@ -5,6 +5,7 @@ import { SALES_MIGRATIONS_DIR } from '../definition.js';
 import { OidcError, loadOperatorAuthConfig } from '../operator-auth/index.js';
 import { inspectApprovals } from '../production/control.js';
 import { SALES_PRODUCTION_PROFILES, salesProductionProfile } from '../production/profile-v8.js';
+import { salesWebProfile } from '../production/profile-web.js';
 import { openApprovalInspection } from './approval-inspection.js';
 import { DecisionRefused, decideApproval, whoAmI } from './operator-approval.js';
 
@@ -102,7 +103,7 @@ export async function runOperator(argv: readonly string[], env: Readonly<Record<
   try {
     if (declaredExecutionMode(env) !== 'production') throw new ProductionConfigError('production_mode_not_declared', 'R4_EXECUTION_MODE must be "production"');
     const { config } = loadProductionConfig(env);
-    if (!salesProductionProfile(config.policyProfile)) throw new ProductionConfigError('invalid_production_config', `R4_PROD_POLICY_PROFILE is not a Sales production profile (${SALES_PRODUCTION_PROFILES.map(profileLabel).join(', ')})`);
+    if (!salesProductionProfile(config.policyProfile) && !salesWebProfile(config.policyProfile)) throw new ProductionConfigError('invalid_production_config', `R4_PROD_POLICY_PROFILE is not a Sales production profile (${SALES_PRODUCTION_PROFILES.map(profileLabel).join(', ')})`);
     const databaseUrl = env.R4_DATABASE_URL;
     if (!databaseUrl || !/^postgres(ql)?:\/\//.test(databaseUrl)) throw new ProductionConfigError('production_config_incomplete', 'R4_DATABASE_URL (postgres://) of the deployment is required');
     const logger = createLogger({ service: 'r4-sales-operator', level: env.R4_LOG_LEVEL === 'info' || env.R4_LOG_LEVEL === 'debug' ? env.R4_LOG_LEVEL : 'warn' });

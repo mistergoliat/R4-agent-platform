@@ -1,0 +1,34 @@
+[
+  {
+    "label": "deepseek-flash (direct)",
+    "from": "2026-01-01T00:00:00Z",
+    "to": "2026-11-16T19:50:00Z",
+    "priceInPerM": 0.3,
+    "priceOutPerM": 1.2,
+    "note": "DeepSeek official peak prices; off-peak is half. Every R4 worker until the lane switched to Luna."
+  },
+  {
+    "label": "gpt-6-luna (OpenRouter)",
+    "from": "2026-11-16T19:50:00Z",
+    "to": "2026-11-16T21:14:30Z",
+    "agents": ["sales@19"],
+    "priceInPerM": 0.1,
+    "priceOutPerM": 0.5,
+    "note": "Only the @19 lane worker in this window (secrets/model-lane-openrouter.env). Verify the exact switch time against the first model.call.completed with providerId openai-compatible.openrouter-gpt-6-luna."
+  },
+  {
+    "label": "deepseek-flash (direct)",
+    "from": "2026-11-16T19:50:00Z",
+    "to": "2026-11-16T21:14:30Z",
+    "priceInPerM": 0.3,
+    "priceOutPerM": 1.2,
+    "note": "Every other worker in that window (the DeepSeek account had no balance: their calls failed)."
+  },
+  {
+    "label": "gpt-6-luna (OpenRouter)",
+    "from": "2026-11-16T21:14:30Z",
+    "priceInPerM": 0.1,
+    "priceOutPerM": 0.5,
+    "note": "Every worker after production.env switched to OpenRouter. Cached input is billed at 0.01 per M (not visible in the database)."
+  }
+]

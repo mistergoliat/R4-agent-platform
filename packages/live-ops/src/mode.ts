@@ -64,6 +64,12 @@ export const productionConfigSchema = z.strictObject({
   }),
   /** (R4-J4-R7-4) Earlier tasks' turns older than this many days never enter a new task's context automatically. */
   priorConversationDays: z.int().min(1).max(365).default(30),
+  /**
+   * (Case idle close) A conversation task waiting for the contact closes after this many hours without a contact
+   * message; the next message opens a new task. Absent (R4_PROD_CASE_IDLE_CLOSE_HOURS unset or 0): off, and the
+   * configuration (and its fingerprint) is exactly what it was before.
+   */
+  caseIdleCloseHours: z.int().min(1).max(720).optional(),
 });
 export type ProductionConfig = z.infer<typeof productionConfigSchema>;
 
@@ -101,6 +107,7 @@ export function loadProductionConfig(env: Readonly<Record<string, string | undef
   if (network !== 'true' && network !== 'false') problems.push('R4_PROD_ALLOW_NETWORK must be exactly "true" or "false"');
   if (problems.length > 0) throw new ProductionConfigError('production_config_incomplete', `refusing to compose production:\n- ${problems.join('\n- ')}`);
   const percent = Number(env.R4_PROD_ROLLOUT_PERCENT);
+  const idleHours = int(env.R4_PROD_CASE_IDLE_CLOSE_HOURS, 'R4_PROD_CASE_IDLE_CLOSE_HOURS', 0);
   const parsed = productionConfigSchema.safeParse({
     mode: PRODUCTION_EXECUTION_MODE,
     policyProfile: env.R4_PROD_POLICY_PROFILE,
@@ -115,6 +122,7 @@ export function loadProductionConfig(env: Readonly<Record<string, string | undef
       holdRecheckMs: int(env.R4_PROD_HOLD_RECHECK_MS, 'R4_PROD_HOLD_RECHECK_MS', 15_000),
     },
     priorConversationDays: int(env.R4_PROD_PRIOR_CONVERSATION_DAYS, 'R4_PROD_PRIOR_CONVERSATION_DAYS', 30),
+    ...(idleHours === 0 ? {} : { caseIdleCloseHours: idleHours }),
   });
   if (!parsed.success) throw new ProductionConfigError('invalid_production_config', `refusing to compose production:\n${z.prettifyError(parsed.error)}`);
   if (parsed.data.outbound.leaseMs <= parsed.data.outbound.providerTimeoutMs) {

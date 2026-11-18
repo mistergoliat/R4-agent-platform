@@ -18,6 +18,7 @@ import {
 import type { Workspace } from '../workspace/model.js';
 import { CATALOG_SOURCE_SYSTEM, SHIPPING_SOURCE_SYSTEM } from './quote-v2.js';
 import type { QuoteParityGuard } from './parity-guard.js';
+import { promotionQuotability } from './promotion-policy.js';
 import { resolveOrderBasis } from './shipping-basis.js';
 import { SHIPPING_FRESHNESS_TTL_MS } from './shipping.js';
 
@@ -82,7 +83,7 @@ export interface CommercialSnapshot {
 
 /** Owner evidence behind a snapshot (outside the hash). */
 export interface CommercialEvidence {
-  readonly lines: readonly { readonly itemKey: string; readonly asOf: string; readonly validUntil: string | null; readonly pricingReference: string | null; readonly availableQuantity: number | null }[];
+  readonly lines: readonly { readonly itemKey: string; readonly asOf: string; readonly validUntil: string | null; readonly pricingReference: string | null; readonly availableQuantity: number | null; readonly promotionEndsAt?: string }[];
   readonly shipping: { readonly asOf: string; readonly reference: string | null } | null;
   /** The earliest instant any owner fact behind the snapshot stops being current (Catalog validity; Shipping R4 bound). */
   readonly validUntil: string | null;
@@ -131,6 +132,13 @@ export interface CommercialEligibility {
    * memory). Absent/false: v1, quotes without delivery (`shipping_not_in_f1`).
    */
   readonly shippingAllowed?: boolean;
+  /**
+   * (F1-COMMERCIAL-POLICY-v3, owner decision 2026-11-13; active only once the Quote owner accepts it) A promotional price
+   * Catalog V2 reports is quoted only when the promotion's own end (`pricing.promotion.validUntil`) is known and
+   * outlasts the quote's 60-minute validity plus a 15-minute margin, judged at preview and again at issuance. An
+   * open-ended or unknown end, or one too close, stays refused. Absent/false: every promotional price is refused.
+   */
+  readonly promotionsAllowed?: boolean;
 }
 export const F1_COMMERCIAL_POLICY_VERSION = 'F1-COMMERCIAL-POLICY-v1';
 /** (sales-production@19) v1 with delivery allowed at the Shipping owner's price. */
@@ -144,6 +152,8 @@ export async function buildCommercialSnapshot(deps: { readonly catalog: CatalogP
 
   const lines: CommercialSnapshotLine[] = [];
   const evidenceLines: CommercialEvidence['lines'][number][] = [];
+  /** (v3) The end of each quoted promotional price, kept as evidence (outside the hash). */
+  const promotionEnds = new Map<number, string>();
   for (const [index, selected] of state.items.entries()) {
     const at = { line: index + 1, itemKey: selected.productId };
     const item = await deps.catalog.getItemContext({ itemKey: selected.productId, quantity: selected.quantity }, options);
@@ -180,8 +190,12 @@ export async function buildCommercialSnapshot(deps: { readonly catalog: CatalogP
     if (deps.eligibility) {
       const policy = deps.eligibility.policyVersion;
       if (item.pricing.promotion !== null) {
-        block('price_promotional_excluded', `${item.parentProduct.name} has a promotional price: promotional prices are not quoted autonomously until their owners authorize it`, { ...at, policy });
-        continue;
+        const promo = promotionQuotability(item.pricing.promotion, deps.eligibility, now);
+        if (!promo.quotable) {
+          block(promo.code, `${item.parentProduct.name} has a promotional price: ${promo.reason}`, { ...at, policy, promotionEndsAt: promo.endsAt });
+          continue;
+        }
+        promotionEnds.set(index, promo.endsAt);
       }
       if (!OPAQUE_REFERENCE.test(item.pricing.engineVersion)) {
         block('catalog_provenance_missing', `the catalog answer for ${item.parentProduct.name} carries no pricing provenance`, { ...at, policy });
@@ -223,7 +237,8 @@ export async function buildCommercialSnapshot(deps: { readonly catalog: CatalogP
       unitPrice,
       amounts: quoteV2ChargeAmounts(unitPrice, String(selected.quantity)),
     });
-    evidenceLines.push({ itemKey: selected.productId, asOf: item.freshness.asOf, validUntil: item.freshness.validUntil, pricingReference: OPAQUE_REFERENCE.test(item.pricing.engineVersion) ? item.pricing.engineVersion : null, availableQuantity: item.availability.availableQuantity });
+    const promotionEndsAt = promotionEnds.get(index);
+    evidenceLines.push({ itemKey: selected.productId, asOf: item.freshness.asOf, validUntil: item.freshness.validUntil, pricingReference: OPAQUE_REFERENCE.test(item.pricing.engineVersion) ? item.pricing.engineVersion : null, availableQuantity: item.availability.availableQuantity, ...(promotionEndsAt ? { promotionEndsAt } : {}) });
   }
 
   let shipping: CommercialSnapshotShipping | null = null;

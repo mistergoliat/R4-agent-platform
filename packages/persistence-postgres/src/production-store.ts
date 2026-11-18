@@ -10,6 +10,7 @@ import {
   type ClaimOutboundCommand,
   type ConversationBindingRecord,
   type ConversationSummary,
+  type IdleConversation,
   type DeliveryAttemptRecord,
   type DeliveryEventRecord,
   type DispatchClaim,
@@ -213,6 +214,31 @@ export class PostgresProductionStore implements ProductionStore {
     );
   }
 
+  async reactionTarget(channel: string, providerMessageId: string): Promise<{ taskId: string; text: string | null; latest: boolean; stepId: string } | null> {
+    const r = await query<Row>(
+      this.#pool,
+      // Only an AGENT message is a reaction target (a notice, a document or an operator message is not). "Latest" is
+      // measured on recorded respond steps, the order the thread is judged in: a reply recorded but not yet materialized
+      // already makes the reacted-to message an earlier one.
+      `select o.task_id, s.step_id, s.decision ->> 'content' as text,
+              not exists (select 1 from agent_run_steps l where l.task_id = s.task_id and l.decision_type = 'respond' and l.outcome = 'recorded' and l.created_at > s.created_at) as latest
+         from outbound_messages o join agent_run_steps s on s.step_id = o.response_step_id
+        where o.channel = $1 and o.provider_message_id = $2 and o.origin = 'agent'`,
+      [channel, providerMessageId],
+    );
+    const row = r.rows[0];
+    return row ? { taskId: row.task_id as string, text: (row.text as string | null) ?? null, latest: row.latest === true, stepId: row.step_id as string } : null;
+  }
+
+  async inboundEvent(inboundId: string): Promise<InboundEventRecord | null> {
+    const r = await query<Row>(this.#pool, 'select * from inbound_events where inbound_id = $1', [inboundId]);
+    return r.rows[0] ? inboundFromRow(r.rows[0]) : null;
+  }
+
+  async recordInboundPerception(inboundId: string, text: string): Promise<void> {
+    await query(this.#pool, `update inbound_events set content = $2, content_sha256 = $3 where inbound_id = $1 and status = 'received' and content_kind in ('media', 'unsupported')`, [inboundId, text, sha256Hex(text)]);
+  }
+
   async unsettledInbound(olderThanMs: number, limit: number): Promise<InboundEventRecord[]> {
     const r = await query<Row>(this.#pool, `select * from inbound_events where status = 'received' and received_at <= clock_timestamp() - $1::int * interval '1 millisecond' order by received_at limit $2`, [olderThanMs, limit]);
     return r.rows.map(inboundFromRow);
@@ -247,8 +273,9 @@ export class PostgresProductionStore implements ProductionStore {
     return bindingFromRow(r.rows[0]);
   }
 
-  async closeBinding(bindingId: string, reason: string): Promise<void> {
-    await query(this.#pool, `update channel_conversation_bindings set status = 'closed', closed_at = clock_timestamp(), closed_reason = $2 where binding_id = $1 and status = 'open'`, [bindingId, reason]);
+  async closeBinding(bindingId: string, reason: string): Promise<boolean> {
+    const r = await query(this.#pool, `update channel_conversation_bindings set status = 'closed', closed_at = clock_timestamp(), closed_reason = $2 where binding_id = $1 and status = 'open'`, [bindingId, reason]);
+    return (r.rowCount ?? 0) > 0;
   }
 
   async touchBinding(bindingId: string, at: string): Promise<void> {
@@ -258,6 +285,39 @@ export class PostgresProductionStore implements ProductionStore {
   async bindingByTask(taskId: string): Promise<ConversationBindingRecord | null> {
     const r = await query<Row>(this.#pool, 'select * from channel_conversation_bindings where task_id = $1', [taskId]);
     return r.rows[0] ? bindingFromRow(r.rows[0]) : null;
+  }
+
+  async idleConversations(command: { readonly channel: string; readonly idleForMs: number; readonly limit: number }): Promise<IdleConversation[]> {
+    // Time is the temporal clock, the clock of task_inputs.received_at (and of the Temporal Runtime's own check).
+    const r = await query<Row>(
+      this.#pool,
+      `select b.binding_id, b.channel, b.task_id, t.status
+         from channel_conversation_bindings b join agent_tasks t on t.task_id = b.task_id
+        where b.status = 'open' and b.channel = $3 and (
+              (t.status = 'cancelled' and t.status_reason = 'idle_timeout')
+           or (t.status = 'waiting'
+               and exists (select 1 from task_waits w where w.task_id = t.task_id and w.status = 'waiting' and w.kind = 'WAIT_FOR_INPUT')
+               and coalesce((select max(i.received_at) from task_inputs i where i.task_id = t.task_id), b.created_at) <= r4_now() - $1::double precision * interval '1 millisecond'
+               and not exists (select 1 from outbound_messages o where o.task_id = t.task_id and o.status in ('pending', 'dispatching', 'unknown'))
+               and not exists (select 1 from human_requests h where h.task_id = t.task_id and h.status in ('requested', 'active'))
+               and not exists (select 1 from action_executions e where e.task_id = t.task_id and e.status not in ('succeeded', 'rejected', 'failed'))
+               and not exists (select 1 from task_terminal_intents ti where ti.task_id = t.task_id)
+               -- An approval outcome still to carry out: TemporalPersistence.pendingApprovalProposal, as an existence test.
+               and not exists (
+                 select 1 from human_requests h left join action_executions e on e.proposal_id = h.proposal_id
+                  where h.task_id = t.task_id and h.kind = 'approval' and (
+                        (h.status = 'approved' and (
+                           e.status in ('prepared', 'executing') or
+                           (e.execution_id is null and not exists (
+                              select 1 from policy_decisions d where d.proposal_id = h.proposal_id and d.decision_id <> (h.payload->>'policyDecisionId')::uuid))))
+                     or (h.status in ('rejected', 'expired', 'cancelled') and not exists (
+                           select 1 from observations ob where ob.approval_request_id = h.request_id))))
+               -- A message received but not ingested yet (e.g. an image being perceived) is activity.
+               and not exists (select 1 from inbound_events ie where ie.channel = b.channel and ie.conversation_key = b.conversation_key and ie.status = 'received')))
+        order by b.created_at, b.binding_id limit $2`,
+      [command.idleForMs, command.limit, command.channel],
+    );
+    return r.rows.map((row) => ({ bindingId: row.binding_id as string, channel: row.channel as string, taskId: row.task_id as string, taskStatus: row.status as string }));
   }
 
   async taskState(taskId: string): Promise<TaskStateFacts | null> {
@@ -752,6 +812,7 @@ export class PostgresProductionStore implements ProductionStore {
     // never a binding by its closing time: an earlier task can still get a turn after its binding closed (an operator
     // reply on a task whose closing was pending, R7-4 IR-1), and closing times come from another clock than turn times.
     // `earlier` is an index range scan over the one conversation (migration 0013_conversation_binding_history, R-9).
+    // A message cancelled before sending was never said: it is not a turn (the operator `thread` still shows it).
     const r = await query<Row>(
       this.#pool,
       `with cur as (select channel, conversation_key, created_at from channel_conversation_bindings where task_id = $1),
@@ -768,10 +829,11 @@ export class PostgresProductionStore implements ProductionStore {
          select 'agent', s.step_id::text, s.created_at, s.decision->>'content', s.task_id, o.outbound_id, o.status, o.hold_reason, o.cancel_reason, o.provider_message_id
            from agent_run_steps s left join outbound_messages o on o.response_step_id = s.step_id
           where s.task_id in (select task_id from earlier) and s.decision_type = 'respond' and s.outcome = 'recorded' and s.created_at >= $2
+            and o.status is distinct from 'cancelled'
          union all
          select 'operator', o.outbound_id::text, o.created_at, o.body, o.task_id, o.outbound_id, o.status, o.hold_reason, o.cancel_reason, o.provider_message_id
            from outbound_messages o
-          where o.task_id in (select task_id from earlier) and o.origin = 'operator' and o.created_at >= $2),
+          where o.task_id in (select task_id from earlier) and o.origin = 'operator' and o.created_at >= $2 and o.status <> 'cancelled'),
        shown as (select * from turns where text is not null)
        select t.*, (select count(distinct task_id) from shown)::int as earlier_tasks from shown t
         order by t.at desc, t.id desc limit $3`,
@@ -779,6 +841,19 @@ export class PostgresProductionStore implements ProductionStore {
     );
     const turns = r.rows.map((row) => entry(iso(row.at), row.id as string, row.kind as ThreadEntry['kind'], row.text as string, {}, row.outbound_id ? delivery(row) : null)).reverse();
     return { turns, earlierTasks: (r.rows[0]?.earlier_tasks as number | undefined) ?? 0 };
+  }
+
+  async earlierConversationTasks(taskId: string, maxTasks: number): Promise<string[]> {
+    // The `earlier` lineage of `earlierConversationTurns` (index 0013_conversation_binding_history).
+    const r = await query<Row>(
+      this.#pool,
+      `with cur as (select channel, conversation_key, created_at from channel_conversation_bindings where task_id = $1)
+       select e.task_id from cur join channel_conversation_bindings e
+           on e.channel = cur.channel and e.conversation_key = cur.conversation_key and e.created_at < cur.created_at and e.task_id is not null
+        order by e.created_at desc, e.binding_id desc limit $2`,
+      [taskId, maxTasks],
+    );
+    return r.rows.map((row) => row.task_id as string);
   }
 
   async conversations(limit: number): Promise<ConversationSummary[]> {
@@ -860,14 +935,14 @@ export class PostgresProductionStore implements ProductionStore {
 
 async function taskStateOf(db: Db, taskId: string): Promise<TaskStateFacts | null> {
   const r = await db.query<Row>(
-    `select t.status,
+    `select t.status, t.status_reason,
             exists (select 1 from task_terminal_intents i where i.task_id = t.task_id) as terminal_intent,
             exists (select 1 from human_requests h where h.task_id = t.task_id and h.kind = 'handoff' and h.status in ('requested', 'active')) as human_owned
        from agent_tasks t where t.task_id = $1`,
     [taskId],
   );
   const row = r.rows[0];
-  return row ? { status: row.status as string, terminalIntent: row.terminal_intent === true, humanOwned: row.human_owned === true } : null;
+  return row ? { status: row.status as string, statusReason: (row.status_reason as string | null) ?? null, terminalIntent: row.terminal_intent === true, humanOwned: row.human_owned === true } : null;
 }
 
 function entry(at: string, id: string, kind: ThreadEntry['kind'], text: string | null, refs: Record<string, string | null>, deliveryState: ThreadEntry['delivery']): ThreadEntry {

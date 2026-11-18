@@ -37,7 +37,7 @@ export interface InboundEventRecord {
   readonly channel: string;
   readonly providerEventId: string;
   readonly status: InboundStatus;
-  /** text | unsupported | rejected */
+  /** text | unsupported | media | rejected */
   readonly contentKind: string;
   readonly contentType: string | null;
   /** Canonical text, kept only until the input is durable in R4 (then cleared). */
@@ -63,7 +63,7 @@ export interface NewInboundEvent {
   readonly inboundId: string;
   readonly channel: string;
   readonly providerEventId: string;
-  readonly contentKind: 'text' | 'unsupported' | 'rejected';
+  readonly contentKind: 'text' | 'unsupported' | 'media' | 'rejected';
   readonly contentType: string | null;
   readonly content: string | null;
   readonly contentSha256: string | null;
@@ -133,6 +133,20 @@ export interface TaskStateFacts {
   readonly terminalIntent: boolean;
   /** A handoff is requested or active (humans own the task). */
   readonly humanOwned: boolean;
+  /** The task's status reason (e.g. `idle_timeout`); absent where the store does not read it. */
+  readonly statusReason?: string | null;
+}
+
+/**
+ * (Case idle close) An open binding whose task may have gone idle (the sweep's pre-selection; the Temporal Runtime
+ * decides under the task lock), or whose task the sweep already closed while the binding stayed open (a crash
+ * between the two).
+ */
+export interface IdleConversation {
+  readonly bindingId: string;
+  readonly channel: string;
+  readonly taskId: string;
+  readonly taskStatus: string;
 }
 
 export interface OutboundRecord {
@@ -344,6 +358,19 @@ export interface ProductionStore {
    */
   recordInboundInspected(event: NewInboundEvent, inspected: InspectedInbound): Promise<{ readonly record: InboundEventRecord; readonly created: boolean }>;
   settleInbound(inboundId: string, settlement: InboundSettlement): Promise<void>;
+  /**
+   * (Inbound multimodal v1) Replaces an UNSETTLED media (or unsupported) row's content with its decided text (and hash),
+   * before that text becomes an input; cleared at settlement like any inbound content. No-op once settled.
+   */
+  recordInboundPerception(inboundId: string, text: string): Promise<void>;
+  /**
+   * (Reactions) The outbound a provider message id names, with the text of the agent response it delivered and whether
+   * it is the latest agent outbound of its task, and the respond step that produced it. Null: not one of this
+   * deployment's agent messages.
+   */
+  reactionTarget(channel: string, providerMessageId: string): Promise<{ readonly taskId: string; readonly text: string | null; readonly latest: boolean; readonly stepId: string } | null>;
+  /** One inbound event as it is now (null: unknown). */
+  inboundEvent(inboundId: string): Promise<InboundEventRecord | null>;
   /** Received but never settled (a crash between persistence and ingestion). */
   unsettledInbound(olderThanMs: number, limit: number): Promise<InboundEventRecord[]>;
 
@@ -352,9 +379,17 @@ export interface ProductionStore {
   /** Inserts, or returns the open binding a concurrent writer created first. */
   openBinding(binding: NewConversationBinding): Promise<ConversationBindingRecord>;
   attachTask(bindingId: string, taskId: string): Promise<ConversationBindingRecord>;
-  closeBinding(bindingId: string, reason: string): Promise<void>;
+  /** Closes an open binding once (`closed_reason` is final); false when it was already closed. */
+  closeBinding(bindingId: string, reason: string): Promise<boolean>;
   touchBinding(bindingId: string, at: string): Promise<void>;
   bindingByTask(taskId: string): Promise<ConversationBindingRecord | null>;
+  /**
+   * (Case idle close) Open bindings of `channel` whose task is waiting for input with no input for `idleForMs` (temporal clock;
+   * no input: the binding's creation), no outbound pending, dispatching or unknown, no open human request, no
+   * unsettled action execution, no terminal intent, no approval outcome to carry out and no inbound message still
+   * being ingested — plus open bindings whose task already ended `idle_timeout`. Oldest first, at most `limit`.
+   */
+  idleConversations(command: { readonly channel: string; readonly idleForMs: number; readonly limit: number }): Promise<IdleConversation[]>;
   taskState(taskId: string): Promise<TaskStateFacts | null>;
   /** (ADR-045) The task created with this creation idempotency key, if any (a crash may leave it unattached to its binding). */
   taskByCreationKey(idempotencyKey: string): Promise<string | null>;
@@ -412,6 +447,8 @@ export interface ProductionStore {
    * after `since`. The window applies to each turn's own time, never to when a task or binding ended.
    */
   earlierConversationTurns(taskId: string, options: { readonly since: string; readonly limit: number; readonly maxTasks: number }): Promise<{ readonly turns: ThreadEntry[]; readonly earlierTasks: number }>;
+  /** (M3) The earlier tasks of `taskId`'s channel conversation (same lineage as `earlierConversationTurns`), newest first, at most `maxTasks`. */
+  earlierConversationTasks(taskId: string, maxTasks: number): Promise<string[]>;
   conversations(limit: number): Promise<ConversationSummary[]>;
   attention(): Promise<ProductionAttention>;
   metrics(): Promise<ProductionMetrics>;

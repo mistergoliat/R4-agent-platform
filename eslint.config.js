@@ -229,9 +229,9 @@ export default tseslint.config(
     ...tseslint.configs.disableTypeChecked,
   },
   {
-    // Plain-JS child processes spawned by recovery tests (Node cannot run TS directly), repo scripts and operator tools.
+    // Plain-JS child processes spawned by recovery tests (Node cannot run TS directly), repo scripts and ops tools.
     files: ['tests/**/*.mjs', 'scripts/**/*.mjs', 'ops/**/*.mjs'],
     ...tseslint.configs.disableTypeChecked,
-    languageOptions: { ...tseslint.configs.disableTypeChecked.languageOptions, globals: { process: 'readonly' } },
+    languageOptions: { ...tseslint.configs.disableTypeChecked.languageOptions, globals: { process: 'readonly', URL: 'readonly', fetch: 'readonly', AbortSignal: 'readonly' } },
   },
 );

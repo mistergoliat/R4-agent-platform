@@ -117,6 +117,35 @@ export class WhatsAppInboundAdapter implements InboundChannelAdapter {
       if (!body) return { providerEventId: id, reason: 'empty_text' };
       return { ...base, content: { kind: 'text', text: body.slice(0, 8000) } };
     }
+    // (Inbound multimodal v1) Images and audio: only the media REFERENCE; the file is fetched later, and only if the
+    // conversation's input starts autonomous work (ingress). An item without a usable reference stays unsupported.
+    if (type === 'image' || type === 'audio' || type === 'sticker') {
+      const media = isObject(m[type]) ? (m[type]) : null;
+      const mediaId = media ? text(media.id) : null;
+      const mimeType = media ? text(media.mime_type) : null;
+      if (mediaId && /^[A-Za-z0-9._:-]{1,256}$/.test(mediaId) && mimeType && /^[a-z]+\/[a-z0-9.+-]+(; ?[a-z0-9=._ -]+)*$/i.test(mimeType) && mimeType.length <= 128) {
+        const caption = type === 'image' && media ? text(media.caption) : null;
+        return {
+          ...base,
+          content: { kind: 'media', mediaKind: type, mediaId, mimeType, sha256: mediaSha256(media!.sha256), caption: caption ? caption.slice(0, 1024) : null, voice: type === 'audio' && media!.voice === true },
+        };
+      }
+    }
+    // (Reactions) The emoji (absent: the reaction was removed) and the provider id of the message it reacts to.
+    if (type === 'reaction') {
+      const r = isObject(m.reaction) ? m.reaction : null;
+      const target = r ? text(r.message_id) : null;
+      const emoji = r ? text(r.emoji) : null;
+      // Only emoji characters are an emoji; anything else (a modified client) is an unknown reaction, never "removed".
+      const valid = emoji === null || (emoji.length <= 16 && /^(?:\p{Extended_Pictographic}|\p{Emoji_Component}|‍|️)+$/u.test(emoji));
+      if (target && target.length <= 256 && valid) return { ...base, content: { kind: 'reaction', emoji, targetProviderMessageId: target } };
+    }
+    // Content the Cloud API cannot represent keeps WHAT it was (`unsupported.type`, e.g. a view-once photo, an edit, a poll)
+    // so it can be answered properly; never its content.
+    if (type === 'unsupported') {
+      const sub = isObject(m.unsupported) && typeof m.unsupported.type === 'string' ? m.unsupported.type.toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 40) : null;
+      return { ...base, content: { kind: 'unsupported', contentType: sub ? `unsupported.${sub}` : 'unsupported' } };
+    }
     return { ...base, content: { kind: 'unsupported', contentType: type.replace(/_/g, '-') } };
   }
 
@@ -130,6 +159,15 @@ export class WhatsAppInboundAdapter implements InboundChannelAdapter {
     const code = firstError && (typeof firstError.code === 'number' || typeof firstError.code === 'string') ? String(firstError.code).slice(0, 32) : null;
     return { channel: WHATSAPP_CHANNEL_ID, providerMessageId: id, status: mapped, occurredAt, eventKey: `${id}:${String(s.status)}:${String(s.timestamp)}`, errorCode: code };
   }
+}
+
+/** The provider's file hash as lowercase hex (Meta states it as hex or base64 depending on the surface); null when absent or unusable. */
+export function mediaSha256(value: unknown): string | null {
+  const s = text(value);
+  if (!s) return null;
+  if (/^[0-9a-f]{64}$/i.test(s)) return s.toLowerCase();
+  if (/^[A-Za-z0-9+/]{43}=$/.test(s)) return Buffer.from(s, 'base64').toString('hex');
+  return null;
 }
 
 function safeEqual(a: string, b: string): boolean {

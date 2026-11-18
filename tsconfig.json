@@ -36,6 +36,7 @@
       "@r4-adapters/openai-compatible": ["./adapters/models/openai-compatible/src/index.ts"],
       "@r4-adapters/whatsapp-cloud/testing": ["./adapters/channels/whatsapp-cloud/src/testing.ts"],
       "@r4-adapters/whatsapp-cloud": ["./adapters/channels/whatsapp-cloud/src/index.ts"],
+      "@r4-adapters/web": ["./adapters/channels/web/src/index.ts"],
       "@r4-sales/agent/evaluations": ["./agents/sales/src/evaluations/index.ts"],
       "@r4-sales/agent/shadow": ["./agents/sales/src/shadow/index.ts"],
       "@r4-sales/agent/production": ["./agents/sales/src/production/index.ts"],

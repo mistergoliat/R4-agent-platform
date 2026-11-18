@@ -10,6 +10,7 @@ import {
   conversationKey,
   decideInboundAutonomy,
   declaredExecutionMode,
+  laneRoute,
   loadProductionConfig,
   productionConfigFingerprint,
   rolloutBucket,
@@ -17,6 +18,7 @@ import {
   rolloutFingerprint,
   type AutonomyControlsState,
   type ProductionProfile,
+  type RolloutConfig,
 } from '@r4/live-ops';
 
 const KEY = 'k'.repeat(40);
@@ -140,6 +142,33 @@ describe('stable rollout', () => {
     expect(eligible).toBeGreaterThan(400);
     expect(eligible).toBeLessThan(600);
     expect(rolloutFingerprint({ ...base, allowlist: [key] })).not.toBe(rolloutFingerprint(base));
+  });
+});
+
+describe('(ADR-045) lane routing: lane conversations and the rollout cohort → lane; everything else → main', () => {
+  const base = { percent: 0, allowlist: [], denylist: [] };
+  const named = conversationKey(KEY, 'chat', 'acct', 'named');
+  const other = conversationKey(KEY, 'chat', 'acct', 'other');
+  const lane = new Set([named]);
+  const route = (rollout: RolloutConfig, key: string, keys: ReadonlySet<string> | null = lane) => laneRoute(rolloutEligibility(rollout, key), key, keys);
+
+  it('allowlisted lane conversation → lane; allowlisted but not named → main (unchanged ADR-045)', () => {
+    expect(route({ ...base, allowlist: [named, other] }, named)).toBe('lane');
+    expect(route({ ...base, allowlist: [named, other] }, other)).toBe('main');
+  });
+
+  it('cohort → lane; not_in_cohort → main; the bucket boundary decides, nothing else', () => {
+    const bucket = rolloutBucket(other);
+    expect(route({ ...base, percent: (bucket + 1) / 100 }, other)).toBe('lane');
+    expect(route({ ...base, percent: bucket / 100 }, other)).toBe('main');
+    expect(route({ ...base, percent: 100 }, other)).toBe('lane');
+    expect(route(base, other)).toBe('main');
+  });
+
+  it('denied → main even at 100 % (and held by the autonomy decision); lane absent → main for every reason', () => {
+    expect(route({ ...base, percent: 100, denylist: [other] }, other)).toBe('main');
+    expect(route({ ...base, percent: 100 }, other, null)).toBe('main');
+    expect(route({ ...base, allowlist: [named] }, named, null)).toBe('main');
   });
 });
 

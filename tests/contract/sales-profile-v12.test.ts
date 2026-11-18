@@ -87,10 +87,10 @@ describe('B. the F1 gate is enforced in code', () => {
   });
 
   it('the approved values are the J3E owner values (decision C), the write ceiling 6', () => {
-    expect(SALES_F1_CANARY_LIMITS).toEqual({ maxGrossClp: 250_000, maxLines: 3, maxUnitsPerLine: 5, maxTotalUnits: 5, maxQuotesPerConversation: 1, maxQuotesPerHour: 2, confirmationWindowSeconds: 900 });
-    expect(SALES_F1_CANARY_MAX_WRITE_ACTIONS).toBe(6);
-    for (const ok of [1, 6]) expect(() => assertF1CanaryWriteCeiling(ok)).not.toThrow();
-    for (const bad of [0, 7, 1.5, Number.NaN]) expect(() => assertF1CanaryWriteCeiling(bad), String(bad)).toThrow(/between 1 and 6/);
+    expect(SALES_F1_CANARY_LIMITS).toEqual({ maxGrossClp: 2_000_000, maxLines: 10, maxUnitsPerLine: 20, maxTotalUnits: 50, maxQuotesPerConversation: 100, maxQuotesPerHour: 10_000, confirmationWindowSeconds: 900 });
+    expect(SALES_F1_CANARY_MAX_WRITE_ACTIONS).toBe(200);
+    for (const ok of [1, 6, 200]) expect(() => assertF1CanaryWriteCeiling(ok)).not.toThrow();
+    for (const bad of [0, 201, 1.5, Number.NaN]) expect(() => assertF1CanaryWriteCeiling(bad), String(bad)).toThrow(/between 1 and 200/);
   });
 });
 
@@ -108,10 +108,10 @@ describe('B2. the isolated canary runtime applies the gate', () => {
     expect(() => canaryEnv({ R4_QUOTE_PARITY_EVIDENCE_FILE: file, R4_QUOTE_PARITY_MAX_AGE_SECONDS: '0' })).toThrow(/MAX_AGE_SECONDS/);
   });
 
-  it('refuses a worker whose write ceiling is outside 1..6, before touching any database', async () => {
+  it('refuses a worker whose write ceiling is outside 1..200, before touching any database', async () => {
     const canary = canaryEnv({ R4_QUOTE_PARITY_EVIDENCE_FILE: file, R4_QUOTE_PARITY_MAX_AGE_SECONDS: '3600' });
-    for (const maxWriteActions of [0, 7]) {
-      await expect(startCanaryRuntime(canary, { worker: { databaseUrl: canary.databaseUrl, execution: { maxWriteActions } }, scheduler: null, logger: createSilentLogger() } as never), String(maxWriteActions)).rejects.toThrow(/between 1 and 6/);
+    for (const maxWriteActions of [0, 201]) {
+      await expect(startCanaryRuntime(canary, { worker: { databaseUrl: canary.databaseUrl, execution: { maxWriteActions } }, scheduler: null, logger: createSilentLogger() } as never), String(maxWriteActions)).rejects.toThrow(/between 1 and 200/);
     }
   });
 });

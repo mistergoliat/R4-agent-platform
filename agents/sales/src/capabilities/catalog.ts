@@ -3,6 +3,7 @@ import { CATALOG_KEY_PATTERN, CATALOG_SELLABILITY, type CatalogFreshness, type C
 import type { CapabilityRegistration } from '@r4/capability-runtime';
 import { CAPABILITY_IDS, SCOPES } from '../ids.js';
 import { domainRead, moneySchema, readDefinition } from './common.js';
+import { promotionQuotability } from './promotion-policy.js';
 
 /**
  * R4's own upper bound on how long a catalog observation may be treated as
@@ -88,7 +89,13 @@ export const productContextOutput = z.discriminatedUnion('status', [
       variantOptions: z.array(z.strictObject({ itemKey: z.string(), sku: z.string().nullable(), attributes: z.array(z.strictObject({ group: z.string(), value: z.string() })), availability: variantAvailabilityView.optional() })),
     }),
     catalogText: z.strictObject({ notice: z.literal(CATALOG_TEXT_NOTICE), shortDescription: z.string().nullable() }),
-    derived: z.strictObject({ price: priceView.nullable(), availability: availabilityView, publicUrl: z.string().nullable() }),
+    derived: z.strictObject({
+      price: priceView.nullable(),
+      availability: availabilityView,
+      publicUrl: z.string().nullable(),
+      /** (F1 profiles) Whether a formal quote at the product's promotional price can be issued (withPromotionQuotability). */
+      promotion: z.strictObject({ endsAt: z.string().nullable(), formalQuote: z.enum(['available', 'not_available']), note: z.string() }).optional(),
+    }),
     inferred: z.strictObject({
       frequentlyBoughtTogether: z.discriminatedUnion('status', [
         z.strictObject({ status: z.literal('available'), meaning: z.literal(FREQUENTLY_BOUGHT_TOGETHER_MEANING), builtAt: z.string(), items: z.array(z.strictObject({ productKey: z.string(), name: z.string() })) }),
@@ -209,7 +216,34 @@ export function catalogEvidenceValidUntil(observation: { validUntil: string | nu
  * the port, deliberately NOT exposed to the model in J1: its consumer is
  * Quote (J3).
  */
-export function catalogCapabilities(catalog: CatalogPort, options: { variantAvailability?: boolean } = {}): [CapabilityRegistration<z.infer<typeof catalogSearchInput>, CatalogSearchView>, CapabilityRegistration<z.infer<typeof productContextInput>, ProductContextView>] {
+/**
+ * (F1-COMMERCIAL-POLICY-v3, owner order 2026-11-13 «experiencia conversacional») A discounted product the agent reads
+ * says whether a formal quote at that promotional price can be issued, by the same rule quote.preview and quote.create
+ * enforce (promotionQuotability), so the agent never offers a quote the platform will refuse. Read through the existing
+ * item-context port for one unit; a failed read leaves the product view as it was (the quote is still enforced).
+ */
+export async function withPromotionQuotability(view: ProductContextView, catalog: CatalogPort, promotions: CatalogPromotionAnnotation, call: { signal: AbortSignal; correlationId: string }): Promise<ProductContextView> {
+  if (view.status !== 'found' || view.derived.price?.discounted !== true || view.facts.sellableItemKey === null) return view;
+  let item: CatalogItemContext;
+  try {
+    item = await catalog.getItemContext({ itemKey: view.facts.sellableItemKey, quantity: 1 }, call);
+  } catch {
+    return view;
+  }
+  if (item.status !== 'found' || item.pricing.status !== 'available' || item.pricing.promotion === null) return view;
+  const q = promotionQuotability(item.pricing.promotion, promotions.eligibility, promotions.now());
+  const store = view.derived.publicUrl ? ` (${view.derived.publicUrl})` : '';
+  const promotion = q.quotable
+    ? { endsAt: q.endsAt, formalQuote: 'available' as const, note: `A formal quote at this promotional price can be issued: the promotion ends ${q.endsAt}, after the quote's 60-minute validity (checked again when the quote is issued). A quote never reserves stock.` }
+    : { endsAt: q.endsAt, formalQuote: 'not_available' as const, note: `A formal quote at this promotional price cannot be issued: ${q.reason}. Do not offer it as quotable; say so plainly and offer what is possible: buying it at that price in the online store${store}, or a person from the team.` };
+  return { ...view, derived: { ...view.derived, promotion } };
+}
+export interface CatalogPromotionAnnotation {
+  readonly eligibility: { readonly promotionsAllowed?: boolean };
+  readonly now: () => Date;
+}
+
+export function catalogCapabilities(catalog: CatalogPort, options: { variantAvailability?: boolean; promotions?: CatalogPromotionAnnotation | null } = {}): [CapabilityRegistration<z.infer<typeof catalogSearchInput>, CatalogSearchView>, CapabilityRegistration<z.infer<typeof productContextInput>, ProductContextView>] {
   return [
     {
       definition: readDefinition({
@@ -246,7 +280,10 @@ export function catalogCapabilities(catalog: CatalogPort, options: { variantAvai
       ownerValidUntil: catalogOwnerValidUntil,
       handler: (input, context) => {
         const call = { signal: context.signal, correlationId: context.execution.correlationId };
-        return domainRead(async () => (options.variantAvailability ? productContextWithVariantAvailability(catalog, input.productKey, call) : productContextView(await catalog.getProductContext(input.productKey, call))));
+        return domainRead(async () => {
+          const view = options.variantAvailability ? await productContextWithVariantAvailability(catalog, input.productKey, call) : productContextView(await catalog.getProductContext(input.productKey, call));
+          return options.promotions ? withPromotionQuotability(view, catalog, options.promotions, call) : view;
+        });
       },
     },
   ];

@@ -31,7 +31,7 @@ let store: IdentityVerificationStore;
 let production: PostgresProductionStore;
 
 beforeAll(async () => {
-  bed = await LiveOpsTestbed.start({ identityVerification: FULL, autonomy: true, percent: 100 });
+  bed = await LiveOpsTestbed.start({ identityVerification: FULL, autonomy: true, allowlist: Array.from({ length: 500 }, (_, i) => `5691200${String(i + 1).padStart(4, '0')}`) });
   store = new IdentityVerificationStore(bed.pool);
   production = new PostgresProductionStore(bed.pool);
 }, 120_000);

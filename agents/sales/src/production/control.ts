@@ -12,6 +12,7 @@ import {
 import { createLogger } from '@r4/observability';
 import { SALES_MIGRATIONS_DIR } from '../definition.js';
 import { SALES_PRODUCTION_PROFILES, salesProductionProfile } from './profile-v8.js';
+import { salesWebProfile } from './profile-web.js';
 import { APPROVAL_DECISION_BLOCKER, type ApprovalInspection, type OpenApprovalInspection } from './approvals.js';
 
 /**
@@ -153,7 +154,8 @@ export async function runProductionControl(
     // Production must be positively established; nothing is guessed or defaulted.
     if (declaredExecutionMode(env) !== 'production') throw new ProductionConfigError('production_mode_not_declared', 'R4_EXECUTION_MODE must be "production" for production control');
     const { config } = loadProductionConfig(env);
-    if (!salesProductionProfile(config.policyProfile)) {
+    // (ADR-046) A web deployment administers its own database's kill switch and tasks the same way.
+    if (!salesProductionProfile(config.policyProfile) && !salesWebProfile(config.policyProfile)) {
       throw new ProductionConfigError('invalid_production_config', `R4_PROD_POLICY_PROFILE=${config.policyProfile} is not a Sales production profile (${SALES_PRODUCTION_PROFILES.map(profileLabel).join(', ')})`);
     }
     const databaseUrl = env.R4_DATABASE_URL;

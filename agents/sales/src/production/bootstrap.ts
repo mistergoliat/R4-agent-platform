@@ -6,9 +6,10 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SALES_AGENT_DIR, SALES_MIGRATIONS_DIR, isSalesCandidateDefinition, loadSalesAgentDefinition } from '../definition.js';
-import { SALES_AGENT_ID } from '../ids.js';
+import { SALES_AGENT_ID, SALES_WEB_AGENT_ID } from '../ids.js';
 import { SALES_PRODUCTION_PROFILES, salesProductionAgentVersion, salesProductionProfile } from './profile-v8.js';
 import { SALES_LANE_PROFILES } from './profile-v15.js';
+import { loadSalesWebAgentDefinition, salesWebAgentVersion, salesWebProfile } from './profile-web.js';
 
 /**
  * `npm run production:sales:bootstrap` — registers the Sales AgentDefinition
@@ -54,13 +55,15 @@ export async function runProductionBootstrap(
     // (ADR-045) --lane: only the lane profile's own definition, from a directory holding just that file.
     const lane = options.lane ? SALES_LANE_PROFILES.find((p) => profileLabel(p) === config.policyProfile) : undefined;
     if (options.lane && !lane) throw new ProductionConfigError('invalid_production_config', `--lane requires R4_PROD_POLICY_PROFILE to be a Sales lane profile (${SALES_LANE_PROFILES.map(profileLabel).join(', ')})`);
-    if (!lane && !salesProductionProfile(config.policyProfile)) {
+    // (ADR-046) A web profile registers only its own sales-web definition, the same way (a directory holding just that file).
+    const web = lane ? null : salesWebProfile(config.policyProfile);
+    if (!lane && !web && !salesProductionProfile(config.policyProfile)) {
       throw new ProductionConfigError('invalid_production_config', `R4_PROD_POLICY_PROFILE=${config.policyProfile} is not a Sales production profile (${SALES_PRODUCTION_PROFILES.map(profileLabel).join(', ')})`);
     }
     const databaseUrl = env.R4_DATABASE_URL;
     if (!databaseUrl || !DATABASE_URL.test(databaseUrl)) throw new ProductionConfigError('production_config_incomplete', 'R4_DATABASE_URL (postgres://) of the production deployment is required');
     const level = env.R4_LOG_LEVEL === 'info' || env.R4_LOG_LEVEL === 'debug' ? env.R4_LOG_LEVEL : 'warn';
-    const laneDir = lane ? mkdtempSync(join(tmpdir(), 'r4-sales-lane-')) : null;
+    const laneDir = lane || web ? mkdtempSync(join(tmpdir(), 'r4-sales-lane-')) : null;
     let report: Awaited<ReturnType<typeof registerAgentDefinitions>>;
     try {
       if (lane && laneDir) {
@@ -68,17 +71,19 @@ export async function runProductionBootstrap(
         if (!isSalesCandidateDefinition(version)) throw new ProductionConfigError('invalid_production_config', `the lane definition v${version} is not a candidate file`);
         writeFileSync(join(laneDir, `sales.v${version}.agent.json`), JSON.stringify(loadSalesAgentDefinition(version)));
       }
+      const webVersion = web ? salesWebAgentVersion(web) : null;
+      if (webVersion !== null && laneDir) writeFileSync(join(laneDir, `${SALES_WEB_AGENT_ID}.v${webVersion}.agent.json`), JSON.stringify(loadSalesWebAgentDefinition(webVersion)));
       report = await registerAgentDefinitions({
         databaseUrl,
         directory: laneDir ?? options.definitionsDir ?? SALES_AGENT_DIR,
-        agentIds: [SALES_AGENT_ID],
+        agentIds: [web ? SALES_WEB_AGENT_ID : SALES_AGENT_ID],
         migrationDirectories: [SALES_MIGRATIONS_DIR],
         logger: createLogger({ service: 'r4-production-bootstrap', level }),
       });
     } finally {
       if (laneDir) rmSync(laneDir, { recursive: true, force: true });
     }
-    io.out(`production Sales bootstrap${lane ? ` (lane ${profileLabel(lane)})` : ''}:`);
+    io.out(`production Sales bootstrap${lane ? ` (lane ${profileLabel(lane)})` : web ? ` (web ${profileLabel(web)})` : ''}:`);
     if (report.registered.length > 0) io.out(`registered: ${report.registered.join(', ')}`);
     if (report.unchanged.length > 0) io.out(`unchanged: ${report.unchanged.join(', ')}`);
     return 0;

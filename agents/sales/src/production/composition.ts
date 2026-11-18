@@ -2,8 +2,9 @@ import type pg from 'pg';
 import type { Logger } from 'pino';
 import { DomainError, type CatalogPort, type CheckoutConsentSource, type CheckoutService, type QuoteV2Service, type ShippingService } from '@r4-adapters/domains';
 import { identityVerificationSchemaIsCurrent } from '@r4-adapters/identity-verification';
-import { WhatsAppInboundAdapter, WhatsAppOutboundAdapter, describeWhatsAppConfig, loadWhatsAppCloudConfig, type FetchLike, type WhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
-import { CapabilityRegistry } from '@r4/capability-runtime';
+import { WhatsAppInboundAdapter, WhatsAppMediaDownloader, WhatsAppOutboundAdapter, describeWhatsAppConfig, loadWhatsAppCloudConfig, type FetchLike, type WhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
+import { WebInboundAdapter, WebOutboundAdapter, describeWebChannelConfig, loadWebChannelConfig, type WebFetch } from '@r4-adapters/web';
+import { CapabilityRegistry, type CapabilityRegistration } from '@r4/capability-runtime';
 import { systemClock, type Clock, type Principal } from '@r4/contracts';
 import type { ModelProvider } from '@r4/model-gateway';
 import {
@@ -17,6 +18,7 @@ import {
   profileLabel,
   type ConversationLane,
   type ConversationTaskFactory,
+  type MediaPerception,
   type ProductionCompositionReport,
   type ProductionProfile,
   type ProductionConfig,
@@ -29,6 +31,8 @@ import { workspaceCapability } from '../capabilities/workspace.js';
 import { SALES_AGENT_ID, SALES_TASK_TYPE, AUTONOMOUS_QUOTE_CAPABILITY_IDS, CAPABILITY_IDS } from '../ids.js';
 import { SALES_ROOT_GOAL } from '../goal.js';
 import { SalesWorkspaceContextSource } from '../workspace/context-source.js';
+import { SalesQuoteRecoveryContextSource } from '../workspace/quote-recovery-source.js';
+import { SALES_QUOTE_LANE_V22_PROFILE_LABEL } from './profile-v22.js';
 import { PostgresSalesStore } from '../workspace/store.js';
 import { SALES_DOMAINS } from './profile.js';
 import { isAutonomousQuoteProfile } from './profile-v5.js';
@@ -37,8 +41,13 @@ import { isDeterministicOfferProfile } from './profile-v7.js';
 import { SALES_PRODUCTION_PROFILES, isCustomerIdentityProfile, salesActionPolicyFor, salesProductionAgentVersion, salesProductionProfile } from './profile-v8.js';
 import { composeSyntheticCustomerCapabilities, composeSyntheticIdentityVerificationCapabilities } from '../capabilities/customer-synthetic.js';
 import { GATEWAY_ONLY_ENV, salesGatewayInspection } from './gateway-identity.js';
+import { SALES_IMAGE_PERCEPTION_INSTRUCTIONS, SALES_TRANSCRIPTION_PROMPT, SalesMediaPerceiver } from './media-perception.js';
+import { salesHumanRequestNotice, salesRunFailureNotice } from './service-hours.js';
+import { configuredMediaPerception } from '../model.js';
 import { catalogCapabilities } from '../capabilities/catalog.js';
+import { withWebProgress, type WebProgressReporter } from './web-progress.js';
 import { F1_COMMERCIAL_POLICY_V2_VERSION, F1_COMMERCIAL_POLICY_VERSION, type CommercialEligibility } from '../capabilities/commercial-snapshot.js';
+import { F1_COMMERCIAL_POLICY_V3_VERSION } from '../capabilities/promotion-policy.js';
 import { shippingCapability } from '../capabilities/shipping.js';
 import { quoteCreateV2Capability } from '../capabilities/quote-v2.js';
 import { quoteCreateV3Capability } from '../capabilities/quote-v3.js';
@@ -53,10 +62,20 @@ import { SALES_LANE_PROFILES, isCheckoutLaneProfile, isQuoteLaneProfile, isSales
 import { SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_VARIANT_AVAILABILITY_PROFILES } from './profile-v17.js';
 import { SALES_QUOTE_DOCUMENT_PROFILES, SALES_QUOTE_LANE_V18_PROFILE_LABEL } from './profile-v18.js';
 import { SALES_F1_SHIPPING_PROFILES, SALES_INTENT_ACCEPTANCE_PROFILES } from './profile-v19.js';
+import { SALES_QUOTE_LANE_V21_PROFILE_LABEL } from './profile-v21.js';
+import { SALES_QUOTE_LANE_V22_PROFILE_LABEL } from './profile-v22.js';
 import { quoteDocumentDelivery } from '../capabilities/quote-document.js';
 import { catalogDiscoverCapability } from '../capabilities/catalog-discover.js';
 import type { CatalogDiscoverPort } from '@r4-adapters/catalog-http';
 import { checkoutPurchaseStatusCapability, checkoutRequestLinkCapability, checkoutStartPurchaseCapability } from '../capabilities/checkout.js';
+import { SALES_WEB_PROFILES, isSalesWebProfile, salesWebAgentVersion, salesWebProfile } from './profile-web.js';
+import { SALES_WEB_AGENT_ID } from '../ids.js';
+
+/** (ADR-046) The agent (identity and pinned definition version) a Sales profile runs: `sales-web@N` for web profiles, `sales@vN` otherwise. */
+export function salesAgentOf(profile: ProductionProfile): { readonly agentId: string; readonly version: number } {
+  const web = salesWebAgentVersion(profile);
+  return web === null ? { agentId: SALES_AGENT_ID, version: salesProductionAgentVersion(profile) } : { agentId: SALES_WEB_AGENT_ID, version: web };
+}
 
 /** Who opens production Sales conversations: the channel ingress (a platform service, never the model). */
 export const SALES_CHANNEL_INGRESS: Principal = { kind: 'service', ref: 'sales-channel-ingress' };
@@ -89,6 +108,8 @@ export interface SalesProductionWorkerOptions {
   readonly clock?: Clock;
   /** The catalog-service binding; required when the selected profile makes Catalog REAL (v2). */
   readonly catalog?: CatalogPort & { readonly bindingKind: string };
+  /** (ADR-046) Where a web profile reports what it is reading while it works (the store chat shows it). Ignored by any other profile. */
+  readonly webProgress?: WebProgressReporter;
   /** (ADR-045) Catalog V2 Discover; required when the selected profile is a lane profile (@13), ignored otherwise. */
   readonly catalogDiscover?: CatalogDiscoverPort;
   /** The pc-carrier binding (ProductionShippingAdapter); required when the selected profile makes Shipping REAL (v3). */
@@ -99,6 +120,10 @@ export interface SalesProductionWorkerOptions {
   readonly autonomousQuoteLimits?: AutonomousQuoteLimits | AutonomousQuoteLimitsV6;
   /** (R4-J5 F1, P-1) The parity-verified SKU set for autonomous quotes (R4_QUOTE_PARITY_*); applied to the deterministic-offer path (v7 lineage) when given. The F1 profile gate must require it. */
   readonly quoteParity?: QuoteParityGuard | null;
+  /** (F1-COMMERCIAL-POLICY-v3) Promotional prices that outlast the quote may be quoted (@19, @20, @21 and @22 only; default off). */
+  readonly promotionalQuotes?: boolean;
+  /** (M3) R4_SALES_QUOTE_RECOVERY=enabled: the conversation's earlier quotes with their current Quote V2 state enter the context (profiles with a REAL Quote; default off). */
+  readonly quoteRecovery?: boolean;
   /** (R4-J5 F1) Set only by the isolated canary runtime: it may also compose canary-only profiles (@12). A production worker never sets it. */
   readonly canary?: boolean;
   /** (R4 Checkout, R-1) The Checkout sandbox-purchase binding (CheckoutHttpClient); required when the selected profile composes Checkout (@15). */
@@ -115,12 +140,14 @@ export interface SalesProductionWorkerOptions {
 }
 
 /** The Sales production profile the deployment declared, or a refusal (nothing is defaulted). */
-export function selectedSalesProductionProfile(config: ProductionConfig, options: { readonly canary?: boolean; readonly lane?: boolean } = {}): ProductionProfile {
+export function selectedSalesProductionProfile(config: ProductionConfig, options: { readonly canary?: boolean; readonly lane?: boolean; readonly web?: boolean } = {}): ProductionProfile {
   const profile =
     salesProductionProfile(config.policyProfile) ??
     (options.canary ? (SALES_CANARY_ONLY_PROFILES.find((p) => profileLabel(p) === config.policyProfile) ?? null) : null) ??
     // (ADR-045) A lane profile is selected only by a production worker; a gateway serves it as its lane, never as its main profile.
-    (options.lane ? (SALES_LANE_PROFILES.find((p) => profileLabel(p) === config.policyProfile) ?? null) : null);
+    (options.lane ? (SALES_LANE_PROFILES.find((p) => profileLabel(p) === config.policyProfile) ?? null) : null) ??
+    // (ADR-046) A web profile is selected by a worker or by the web gateway, never by the WhatsApp gateway.
+    (options.web ? salesWebProfile(config.policyProfile) : null);
   if (!profile) throw new Error(`refusing production composition: R4_PROD_POLICY_PROFILE=${config.policyProfile} is not a Sales production profile (${SALES_PRODUCTION_PROFILES.map(profileLabel).join(', ')})`);
   return profile;
 }
@@ -147,11 +174,14 @@ export interface SalesProductionWorker {
  */
 export function composeSalesProductionWorker(options: SalesProductionWorkerOptions): SalesProductionWorker {
   const config = assertProductionMode(options.production.config);
-  const profile = selectedSalesProductionProfile(config, { canary: options.canary === true, lane: true });
+  const profile = selectedSalesProductionProfile(config, { canary: options.canary === true, lane: true, web: true });
   const clock = options.clock ?? systemClock;
   const sales = new PostgresSalesStore(options.pool);
   const controls = new AutonomyControls({ store: options.store, logger: options.logger });
   const capabilities = new CapabilityRegistry();
+  // (ADR-046) A web profile's reads also say what they are doing, for the store chat; any other profile's are untouched.
+  const webProgress = isSalesWebProfile(profile) ? options.webProgress : undefined;
+  const progress = <I, O>(registration: CapabilityRegistration<I, O>): CapabilityRegistration<I, O> => (webProgress ? withWebProgress(registration, webProgress) : registration);
   // Catalog is bound only when the profile makes it REAL (v2); otherwise every call is refused honestly.
   const catalogReal = profile.domains[SALES_DOMAINS.catalog]?.status === 'REAL';
   if (catalogReal && (!options.catalog || options.catalog.bindingKind === UNAVAILABLE_CATALOG.bindingKind)) {
@@ -165,15 +195,17 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
   }
   if (catalogReal) {
     // READ capabilities offered to the model; they execute through the CapabilityInvoker only.
-    const [catalogSearch, productContext] = catalogCapabilities(catalog, { variantAvailability: SALES_VARIANT_AVAILABILITY_PROFILES.has(profileLabel(profile)) });
-    capabilities.register(catalogSearch);
-    capabilities.register(productContext);
+    // (F1-COMMERCIAL-POLICY-v3) Under an F1 policy, a discounted product says whether its promotional price can be quoted.
+    const commercial = salesCommercialEligibility(profile, options.promotionalQuotes === true);
+    const [catalogSearch, productContext] = catalogCapabilities(catalog, { variantAvailability: SALES_VARIANT_AVAILABILITY_PROFILES.has(profileLabel(profile)) || isSalesWebProfile(profile), promotions: commercial ? { eligibility: commercial, now: () => clock.now() } : null });
+    capabilities.register(progress(catalogSearch));
+    capabilities.register(progress(productContext));
   }
-  // (ADR-045) The lane profile reads Catalog V2 Discover; it never composes without it.
-  if (isSalesLaneProfile(profile)) {
+  // (ADR-045) The lane profile reads Catalog V2 Discover; it never composes without it. (ADR-046) Nor does a web profile.
+  if (isSalesLaneProfile(profile) || isSalesWebProfile(profile)) {
     // A port whose Discover key (or V2 source) is missing would compose and then fail every call: refuse at start.
     if (!catalogReal || !options.catalogDiscover?.discoverConfigured) throw new Error(`refusing production composition: ${profileLabel(profile)} requires Catalog V2 Discover (R4_CATALOG_V2_* and R4_CATALOG_V2_DISCOVER_API_KEY)`);
-    capabilities.register(catalogDiscoverCapability(options.catalogDiscover));
+    capabilities.register(progress(catalogDiscoverCapability(options.catalogDiscover)));
   }
   // Shipping is bound only when the profile makes it REAL (v3): the pc-carrier HTTP adapter, never a fixture.
   // Its order basis reads Catalog, so a REAL Shipping without a REAL Catalog is refused too.
@@ -183,7 +215,7 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
       throw new Error(`refusing production composition: ${profileLabel(profile)} binds Shipping REAL but no pc-carrier binding was provided (R4_SHIPPING_*)`);
     }
     if (!catalogReal) throw new Error(`refusing production composition: ${profileLabel(profile)} binds Shipping REAL without a REAL Catalog (the order basis reads Catalog)`);
-    if (capabilityAvailability(profile, CAPABILITY_IDS.shippingQuote).available) capabilities.register(shippingCapability(options.shipping, catalog));
+    if (capabilityAvailability(profile, CAPABILITY_IDS.shippingQuote).available) capabilities.register(progress(shippingCapability(options.shipping, catalog)));
   }
   // Quote is bound only when the profile makes it REAL (v4): the Quote V2 HTTP adapter, never a fixture.
   // quote.create@2 verifies the approved snapshot against Catalog and Shipping, so both must be REAL too.
@@ -211,8 +243,8 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
           // (R4-J5 F1) The F1 canary, and the quote lane @14, run within the owner-approved canary limits, never looser.
           if (isF1CanaryProfile(profile) || isQuoteLaneProfile(profile)) assertF1CanaryLimits(limits, profileLabel(profile));
           if (options.quoteParity) options.logger.info({ quoteParity: { profile: profileLabel(profile), fingerprint: options.quoteParity.fingerprint, items: options.quoteParity.items, maxAgeSeconds: options.quoteParity.maxAgeSeconds } }, 'sales quote parity evidence configured');
-          if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV3Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now(), parity: options.quoteParity ?? null, eligibility: salesCommercialEligibility(profile), naturalAcceptance: SALES_INTENT_ACCEPTANCE_PROFILES.has(profileLabel(profile)) }));
-          if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV5Capability({ store: sales, quotes, catalog, shipping: options.shipping, limits, conversation: options.store, admission: controls, now: () => clock.now(), parity: options.quoteParity ?? null, eligibility: salesCommercialEligibility(profile), documents: SALES_QUOTE_DOCUMENT_PROFILES.has(profileLabel(profile)) ? quoteDocumentDelivery(options.store, options.logger) : null, naturalAcceptance: SALES_INTENT_ACCEPTANCE_PROFILES.has(profileLabel(profile)) }));
+          if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV3Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now(), parity: options.quoteParity ?? null, eligibility: salesCommercialEligibility(profile, options.promotionalQuotes === true), naturalAcceptance: SALES_INTENT_ACCEPTANCE_PROFILES.has(profileLabel(profile)) }));
+          if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV5Capability({ store: sales, quotes, catalog, shipping: options.shipping, limits, conversation: options.store, admission: controls, now: () => clock.now(), parity: options.quoteParity ?? null, eligibility: salesCommercialEligibility(profile, options.promotionalQuotes === true), documents: SALES_QUOTE_DOCUMENT_PROFILES.has(profileLabel(profile)) ? quoteDocumentDelivery(options.store, options.logger) : null, naturalAcceptance: SALES_INTENT_ACCEPTANCE_PROFILES.has(profileLabel(profile)) }));
         } else {
           if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV2Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now() }));
           if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV4Capability({ store: sales, quotes: options.quotes, catalog, shipping: options.shipping, limits, conversation: options.store, now: () => clock.now() }));
@@ -260,13 +292,19 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
     bindings: {
       modelProvider: options.modelProvider,
       capabilities,
-      contextSources: [new SalesWorkspaceContextSource(sales), new DeliveryStateContextSource(options.store), new PriorConversationContextSource(options.store, { windowDays: config.priorConversationDays })],
+      contextSources: [
+        new SalesWorkspaceContextSource(sales),
+        new DeliveryStateContextSource(options.store),
+        new PriorConversationContextSource(options.store, { windowDays: config.priorConversationDays }),
+        // (M3) Read-only; only when enabled AND the profile is one the owner allowed (@22; Quote V2 REAL there).
+        ...(quoteRecoveryComposed(profile, options) ? [new SalesQuoteRecoveryContextSource({ conversation: options.store, sales, quotes: options.quotes!, windowDays: config.priorConversationDays })] : []),
+      ],
       actionPolicy: salesActionPolicyFor(profile),
       admission: controls,
       presence: { executionMode: 'production', runtimeProfile: profileLabel(profile) },
       // R4-J4-R6 EV-2: only tasks pinned to this profile's definition; after a rollback, tasks of another
       // definition wait (durable, visible) instead of running with this profile's capabilities.
-      servedAgents: [{ agentId: SALES_AGENT_ID, version: salesProductionAgentVersion(profile) }],
+      servedAgents: [salesAgentOf(profile)],
     },
   };
 }
@@ -309,11 +347,11 @@ export async function assertSalesProductionPrerequisites(profile: ProductionProf
  * The task is pinned to the Sales definition version of the selected profile (R4-J2D): registering a newer
  * definition never switches a running profile, since an unpinned task would run the latest registered version.
  */
-export function salesConversationTaskFactory(pool: pg.Pool, agentVersion: number): ConversationTaskFactory {
+export function salesConversationTaskFactory(pool: pg.Pool, agentVersion: number, agentId: string = SALES_AGENT_ID): ConversationTaskFactory {
   const sales = new PostgresSalesStore(pool);
   return {
     requestedBy: SALES_CHANNEL_INGRESS,
-    request: (binding) => ({ taskType: SALES_TASK_TYPE, agentId: SALES_AGENT_ID, agentVersion, goal: SALES_ROOT_GOAL, input: { channel: binding.channel, conversationBinding: binding.bindingId } }),
+    request: (binding) => ({ taskType: SALES_TASK_TYPE, agentId, agentVersion, goal: SALES_ROOT_GOAL, input: { channel: binding.channel, conversationBinding: binding.bindingId } }),
     // Customer identity is UNAVAILABLE in this profile: the conversation acts for an unknown customer.
     afterOpen: async (taskId, binding) => {
       await sales.bindConversation({ taskId, customerRef: null, channelRef: binding.channel });
@@ -331,6 +369,8 @@ export interface SalesGatewayOptions {
   readonly identityFetch?: (url: string, init: RequestInit) => Promise<Response>;
   /** (R4-J4-R5 preparation) The isolated canary's closed test-host allowlist for the CIA confirm client. */
   readonly allowedHosts?: readonly string[];
+  /** The clock of the service-hours wording of platform messages (tests pin it); default: now. */
+  readonly now?: () => Date;
 }
 
 /**
@@ -338,41 +378,105 @@ export interface SalesGatewayOptions {
  * person (ADR-028 recovery exhausted, or a non-retryable model failure). Fixed text, never model output. It claims
  * no effect: whatever was or was not done (a quote, a verification) stays for the person to confirm.
  */
-export const SALES_RUN_FAILURE_FALLBACK_TEXT =
-  'Disculpa, tuve un problema técnico y no pude responder tu último mensaje. Ya avisé a una persona del equipo de PesasChile, que seguirá la conversación por este mismo chat. No hace falta que repitas lo que escribiste.';
+/** A business-day noon in Chile: the in-hours wording of the platform messages (tests, synthetic canary). */
+export const SALES_IN_HOURS_REFERENCE = new Date('2026-01-07T15:00:00.000Z');
+export const SALES_RUN_FAILURE_FALLBACK_TEXT = salesRunFailureNotice(SALES_IN_HOURS_REFERENCE);
 
 /**
  * (F-ADV-2, ADR-041 extension) The notice the delivery owner sends once when the agent opens a human request (a
  * consultation or a handoff) without replying in that run, so the contact never waits in silence. Fixed text, never
  * model output; it claims no commercial effect: the answer, and any commercial resolution, stay with the person.
  */
-export const SALES_HUMAN_REQUEST_NOTICE_TEXT =
-  'Gracias por tu mensaje. Tu consulta quedó pendiente de revisión por una persona del equipo de PesasChile. La respuesta llegará por este mismo chat; no hace falta que repitas lo que escribiste.';
+export const SALES_HUMAN_REQUEST_NOTICE_TEXT = salesHumanRequestNotice(SALES_IN_HOURS_REFERENCE);
 
 /** The profiles whose conversations get that notice: only the F1 quote lane candidate (@13 and the others unchanged). */
-export const SALES_HUMAN_REQUEST_NOTICE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_QUOTE_LANE_V18_PROFILE_LABEL, 'sales-production@19']);
+export const SALES_HUMAN_REQUEST_NOTICE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_QUOTE_LANE_V18_PROFILE_LABEL, 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22']);
+
+/**
+ * (ADR-046) The web chat's own notices. No person attends it yet: they say so, show the store contact ([[contacto]],
+ * filled by the web edge from its configuration) and start a fresh conversation for the visitor's next message
+ * ([[nueva-conversacion]]), so a task blocked on a handoff never leaves the visitor without an answer. Fixed text.
+ */
+export const SALES_WEB_RUN_FAILURE_FALLBACK_TEXT =
+  'Disculpa, tuve un problema técnico y no pude responder tu último mensaje. Escríbeme de nuevo y lo intento otra vez. Si prefieres hablar con una persona del equipo:\n[[contacto]]\n[[nueva-conversacion]]';
+export const SALES_WEB_HUMAN_REQUEST_NOTICE_TEXT =
+  'En este chat todavía no puede atenderte una persona del equipo. Para hablar con alguien:\n[[contacto]]\nSi quieres, escríbeme de nuevo y sigo ayudándote por aquí.\n[[nueva-conversacion]]';
 
 /** Gateway bindings of the Sales canary: the WhatsApp Cloud adapter (canary number), the profile and the task factory. */
 export function composeSalesGateway(options: SalesGatewayOptions): { bindings: GatewayBindings; whatsapp: WhatsAppCloudConfig; describe: Record<string, string | boolean> } {
   const config = assertProductionMode(options.production.config);
   const profile = selectedSalesProductionProfile(config);
+  const lane = salesGatewayLane(options.env, options.pool);
+  assertSalesGatewayCohort(config.rollout.percent, lane);
   const whatsapp = loadWhatsAppCloudConfig(options.env, { allowNetwork: config.allowNetwork });
+  const now = options.now ?? (() => new Date());
+  const media = salesMediaPerception(options.env, whatsapp, config.allowNetwork, isCustomerIdentityProfile(profile), now);
   return {
     whatsapp,
-    describe: describeWhatsAppConfig(whatsapp),
+    describe: { ...describeWhatsAppConfig(whatsapp), ...media.describe },
     bindings: {
       production: options.production,
       profile,
       inbound: [new WhatsAppInboundAdapter(whatsapp)],
       outbound: [new WhatsAppOutboundAdapter(whatsapp, options.fetch ? { fetch: options.fetch } : {})],
       taskFactory: salesConversationTaskFactory(options.pool, salesProductionAgentVersion(profile)),
-      runFailureFallback: { text: SALES_RUN_FAILURE_FALLBACK_TEXT },
-      humanRequestNotice: { text: SALES_HUMAN_REQUEST_NOTICE_TEXT, profiles: SALES_HUMAN_REQUEST_NOTICE_PROFILES },
-      ...laneOf(salesGatewayLane(options.env, options.pool)),
+      // (Owner decision 2026-11-12) Worded by the team's service hours at the moment each notice is created.
+      runFailureFallback: { text: () => salesRunFailureNotice(now()) },
+      humanRequestNotice: { text: () => salesHumanRequestNotice(now()), profiles: SALES_HUMAN_REQUEST_NOTICE_PROFILES },
+      ...laneOf(lane),
+      ...(media.perception ? { media: media.perception } : {}),
       // (R4-J4-R4) v8 never runs without the inbound inspector, requested in full (ADR-040).
       ...(isCustomerIdentityProfile(profile) ? { inspection: salesGatewayInspection(profile, options.env, { transport: options.identityFetch, allowedHosts: options.allowedHosts }) } : {}),
     },
   };
+}
+
+/**
+ * (ADR-046) Gateway bindings of the store website chat: the web edge adapters, a web profile and its own task factory
+ * (sales-web). A separate process from the WhatsApp gateway (one channel per profile); no lane, no inspector.
+ */
+export function composeSalesWebGateway(options: Omit<SalesGatewayOptions, 'fetch'> & { readonly fetch?: WebFetch }): { bindings: GatewayBindings; describe: Record<string, string> } {
+  const config = assertProductionMode(options.production.config);
+  const profile = salesWebProfile(config.policyProfile);
+  if (!profile) throw new Error(`refusing the web gateway: R4_PROD_POLICY_PROFILE=${config.policyProfile} is not a Sales web profile (${SALES_WEB_PROFILES.map(profileLabel).join(', ')})`);
+  const web = loadWebChannelConfig(options.env, { allowNetwork: config.allowNetwork });
+  const agent = salesAgentOf(profile);
+  return {
+    describe: describeWebChannelConfig(web),
+    bindings: {
+      production: options.production,
+      profile,
+      inbound: [new WebInboundAdapter(web)],
+      outbound: [new WebOutboundAdapter(web, options.fetch ? { fetch: options.fetch } : {})],
+      taskFactory: salesConversationTaskFactory(options.pool, agent.version, agent.agentId),
+      runFailureFallback: { text: SALES_WEB_RUN_FAILURE_FALLBACK_TEXT },
+      humanRequestNotice: { text: SALES_WEB_HUMAN_REQUEST_NOTICE_TEXT, profiles: [profileLabel(profile)] },
+    },
+  };
+}
+
+/**
+ * (Inbound multimodal v1) Image and voice-note perception for the gateway, off unless R4_MEDIA_PERCEPTION=enabled.
+ * The downloader holds the WhatsApp token; the describer (DeepSeek deepseek-flash) and the transcriber (OpenAI
+ * gpt-transcribe) hold their own credentials, which only the gateway's environment carries (never the worker's).
+ */
+export function salesMediaPerception(env: Readonly<Record<string, string | undefined>>, whatsapp: WhatsAppCloudConfig, allowNetwork: boolean, inspected: boolean, now: () => Date = () => new Date()): { perception?: { perception: MediaPerception; profiles: readonly string[] }; describe: Record<string, string | boolean> } {
+  const c = configuredMediaPerception(env, { allowNetwork, imageInstructions: SALES_IMAGE_PERCEPTION_INSTRUCTIONS });
+  if (!c.enabled) return { describe: c.description };
+  // Opt-in per profile (never the whole gateway): every other profile keeps holding media for a person, as before.
+  const profiles = [...new Set((env.R4_MEDIA_PERCEPTION_PROFILES ?? '').split(/[\s,]+/).map((p) => p.trim()).filter(Boolean))];
+  const known = new Set([...SALES_PRODUCTION_PROFILES, ...SALES_LANE_PROFILES].map(profileLabel));
+  if (profiles.length === 0 || profiles.some((p) => !known.has(p))) throw new Error(`refusing media perception: R4_MEDIA_PERCEPTION_PROFILES must list Sales profiles (${[...known].join(', ')})`);
+  // The ADR-040 inspector covers text only: with it, the ingress never perceives media (and says so here).
+  if (inspected) return { describe: { ...c.description, mediaPerception: 'off_inspector_composed' } };
+  const perception = new SalesMediaPerceiver({
+    downloader: new WhatsAppMediaDownloader(whatsapp),
+    ...(c.describer ? { describer: c.describer } : {}),
+    ...(c.transcriber ? { transcriber: c.transcriber } : {}),
+    transcriptionPrompt: c.transcriptionPromptOverride ?? SALES_TRANSCRIPTION_PROMPT,
+    now,
+  });
+  return { perception: { perception, profiles }, describe: { ...c.description, mediaPerceptionProfiles: profiles.join(','), mediaPerceptionKinds: [...perception.kinds].join(',') || 'none', unsupportedContentOnPerceptionProfiles: 'agent_answers' } };
 }
 
 /** (ADR-045) The lane variables of the gateway: both set (the lane) or neither (exactly R4-I). */
@@ -380,7 +484,8 @@ export const SALES_LANE_ENV = ['R4_PROD_LANE_PROFILE', 'R4_PROD_LANE_ALLOWLIST']
 
 /**
  * (ADR-045) The gateway's lane: a lane profile (sales-production@13) for an explicit list of conversation keys, each
- * of which ChannelIngress also requires to be allowlisted in the rollout. Refuses partial or malformed configuration.
+ * of which ChannelIngress also requires to be allowlisted in the rollout, and for the rollout cohort
+ * (R4_PROD_ROLLOUT_PERCENT; `laneRoute`). Refuses partial or malformed configuration.
  */
 export function salesGatewayLane(env: Readonly<Record<string, string | undefined>>, pool: pg.Pool): ConversationLane | undefined {
   const label = env.R4_PROD_LANE_PROFILE?.trim() ?? '';
@@ -392,6 +497,26 @@ export function salesGatewayLane(env: Readonly<Record<string, string | undefined
   const keys = [...new Set(raw.split(/[\s,]+/).map((k) => k.trim().toLowerCase()).filter(Boolean))];
   if (keys.some((k) => !/^[0-9a-f]{64}$/.test(k))) throw new Error('refusing the gateway lane: R4_PROD_LANE_ALLOWLIST must list 64-hex conversation keys (--identity-key)');
   return { conversationKeys: keys, profile, taskFactory: salesConversationTaskFactory(pool, salesProductionAgentVersion(profile)) };
+}
+
+/**
+ * (ADR-045 amendment 1) The lane profiles the owner approved to serve the rollout cohort, i.e. real customers. A code
+ * constant on purpose: adding a profile is a reviewed change, never a variable. @22 is the live lane profile and @21 its
+ * declared rollback (owner decision 2026-11-18): switching the lane @22 → @21 never requires dropping the percentage to 0.
+ */
+export const SALES_COHORT_LANE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V22_PROFILE_LABEL, SALES_QUOTE_LANE_V21_PROFILE_LABEL]);
+
+/**
+ * (ADR-045 amendment 1) With R4_PROD_ROLLOUT_PERCENT > 0 the WhatsApp gateway serves the cohort only through an
+ * owner-approved lane profile: without a lane the cohort would open, autonomous, on the main profile; with another lane
+ * profile (@13–@20, superseded or never approved) real customers would get a profile not approved for them. At 0 %
+ * nothing is required (as before).
+ */
+export function assertSalesGatewayCohort(percent: number, lane: ConversationLane | undefined): void {
+  if (percent <= 0) return;
+  if (!lane) throw new Error(`refusing the gateway: R4_PROD_ROLLOUT_PERCENT=${percent} without a lane would serve the cohort with the main profile; compose ${SALES_LANE_ENV.join(' and ')} with ${SALES_COHORT_LANE_PROFILES.join(', ')}, or keep the percentage at 0`);
+  const label = profileLabel(lane.profile);
+  if (!SALES_COHORT_LANE_PROFILES.includes(label)) throw new Error(`refusing the gateway: R4_PROD_ROLLOUT_PERCENT=${percent} with the lane profile ${label}, which is not approved for the rollout cohort (${SALES_COHORT_LANE_PROFILES.join(', ')})`);
 }
 
 function laneOf(lane: ConversationLane | undefined): { lane?: ConversationLane } {
@@ -418,11 +543,51 @@ export function killSwitchGuardedQuotes(quotes: QuoteV2Service, controls: Autono
   return guardProductionWrites(port, { domain: SALES_DOMAINS.quote, writeOperations: ['createAndIssue'], controls, logger, blocked: () => quoteWritesBlockedError() });
 }
 
-/** (F1 commercial eligibility) The policy the F1 candidate @17 enforces at quote.preview and quote.create; null elsewhere. */
-export function salesCommercialEligibility(profile: ProductionProfile): CommercialEligibility | null {
-  if (!SALES_VARIANT_AVAILABILITY_PROFILES.has(profileLabel(profile))) return null;
+/**
+ * (F1 commercial eligibility) The policy the F1 candidate @17 enforces at quote.preview and quote.create; null elsewhere.
+ * `promotionalQuotes` (R4_F1_PROMOTIONAL_QUOTES=enabled, default off; owner decision 2026-11-13, activated only after the
+ * Quote owner accepts it) selects v3 for @19 alone; asking for it under any other profile refuses the composition.
+ */
+export function salesCommercialEligibility(profile: ProductionProfile, promotionalQuotes = false): CommercialEligibility | null {
+  const label = profileLabel(profile);
+  if (promotionalQuotes && !SALES_F1_SHIPPING_PROFILES.has(label)) throw new Error(`refusing production composition: promotional quotes (R4_F1_PROMOTIONAL_QUOTES) are defined only for ${[...SALES_F1_SHIPPING_PROFILES].join(', ')}, not ${label}`);
+  if (!SALES_VARIANT_AVAILABILITY_PROFILES.has(label)) return null;
   // (owner decision 2026-11-10) @19: F1 policy v2, delivery at the Shipping owner price; @17/@18 keep v1 (no delivery).
-  return SALES_F1_SHIPPING_PROFILES.has(profileLabel(profile)) ? { policyVersion: F1_COMMERCIAL_POLICY_V2_VERSION, shippingAllowed: true } : { policyVersion: F1_COMMERCIAL_POLICY_VERSION };
+  if (!SALES_F1_SHIPPING_PROFILES.has(label)) return { policyVersion: F1_COMMERCIAL_POLICY_VERSION };
+  return promotionalQuotes ? { policyVersion: F1_COMMERCIAL_POLICY_V3_VERSION, shippingAllowed: true, promotionsAllowed: true } : { policyVersion: F1_COMMERCIAL_POLICY_V2_VERSION, shippingAllowed: true };
+}
+
+/** (F1-COMMERCIAL-POLICY-v3) R4_F1_PROMOTIONAL_QUOTES: `enabled` | `disabled` (default). Anything else refuses (fail closed). */
+export function loadPromotionalQuotes(env: Readonly<Record<string, string | undefined>>): boolean {
+  const value = (env.R4_F1_PROMOTIONAL_QUOTES ?? 'disabled').trim();
+  if (value !== 'enabled' && value !== 'disabled') throw new Error('R4_F1_PROMOTIONAL_QUOTES must be enabled or disabled');
+  return value === 'enabled';
+}
+
+/** (M3) R4_SALES_QUOTE_RECOVERY: `enabled` | `disabled` (default). Anything else refuses (fail closed). */
+export function loadQuoteRecovery(env: Readonly<Record<string, string | undefined>>): boolean {
+  const value = (env.R4_SALES_QUOTE_RECOVERY ?? 'disabled').trim();
+  if (value !== 'enabled' && value !== 'disabled') throw new Error('R4_SALES_QUOTE_RECOVERY must be enabled or disabled');
+  return value === 'enabled';
+}
+
+/** (M3, owner mandate 2026-11-18) The only profiles on which R4_SALES_QUOTE_RECOVERY takes effect. */
+export const SALES_QUOTE_RECOVERY_PROFILES: ReadonlySet<string> = new Set([SALES_QUOTE_LANE_V22_PROFILE_LABEL]);
+
+/**
+ * (M3) Whether the quote-recovery source is composed: enabled, an allowed profile, and a REAL Quote V2 binding. On any
+ * other profile the flag is IGNORED with a warning (not refused): the lane's rollback to @21 must stay a one-variable
+ * change (R4_PROD_POLICY_PROFILE), and a worker that refused to start over a leftover flag would turn a rollback into an
+ * outage. The `service.composed` log states the outcome (`features.quoteRecovery`).
+ */
+export function quoteRecoveryComposed(profile: ProductionProfile, options: Pick<SalesProductionWorkerOptions, 'quoteRecovery' | 'quotes' | 'logger'>): boolean {
+  if (options.quoteRecovery !== true) return false;
+  const label = profileLabel(profile);
+  if (!SALES_QUOTE_RECOVERY_PROFILES.has(label) || profile.domains[SALES_DOMAINS.quote]?.status !== 'REAL' || !options.quotes) {
+    options.logger.warn({ event: 'sales.quote_recovery.ignored', profile: label, allowed: [...SALES_QUOTE_RECOVERY_PROFILES] }, 'R4_SALES_QUOTE_RECOVERY=enabled is ignored: this profile does not compose quote recovery');
+    return false;
+  }
+  return true;
 }
 
 /** The Quote V2 port quote.create@5 uses: behind the kill switch; for the F1 profiles also single-flight (see below). */

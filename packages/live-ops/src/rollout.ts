@@ -46,3 +46,13 @@ export function rolloutEligibility(rollout: RolloutConfig, key: string): Rollout
 export function rolloutFingerprint(rollout: RolloutConfig): string {
   return fingerprint({ percent: rollout.percent, allowlist: [...rollout.allowlist].sort(), denylist: [...rollout.denylist].sort() });
 }
+
+/**
+ * (ADR-045, rollout cohort) Which of a gateway's profiles a NEW binding opens with: the lane for its named
+ * conversations and for the rollout cohort; the main profile otherwise (and always when no lane is composed).
+ * Never widens autonomy: a cohort conversation is already eligible by the rollout, and a denied one is never `cohort`.
+ */
+export function laneRoute(eligibility: RolloutEligibility, key: string, laneKeys: ReadonlySet<string> | null): 'lane' | 'main' {
+  if (!laneKeys) return 'main';
+  return laneKeys.has(key) || eligibility.reason === 'cohort' ? 'lane' : 'main';
+}

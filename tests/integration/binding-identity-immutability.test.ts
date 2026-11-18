@@ -84,7 +84,7 @@ function barrier() {
 }
 
 beforeAll(async () => {
-  bed = await LiveOpsTestbed.start({ identityVerification: { requested: 'full', codeKeys: KEYS, confirm: NOT_STARTED }, autonomy: true, percent: 100 });
+  bed = await LiveOpsTestbed.start({ identityVerification: { requested: 'full', codeKeys: KEYS, confirm: NOT_STARTED }, autonomy: true, allowlist: Array.from({ length: 500 }, (_, i) => `5691400${String(i + 1).padStart(4, '0')}`) });
 }, 120_000);
 
 afterAll(async () => {
@@ -259,7 +259,7 @@ describe('R4-T06: migration over a 0010 database that already holds bindings', (
       const before = (await pool.query(all)).rows;
       expect(before.map((r: Record<string, unknown>) => r.status)).toEqual(['open', 'closed']);
 
-      expect(await migrate(pool)).toEqual({ applied: ['0011_binding_identity_immutability', '0012_platform_fallback_outbound', '0013_conversation_binding_history', '0014_platform_notice_outbound', '0015_platform_notice_document'] });
+      expect(await migrate(pool)).toEqual({ applied: ['0011_binding_identity_immutability', '0012_platform_fallback_outbound', '0013_conversation_binding_history', '0014_platform_notice_outbound', '0015_platform_notice_document', '0016_inbound_media'] });
       expect((await pool.query(all)).rows).toEqual(before);
 
       const spare = await task();

@@ -6,10 +6,12 @@ import { canonicalInboundSchema, type CanonicalInbound, type HeaderBag, type Inb
 import type { AutonomyControls } from './controls.js';
 import type { ProductionConfig, ProductionSecrets } from './mode.js';
 import type { InboundInspector } from './inspection.js';
+import { mediaRefContent, parseMediaRefContent, parseReactionRefContent, reactionRefContent, type MediaKind, type MediaPerception } from './media.js';
+import { IDLE_TIMEOUT } from './idle-close.js';
 import type { OutboundDeliveryRuntime } from './outbound.js';
 import type { ConversationBindingRecord, InboundEventRecord, ProductionStore } from './ports.js';
 import { profileFingerprint, profileLabel, type ProductionProfile } from './profile.js';
-import { conversationKey, rolloutEligibility, rolloutFingerprint } from './rollout.js';
+import { conversationKey, laneRoute, rolloutEligibility, rolloutFingerprint, type RolloutEligibility } from './rollout.js';
 
 /**
  * How a pack opens the durable task that serves a new channel conversation.
@@ -23,10 +25,11 @@ export interface ConversationTaskFactory {
 }
 
 /**
- * (ADR-045) One extra profile the same gateway serves for an explicit, closed set of conversations (keyed
- * hashes, never addresses). The lane is decided only when a binding is OPENED and persisted on it
- * (`binding.profile`); everything after that follows the binding, never the current configuration. Every lane
- * conversation must also be allowlisted in the rollout: a lane never widens who gets autonomy.
+ * (ADR-045) One extra profile the same gateway serves for an explicit set of conversations (keyed hashes, never
+ * addresses) AND for the rollout percentage cohort (`laneRoute`). The lane is decided only when a binding is OPENED
+ * and persisted on it (`binding.profile`); everything after that follows the binding, never the current
+ * configuration. Every named lane conversation must also be allowlisted in the rollout, and the cohort is eligible
+ * by the rollout itself: a lane never widens who gets autonomy.
  */
 export interface ConversationLane {
   readonly conversationKeys: readonly string[];
@@ -57,6 +60,14 @@ export interface ChannelIngressOptions {
    * gateway's cosmetic working signal. Must not throw or block; its failures are ignored. Absent: nothing.
    */
   readonly onAutonomousInput?: (input: { readonly channel: string; readonly accountRef: string; readonly providerEventId: string; readonly taskId: string }) => void;
+  /**
+   * (Inbound multimodal v1) Perception of images and voice notes. Absent — or with an inspector composed, whose ADR-040
+   * guarantees cover text only — a media item is exactly an `unsupported` one (held per profile, never downloaded).
+   * Present: a media item is acknowledged at once and processed right after (download + perception take seconds), and it
+   * is downloaded ONLY when its input starts autonomous work, in a task no human owns, of a binding whose profile is one
+   * of `profiles` (every other profile keeps holding media exactly as before).
+   */
+  readonly media?: { readonly perception: MediaPerception; readonly profiles: readonly string[] };
 }
 
 interface ServedProfile {
@@ -68,6 +79,8 @@ interface ServedProfile {
 
 export type IngestOutcome =
   | { readonly kind: 'duplicate'; readonly inboundId: string }
+  /** (media) Durable and acknowledged; processed right after the response (or by the resume sweep after a crash). */
+  | { readonly kind: 'deferred'; readonly inboundId: string }
   | { readonly kind: 'ingested'; readonly inboundId: string; readonly taskId: string; readonly inputId: string; readonly taskCreated: boolean; readonly disposition: string }
   | { readonly kind: 'failed'; readonly inboundId: string; readonly code: string };
 
@@ -101,6 +114,8 @@ export class ChannelIngress {
   readonly #main: ServedProfile;
   readonly #lane: (ServedProfile & { readonly keys: ReadonlySet<string> }) | null;
   readonly #rolloutFingerprint: string;
+  /** Media inbound being processed in this process right now (the resume sweep never takes them twice). */
+  readonly #inFlight = new Set<string>();
 
   constructor(options: ChannelIngressOptions) {
     this.#o = options;
@@ -108,6 +123,7 @@ export class ChannelIngress {
     this.#main = { label: profileLabel(options.profile), fingerprint: profileFingerprint(options.profile), profile: options.profile, taskFactory: options.taskFactory };
     const lane = options.lane;
     this.#lane = lane ? { label: profileLabel(lane.profile), fingerprint: profileFingerprint(lane.profile), profile: lane.profile, taskFactory: lane.taskFactory, keys: new Set(lane.conversationKeys) } : null;
+    if (options.media && options.media.profiles.length === 0) throw new PlatformError('precondition', 'media_perception_refused', 'media perception needs at least one profile');
     if (this.#lane) {
       const { rollout } = options.config;
       const problems: string[] = [];
@@ -123,8 +139,8 @@ export class ChannelIngress {
   }
 
   /** The profile a NEW binding of this conversation is opened with. */
-  #assign(key: string): ServedProfile {
-    return this.#lane?.keys.has(key) ? this.#lane : this.#main;
+  #assign(key: string, eligibility: RolloutEligibility): ServedProfile {
+    return this.#lane && laneRoute(eligibility, key, this.#lane.keys) === 'lane' ? this.#lane : this.#main;
   }
 
   /** The composed profile an existing binding was opened with (null: none of this gateway's). */
@@ -162,7 +178,7 @@ export class ChannelIngress {
       return { status: 401, body: { error: 'unauthenticated' } };
     }
     const parsed = adapter.parse(rawBody);
-    const results = { ingested: 0, duplicates: 0, failed: 0, rejected: 0, statuses: 0 };
+    const results = { ingested: 0, deferred: 0, duplicates: 0, failed: 0, rejected: 0, statuses: 0 };
     for (const item of parsed.rejected) {
       const providerEventId = item.providerEventId ?? `unidentified:${sha256Hex(rawBody).slice(0, 48)}`;
       const { created } = await this.#o.store.recordInbound({
@@ -175,6 +191,7 @@ export class ChannelIngress {
     for (const inbound of parsed.inbound) {
       const outcome = await this.ingest(inbound, correlationId);
       if (outcome.kind === 'ingested') results.ingested += 1;
+      else if (outcome.kind === 'deferred') results.deferred += 1;
       else if (outcome.kind === 'duplicate') results.duplicates += 1;
       else results.failed += 1;
     }
@@ -189,13 +206,24 @@ export class ChannelIngress {
   async ingest(raw: CanonicalInbound, correlationId: string): Promise<IngestOutcome> {
     const event = canonicalInboundSchema.parse(raw);
     const key = conversationKey(this.#o.secrets.identityHashKey, event.channel, event.accountRef, event.conversationRef);
-    const text = event.content.kind === 'text' ? event.content.text : unsupportedContentMarker(event.content.contentType);
+    // Without perception, a media item is recorded exactly as before multimodal v1 (`unsupported`, its type only).
+    // A reaction is kept (emoji + target) only where media perception is composed; elsewhere it is unsupported, as before.
+    const ec = event.content;
+    const c = ec.kind === 'media' && !this.#perceivesMedia(undefined, ec.mediaKind) ? { kind: 'unsupported' as const, contentType: ec.mediaKind }
+      : ec.kind === 'reaction' && !this.#perceivesMedia() ? { kind: 'unsupported' as const, contentType: 'reaction' }
+      : ec;
+    // A media item keeps only its provider reference until it is perceived (or held as unsupported); never bytes.
+    // A contact's text never starts with a platform header: "[r4:…" written by the contact is neutralized, so it can
+    // never pose as a perceived file or a reaction.
+    const text = c.kind === 'text' ? c.text.replace(/^(\s*)\[\s*r4\s*:/i, '$1[r4 :') : c.kind === 'reaction' ? reactionRefContent({ emoji: c.emoji, targetProviderMessageId: c.targetProviderMessageId }) : c.kind === 'media'
+      ? mediaRefContent({ kind: c.mediaKind, mediaId: c.mediaId, mimeType: c.mimeType, sha256: c.sha256, caption: c.caption, voice: c.voice })
+      : unsupportedContentMarker(c.contentType);
     const inbound = {
       inboundId: this.#o.ids.next(),
       channel: event.channel,
       providerEventId: event.providerEventId,
-      contentKind: event.content.kind,
-      contentType: event.content.kind === 'unsupported' ? event.content.contentType : 'text',
+      contentKind: c.kind === 'reaction' ? ('unsupported' as const) : c.kind,
+      contentType: c.kind === 'unsupported' ? c.contentType : c.kind === 'media' ? c.mediaKind : c.kind === 'reaction' ? 'reaction' : 'text',
       content: text,
       contentSha256: sha256Hex(text),
       conversationKey: key,
@@ -211,7 +239,7 @@ export class ChannelIngress {
     const { record, created } = inspector
       ? await this.#o.store.recordInboundInspected(inbound, {
           inspector,
-          inspectable: event.content.kind === 'text',
+          inspectable: c.kind === 'text',
           senderRef: event.senderRef,
           direct: this.#adapters.get(event.channel)?.directConversations === true && event.senderRef === event.conversationRef,
         })
@@ -220,7 +248,16 @@ export class ChannelIngress {
       emitTelemetry(this.#o.logger, 'inbound.duplicate', { channel: event.channel, inboundId: record.inboundId, status: record.status, correlationId });
       return { kind: 'duplicate', inboundId: record.inboundId };
     }
-    emitTelemetry(this.#o.logger, 'inbound.received', { channel: event.channel, inboundId: record.inboundId, contentKind: event.content.kind, correlationId });
+    emitTelemetry(this.#o.logger, 'inbound.received', { channel: event.channel, inboundId: record.inboundId, contentKind: c.kind, correlationId });
+    if (record.contentKind === 'media' && this.#perceivesMedia()) {
+      // Acknowledged now (the row is durable); download and perception run after the response. A crash leaves the row
+      // `received` and the resume sweep processes it.
+      this.#inFlight.add(record.inboundId);
+      void this.#process(record)
+        .catch((error: unknown) => emitTelemetry(this.#o.logger, 'inbound.media.deferred_failed', { channel: record.channel, inboundId: record.inboundId, error: error instanceof PlatformError ? error.code : 'infrastructure' }))
+        .finally(() => this.#inFlight.delete(record.inboundId));
+      return { kind: 'deferred', inboundId: record.inboundId };
+    }
     return this.#process(record);
   }
 
@@ -228,17 +265,78 @@ export class ChannelIngress {
   async resumeUnsettled(olderThanMs = 30_000, limit = 50): Promise<IngestOutcome[]> {
     const pending = await this.#o.store.unsettledInbound(olderThanMs, limit);
     const out: IngestOutcome[] = [];
-    for (const record of pending) out.push(await this.#process(record));
+    for (const record of pending) {
+      if (this.#inFlight.has(record.inboundId)) continue;
+      this.#inFlight.add(record.inboundId);
+      try {
+        out.push(await this.#process(record));
+      } finally {
+        this.#inFlight.delete(record.inboundId);
+      }
+    }
     return out;
   }
 
-  async #process(record: InboundEventRecord): Promise<IngestOutcome> {
+  /**
+   * Media is perceived only when perception is composed, no inspector is (its guarantees cover text only) and, for a
+   * given binding, its profile is one perception was enabled for. Without a label: for any profile of this gateway.
+   */
+  #perceivesMedia(profileLabel?: string, kind?: string | null): boolean {
+    const m = this.#o.media;
+    return m !== undefined && this.#o.inspector === undefined && (profileLabel === undefined || m.profiles.includes(profileLabel))
+      && (kind === undefined || (kind !== null && m.perception.kinds.has(kind as MediaKind)));
+  }
+
+  /**
+   * The input text of a media inbound, decided once. Held, human-owned or not perceivable: the unsupported marker, and
+   * nothing is downloaded. Otherwise it is perceived and the framed text is made durable on the inbound row BEFORE it
+   * becomes an input, so a crash after this point never perceives (or downloads) the same message again.
+   */
+  async #mediaText(record: InboundEventRecord, binding: ConversationBindingRecord, held: boolean, profileLabel: string): Promise<string> {
+    const ref = record.contentKind === 'media' ? parseMediaRefContent(record.content ?? '') : null;
+    const humanOwned = binding.taskId ? ((await this.#o.store.taskState(binding.taskId))?.humanOwned ?? false) : false;
+    let text = unsupportedContentMarker(record.contentType ?? 'media');
+    const reaction = record.contentKind === 'unsupported' ? parseReactionRefContent(record.content ?? '') : null;
+    if (!held && !humanOwned && reaction && this.#perceivesMedia(profileLabel)) {
+      // (Reactions) The agent learns which of its messages was reacted to, and whether it is its latest one (the offer).
+      const target = await this.#o.store.reactionTarget(record.channel, reaction.targetProviderMessageId);
+      const own = target && target.taskId === binding.taskId ? target : null;
+      text = this.#o.media!.perception.frameReaction({ emoji: reaction.emoji, target: own ? { text: own.text, latest: own.latest, stepId: own.stepId } : null });
+      emitTelemetry(this.#o.logger, 'inbound.media.perceived', { channel: record.channel, inboundId: record.inboundId, outcome: 'reaction', reason: own ? (own.latest ? 'latest_agent_message' : 'earlier_message') : 'unknown_message' });
+    } else if (!held && !humanOwned && !(ref && this.#perceivesMedia(profileLabel, ref.kind)) && this.#perceivesMedia(profileLabel)) {
+      // Not representable here (an album, a sticker, a kind without a provider…): the agent answers, nothing is downloaded.
+      text = this.#o.media!.perception.frameUnsupported(record.contentType ?? 'unsupported');
+      emitTelemetry(this.#o.logger, 'inbound.media.perceived', { channel: record.channel, inboundId: record.inboundId, outcome: 'not_representable', reason: record.contentType ?? null });
+    } else if (!held && !humanOwned && ref && this.#perceivesMedia(profileLabel, ref.kind)) {
+      try {
+        const result = await this.#o.media!.perception.perceive(ref, { accountRef: record.accountRef! });
+        emitTelemetry(this.#o.logger, 'inbound.media.perceived', { channel: record.channel, inboundId: record.inboundId, outcome: result.outcome, reason: result.reason, ...result.evidence });
+        text = result.text;
+      } catch {
+        // The port never throws; if an implementation does, the input is the marker (never a retry loop of downloads).
+        emitTelemetry(this.#o.logger, 'inbound.media.perceived', { channel: record.channel, inboundId: record.inboundId, outcome: 'degraded', reason: 'perception_threw' });
+      }
+    }
+    // Durable BEFORE it becomes an input (also the marker): a resume submits exactly what may already be submitted.
+    await this.#o.store.recordInboundPerception(record.inboundId, text);
+    return text;
+  }
+
+  async #process(stale: InboundEventRecord): Promise<IngestOutcome> {
     const { store, controls, config, temporal, tasks, logger } = this.#o;
+    // A snapshot (resume sweep) may be older than the row: a media or unsupported row is processed only while still received.
+    const record = stale.contentKind === 'media' || stale.contentKind === 'unsupported' ? await store.inboundEvent(stale.inboundId) : stale;
+    if (!record || record.status !== 'received') return { kind: 'duplicate', inboundId: stale.inboundId };
     if (record.conversationKey === null || record.accountRef === null || record.conversationRef === null || record.content === null || record.occurredAt === null) {
       await store.settleInbound(record.inboundId, { status: 'failed', failureCode: 'incomplete_inbound_record' });
       return { kind: 'failed', inboundId: record.inboundId, code: 'incomplete_inbound_record' };
     }
-    const unsupported = record.contentKind === 'unsupported';
+    const media = record.contentKind === 'media';
+    const unsupportedRow = record.contentKind === 'unsupported';
+    /** The text of a media or unsupported input: the stored decision (after a crash: exactly what may already be submitted), or decided below. */
+    let mediaText: string | null = media && parseMediaRefContent(record.content) === null ? record.content
+      : unsupportedRow && record.content !== unsupportedContentMarker(record.contentType ?? '') && parseReactionRefContent(record.content) === null ? record.content : null;
+    let decidedHere = false;
     try {
       for (let attempt = 0; ; attempt += 1) {
         let binding = await store.findOpenBinding(record.channel, record.conversationKey);
@@ -246,7 +344,8 @@ export class ChannelIngress {
           const state = await store.taskState(binding.taskId);
           // Truly terminal work is never revived: a new contact opens a new task (no cross-task memory).
           if (!state || state.terminalIntent || state.status === 'completed' || state.status === 'cancelled' || state.status === 'failed') {
-            await store.closeBinding(binding.bindingId, state ? `task_${state.terminalIntent ? 'terminal_intent' : state.status}` : 'task_missing');
+            // A case the idle close ended keeps its reason whichever process closes the binding first.
+            await store.closeBinding(binding.bindingId, state?.statusReason === IDLE_TIMEOUT ? IDLE_TIMEOUT : state ? `task_${state.terminalIntent ? 'terminal_intent' : state.status}` : 'task_missing');
             emitTelemetry(logger, 'conversation.binding.closed', { channel: record.channel, bindingId: binding.bindingId, taskId: binding.taskId, reason: state?.status ?? 'task_missing' });
             binding = null;
           }
@@ -268,7 +367,7 @@ export class ChannelIngress {
         }
         if (!binding) {
           const eligibility = rolloutEligibility(config.rollout, record.conversationKey);
-          const assigned = this.#assign(record.conversationKey);
+          const assigned = this.#assign(record.conversationKey, eligibility);
           binding = await store.openBinding({
             bindingId: this.#o.ids.next(), channel: record.channel, conversationKey: record.conversationKey, accountRef: record.accountRef, recipientRef: record.conversationRef,
             autonomy: eligibility.eligible ? 'autonomous' : 'excluded', eligibilityReason: eligibility.reason, rolloutFingerprint: this.#rolloutFingerprint,
@@ -279,6 +378,10 @@ export class ChannelIngress {
         // Everything after the opening follows the binding (ADR-045): its profile, never the current lane configuration.
         const served = this.#servedBy(binding) ?? this.#main;
         const { taskFactory } = served;
+        // Media is unsupported content (held per profile, never downloaded) unless perceived for this binding's profile.
+        // With perception composed for this profile, content it cannot represent is answered by the agent (no hand-off);
+        // without it, such content is held per profile exactly as before.
+        const unsupported = (unsupportedRow || (media && !this.#perceivesMedia(served.label, record.contentType))) && !this.#perceivesMedia(served.label);
         const decision: InboundAutonomyDecision = decideInboundAutonomy({
           controls: await controls.state(),
           channel: record.channel,
@@ -288,7 +391,12 @@ export class ChannelIngress {
           unsupportedContentPolicy: served.profile.unsupportedContent,
         });
         const hold = decision.kind === 'hold' ? { reason: decision.reason, summary: decision.summary } : undefined;
-        const input = { externalKey: record.providerEventId, content: record.content, sourceRef: `channel:${record.channel}`, occurredAt: record.occurredAt };
+        // Decided once; again only after a terminal race (nothing was submitted, and the new task may decide otherwise).
+        if ((media || unsupportedRow) && (mediaText === null || (attempt > 0 && decidedHere))) {
+          mediaText = await this.#mediaText(record, binding, hold !== undefined, served.label);
+          decidedHere = true;
+        }
+        const input = { externalKey: record.providerEventId, content: mediaText ?? record.content, sourceRef: `channel:${record.channel}`, occurredAt: record.occurredAt };
         // The provider identity is a provisional participant reference; the address itself never becomes a principal.
         const actor: Principal = { kind: 'user', ref: `${record.channel}:${record.conversationKey.slice(0, 32)}` };
         try {
@@ -329,7 +437,8 @@ export class ChannelIngress {
         } catch (error) {
           // The task became terminal between the check and the submission: close the binding and open a new one once.
           if (attempt === 0 && error instanceof PlatformError && (error.code === 'task_not_accepting_input' || error.code === 'task_terminal') && binding.taskId) {
-            await store.closeBinding(binding.bindingId, 'task_terminal_race');
+            const ended = await store.taskState(binding.taskId);
+            await store.closeBinding(binding.bindingId, ended?.statusReason === IDLE_TIMEOUT ? IDLE_TIMEOUT : 'task_terminal_race');
             continue;
           }
           throw error;

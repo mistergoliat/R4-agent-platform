@@ -1,3 +1,4 @@
+import type { RenderOrder } from './render.js';
 import { z } from 'zod';
 
 /**
@@ -39,6 +40,8 @@ export interface OpenAICompatibleConfig {
    * it is reported by `describeModelConfig`.
    */
   readonly extraBody: Readonly<Record<string, unknown>>;
+  /** R4_MODEL_RENDER_ORDER: how the compiled context is laid out (render.ts). Default 'compiled' (unchanged behaviour). */
+  readonly renderOrder?: RenderOrder;
 }
 
 /** Request fields the adapter owns; `extraBody` may not set them. */
@@ -70,6 +73,7 @@ const envSchema = z.object({
   R4_MODEL_RESPONSE_FORMAT: z.enum(['json_object', 'none']).default('json_object'),
   R4_MODEL_TEMPERATURE: z.coerce.number().min(0).max(2).optional(),
   R4_MODEL_EXTRA_BODY: extraBodySchema.optional(),
+  R4_MODEL_RENDER_ORDER: z.preprocess((v) => (v === '' ? undefined : v), z.enum(['compiled', 'cache']).default('compiled')),
 });
 
 /**
@@ -99,6 +103,7 @@ export function loadOpenAICompatibleConfig(env: NodeJS.ProcessEnv): OpenAICompat
     responseFormat: c.R4_MODEL_RESPONSE_FORMAT,
     temperature: c.R4_MODEL_TEMPERATURE ?? null,
     extraBody: c.R4_MODEL_EXTRA_BODY ?? {},
+    renderOrder: c.R4_MODEL_RENDER_ORDER,
   };
 }
 
@@ -110,7 +115,7 @@ export function outputLimitModeOf(config: Pick<OpenAICompatibleConfig, 'maxOutpu
 }
 
 /** What may be printed or stored about a configuration: no key, no credentials in the URL. */
-export function describeModelConfig(config: OpenAICompatibleConfig): { profile: string; host: string; model: string; contextWindowTokens: number; maxOutputTokens: number | null; outputLimitMode: OutputLimitMode; responseFormat: string; temperature: number | null; extraBody: Readonly<Record<string, unknown>>; authenticated: boolean } {
+export function describeModelConfig(config: OpenAICompatibleConfig): { profile: string; host: string; model: string; contextWindowTokens: number; maxOutputTokens: number | null; outputLimitMode: OutputLimitMode; responseFormat: string; temperature: number | null; extraBody: Readonly<Record<string, unknown>>; renderOrder: RenderOrder; authenticated: boolean } {
   const url = new URL(config.baseUrl);
-  return { profile: config.profile, host: url.host, model: config.model, contextWindowTokens: config.contextWindowTokens, maxOutputTokens: config.maxOutputTokens, outputLimitMode: outputLimitModeOf(config), responseFormat: config.responseFormat, temperature: config.temperature, extraBody: config.extraBody, authenticated: config.apiKey !== null };
+  return { profile: config.profile, host: url.host, model: config.model, contextWindowTokens: config.contextWindowTokens, maxOutputTokens: config.maxOutputTokens, outputLimitMode: outputLimitModeOf(config), responseFormat: config.responseFormat, temperature: config.temperature, extraBody: config.extraBody, renderOrder: config.renderOrder ?? 'compiled', authenticated: config.apiKey !== null };
 }

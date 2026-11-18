@@ -1,3 +1,5 @@
+import { MEDIA_TEXT_HEADERS, REACTION_STEP_MARK, UNCERTAIN_OPEN } from './media-text.js';
+
 /**
  * (R4-J3E-B) The deterministic grammar of an explicit quote confirmation in a
  * customer's own message (Spanish, Chile). Deliberately small and closed:
@@ -91,8 +93,39 @@ const DELIVERY_CHANGE: Record<OfferDelivery, RegExp> = {
 /** Whether the offer the customer answers includes delivery (the snapshot's shipping kind). */
 export type OfferDelivery = 'excluded' | 'selected';
 
+/**
+ * (Inbound multimodal v1) A reply that came as a file: an image, an unprocessed file or a transcript without measured
+ * confidence is never an acceptance ("a file is not an authorization"); a voice note is read as its transcript only when
+ * no word of it was transcribed with doubt. Any other platform-style header is refused (false). Null: an ordinary text.
+ */
+/** The platform-written last line of a reaction to the latest message: the emoji and the respond step it reacts to. */
+const REACTION_LAST_LINE = new RegExp(`\\n«([^»\\n]{1,16})» ${REACTION_STEP_MARK} ([0-9A-Za-z-]{8,64})\\s*$`, 'u');
+
+/**
+ * (Owner decisions 2026-11-12, semantic confirmation) What a reaction means is the agent's reading of the whole
+ * conversation: no list of emojis — positive or negative — decides it. The platform decides only what does not depend
+ * on meaning: a reaction to anything but the agent's latest message, a removed reaction, and a reaction not bound to the
+ * step it reacts to (one framed before the binding existed) never reach issuance; the binding is then checked against
+ * the offer by quote.create (locateConfirmation), from recorded rows the model cannot change, with every F1 control.
+ */
+export function mediaReplyBody(text: string): string | false | null | { readonly reaction: string; readonly stepId: string } {
+  const t = text.trimStart();
+  if (!t.startsWith('[r4:')) return null;
+  if (t.startsWith(`${MEDIA_TEXT_HEADERS.reactionToLatest} `)) {
+    const last = REACTION_LAST_LINE.exec(t);
+    return last ? { reaction: last[1]!, stepId: last[2]! } : false;
+  }
+  if (!t.startsWith(`${MEDIA_TEXT_HEADERS.audio} `)) return false;
+  const body = /\n«([\s\S]*)»\s*$/.exec(t)?.[1];
+  return body === undefined || body.includes(UNCERTAIN_OPEN) ? false : body;
+}
+
 /** The deterministic guard of @19: never an acceptance when the reply asks, rejects, hesitates or asks for a change. */
-export function guardIntentReply(text: string | null, delivery: OfferDelivery = 'excluded'): ConfirmationVerdict {
+export function guardIntentReply(reply: string | null, delivery: OfferDelivery = 'excluded'): ConfirmationVerdict {
+  const media = reply === null ? null : mediaReplyBody(reply);
+  if (media === false) return { confirmed: false, reason: 'disqualified' };
+  if (media !== null && typeof media === 'object') return { confirmed: true, rule: `agent_interpreted;reaction=${media.reaction};bound_to=reacted_step`, reactedStepId: media.stepId };
+  const text = media ?? reply;
   if (text === null || text.trim() === '') return { confirmed: false, reason: 'empty' };
   if (text.length > INTENT_MAX_LENGTH) return { confirmed: false, reason: 'too_long' };
   if (/[?¿？]/u.test(text) || NEGATIVE_EMOJI.test(text)) return { confirmed: false, reason: 'disqualified' };
@@ -104,7 +137,8 @@ export function guardIntentReply(text: string | null, delivery: OfferDelivery = 
 }
 
 export type ConfirmationVerdict =
-  | { readonly confirmed: true; readonly rule: string }
+  /** reactedStepId: the acceptance is a reaction, valid only for the offer that step recorded (checked by quote.create). */
+  | { readonly confirmed: true; readonly rule: string; readonly reactedStepId?: string }
   | { readonly confirmed: false; readonly reason: 'empty' | 'too_long' | 'disqualified' | 'not_a_confirmation' };
 
 export function normalizeMessage(text: string): string {

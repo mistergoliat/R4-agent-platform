@@ -19,7 +19,7 @@ const NOTICE_IT = { project: 'integration', file: 'tests/integration/platform-no
 const MUTATIONS = [
   {
     name: 'RFF-M1 the delivery runtime never materializes the fallback',
-    edits: [{ file: OUTBOUND, from: '    if (fallback) created.push(', to: '    if (false) created.push(' }],
+    edits: [{ file: OUTBOUND, from: '    if (fallbackText !== null) created.push(', to: '    if (false) created.push(' }],
     tests: [[IT, 'two consecutive failures'], [IT, 'a non-retryable model failure hands off at once']],
   },
   {
@@ -54,7 +54,7 @@ const MUTATIONS = [
   },
   {
     name: 'RFF-M6 the Sales gateway composes no fallback text',
-    edits: [{ file: SALES, from: '      runFailureFallback: { text: SALES_RUN_FAILURE_FALLBACK_TEXT },\n', to: '' }],
+    edits: [{ file: SALES, from: '      runFailureFallback: { text: () => salesRunFailureNotice(now()) },\n', to: '' }],
     tests: [[IT, 'two consecutive failures'], [IT, 'a worker restart during recovery']],
   },
 ];
