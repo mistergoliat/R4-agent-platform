@@ -843,6 +843,19 @@ export class PostgresProductionStore implements ProductionStore {
     return { turns, earlierTasks: (r.rows[0]?.earlier_tasks as number | undefined) ?? 0 };
   }
 
+  async earlierConversationTasks(taskId: string, maxTasks: number): Promise<string[]> {
+    // The `earlier` lineage of `earlierConversationTurns` (index 0013_conversation_binding_history).
+    const r = await query<Row>(
+      this.#pool,
+      `with cur as (select channel, conversation_key, created_at from channel_conversation_bindings where task_id = $1)
+       select e.task_id from cur join channel_conversation_bindings e
+           on e.channel = cur.channel and e.conversation_key = cur.conversation_key and e.created_at < cur.created_at and e.task_id is not null
+        order by e.created_at desc, e.binding_id desc limit $2`,
+      [taskId, maxTasks],
+    );
+    return r.rows.map((row) => row.task_id as string);
+  }
+
   async conversations(limit: number): Promise<ConversationSummary[]> {
     const r = await query<Row>(
       this.#pool,

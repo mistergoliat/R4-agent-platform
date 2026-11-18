@@ -59,3 +59,5 @@ export const SCOPES = {
 } as const;
 
 export const WORKSPACE_SOURCE_ID = 'sales.workspace';
+/** (M3) The conversation's earlier quotes with their current Quote V2 state. */
+export const QUOTE_RECOVERY_SOURCE_ID = 'sales.quote_recovery';
