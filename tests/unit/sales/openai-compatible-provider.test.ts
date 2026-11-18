@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { ModelRequest } from '@r4/model-gateway';
 import { DefaultModelGateway } from '@r4/model-gateway';
 import { createSilentLogger } from '@r4/observability';
-import { ONE_DOCUMENT_REMINDER, ONE_DOCUMENT_RULE, OpenAICompatibleModelProvider, describeModelConfig, estimateTokens, loadOpenAICompatibleConfig, renderMessages, type FetchLike, type OpenAICompatibleConfig } from '@r4-adapters/openai-compatible';
+import { CONTEXT_SECTIONS } from '@r4/contracts';
+import { ONE_DOCUMENT_REMINDER, ONE_DOCUMENT_RULE, OpenAICompatibleModelProvider, RENDER_SECTION_ORDER, describeModelConfig, estimateTokens, loadOpenAICompatibleConfig, renderContext, renderMessages, type FetchLike, type OpenAICompatibleConfig } from '@r4-adapters/openai-compatible';
 import { captureLogs } from '../../support/logs.js';
 
 const KEY = 'sk-test-DO-NOT-LEAK-0123456789abcdef';
@@ -214,6 +215,53 @@ describe('OpenAICompatibleModelProvider', () => {
     expect(`${ONE_DOCUMENT_RULE} ${ONE_DOCUMENT_REMINDER}`).not.toMatch(/read_capability|respond|propose_action/);
   });
 
+  it('lays the context out from stable to variable so consecutive calls share a cacheable prefix, dropping nothing', () => {
+    // Every section of the contract, exactly once: a new section can never be left out of the rendered context.
+    expect([...RENDER_SECTION_ORDER].sort()).toEqual([...CONTEXT_SECTIONS].sort());
+    const item = (itemId: string, content: unknown) => ({ itemId, content, provenance: { derivedFromCount: 0 }, assertions: [], sensitivity: 'NORMAL' });
+    // Sections in the compiler's order, as a stored snapshot has them; only the fields the renderer reads.
+    const build = (iteration: number, asOf: string, observations: string[]) => {
+      const sections: Record<string, unknown[]> = Object.fromEntries(CONTEXT_SECTIONS.map((s) => [s, []]));
+      Object.assign(sections, {
+        agent: [item('agent', { instructions: 'definition' })],
+        task: [item('task', { iteration, status: 'running' })],
+        capabilities: [item('cap', { capabilityId: 'catalog.search' })],
+        observations: observations.map((o) => item(o, { payload: o })),
+        conversation: [item('m1', { text: 'hola' })],
+      });
+      return { schemaVersion: 1, asOf, scope: { iteration }, conflicts: [], omissions: {}, sections } as unknown as NonNullable<ModelRequest['context']>;
+    };
+    const first = renderContext(build(1, '2026-11-12T18:00:00.000Z', ['o1']), 'cache');
+    const second = renderContext(build(2, '2026-11-12T18:00:09.000Z', ['o1', 'o2']), 'cache');
+    const doc = JSON.parse(first.slice(first.indexOf('\n') + 1)) as Record<string, object>;
+    expect(Object.keys(doc.sections!)).toEqual(['agent', 'capabilities', 'conversation', 'observations', 'task']);
+    expect(Object.keys(doc).slice(-2)).toEqual(['asOf', 'iteration']);
+    // The next call repeats everything up to the newest observation: definition, capabilities, conversation, o1.
+    let shared = 0;
+    while (first[shared] === second[shared]) shared += 1;
+    expect(first.slice(0, shared)).toContain('"o1"');
+    expect(first.slice(0, shared)).not.toContain('"running"');
+    expect(Object.isFrozen(RENDER_SECTION_ORDER)).toBe(true);
+    // The default stays the compiled layout every definition was evaluated with: asOf and iteration first, compiler order.
+    const compiled = JSON.parse(renderContext(build(1, '2026-11-12T18:00:00.000Z', ['o1'])).split('\n')[1]!) as Record<string, object>;
+    expect(Object.keys(compiled).slice(0, 3)).toEqual(['schemaVersion', 'asOf', 'iteration']);
+    expect(Object.keys(compiled.sections!)).toEqual(CONTEXT_SECTIONS.filter((s) => ['agent', 'capabilities', 'conversation', 'observations', 'task'].includes(s)));
+  });
+
+  it('R4_MODEL_RENDER_ORDER selects the layout: compiled by default, cache only when set, anything else refused', () => {
+    const base = { R4_MODEL_PROVIDER: 'openai_compatible', R4_MODEL_BASE_URL: 'https://example.test/v1', R4_MODEL_NAME: 'm', R4_MODEL_CONTEXT_WINDOW_TOKENS: '64000' };
+    expect(loadOpenAICompatibleConfig(base)?.renderOrder).toBe('compiled');
+    expect(loadOpenAICompatibleConfig({ ...base, R4_MODEL_RENDER_ORDER: '' })?.renderOrder).toBe('compiled');
+    expect(loadOpenAICompatibleConfig({ ...base, R4_MODEL_RENDER_ORDER: 'cache' })?.renderOrder).toBe('cache');
+    expect(() => loadOpenAICompatibleConfig({ ...base, R4_MODEL_RENDER_ORDER: 'fast' })).toThrow();
+  });
+
+  it('a token count past the safe-integer range is dropped, never failing the call', async () => {
+    const { fetch } = fakeFetch(() => ({ status: 200, body: { ...completion('{"type":"respond","content":"hola"}'), usage: { prompt_tokens: 10, completion_tokens: 2, prompt_tokens_details: { cached_tokens: 1e20 } } } }));
+    const result = await new DefaultModelGateway({ provider: new OpenAICompatibleModelProvider(CONFIG, { fetch }), logger: createSilentLogger() }).generate(request());
+    expect(result.ok).toBe(true);
+  });
+
   it('leaves non-JSON output for the platform parser to reject (no silent repair)', async () => {
     const { fetch } = fakeFetch(() => ({ status: 200, body: completion('I think we should read the catalog') }));
     const result = await new DefaultModelGateway({ provider: new OpenAICompatibleModelProvider(CONFIG, { fetch }), logger: createSilentLogger() }).generate(request());
@@ -290,5 +338,25 @@ describe('OpenAICompatibleModelProvider', () => {
     const raw = logs.raw();
     expect(logs.events('model.call.completed')[0]).toMatchObject({ providerId: 'openai-compatible.test', modelId: 'some-model-2026', inputTokens: 120, outputTokens: 30, finishReason: 'stop' });
     for (const secret of [KEY, 'secret-prompt-marker', 'secret-answer-marker']) expect(raw).not.toContain(secret);
+  });
+
+  it('reports cached-input and reasoning token counts in telemetry only, and tolerates their absence or a malformed detail', async () => {
+    const generate = async (usage: Record<string, unknown>) => {
+      const logs = captureLogs();
+      const { fetch } = fakeFetch(() => ({ status: 200, body: completion('{"type":"respond","content":"ok"}', { usage: { prompt_tokens: 120, completion_tokens: 30, ...usage } }) }));
+      const result = await new DefaultModelGateway({ provider: new OpenAICompatibleModelProvider(CONFIG, { fetch }), logger: logs.logger }).generate(request());
+      return { result, event: logs.events('model.call.completed')[0] };
+    };
+
+    const reported = await generate({ prompt_cache_hit_tokens: 90, prompt_tokens_details: { cached_tokens: 100 }, completion_tokens_details: { reasoning_tokens: 25 } });
+    expect(reported.event).toMatchObject({ inputTokens: 120, outputTokens: 30, cachedInputTokens: 100, reasoningTokens: 25 });
+    // ModelUsage — what the kernel records on a step — keeps exactly its two counters.
+    expect(reported.result.ok && reported.result.response.usage).toEqual({ inputTokens: 120, outputTokens: 30 });
+
+    expect((await generate({ prompt_cache_hit_tokens: 90 })).event).toMatchObject({ cachedInputTokens: 90, reasoningTokens: null });
+    expect((await generate({})).event).toMatchObject({ cachedInputTokens: null, reasoningTokens: null });
+    const malformed = await generate({ prompt_tokens_details: 'n/a', completion_tokens_details: { reasoning_tokens: -1 } });
+    expect(malformed.result.ok).toBe(true);
+    expect(malformed.event).toMatchObject({ cachedInputTokens: null, reasoningTokens: null });
   });
 });

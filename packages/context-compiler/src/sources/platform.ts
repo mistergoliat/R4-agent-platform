@@ -62,9 +62,9 @@ export const taskSource: ContextSource = new MappingSource(PLATFORM_SOURCE_IDS.t
 /**
  * The run: its current execution constraints (AUTHORITATIVE, platform-owned)
  * and the agent's own recorded `respond` outputs (CONVERSATIONAL: what the
- * agent said, not what is true).
+ * agent said, not what is true; a withdrawn response was never said).
  */
-export const runSource: ContextSource = new MappingSource(PLATFORM_SOURCE_IDS.run, ({ scope, execution: { run, agent, constraints, responses } }) => [
+export const runSource: ContextSource = new MappingSource(PLATFORM_SOURCE_IDS.run, ({ scope, execution: { run, agent, constraints, responses, interactions } }) => [
   {
     itemId: `execution:${run.runId}`,
     kind: 'execution_constraints',
@@ -75,7 +75,7 @@ export const runSource: ContextSource = new MappingSource(PLATFORM_SOURCE_IDS.ru
     createdAt: run.startedAt,
     taskId: run.taskId,
   },
-  ...responses.map((response): ContextContributionInput => ({
+  ...responses.filter((response) => !interactions?.withdrawnResponses?.includes(response.stepId)).map((response): ContextContributionInput => ({
     itemId: `response:${response.stepId}`,
     kind: 'conversation_turn',
     authority: 'CONVERSATIONAL',
@@ -135,7 +135,7 @@ export const goalSource: ContextSource = new MappingSource(PLATFORM_SOURCE_IDS.g
  * that starts after a wait, a consultation or a handoff knows what was said
  * before it — the question the agent asked, not only the answer:
  *
- *   - the agent's `respond` outputs of earlier runs (this run's come from `platform.run`)
+ *   - the agent's `respond` outputs of earlier runs (this run's come from `platform.run`), never a withdrawn one
  *   - questions to a human (consultation) and handoff summaries the agent wrote
  *   - every human decision with the human's own text (answer, approval note,
  *     takeover/release note) — CONVERSATIONAL with human provenance, never truth
@@ -153,12 +153,13 @@ export const interactionSource: ContextSource = new MappingSource(PLATFORM_SOURC
   const items: ContextContributionInput[] = [];
   const humans = new Map(interactions.humans.map((h) => [h.requestId, h]));
   const waitReason = new Map<string, string>();
+  const withdrawn = new Set(interactions.withdrawnResponses);
   for (const step of interactions.steps) {
     const decision = step.decision;
     if (!decision) continue;
     // A refused wait (R4-J4-R7-2) did not happen: its reason is not the reason of the run's wait.
     if (decision.type === 'wait' && decision.reason !== undefined && step.outcome === 'recorded') waitReason.set(step.runId, decision.reason);
-    if (decision.type === 'respond' && step.runId !== run.runId && step.outcome === 'recorded') {
+    if (decision.type === 'respond' && step.runId !== run.runId && step.outcome === 'recorded' && !withdrawn.has(step.stepId)) {
       items.push({
         itemId: `response:${step.stepId}`,
         kind: 'conversation_turn',

@@ -176,6 +176,47 @@ function parsePlatformCancellation(cancellation: PlatformTaskCancellation): Plat
   return { note: cancellation.note.trim(), actorRef: cancellation.actorRef, correlationId: cancellation.correlationId };
 }
 
+/** (Case idle close) The status reason of a task the platform closed because its conversation went idle. */
+export const IDLE_TIMEOUT_REASON = 'idle_timeout';
+
+/** Why a task is not closed as idle: what still needs it. */
+export type IdleRefusal = 'not_waiting_for_input' | 'terminal_intent' | 'human_request_open' | 'action_unsettled' | 'delivery_open' | 'approval_pending' | 'recent_input';
+
+/** The durable facts the idle rule reads, under the task row lock. */
+export interface IdleFacts {
+  readonly status: string;
+  readonly waitKind: string | null;
+  readonly terminalIntent: boolean;
+  /** Human requests (consultation, approval, handoff) still `requested` or `active`. */
+  readonly openHumanRequests: number;
+  /** Action executions not resolved: prepared, executing or awaiting reconciliation. */
+  readonly unsettledActions: number;
+  /** Deliveries of the task's output still open: pending (or held), dispatching, or of unknown outcome. */
+  readonly openDeliveries: number;
+  readonly approvalPending: boolean;
+  /** The newest input's receipt time on the temporal clock; the task's creation when it has none. */
+  readonly lastActivityAt: string;
+  readonly now: string;
+  readonly idleForMs: number;
+}
+
+/**
+ * (Case idle close) A task may be closed as idle only while it is suspended waiting for input (an agent's WAIT_UNTIL
+ * is its own timer; a blocked task — human handoff, platform hold, reconciliation — is left to its owner), nothing
+ * else needs it (a human request, an unresolved action, an open delivery, an approval to carry out) and its newest
+ * input is at least `idleForMs` old. Null: idle.
+ */
+export function idleRefusal(f: IdleFacts): IdleRefusal | null {
+  if (f.status !== 'waiting' || f.waitKind !== 'WAIT_FOR_INPUT') return 'not_waiting_for_input';
+  if (f.terminalIntent) return 'terminal_intent';
+  if (f.openHumanRequests > 0) return 'human_request_open';
+  if (f.unsettledActions > 0) return 'action_unsettled';
+  if (f.openDeliveries > 0) return 'delivery_open';
+  if (f.approvalPending) return 'approval_pending';
+  if (Date.parse(f.now) - Date.parse(f.lastActivityAt) < f.idleForMs) return 'recent_input';
+  return null;
+}
+
 function parsePlatformHold(hold: PlatformHold): PlatformHold {
   parseOrThrow(statusReasonSchema, hold.reason);
   if (typeof hold.summary !== 'string' || hold.summary.trim().length === 0 || hold.summary.length > 2000) {
@@ -811,10 +852,49 @@ export class TemporalRuntime implements RunFailureHandoff, TurnCompletionGuard {
     );
   }
 
+  /**
+   * (Case idle close) `cancelTaskByPlatform` only if the task is idle (`idleRefusal`), decided in the same transaction
+   * and under the same task row lock that an input takes: an input either lands first (the task is no longer waiting,
+   * so it is not closed) or finds the task terminal (the caller opens a new task for it). Never both, never lost. The
+   * task ends `cancelled` with status reason `idle_timeout`; the rest is exactly a platform cancellation.
+   */
+  async cancelIdleTaskByPlatform(
+    taskId: string,
+    cancellation: PlatformTaskCancellation & { readonly idleForMs: number },
+  ): Promise<{ task: AgentTask; outcome: 'cancelled' | 'already_terminal' } | { task: AgentTask; outcome: 'not_idle'; refusal: IdleRefusal }> {
+    const body = parsePlatformCancellation(cancellation);
+    const idleForMs = cancellation.idleForMs;
+    if (!Number.isInteger(idleForMs) || idleForMs <= 0) throw new PlatformError('validation', 'validation_failed', 'idleForMs must be a positive integer');
+    return this.write(async (uow, events) => {
+      const task = await this.lockTask(uow, taskId);
+      if (isTerminalTaskStatus(task.status)) return { task, outcome: 'already_terminal' as const };
+      const p = temporalOf(uow);
+      const now = await p.now();
+      const activity = await p.idleActivity(taskId);
+      const lastActivityAt = activity.latestInputAt ?? task.createdAt;
+      const refusal = idleRefusal({
+        status: task.status,
+        waitKind: (await p.activeWait(taskId))?.kind ?? null,
+        terminalIntent: (await p.terminalIntent(taskId)) !== null,
+        openHumanRequests: (await p.listHumans(taskId)).filter((h) => h.status === 'requested' || h.status === 'active').length,
+        unsettledActions: activity.unsettledActions,
+        openDeliveries: activity.openDeliveries,
+        approvalPending: (await p.pendingApprovalProposal(taskId)) !== null,
+        lastActivityAt,
+        now,
+        idleForMs,
+      });
+      if (refusal) return { task, outcome: 'not_idle' as const, refusal };
+      const evidence = { initiatedBy: 'platform', reason: IDLE_TIMEOUT_REASON, content: body.note, lastActivityAt, idleForMs };
+      const { task: cancelled } = await this.#cancelWithin(uow, taskId, { actor: { kind: 'system', ref: body.actorRef }, correlationId: body.correlationId, evidence, statusReason: IDLE_TIMEOUT_REASON }, events);
+      return { task: cancelled, outcome: 'cancelled' as const };
+    });
+  }
+
   async #cancelWithin(
     uow: ExecutionUnitOfWork,
     taskId: string,
-    by: { readonly actor: Principal; readonly correlationId: string; readonly evidence?: Record<string, unknown> },
+    by: { readonly actor: Principal; readonly correlationId: string; readonly evidence?: Record<string, unknown>; readonly statusReason?: string },
     events: PendingEvent[],
   ): Promise<{ task: AgentTask; alreadyTerminal: boolean }> {
     let task = await this.lockTask(uow, taskId);
@@ -837,7 +917,7 @@ export class TemporalRuntime implements RunFailureHandoff, TurnCompletionGuard {
       await this.event(uow, task, h.requestId, status === 'released' ? 'handoff.released' : `${h.kind}.cancelled`, now, events, { cause: 'task_cancelled', ...by.evidence }, by.actor.ref, null, eventCorrelation);
     }
     await this.cancelSchedulesWithin(uow, task, now, events);
-    task = await transitionTaskWithin(uow, this.#options.ids, task, 'cancelled', 'cancelled', by.actor, by.correlationId, now, events);
+    task = await transitionTaskWithin(uow, this.#options.ids, task, 'cancelled', by.statusReason ?? 'cancelled', by.actor, by.correlationId, now, events);
     await this.event(uow, task, taskId, task.status === 'cancelled' ? 'task.cancelled' : 'task.terminal.deferred', now, events, { targetStatus: 'cancelled', ...by.evidence }, by.actor.ref, null, eventCorrelation);
     return { task, alreadyTerminal: false };
   }
