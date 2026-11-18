@@ -1,21 +1,24 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
+import { catalogDiscoverResponseSchema, type CatalogDiscoverAnswer, type CatalogDiscoverPort } from '@r4-adapters/catalog-http';
+import { FixtureCatalog, FixtureQuoteV2Service, type ShippingService } from '@r4-adapters/domains';
 import { rolloutBucket, rolloutFingerprint } from '@r4/live-ops';
-import { LiveOpsTestbed, OPERATOR, keyOf } from '../support/live-ops.js';
+import { LiveOpsTestbed, OPERATOR, keyOf, say } from '../support/live-ops.js';
+import { freezeTemporalClock } from '../support/temporal.js';
 
 /**
  * ADR-045 amendment 1 — the lane serves its named conversations AND the rollout percentage cohort; everything else is
- * exactly as before. Invariants: 0 % changes nothing; a percentage > 0 needs the owner-approved cohort lane (@19);
+ * exactly as before. Invariants: 0 % changes nothing; a percentage > 0 needs the owner-approved cohort lane (@22);
  * one binding and one task per new cohort conversation, also under concurrent first messages; the main worker never
  * takes a cohort task; restarts and redeliveries never re-route or duplicate; an open binding keeps its profile,
  * autonomy and rollout fingerprint when the percentage changes (until its task ends), new conversations follow the new
  * percentage, and rollback to 0 % gives today's routing once open lane tasks end.
  *
- * The lane WORKER (claiming only its pinned definition, draining after a configuration change) is covered by
- * conversation-lane.test.ts L2/L3/L6 on @13; here the cohort tasks are only shown pinned to the lane definition and
- * never taken by the main worker.
+ * C6 runs the real @22 lane worker and the 24 h case idle close (#97); C7 the kill switch. Claiming only the pinned
+ * definition and draining after a configuration change are also covered by conversation-lane.test.ts L2/L3/L6 on @13.
  */
 const OWNER = '56911110000';
-const LANE = 'sales-production@19';
+const LANE = 'sales-production@22';
 const MAIN = 'sales-production@1';
 
 /** Synthetic wa_ids whose deterministic bucket (from the keyed conversation key) is in [from, to). */
@@ -39,7 +42,7 @@ afterEach(async () => {
   bed = null;
 });
 
-const start = (percent: number) => LiveOpsTestbed.start({ allowlist: [OWNER], lane: [OWNER], laneProfile: LANE, percent, autonomy: true });
+const start = (percent: number, env: Record<string, string> = {}) => LiveOpsTestbed.start({ allowlist: [OWNER], lane: [OWNER], laneProfile: LANE, percent, autonomy: true, env });
 const rollout = (percent: number) => ({ allowlist: [OWNER], lane: [OWNER], percent });
 
 type BindingRow = { profile: string; status: string; autonomy: string; eligibility_reason: string; rollout_fingerprint: string; closed_reason: string | null; agent_version: number | null };
@@ -53,7 +56,7 @@ const routed = async (b: LiveOpsTestbed, waId: string) => {
   return { profile, autonomy, eligibility_reason, agent_version };
 };
 const disposition = async (b: LiveOpsTestbed, wamid: string) => (await b.rows<{ disposition: string }>('select disposition from inbound_events where provider_event_id = $1', [wamid]))[0]?.disposition;
-const ON_LANE = (reason: string) => ({ profile: LANE, autonomy: 'autonomous', eligibility_reason: reason, agent_version: 19 });
+const ON_LANE = (reason: string) => ({ profile: LANE, autonomy: 'autonomous', eligibility_reason: reason, agent_version: 22 });
 const HELD_ON_MAIN = { profile: MAIN, autonomy: 'excluded', eligibility_reason: 'not_in_cohort', agent_version: 3 };
 
 describe('ADR-045 amendment 1: the lane takes the rollout cohort', () => {
@@ -99,7 +102,7 @@ describe('ADR-045 amendment 1: the lane takes the rollout cohort', () => {
       b.customer(COHORT, 'wamid.c3a', 'Hola'), b.customer(COHORT, 'wamid.c3b', 'Busco una barra'),
     ]);
     expect(await bindingsOf(b, COHORT)).toMatchObject([{ ...ON_LANE('cohort'), status: 'open', closed_reason: null }]);
-    expect(await b.rows('select agent_version, count(*)::int as n from agent_tasks group by 1')).toEqual([{ agent_version: 19, n: 1 }]);
+    expect(await b.rows('select agent_version, count(*)::int as n from agent_tasks group by 1')).toEqual([{ agent_version: 22, n: 1 }]);
     const taskId = await b.taskOf(COHORT);
     expect(await b.rows('select count(*)::int as n from task_inputs where task_id = $1', [taskId])).toEqual([{ n: 3 }]);
     expect(await b.runWorker(main)).toEqual([]);
@@ -160,5 +163,63 @@ describe('ADR-045 amendment 1: the lane takes the rollout cohort', () => {
     expect((await bindingsOf(b, MID)).map((r) => [r.profile, r.status, r.closed_reason])).toEqual([[LANE, 'closed', 'task_cancelled'], [MAIN, 'open', null]]);
     expect(await routed(b, MID)).toEqual(HELD_ON_MAIN);
     expect(await disposition(b, 'wamid.c5g')).toBe('held:rollout_excluded');
+  });
+});
+
+const fixtures = JSON.parse(readFileSync(new URL('../../adapters/domains/catalog/http/fixtures/discover/catalog-discover.fixtures.v1b1.json', import.meta.url), 'utf8')) as { answers: { httpStatus: number; response: unknown }[] };
+const ANSWER: CatalogDiscoverAnswer = catalogDiscoverResponseSchema.parse(fixtures.answers.find((a) => a.httpStatus === 200)!.response);
+/** Stand-ins for the owners of the @22 quote lane (never called by these scripted turns). */
+function owners() {
+  const discover: CatalogDiscoverPort = { discoverConfigured: true, discover: () => Promise.resolve(ANSWER) };
+  const shipping: ShippingService & { bindingKind: string } = { bindingKind: 'http', quote: () => Promise.reject(new Error('not used')) };
+  return { catalog: Object.assign(new FixtureCatalog(), { bindingKind: 'real' }), discover, shipping, quotes: Object.assign(new FixtureQuoteV2Service(), { bindingKind: 'http' }) };
+}
+const DAY = 24 * 3_600_000;
+async function idleFor(b: LiveOpsTestbed, ms: number): Promise<void> {
+  const [row] = await b.rows<{ at: Date }>('select max(received_at) as at from task_inputs');
+  await freezeTemporalClock(b.pool, new Date(row!.at.getTime() + ms));
+}
+
+describe('ADR-045 amendment 1: cohort lifecycle on @22', { timeout: 90_000 }, () => {
+  it('C6: a cohort binding keeps @22 after a rollback to 0 % until its task ends; the 24 h case idle close (#97) ends it, and the next message follows the current percentage', async () => {
+    const b = (bed = await start(20, { R4_PROD_CASE_IDLE_CLOSE_HOURS: '24' }));
+    const lane = await b.laneWorker(owners(), 'lane-worker-1', LANE);
+    const main = await b.worker('main-worker');
+    await b.customer(COHORT, 'wamid.c6a', 'Hola');
+    const taskId = await b.taskOf(COHORT);
+    b.next(say('Hola, ¿qué buscas?'));
+    expect((await b.runWorker(lane)).length).toBeGreaterThan(0);
+    expect(await b.runWorker(main)).toEqual([]);
+    await b.deliver();
+    expect((await b.store.outboundForTask(taskId)).length).toBe(1);
+    expect((await b.rows<{ status: string }>('select status from agent_tasks where task_id = $1', [taskId]))[0]!.status).toBe('waiting');
+
+    await b.redeployGateway(rollout(0));
+    await idleFor(b, DAY - 60_000);
+    expect((await b.gateway.idleClose!.sweep()).closed).toBe(0);
+    expect(await routed(b, COHORT)).toEqual(ON_LANE('cohort'));
+
+    await idleFor(b, DAY);
+    expect((await b.gateway.idleClose!.sweep()).closed).toBe(1);
+    expect((await bindingsOf(b, COHORT)).map((r) => [r.profile, r.status, r.closed_reason])).toEqual([[LANE, 'closed', 'idle_timeout']]);
+    await b.customer(COHORT, 'wamid.c6b', 'Hola de nuevo');
+    expect(await routed(b, COHORT)).toEqual(HELD_ON_MAIN);
+    expect(await disposition(b, 'wamid.c6b')).toBe('held:rollout_excluded');
+    expect(await b.runWorker(lane)).toEqual([]);
+  });
+
+  it('C7: the kill switch holds cohort conversations exactly like allowlisted ones, and releasing it resumes both on the lane', async () => {
+    const b = (bed = await start(20));
+    await b.customer(OWNER, 'wamid.c7a', 'Hola');
+    await b.customer(COHORT, 'wamid.c7b', 'Hola');
+    await b.setAutonomy(false);
+    await b.customer(OWNER, 'wamid.c7c', '¿Sigues?');
+    await b.customer(COHORT, 'wamid.c7d', '¿Sigues?');
+    await b.customer(COHORT2, 'wamid.c7e', 'Hola');
+    expect([await disposition(b, 'wamid.c7c'), await disposition(b, 'wamid.c7d'), await disposition(b, 'wamid.c7e')]).toEqual(['held:autonomy_disabled', 'held:autonomy_disabled', 'held:autonomy_disabled']);
+    // Held, not re-routed: a conversation opened while engaged is still a cohort binding on the lane.
+    expect(await routed(b, COHORT2)).toEqual(ON_LANE('cohort'));
+    const status = async (waId: string) => (await b.rows<{ status: string; status_reason: string | null }>('select status, status_reason from agent_tasks where task_id = $1', [await b.taskOf(waId)]))[0];
+    expect(await status(COHORT)).toEqual(await status(OWNER));
   });
 });

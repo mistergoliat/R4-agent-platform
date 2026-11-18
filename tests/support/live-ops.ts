@@ -3,7 +3,7 @@ import { createPlatform, type Platform } from '@r4/api';
 import { createGatewayPlatform, type GatewayPlatform } from '@r4/channel-gateway';
 import type { ContextCompactor, ContextCompilationPolicyInput } from '@r4/context-compiler';
 import type { TrustedHumanContext } from '@r4/contracts';
-import type { CatalogPort, ShippingService } from '@r4-adapters/domains';
+import type { CatalogPort, QuoteV2Service, ShippingService } from '@r4-adapters/domains';
 import type { CatalogDiscoverPort } from '@r4-adapters/catalog-http';
 import { FakeModelProvider, type FakeModelStep, type ModelRequest } from '@r4/model-gateway';
 import { createSilentLogger } from '@r4/observability';
@@ -11,7 +11,7 @@ import { PostgresProductionStore, type Pool } from '@r4/persistence-postgres';
 import { conversationKey, loadProductionConfig, type ProductionConfig, type ProductionSecrets } from '@r4/live-ops';
 import { createWorkerPlatform, type WorkerAdmission, type WorkerCycle, type WorkerPlatform, type WorkerPresenceBinding } from '@r4/worker';
 import { SALES_AGENT_DIR, migrateSales } from '@r4-sales/agent';
-import { SALES_IN_HOURS_REFERENCE, composeSalesGateway, composeSalesProductionWorker, runProductionBootstrap } from '@r4-sales/agent/production';
+import { SALES_F1_CANARY_LIMITS, SALES_IN_HOURS_REFERENCE, composeSalesGateway, composeSalesProductionWorker, runProductionBootstrap } from '@r4-sales/agent/production';
 import { identityVerificationInspection, migrateIdentityVerification, type IdentityVerificationInspectionOptions } from '@r4-adapters/identity-verification';
 import { FakeWhatsAppProvider, notification, signNotification, type NotificationMessage, type NotificationStatus } from '@r4-adapters/whatsapp-cloud/testing';
 import { createMigratedTestDatabase, openPool, type TestDatabase } from './database.js';
@@ -53,7 +53,7 @@ export interface TestbedOptions {
   readonly gatewayLogger?: Logger;
   /** (ADR-045) wa_ids served by the lane profile sales-production@13 (each must also be allowlisted). Absent: no lane. */
   readonly lane?: readonly string[];
-  /** (ADR-045 amendment 1) The lane profile (default sales-production@13); a percentage > 0 requires sales-production@19. */
+  /** (ADR-045 amendment 1) The lane profile (default sales-production@13); a percentage > 0 requires an approved cohort lane (SALES_COHORT_LANE_PROFILES). */
   readonly laneProfile?: string;
   /** (F-ADV-2) Profiles whose agent-opened human requests get the pack notice (default: the composition's own scope). */
   readonly humanRequestNoticeProfiles?: readonly string[];
@@ -220,15 +220,15 @@ export class LiveOpsTestbed {
   }
 
   /**
-   * (ADR-045) The lane worker: the real production worker composition with R4_PROD_POLICY_PROFILE=sales-production@13
-   * over the same database, given stand-ins for its owners (Catalog V2 with Discover, Shipping). Registers definition
-   * v13 through `production:sales:bootstrap --lane` first, as a deployment would.
+   * (ADR-045) The lane worker: the real production worker composition with R4_PROD_POLICY_PROFILE=`profile` (default
+   * sales-production@13) over the same database, given stand-ins for its owners (Catalog V2 with Discover, Shipping and, for
+   * a quote lane, Quote V2 within the F1 limits). Registers the lane definition through `production:sales:bootstrap --lane`.
    */
-  async laneWorker(owners: { readonly catalog: CatalogPort & { readonly bindingKind: string }; readonly discover: CatalogDiscoverPort; readonly shipping: ShippingService & { readonly bindingKind: string } }, workerId = 'lane-worker-1'): Promise<WorkerPlatform> {
-    const env = { ...this.env, R4_PROD_POLICY_PROFILE: 'sales-production@13' };
-    await registerLaneDefinition(env);
+  async laneWorker(owners: { readonly catalog: CatalogPort & { readonly bindingKind: string }; readonly discover: CatalogDiscoverPort; readonly shipping: ShippingService & { readonly bindingKind: string }; readonly quotes?: QuoteV2Service & { readonly bindingKind: string } }, workerId = 'lane-worker-1', profile = 'sales-production@13'): Promise<WorkerPlatform> {
+    const env = { ...this.env, R4_PROD_POLICY_PROFILE: profile };
+    await registerLaneDefinition(env, profile);
     const production = loadProductionConfig(env);
-    const composition = composeSalesProductionWorker({ pool: this.pool, store: this.store, production, modelProvider: this.model, logger: createSilentLogger(), catalog: owners.catalog, catalogDiscover: owners.discover, shipping: owners.shipping });
+    const composition = composeSalesProductionWorker({ pool: this.pool, store: this.store, production, modelProvider: this.model, logger: createSilentLogger(), catalog: owners.catalog, catalogDiscover: owners.discover, shipping: owners.shipping, ...(owners.quotes ? { quotes: owners.quotes, autonomousQuoteLimits: SALES_F1_CANARY_LIMITS } : {}) });
     const worker = await createWorkerPlatform(
       {
         databaseUrl: this.db.url, logLevel: 'silent', dbPoolMax: 3, workerId, leaseDurationMs: 60_000, heartbeatIntervalMs: 10_000, pollIntervalMs: 20, maxRunRecoveries: 3, maxRunFailureRecoveries: 1,

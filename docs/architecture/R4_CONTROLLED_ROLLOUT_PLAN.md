@@ -6,7 +6,7 @@ Mandato «R4 — COMMERCIAL SCALE-UP: MEASUREMENT, OPTIMIZATION, FOLLOW-UP AND C
 
 ## 1. Punto de partida
 
-Hoy producción atiende WhatsApp con el perfil de carril `sales-production@19` y GPT-6 Luna (OpenRouter). Ese perfil incluye Catalog V2 con Discover, Shipping, Quote V2 regular y promocional, PDF, imágenes y notas de voz. La configuración actual es `R4_PROD_ROLLOUT_PERCENT=0` con allowlist, Checkout deshabilitado y CloudWatch/SNS diferidos.
+Hoy producción atiende WhatsApp con el perfil de carril `sales-production@22` (antes `@19`; `@20` y `@21` superados) y GPT-6 Luna (OpenRouter). Ese perfil incluye Catalog V2 con Discover, Shipping, Quote V2 regular y promocional, PDF, imágenes y notas de voz. La configuración actual es `R4_PROD_ROLLOUT_PERCENT=0` con allowlist, Checkout deshabilitado y CloudWatch/SNS diferidos.
 
 La medición sale del reporte M1 (`ops/r4-metrics/`), que es de solo lectura y separa:
 
@@ -17,18 +17,18 @@ Hasta hoy todo el tráfico medido es de testers. Las cifras de producción no se
 
 ## 2. Prerrequisitos técnicos (bloquean la etapa 2)
 
-**P1. Un cliente de la cohorte no llega a `@19`.**
+**P1. Un cliente de la cohorte no llega al perfil del carril (`@22`).**
 
 El carril del gateway (ADR-045, `salesGatewayLane`) atiende solo las claves de conversación listadas en `R4_PROD_LANE_ALLOWLIST`. Una conversación que entra por el porcentaje de rollout (`cohort`) la atiende el perfil principal del gateway (`R4_PROD_POLICY_PROFILE`, hoy `@3`), que no tiene Quote ni Discover. Además, el perfil principal no puede ser un perfil de carril. Por eso subir `R4_PROD_ROLLOUT_PERCENT` hoy no da a clientes reales la experiencia probada.
 
 Opciones, que se deciden con revisión de arquitectura antes de la etapa 2:
 
 - **a. Carril por porcentaje.** El carril acepta, además de su lista, la cohorte del rollout. Es un cambio acotado en `salesGatewayLane` y `ChannelIngress`, con el mismo worker y la misma definición.
-- **b. Perfil de producción equivalente a `@19`.** Un perfil no-carril que el gateway usa como principal. Requiere un nuevo número de perfil, sin tocar las definiciones históricas.
+- **b. Perfil de producción equivalente al perfil del carril.** Un perfil no-carril que el gateway usa como principal. Requiere un nuevo número de perfil, sin tocar las definiciones históricas.
 
 La recomendación es la **a**: menos superficie, y el rollback sigue siendo bajar el porcentaje.
 
-**Implementada la opción a** (ADR-045, enmienda 1; pendiente de revisión y merge, no desplegada): con el carril compuesto, la cohorte del rollout abre en el perfil del carril. En `R4_PROD_ROLLOUT_PERCENT=0` nada cambia. Con un porcentaje mayor que 0, el gateway de WhatsApp no arranca sin carril, ni con un perfil de carril distinto de `sales-production@19` (la lista aprobada `SALES_COHORT_LANE_PROFILES`, una constante en código).
+**Implementada la opción a** (ADR-045, enmienda 1; pendiente de revisión y merge, no desplegada): con el carril compuesto, la cohorte del rollout abre en el perfil del carril. En `R4_PROD_ROLLOUT_PERCENT=0` nada cambia. Con un porcentaje mayor que 0, el gateway de WhatsApp no arranca sin carril, ni con un perfil de carril distinto de `sales-production@22` (la lista aprobada `SALES_COHORT_LANE_PROFILES`, una constante en código).
 
 Límites que el operador debe conocer (enmienda 1, puntos 6 a 8):
 
@@ -62,7 +62,7 @@ El tamaño de muestra sigue la regla del tres: si en `n` conversaciones independ
 
 Un escalón con poco tráfico tarda más en juntar su muestra; subir el porcentaje para acelerar no es un criterio válido.
 
-Qué se activa para clientes reales en la etapa 2. Un porcentaje mayor que 0 les da todo lo que tiene `@19`, no sólo la conversación:
+Qué se activa para clientes reales en la etapa 2. Un porcentaje mayor que 0 les da todo lo que tiene `@22` (lo mismo que `@19` más el texto del agente de v20 a v22), no sólo la conversación:
 
 - percepción de imágenes con un modelo de terceros, si `R4_MEDIA_PERCEPTION` y `R4_MEDIA_PERCEPTION_PROFILES` la incluyen;
 - cotizaciones promocionales, si `R4_F1_PROMOTIONAL_QUOTES` está encendido;
@@ -117,7 +117,7 @@ CloudWatch y SNS siguen diferidos. Las alertas viven en el observador de solo le
 | Situación | Acción | Tiempo |
 |---|---|---|
 | Fallo grave en etapa 2 o 3: entrada | `R4_PROD_ROLLOUT_PERCENT` al escalón anterior, o a 0, y reinicio del gateway. Ninguna conversación nueva entra a la cohorte | Minutos |
-| Fallo grave en etapa 2 o 3: conversaciones de cohorte ya abiertas | Bajar el porcentaje **no** les quita la autonomía. Siguen en el carril hasta que su tarea termina, lo que en Sales suele no ocurrir solo; el worker del carril sigue en marcha. Corte dirigido: listar los bindings abiertos con `eligibility_reason = 'cohort'` y `tasks cancel` de cada tarea. Cancelar descarta las entradas aún no procesadas (ADR-045, 7.2), así que primero se deja responder al worker del carril. Alternativas: denylist por clave, o el interruptor de autonomía global. Seguimiento recomendado: un comando que retenga o drene los bindings de cohorte con `rollout_fingerprint` anterior (no implementado) | Según el número de conversaciones abiertas; no minutos |
+| Fallo grave en etapa 2 o 3: conversaciones de cohorte ya abiertas | Bajar el porcentaje **no** les quita la autonomía. Siguen en el carril hasta que su tarea termina. Con `R4_PROD_CASE_IDLE_CLOSE_HOURS=24` (#97), una conversación que espera al cliente se cierra tras 24 h sin mensajes y su siguiente mensaje sigue el porcentaje vigente; sin esa variable, la tarea suele no terminar sola. El worker del carril sigue en marcha mientras queden. Corte dirigido: listar los bindings abiertos con `eligibility_reason = 'cohort'` y `tasks cancel` de cada tarea. Cancelar descarta las entradas aún no procesadas (ADR-045, 7.2), así que primero se deja responder al worker del carril. Alternativas: denylist por clave, o el interruptor de autonomía global. Seguimiento recomendado: un comando que retenga o drene los bindings de cohorte con `rollout_fingerprint` anterior (no implementado) | Con el cierre por inactividad, 24 h después del último mensaje de cada conversación (más si el cliente sigue escribiendo); si no, lo que tome el corte dirigido. No minutos |
 | Fallo grave atribuible al agente | Interruptor de autonomía (`production:sales:control -- autonomy off`). Las lecturas siguen y las escrituras se rechazan con «definitivamente no enviado» | Segundos |
 | Fallo de promociones | `R4_F1_PROMOTIONAL_QUOTES` apagado en el entorno del carril. Antes de apagarlo se revisan las decisiones promocionales retenidas (precondición del PR #79) | Minutos |
 | Regresión de código | `rollback.sh 2` con el SHA anterior completo (procedimiento de despliegue por SHA) | ~1 minuto |

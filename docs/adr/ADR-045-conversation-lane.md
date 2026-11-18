@@ -113,8 +113,8 @@ no daba a clientes reales el perfil probado. Resuelve el prerrequisito P1 de `R4
 3. **Composición que se niega** (`assertSalesGatewayCohort`, gateway de WhatsApp de Sales). Con
    `R4_PROD_ROLLOUT_PERCENT > 0` el gateway no arranca:
    - **sin carril**: la cohorte abriría autónoma en el perfil principal;
-   - **con un perfil de carril fuera de `SALES_COHORT_LANE_PROFILES`**, que hoy es sólo `sales-production@19`.
-     `salesGatewayLane` acepta @13–@19 (por ejemplo @16, con F-ADV-1, o @15, el carril de Checkout), y ninguno de esos
+   - **con un perfil de carril fuera de `SALES_COHORT_LANE_PROFILES`**, que hoy es sólo `sales-production@22` (el perfil vivo del carril).
+     `salesGatewayLane` acepta @13–@22 (por ejemplo @16, con F-ADV-1, o @15, el carril de Checkout; @20 y @21 están superados), y ninguno de esos
      está aprobado para clientes reales. La lista es una constante en código: agregar un perfil es un cambio revisado.
 
    En `0 %` no se exige nada, con o sin carril (exactamente como antes). El gateway web (ADR-046) no cambia.
@@ -128,7 +128,9 @@ no daba a clientes reales el perfil probado. Resuelve el prerrequisito P1 de `R4
    `conversation-<bindingId>` dan un binding y una tarea por conversación también con primeros mensajes concurrentes.
 6. **Rollback y su alcance real.** Bajar `R4_PROD_ROLLOUT_PERCENT` (o a `0`) y reiniciar el gateway corta la
    **entrada**: ninguna conversación nueva entra a la cohorte. **No revoca** la autonomía de los bindings de cohorte ya
-   abiertos. Las tareas de conversación de Sales rara vez terminan solas, así que «hasta que su tarea termina» suele
+   abiertos. Una tarea de conversación de Sales termina cuando se cancela, falla o, con `R4_PROD_CASE_IDLE_CLOSE_HOURS`
+   (#97; 24 h), cuando espera al cliente ese tiempo sin mensajes; el binding se cierra (`idle_timeout`) y el siguiente
+   mensaje se evalúa contra el porcentaje vigente. Sin el cierre por inactividad, «hasta que su tarea termina» suele
    significar indefinidamente. El worker del carril debe seguir en marcha mientras existan, y no quedan tareas
    huérfanas. Para cortarlas:
    - **dirigido**: listar los bindings abiertos con `eligibility_reason = 'cohort'` (y, si hace falta, los de un
@@ -149,7 +151,7 @@ no daba a clientes reales el perfil probado. Resuelve el prerrequisito P1 de `R4
 
 Evidencia: `tests/unit/live-ops/mode-profile-rollout.test.ts` (regla: allowlist, cohorte, denegada, fuera de
 cohorte, sin carril), `tests/unit/sales/gateway-cohort.test.ts` y `tests/contract/sales-gateway-cohort.test.ts`
-(composiciones que se niegan), y `tests/integration/conversation-lane-cohort.test.ts`, con el carril `@19`:
+(composiciones que se niegan), y `tests/integration/conversation-lane-cohort.test.ts`, con el carril `@22`:
 
 | Prueba | Qué cubre |
 |---|---|
@@ -158,8 +160,11 @@ cohorte, sin carril), `tests/unit/sales/gateway-cohort.test.ts` y `tests/contrac
 | C3 | Primeros mensajes concurrentes y reentregas: un binding y una tarea fijada a v19; el worker principal no la toma |
 | C4 | Reentrega y reinicios del gateway (también con otro porcentaje): sin re-ruteo ni duplicados |
 | C5 | Cambio de porcentaje con la tarea viva; conversaciones nuevas según el nuevo porcentaje; rollback a `0 %` sin revocar la autonomía abierta; cancelación → ruteo de hoy |
+| C6 | Ciclo de vida en `@22`: el worker del carril responde y el principal no toma nada; tras rollback a `0 %` el binding sigue en `@22`; el cierre por inactividad de 24 h (#97) lo cierra y el siguiente mensaje sigue el porcentaje vigente |
+| C7 | El interruptor de autonomía retiene las conversaciones de cohorte igual que las de la allowlist, también las abiertas con el interruptor activo |
 
-El worker del carril (sólo su definición fijada, drenaje tras un cambio de configuración) ya está cubierto por L2, L3
-y L6 sobre `@13`: la forma en que se ruteó el binding no cambia cómo se reclaman las tareas.
+El worker del carril `@22` responde en C6. El reclamo sólo de su definición fijada y el drenaje tras un cambio de
+configuración están cubiertos además por L2, L3 y L6 sobre `@13`: la forma en que se ruteó el binding no cambia cómo se
+reclaman las tareas.
 
 Mutación manual «el carril no toma la cohorte»: fallan C1, C3, C4 y C5.

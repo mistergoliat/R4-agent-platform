@@ -59,7 +59,8 @@ import { SALES_CANARY_ONLY_PROFILES, assertF1CanaryLimits, isF1CanaryProfile } f
 import { SALES_LANE_PROFILES, isCheckoutLaneProfile, isQuoteLaneProfile, isSalesLaneProfile } from './profile-v15.js';
 import { SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_VARIANT_AVAILABILITY_PROFILES } from './profile-v17.js';
 import { SALES_QUOTE_DOCUMENT_PROFILES, SALES_QUOTE_LANE_V18_PROFILE_LABEL } from './profile-v18.js';
-import { SALES_F1_SHIPPING_PROFILES, SALES_INTENT_ACCEPTANCE_PROFILES, SALES_QUOTE_LANE_V19_PROFILE_LABEL } from './profile-v19.js';
+import { SALES_F1_SHIPPING_PROFILES, SALES_INTENT_ACCEPTANCE_PROFILES } from './profile-v19.js';
+import { SALES_QUOTE_LANE_V22_PROFILE_LABEL } from './profile-v22.js';
 import { quoteDocumentDelivery } from '../capabilities/quote-document.js';
 import { catalogDiscoverCapability } from '../capabilities/catalog-discover.js';
 import type { CatalogDiscoverPort } from '@r4-adapters/catalog-http';
@@ -491,12 +492,13 @@ export function salesGatewayLane(env: Readonly<Record<string, string | undefined
  * (ADR-045 amendment 1) The lane profiles the owner approved to serve the rollout cohort, i.e. real customers. A code
  * constant on purpose: adding a profile is a reviewed change, never a variable.
  */
-export const SALES_COHORT_LANE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V19_PROFILE_LABEL]);
+export const SALES_COHORT_LANE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V22_PROFILE_LABEL]);
 
 /**
  * (ADR-045 amendment 1) With R4_PROD_ROLLOUT_PERCENT > 0 the WhatsApp gateway serves the cohort only through an
  * owner-approved lane profile: without a lane the cohort would open, autonomous, on the main profile; with another lane
- * profile (@13–@18) real customers would get a profile never approved for them. At 0 % nothing is required (as before).
+ * profile (@13–@21, superseded or never approved) real customers would get a profile not approved for them. At 0 %
+ * nothing is required (as before).
  */
 export function assertSalesGatewayCohort(percent: number, lane: ConversationLane | undefined): void {
   if (percent <= 0) return;
