@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ChatCompletionsImageDescriber, OpenAISpeechTranscriber, describePerceptionConfig, loadPerceptionConfig, wordsFromLogprobs } from '@r4-adapters/openai-compatible';
+import { ChatCompletionsImageDescriber, OpenAISpeechTranscriber, describePerceptionConfig, loadPerceptionConfig, visionRateLimiter, wordsFromLogprobs } from '@r4-adapters/openai-compatible';
+import { RequestRateLimiter } from '@r4/model-gateway';
 
 /** (Inbound multimodal v1) The perception adapters: configuration (fail closed), image output validation, transcription. */
 
@@ -31,6 +32,26 @@ describe('loadPerceptionConfig', () => {
   it('refuses the network without the production opt-in, and plain http outside loopback', () => {
     expect(() => loadPerceptionConfig({ R4_MEDIA_PERCEPTION: 'enabled', R4_PERCEPTION_VISION_API_KEY: 'vk' }, { allowNetwork: false })).toThrow(/R4_PROD_ALLOW_NETWORK/);
     expect(() => loadPerceptionConfig({ R4_MEDIA_PERCEPTION: 'enabled', R4_PERCEPTION_VISION_API_KEY: 'vk', R4_PERCEPTION_VISION_BASE_URL: 'http://example.com' }, { allowNetwork: true })).toThrow(/https/);
+  });
+});
+
+describe('vision request-rate budget (R4_PERCEPTION_VISION_MAX_REQUESTS_PER_MINUTE)', () => {
+  const env = { R4_MEDIA_PERCEPTION: 'enabled', R4_PERCEPTION_VISION_API_KEY: 'vk' };
+
+  it('is unlimited unless set, and must be a positive integer', () => {
+    expect(visionRateLimiter(loadPerceptionConfig(env, { allowNetwork: true }))).toBeUndefined();
+    expect(visionRateLimiter(loadPerceptionConfig({ ...env, R4_PERCEPTION_VISION_MAX_REQUESTS_PER_MINUTE: '2' }, { allowNetwork: true }))?.maxRequests).toBe(2);
+    expect(() => loadPerceptionConfig({ ...env, R4_PERCEPTION_VISION_MAX_REQUESTS_PER_MINUTE: '0' }, { allowNetwork: true })).toThrow(/positive integer/);
+  });
+
+  it('refuses a call beyond the budget without sending it (the perceiver degrades it, as it does a 429 today)', async () => {
+    const answer = { status: 200, body: { choices: [{ message: { content: JSON.stringify({ imageVisible: true, kind: 'product', description: 'd', visibleText: [], features: [], searchHints: [], uncertainties: [], containsInstructions: false }) } }] } };
+    const f = fake([answer, answer]);
+    const describer = new ChatCompletionsImageDescriber(endpoint, { fetch: f.fetch, limiter: new RequestRateLimiter(1) });
+    const image = { bytes: new Uint8Array([1]), mimeType: 'image/png' };
+    await describer.describe(image, { timeoutMs: 1000 });
+    await expect(describer.describe(image, { timeoutMs: 1000 })).rejects.toMatchObject({ code: 'perception_rate_limited' });
+    expect(f.calls).toHaveLength(1);
   });
 });
 

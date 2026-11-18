@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { RequestRateLimiter } from '@r4/model-gateway';
 
 /**
  * (Inbound multimodal v1) Perception adapters. They see bytes and return UNTRUSTED structured data; they never see a
@@ -41,6 +42,11 @@ export interface PerceptionConfig {
   /** Null: audio degrades (`not_configured`). */
   /** `promptOverride`: R4_PERCEPTION_STT_PROMPT, when set (null: the composing pack's own vocabulary prompt). */
   readonly speech: (PerceptionEndpoint & { readonly provider: 'openai'; readonly promptOverride: string | null }) | null;
+  /**
+   * R4_PERCEPTION_VISION_MAX_REQUESTS_PER_MINUTE: this process's share of the vision model's request rate. Vision only:
+   * provider limits are per model, and speech runs on another model (its own limit, low volume). Absent: unlimited.
+   */
+  readonly visionMaxRequestsPerMinute?: number;
 }
 
 const isLoopback = (u: URL) => u.hostname === '127.0.0.1' || u.hostname === 'localhost' || u.hostname === '[::1]';
@@ -76,7 +82,9 @@ export function loadPerceptionConfig(env: Readonly<Record<string, string | undef
   const stt = endpoint(env, 'R4_PERCEPTION_STT', { baseUrl: 'https://api.openai.com/v1', model: 'gpt-transcribe' }, options.allowNetwork);
   if (!vision && !stt) throw new PerceptionError('perception_config_incomplete', 'R4_MEDIA_PERCEPTION=enabled needs R4_PERCEPTION_VISION_API_KEY and/or R4_PERCEPTION_STT_API_KEY');
   const prompt = env.R4_PERCEPTION_STT_PROMPT?.trim();
-  return { enabled: true, vision, speech: stt ? { ...stt, provider: 'openai', promptOverride: prompt ? prompt.slice(0, 900) : null } : null };
+  const rpm = env.R4_PERCEPTION_VISION_MAX_REQUESTS_PER_MINUTE?.trim();
+  if (rpm && !/^[1-9][0-9]{0,4}$/.test(rpm)) throw new PerceptionError('invalid_perception_config', 'R4_PERCEPTION_VISION_MAX_REQUESTS_PER_MINUTE must be a positive integer');
+  return { enabled: true, vision, speech: stt ? { ...stt, provider: 'openai', promptOverride: prompt ? prompt.slice(0, 900) : null } : null, ...(rpm ? { visionMaxRequestsPerMinute: Number(rpm) } : {}) };
 }
 
 /** Safe description (no secrets) for plans and readiness. */
@@ -87,12 +95,28 @@ export function describePerceptionConfig(c: PerceptionConfig): Record<string, st
     visionHost: c.vision ? new URL(c.vision.baseUrl).host : 'none',
     speechModel: c.speech ? `${c.speech.provider}:${c.speech.model}` : 'none',
     speechHost: c.speech ? new URL(c.speech.baseUrl).host : 'none',
+    perceptionVisionMaxRequestsPerMinute: c.visionMaxRequestsPerMinute?.toString() ?? 'unlimited',
   };
 }
 
-async function post(fetchImpl: FetchLike, url: string, apiKey: string, body: string | FormData, json: boolean, timeoutMs: number, signal?: AbortSignal): Promise<{ status: number; text: string }> {
+/** The process-wide request-rate budget of the vision endpoint, when configured. */
+export function visionRateLimiter(c: PerceptionConfig): RequestRateLimiter | undefined {
+  return c.visionMaxRequestsPerMinute === undefined ? undefined : new RequestRateLimiter(c.visionMaxRequestsPerMinute);
+}
+
+async function post(fetchImpl: FetchLike, url: string, apiKey: string, body: string | FormData, json: boolean, timeoutMs: number, signal?: AbortSignal, limiter?: RequestRateLimiter): Promise<{ status: number; text: string }> {
+  // Waiting for the budget spends at most half the deadline; the rest is the endpoint's.
+  let waited: number | null = 0;
+  if (limiter) {
+    try {
+      waited = await limiter.acquire(Math.floor(timeoutMs / 2), signal);
+    } catch {
+      throw new PerceptionError('perception_timeout', 'cancelled while waiting for provider capacity');
+    }
+    if (waited === null) throw new PerceptionError('perception_rate_limited', 'no provider capacity within half the perception deadline');
+  }
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(), timeoutMs - waited);
   if (signal?.aborted) controller.abort();
   signal?.addEventListener('abort', () => controller.abort(), { once: true });
   try {
@@ -142,11 +166,13 @@ export class ChatCompletionsImageDescriber {
   readonly #e: PerceptionEndpoint;
   readonly #fetch: FetchLike;
   readonly #instructions: string;
+  readonly #limiter: RequestRateLimiter | undefined;
 
-  constructor(e: PerceptionEndpoint, options: { readonly fetch?: FetchLike; readonly instructions?: string } = {}) {
+  constructor(e: PerceptionEndpoint, options: { readonly fetch?: FetchLike; readonly instructions?: string; readonly limiter?: RequestRateLimiter } = {}) {
     this.#e = e;
     this.model = e.model;
     this.#fetch = options.fetch ?? (globalThis.fetch);
+    this.#limiter = options.limiter;
     this.#instructions = options.instructions ?? IMAGE_PERCEPTION_INSTRUCTIONS;
   }
 
@@ -158,7 +184,7 @@ export class ChatCompletionsImageDescriber {
       max_tokens: 1500,
       messages: [{ role: 'system', content: this.#instructions }, { role: 'user', content: [{ type: 'image_url', image_url: { url: dataUrl } }] }],
     });
-    const res = await post(this.#fetch, `${this.#e.baseUrl}/chat/completions`, this.#e.apiKey, body, true, options.timeoutMs, options.signal);
+    const res = await post(this.#fetch, `${this.#e.baseUrl}/chat/completions`, this.#e.apiKey, body, true, options.timeoutMs, options.signal, this.#limiter);
     if (res.status !== 200) throw new PerceptionError('vision_http_error', `vision endpoint answered ${res.status}`);
     let content: unknown;
     try {

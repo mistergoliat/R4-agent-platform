@@ -87,6 +87,17 @@ writeFileSync(join(dir, 'budget.env'), 'WARN_RATE_LIMITED=10\n');
 r = await run('rate-limited burst under a raised threshold', { PROVIDER_BUDGET_ENV: join(dir, 'budget.env') });
 assert.equal(r.code, 0);
 
+// Calls held back by R4's own request-rate budget: counted; at WARN_THROTTLED (30) waits, sustained saturation.
+const throttledLine = (outcome, waitMs) => `{"level":"info","time":"${new Date().toISOString()}","event":"model.call.throttled","outcome":"${outcome}","waitMs":${waitMs}}`;
+writeFileSync(log, [throttledLine('waited', 2000), throttledLine('waited', 3000), throttledLine('refused', 0), failed('rate_limited')].join('\n'));
+r = await run('a few throttled calls');
+assert.equal(r.code, 0);
+assert.match(r.stdout, /throttled 2\+1/);
+writeFileSync(log, [...Array(30)].map(() => throttledLine('waited', 4000)).join('\n'));
+r = await run('sustained throttling');
+assert.equal(r.code, 1);
+assert.match(r.stdout, /WARN: 30 model calls waited for the request-rate budget in 60 min \(120 s in all; sustained saturation\)/);
+
 // Refusals for money in the logs, each class on its own: CRITICAL. Old lines are outside the window.
 writeFileSync(log, [failed('insufficient_balance'), failed('spend_limit_reached'), failed('spend_limit_reached'), failed('rate_limited'), failed('provider_error', '2020-01-01T00:00:00.000Z')].join('\n'));
 r = await run('balance and spend-limit refusals');
@@ -117,11 +128,12 @@ assert.equal(alerts.at(-1).status, 'OK');
 // Every run appended a snapshot (the --measured input of ops/r4-metrics), with no secret in it nor in the state file.
 const raw = readFileSync(join(dir, 'usage.jsonl'), 'utf8');
 const snapshots = raw.trim().split('\n').map((l) => JSON.parse(l));
-assert.equal(snapshots.length, 12);
+assert.equal(snapshots.length, 14);
 assert.deepEqual(snapshots[0].budgets.map((b) => [b.scope, b.remainingUsd]), [['workspace', 8], ['key_limit', 9]]);
 assert.equal(snapshots[0].keyUsageUsd, 2);
 assert.equal(snapshots[0].balanceReadable, false);
-assert.deepEqual(snapshots[8].failures, { insufficient_balance: 1, spend_limit_reached: 2, rate_limited: 1 });
+assert.deepEqual(snapshots[8].throttled, { waited: 2, refused: 1, waitMs: 5000 });
+assert.deepEqual(snapshots[10].failures, { insufficient_balance: 1, spend_limit_reached: 2, rate_limited: 1 });
 assert.doesNotMatch(raw + readFileSync(join(dir, 'state.json'), 'utf8'), /sk-test|SECRET-WEBHOOK/);
 server.close();
 process.stdout.write('check.mjs self-check: OK\n');
