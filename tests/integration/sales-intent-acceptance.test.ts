@@ -171,6 +171,24 @@ describe('acceptance interpreted in natural language (@19)', { timeout: 150_000 
     expect(r.refusals).toEqual([{ error_code: 'customer_confirmation_not_explicit', reason: 'disqualified' }]);
   });
 
+  it.each(['sales-production@20', 'sales-production@21', 'sales-production@22'])('%s (= @19 on its own definition) issues one quote with the chosen delivery, the intent guard, template v2 and the PDF', async (profile) => {
+    const quotes = new FixtureQuoteV2Service();
+    const r = await issueOnce(profile, quotes, 'dale', SHIPPING_STEPS, 'Quiero 2 barras Z con despacho a Ñuñoa');
+    expect(quotes.quotes[0]!.shipping?.amounts.net ?? 0).toBeGreaterThan(0);
+    expect(r.ownerCalls).toBe(1);
+    expect(r.issued).toHaveLength(1);
+    expect(r.grammar).toEqual(['r4-sales-intent-guard-es-v1']);
+    expect(r.offers).toEqual(['¿Te emito esta cotización? Si quieres cambiar algo, dímelo.']);
+    expect(r.captured.filter((c) => c.document)).toHaveLength(1);
+  });
+
+  it.each(['sales-production@20', 'sales-production@21', 'sales-production@22'])('%s never issues when the reply is a question, even if the agent proposes it', async (profile) => {
+    const r = await issueOnce(profile, new FixtureQuoteV2Service(), '¿incluye despacho?');
+    expect(r.ownerCalls).toBe(0);
+    expect(r.issued).toEqual([]);
+    expect(r.refusals).toEqual([{ error_code: 'customer_confirmation_not_explicit', reason: 'disqualified' }]);
+  });
+
   it('@18 keeps the closed grammar: a bare "si" is not a confirmation there', async () => {
     const r = await issueOnce('sales-production@18', new FixtureQuoteV2Service(), 'si');
     expect(r.ownerCalls).toBe(0);

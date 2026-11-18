@@ -117,7 +117,7 @@ export interface SalesProductionWorkerOptions {
   readonly autonomousQuoteLimits?: AutonomousQuoteLimits | AutonomousQuoteLimitsV6;
   /** (R4-J5 F1, P-1) The parity-verified SKU set for autonomous quotes (R4_QUOTE_PARITY_*); applied to the deterministic-offer path (v7 lineage) when given. The F1 profile gate must require it. */
   readonly quoteParity?: QuoteParityGuard | null;
-  /** (F1-COMMERCIAL-POLICY-v3) Promotional prices that outlast the quote may be quoted (@19 only; default off). */
+  /** (F1-COMMERCIAL-POLICY-v3) Promotional prices that outlast the quote may be quoted (@19, @20, @21 and @22 only; default off). */
   readonly promotionalQuotes?: boolean;
   /** (M3) R4_SALES_QUOTE_RECOVERY=enabled: the conversation's earlier quotes with their current Quote V2 state enter the context (profiles with a REAL Quote; default off). */
   readonly quoteRecovery?: boolean;
@@ -387,7 +387,7 @@ export const SALES_RUN_FAILURE_FALLBACK_TEXT = salesRunFailureNotice(SALES_IN_HO
 export const SALES_HUMAN_REQUEST_NOTICE_TEXT = salesHumanRequestNotice(SALES_IN_HOURS_REFERENCE);
 
 /** The profiles whose conversations get that notice: only the F1 quote lane candidate (@13 and the others unchanged). */
-export const SALES_HUMAN_REQUEST_NOTICE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_QUOTE_LANE_V18_PROFILE_LABEL, 'sales-production@19']);
+export const SALES_HUMAN_REQUEST_NOTICE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_QUOTE_LANE_V18_PROFILE_LABEL, 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22']);
 
 /**
  * (ADR-046) The web chat's own notices. No person attends it yet: they say so, show the store contact ([[contacto]],

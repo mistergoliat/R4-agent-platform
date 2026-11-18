@@ -181,6 +181,17 @@ export class PostgresTemporalPersistence implements TemporalPersistence {
     return r.rows[0] ? { inputId: r.rows[0].input_id, requestHash: r.rows[0].request_hash } : null;
   }
 
+  async idleActivity(taskId: string) {
+    const r = await this.client.query<{ at: Date | null; actions: number; deliveries: number }>(
+      `select (select max(received_at) from task_inputs where task_id = $1) as at,
+              (select count(*) from action_executions where task_id = $1 and status in ('prepared', 'executing', 'needs_reconciliation'))::int as actions,
+              (select count(*) from outbound_messages where task_id = $1 and status in ('pending', 'dispatching', 'unknown'))::int as deliveries`,
+      [taskId],
+    );
+    const row = r.rows[0]!;
+    return { latestInputAt: row.at ? iso(row.at) : null, unsettledActions: row.actions, openDeliveries: row.deliveries };
+  }
+
   async insertInput(i: Parameters<TemporalPersistence['insertInput']>[0]): Promise<void> {
     await this.client.query(
       'insert into task_inputs (input_id, task_id, external_key, source_ref, actor_kind, actor_ref, request_hash, memory_entry_id, received_at, correlation_id) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)',
@@ -294,12 +305,29 @@ export class PostgresTemporalPersistence implements TemporalPersistence {
     const closures = obligation.reconsider && !obligation.covered
       ? await this.client.query<Row>('select * from temporal_events where event_id = $1', [obligation.reconsider.eventId])
       : { rows: [] as Row[] };
+    // A response the participant will never receive: cancelled before sending (any reason), or causally superseded
+    // while still pending — the delivery gate's own rule (claimNextOutbound), under which it can only be held or
+    // cancelled. Also before its outbound exists: every respond of a channel-bound task is materialized (one outbound
+    // per step), supersession is permanent, so a superseded one is materialized only to be held or cancelled. The
+    // next run is often claimed before the delivery tick materializes it.
+    const withdrawn = await this.client.query<{ step_id: string }>(
+      `select s.step_id from agent_run_steps s left join outbound_messages o on o.response_step_id = s.step_id
+        where s.task_id = $1 and s.decision_type = 'respond' and s.outcome = 'recorded'
+          and (o.status = 'cancelled' or (
+                (o.status = 'pending' or (o.outbound_id is null and exists (select 1 from channel_conversation_bindings b where b.task_id = s.task_id)))
+                and s.context_snapshot_id is not null and exists (
+                select 1 from task_inputs i where i.task_id = $1 and not exists (
+                  select 1 from context_snapshot_items ci where ci.snapshot_id = s.context_snapshot_id and ci.item_id = 'memory:' || i.memory_entry_id::text))))
+        order by s.created_at, s.step_id`,
+      [taskId],
+    );
     return {
       steps: steps.rows.map(stepFromRow),
       humans: await this.listHumans(taskId),
       responses: responses.rows.map(eventFromRow),
       waits: await this.listWaits(taskId),
       closures: closures.rows.map(eventFromRow),
+      withdrawnResponses: withdrawn.rows.map((r) => r.step_id),
     };
   }
 }

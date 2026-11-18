@@ -23,6 +23,9 @@ const providerResponseSchema = z.object({
   usage: z.object({
     inputTokens: z.int().nonnegative(),
     outputTokens: z.int().nonnegative(),
+    /** Telemetry only (never part of ModelUsage): the share of the input served from the provider's cache and of the output spent reasoning. Null = not reported. */
+    cachedInputTokens: z.int().nonnegative().nullable().default(null),
+    reasoningTokens: z.int().nonnegative().nullable().default(null),
   }),
   finishReason: z.enum(['stop', 'tool_calls', 'length', 'content_filter', 'other']),
   modelId: z.string().min(1),
@@ -105,7 +108,7 @@ export class DefaultModelGateway implements ModelGateway {
         content: data.content,
         toolCalls: data.toolCalls,
         structuredData: data.structuredData,
-        usage: data.usage,
+        usage: { inputTokens: data.usage.inputTokens, outputTokens: data.usage.outputTokens },
         finishReason: data.finishReason,
         latencyMs: elapsed(),
         provider: { providerId, modelId: data.modelId, requestId: data.requestId },
@@ -117,6 +120,8 @@ export class DefaultModelGateway implements ModelGateway {
         finishReason: response.finishReason,
         inputTokens: response.usage.inputTokens,
         outputTokens: response.usage.outputTokens,
+        cachedInputTokens: data.usage.cachedInputTokens,
+        reasoningTokens: data.usage.reasoningTokens,
         toolCallCount: response.toolCalls.length,
         latencyMs: response.latencyMs,
       });
