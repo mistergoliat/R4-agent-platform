@@ -91,6 +91,19 @@ export interface QuoteV2IssuedRecord {
   readonly recordedAt: string;
 }
 
+/** (M3) An issued quote of a conversation with what R4 asked for (0007 frozen body; 0008 snapshot lines when autonomous). No prices. */
+export interface ConversationQuoteRecord {
+  readonly taskId: string;
+  readonly quoteId: string;
+  readonly quoteNumber: string;
+  readonly issuedAt: string;
+  readonly validThroughLocalDate: string;
+  readonly validUntilExclusive: string;
+  readonly request: QuoteV2CreateRequest;
+  /** The authorized commercial snapshot's lines (they carry the workspace item key), or null for a non-autonomous issuance. */
+  readonly snapshotLines: readonly { readonly itemKey: string; readonly description: string; readonly quantity: number }[] | null;
+}
+
 /** (R4-J3E) One autonomous decision of quote.create@3 (0008), as recorded. */
 export interface AutonomousQuoteDecisionRecord {
   readonly executionKey: string;
@@ -440,6 +453,29 @@ export class PostgresSalesStore {
       byteLength: row.byte_length,
       documentVerification: row.document_verification,
       recordedAt: row.recorded_at.toISOString(),
+    }));
+  }
+
+  /** (M3) The issued quotes of these tasks at or after `since`, newest first, at most `limit`. */
+  async conversationQuotes(taskIds: readonly string[], options: { readonly since: string; readonly limit: number }): Promise<ConversationQuoteRecord[]> {
+    const r = await this.#pool.query<{ task_id: string; quote_id: string; quote_number: string; issued_at: Date; valid_through_local_date: string; valid_until_exclusive: Date; request: QuoteV2CreateRequest; snapshot_lines: ConversationQuoteRecord['snapshotLines'] }>(
+      `select i.task_id, i.quote_id, i.quote_number, i.issued_at, to_char(i.valid_through_local_date, 'YYYY-MM-DD') as valid_through_local_date, i.valid_until_exclusive,
+              q.request, d.snapshot->'lines' as snapshot_lines
+         from sales.quote_v2_issued i join sales.quote_v2_requests q using (execution_key)
+         left join sales.quote_autonomous_decisions d on d.execution_key = i.execution_key and d.outcome = 'authorized'
+        where i.task_id = any($1::uuid[]) and i.issued_at >= $2
+        order by i.issued_at desc, i.execution_key desc limit $3`,
+      [taskIds, options.since, options.limit],
+    );
+    return r.rows.map((row) => ({
+      taskId: row.task_id,
+      quoteId: row.quote_id,
+      quoteNumber: row.quote_number,
+      issuedAt: row.issued_at.toISOString(),
+      validThroughLocalDate: row.valid_through_local_date,
+      validUntilExclusive: row.valid_until_exclusive.toISOString(),
+      request: row.request,
+      snapshotLines: row.snapshot_lines?.map((l) => ({ itemKey: l.itemKey, description: l.description, quantity: l.quantity })) ?? null,
     }));
   }
 

@@ -211,7 +211,7 @@ async function environment(cia: Cia, options: { resendIntervalMs?: number } = {}
   const confirm = new CiaVerificationConfirmClient({ config: loadCiaVerificationConfirmConfig(env(cia)), fetch: confirmFetch, onCall: (e) => confirmEvents.push(e) });
   const inspectionOptions = { requested: 'full' as const, codeKeys: KEYS, confirm, dispatcher: { pollMs: 100 } };
   const logger = pino({ level: 'info' }, new Writable({ write(chunk: Buffer, _enc, done) { gatewayLog.push(chunk.toString()); done(); } }));
-  const bed = await LiveOpsTestbed.start({ identityVerification: inspectionOptions, autonomy: true, percent: 100, gatewayLogger: logger });
+  const bed = await LiveOpsTestbed.start({ identityVerification: inspectionOptions, autonomy: true, allowlist: Array.from({ length: 500 }, (_, i) => `5691700${String(i + 1).padStart(4, '0')}`), gatewayLogger: logger });
   const store = new IdentityVerificationStore(bed.pool);
   const transport = (url: string, init: RequestInit) => fetch(url, init);
   const identity = composeSyntheticIdentityVerificationCapabilities({ env: env(cia), bindings: bed.store, pool: bed.pool, fetch: transport, ...(options.resendIntervalMs ? { resendIntervalMs: options.resendIntervalMs } : {}) });
