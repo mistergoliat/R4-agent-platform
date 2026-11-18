@@ -1,7 +1,8 @@
 # R4 / Catalog V2 — Auditoría y diseño de corrección de vigencia de evidencia
 
-- **Estado:** `DESIGN_REVISION_1_READY_FOR_REVIEW`.
+- **Estado:** `DESIGN_REVISION_2_D1_DECIDED`.
 - **Revisión 1 (2026-11-10):** incorpora las condiciones de la aprobación del owner, la inspección de solo lectura de Catalog (D-5) y el experimento local (D-6).
+- **Revisión 2 (2026-11-18):** registro de la decisión D-1 del owner (sección 12). Catalog V2 es la autoridad del contrato de vigencia; reglas del switch interino de R4 (PR #99); D-7 se mantiene. Las secciones 0, 5.2 y 11 se ajustan a esa decisión.
 - **Aprobado:** alternativa D, condicionalmente y solo en el pack Sales de R4. Sin cambios en Catalog, R4 Core, Quote V2, Checkout ni perfiles productivos.
 - **Autorizado hasta ahora:** documentación, inspección de solo lectura y experimento local. **No autorizado:** despliegue ni activación productiva. La implementación espera la aceptación de esta revisión.
 - **Código auditado:** R4 `main` @ `788f1f9`; Catalog `main` @ `5f2c086`.
@@ -11,7 +12,7 @@
 
 1. **R4 puede resolverlo sin tocar Catalog.** La causa no es el valor 15 s. R4 lee un producto por llamada al modelo y cada respuesta de Catalog es una observación con una sola vigencia.
 2. **Fase 1 (bajo el contrato actual):** `catalog.get_commercial_state@1`. Confirma precio y vendibilidad de hasta 8 ítems detrás de una sola llamada del modelo. Cada resultado conserva el `validUntil` que declaró Catalog. Nada recibe una vigencia distinta de la del owner.
-3. **Fase 2 (bloqueada por D-1):** `catalog.get_product_facts@1`, datos descriptivos reutilizables. R4 no le asigna ninguna vigencia propia: la ventana y las condiciones de invalidación las define el owner de Catalog. Sin su aprobación no se implementa.
+3. **Fase 2 (D-1 decidida el 2026-11-18, sección 12):** la vigencia descriptiva se separa de la comercial y **Catalog V2 es la autoridad del contrato**: define qué campos son descriptivos, su ventana y su señal de invalidación. R4 consume esa vigencia y solo puede acortarla (ADR-030). Hasta que Catalog la publique, R4 tiene un switch interino apagado (PR #99), con las reglas de la sección 12.2.
 4. **Subir la ventana (alternativa A) sigue descartada:** en Catalog la caché y la vigencia comercial son el mismo número, verificado en código y en la instancia desplegada.
 5. **Experimento local (sección 9):** con la capability de la fase 1 la conversación media baja de 131 s a 95 s y la mediana de 76 s a 59 s. Confirmar precios de varios productos converge siempre: 25 lecturas de set, todas vigentes. **No resuelve** el turno en que el cliente pregunta qué más se suele llevar: sigue leyendo un producto por llamada y tardó 274 s en una de tres réplicas.
 6. **Dos hallazgos que condicionan la implementación:** la fase 1 sola no garantiza que el set Home Gym converja, y la tasa de respuestas del modelo rechazadas por formato subió a 5 de 170 pasos (hoy: 0 de 209). Ambos deben resolverse antes de cualquier uso en QA.
@@ -212,6 +213,8 @@ Otras reglas:
 
 ### 5.2 Fase 2: `catalog.get_product_facts@1` (bloqueada por D-1)
 
+> **Revisión 2 (2026-11-18).** D-1 está decidida (sección 12). Lo que sigue en esta subsección es el texto de la revisión 1. La política que pedía al owner de Catalog toma la forma de la propuesta de contrato de la sección 12.3: campos `descriptiveValidUntil` / `commercialValidUntil`, `descriptiveVersion` como señal de invalidación y separación entre caché y vigencia. Hasta que ese contrato exista, R4 solo puede reutilizar datos descriptivos con el switch interino de la sección 12.2, nunca con una capability nueva.
+
 Proyección descriptiva de `getProductContext` para hasta 6 productos: nombre, SKU, marca, categoría, especificaciones, opciones de variante con sus claves, texto de catálogo, URL pública y comprados juntos. Excluye precio, disponibilidad y estado.
 
 **R4 no asigna ninguna vigencia a estos datos.** La versión anterior de este documento proponía reutilizar la cota de 5 minutos de R4; esa propuesta queda retirada. La capability no se implementa hasta que el owner de Catalog apruebe por escrito:
@@ -390,15 +393,84 @@ Notas de método:
 
 | # | Decisión | Estado |
 |---|---|---|
-| D-1 | Separar datos descriptivos de evidencia comercial | **Aprobada en concepto.** La política (ventana y condiciones de invalidación) queda **pendiente del owner de Catalog**; R4 no asigna vigencia propia. Mientras tanto se entrega solo la fase 1 |
+| D-1 | Separar datos descriptivos de evidencia comercial | **Aprobada por el owner el 2026-11-18** (sección 12): «la vigencia descriptiva y la vigencia comercial deben distinguirse, con Catalog V2 como autoridad del contrato». Contrato propuesto a Catalog (12.3). Switch interino de R4 apagado (12.2) |
 | D-2 | Implementar D solo en R4, sin cambios en Catalog | **Aprobada** por la aprobación condicional: exclusivamente en el pack Sales |
 | D-3 | Secuencia respecto del canal web | **Resuelta:** capability independiente del código web; integración posterior con un perfil QA versionado |
 | D-4 | Aceptar R-3 o exigir una verificación determinista al responder | **Pendiente.** No fue tratada en la aprobación. Recomendación: aceptar en la fase 1 y medir con el hallazgo nuevo del evaluador; decidir con esos datos. Una verificación al responder es un cambio en Core y queda fuera de este alcance |
 | D-5 | Inspección de solo lectura de Catalog | **Ejecutada** (sección 1.9) |
 | D-6 | Brazo experimental local, tope de US$ 1,00 | **Ejecutada** (sección 9) |
-| D-7 | Descartar la alternativa A mientras caché y vigencia sean el mismo número | **Pendiente de confirmación del owner de Catalog.** Del lado de R4 no se persigue: la aprobación excluye modificar Catalog. El acoplamiento quedó verificado en la instancia desplegada |
+| D-7 | Descartar la alternativa A mientras caché y vigencia sean el mismo número | **Se mantiene** (revisión 2, sección 12.4). No se amplía la caché mientras esté acoplada a la vigencia. La propuesta de contrato desacopla en el sentido contrario: acorta lo que la caché comercial puede servir. Pendiente la confirmación escrita del owner de Catalog |
 | D-8 | Nueva. Incluir en la fase 1 una lectura múltiple de contexto de producto con la vigencia del owner, para el caso descriptivo | **Pendiente del owner de R4.** Recomendación: esperar la respuesta a D-1; si se demora o se rechaza, incluirla. No otorga ninguna vigencia y no requiere a Catalog |
 | D-9 | Nueva. Explicar los pasos rechazados por formato inválido antes de habilitar la capability en QA | **Pendiente del owner de R4.** Recomendación: condición de salida de la implementación |
+
+## 12. Registro de decisión D-1 (revisión 2, 2026-11-18)
+
+### 12.1 Decisión
+
+- **Fecha:** 2026-11-18.
+- **Quién:** el owner.
+- **Texto:** «la vigencia descriptiva y la vigencia comercial deben distinguirse, con Catalog V2 como autoridad del contrato».
+
+Consecuencias:
+
+1. **Autoridad.** Catalog V2 define en su contrato tres cosas: qué campos son descriptivos y cuáles comerciales, la vigencia de cada grupo y la señal que invalida lo descriptivo antes de tiempo. R4 no fija esa política. Solo la consume.
+2. **Cómo consume R4 (ADR-030).**
+   - La vigencia descriptiva que R4 registra es `min(cota propia de R4, descriptiveValidUntil del owner)`. R4 puede acortarla, nunca alargarla.
+   - Lo comercial conserva el `validUntil` del owner exactamente como hoy.
+   - Un `descriptiveVersion` distinto, en cualquier lectura posterior del mismo producto, invalida de inmediato los datos descriptivos anteriores.
+3. **Lo que la decisión no cambia:**
+   - Quote V2 sigue siendo la verificación final: `quote.preview` y `quote.create` releen cada línea en Catalog.
+   - Checkout no cambia.
+   - La fase 1 (`catalog.get_commercial_state@1`) sigue diseñada e independiente.
+   - D-4, D-8 y D-9 siguen pendientes.
+
+### 12.2 Qué puede hacer el switch interino de R4 (PR #99) hasta que Catalog publique el contrato
+
+El switch es `R4_SALES_CATALOG_DESCRIPTIVE_WINDOW_SECONDS`, en el pack Sales. Sus reglas:
+
+| Regla | Contenido |
+|---|---|
+| Estado por defecto | **Apagado.** Sin la variable, R4 se comporta como hoy |
+| Activación | Requiere una de dos condiciones: **(a)** el contrato de Catalog desplegado y un cambio de R4 que lo consuma; o **(b)** un «go» explícito del owner para el interino, con el valor de la ventana (recomendado: 300 s; tope del código: 1800 s) y el perfil o carril donde se activa. Ninguna otra condición lo activa |
+| Qué copia | Solo los campos descriptivos de la tabla de 12.3, de `catalog.get_product_context` y `catalog.discover`. `catalog.search` queda fuera porque sus filtros pueden ser comerciales |
+| Qué no copia | Precio, stock, disponibilidad, vendibilidad, promoción, flags de estado (`active`, `listed`, `orderable`), la `disposition` de Discover ni los requisitos comerciales. La observación original conserva el `validUntil` del owner y pasa a `history` como hoy |
+| Invalidación interina | Manda la lectura más reciente de cada producto o necesidad. Un `not_found` posterior elimina la copia. **No detecta ediciones de texto ni de especificaciones** dentro de la ventana: es un riesgo que el «go» interino acepta explícitamente |
+| Rutas comerciales | Ninguna capability, definición, perfil ni política cambia. La composición registra lo mismo con el switch encendido o apagado (prueba de contrato) |
+| Retiro | Cuando Catalog publique el contrato, un cambio de R4 reemplaza la ventana propia por `min(cota de R4, descriptiveValidUntil)` y adopta `descriptiveVersion`. La ventana de R4 queda solo como cota superior |
+| Rollback | Quitar la variable y reiniciar el worker |
+
+Evidencia que acompaña la decisión. Viene de PR #99, en el turno de producción del 2026-11-16 (104 s, 16 llamadas al modelo):
+
+- **Replay offline**, con un agente que sigue la regla de la definición:
+  - apagado: 16 llamadas, sin respuesta;
+  - encendido con 300 s: 9 llamadas, con respuesta y sin relecturas descriptivas.
+- **Replay con el modelo de producción**, frozen-call, 3 réplicas por punto de decisión:
+  - las respuestas suben de 9 a 13;
+  - `discover` baja de 12 a 9;
+  - las lecturas de producto bajan de 13 a 10;
+  - las relecturas pasan de 10 a 12, y 9 de ellas ocurren con la copia descriptiva vigente: **el agente relee por precio**.
+
+La parte decisiva es la vigencia comercial de Catalog y su contrato, no solo el switch de R4.
+
+### 12.3 Contrato propuesto a Catalog (resumen)
+
+La propuesta completa, con pruebas y criterios de aceptación, es el cuerpo de issue preparado para el repositorio de Catalog. **No está presentado:** lo presenta el owner.
+
+| Punto | Propuesta |
+|---|---|
+| Campos nuevos en `freshness` (aditivos) | `servedAt`, `commercialValidUntil` (= `validUntil`), `descriptiveAsOf`, `descriptiveValidUntil`. `validUntil` conserva su significado y su valor |
+| Campos nuevos en `provenance` | `descriptiveVersion` (hash opaco de los campos descriptivos servidos). `sourceUpdatedAt` pasa a llevar la `date_upd` del producto, solo como dato informativo |
+| Discover, por candidato | `descriptive { version, asOf, validUntil, disposition }`. Esta `disposition` es el veredicto sin requisitos comerciales. La `disposition` actual se mantiene, con vigencia comercial. `commercialFreshness.earliestDescriptiveValidUntil` |
+| Campos descriptivos | `facts.name`, `sku`, `brand`, `category`, `specifications`, `shortDescription`, `variantOptions` (claves y atributos), `derived.publicUrl`, `inferred.frequentlyBoughtTogether`, y en Discover la interpretación, el nombre del candidato y los requisitos no comerciales |
+| Campos comerciales | `derived.priceSummary`, `derived.availability`, `facts.status`, `pricing`, `availability` y `promotion` del ítem, resúmenes de precio y disponibilidad de `search`, y en Discover `commercial`, `disposition` y los requisitos `COMMERCIAL_*` |
+| Invalidación | Recomendada: `descriptiveVersion`. Cambia exactamente cuando cambia lo que el consumidor mostraría, y viaja en toda lectura que nombra el producto. Se descarta la `date_upd` como señal: cambia con ediciones de precio y no está garantizado que cambie con stock, precios específicos o características escritos en sus propias tablas. Se descarta un ETag HTTP por respuesta: `search` y Discover responden por varios productos |
+| Caché frente a vigencia | Ventana comercial `Wc` (hoy 15 s, configurable; su valor es del owner) y cota de caché comercial `Cc` < `Wc` (recomendada: 2 s). Toda respuesta entrega al menos `Wc − Cc` de vigencia, o hasta el próximo cambio de precio programado, y `servedAt` declara el tiempo restante sin depender del reloj del consumidor. Lo descriptivo puede tener su propia caché (`Cd`) y su propia ventana (`Wd`) |
+
+### 12.4 D-7 se mantiene
+
+- No se amplía la caché mientras caché y vigencia sean el mismo número.
+- La propuesta 12.3 mueve la caché comercial en la dirección segura. Hoy, la relectura de Quote puede recibir datos de hasta 15 s; con la propuesta, nunca más de `Cc`.
+- Ampliar `Wc` queda fuera de alcance. Solo es una opción segura después de ese desacople, y sigue siendo decisión del owner de Catalog.
 
 ## Anexo. Lo que no se verificó
 
