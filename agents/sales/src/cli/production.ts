@@ -166,7 +166,7 @@ function autonomousLimits(production: ReturnType<typeof loadProductionConfig>) {
   // (R4-J3E-B) @6 also requires the total-units limit and the confirmation window.
   const autonomousQuoteLimits = isConfirmedIntentProfile(profile) ? loadAutonomousQuoteLimitsV6(process.env) : loadAutonomousQuoteLimits(process.env);
   // (R4 Quote E2E, P-1) A profile that requires the parity-verified SKU set (@14) gets it from R4_QUOTE_PARITY_*; the composition refuses it absent.
-  // (F1-COMMERCIAL-POLICY-v3) R4_F1_PROMOTIONAL_QUOTES=enabled turns on promotional quotes (@19 only; default off).
+  // (F1-COMMERCIAL-POLICY-v3) R4_F1_PROMOTIONAL_QUOTES=enabled turns on promotional quotes (@19, @20, @21 and @22 only; default off).
   const promotionalQuotes = loadPromotionalQuotes(process.env);
   return QUOTE_PARITY_REQUIRED_PROFILES.has(profileLabel(profile)) ? { autonomousQuoteLimits, promotionalQuotes, quoteParity: loadQuoteParityGuard(process.env) } : { autonomousQuoteLimits, promotionalQuotes };
 }
@@ -305,7 +305,7 @@ async function worker(production: ReturnType<typeof loadProductionConfig>): Prom
   if (!model) throw new Error('refusing: no model provider configured (R4_MODEL_*)');
   if (!production.config.allowNetwork) throw new Error('refusing: a real model call requires R4_PROD_ALLOW_NETWORK=true');
   const config = loadWorkerConfig(process.env);
-  // (R4 Quote E2E) The quote lane worker issues quotes within the owner-approved write ceiling (1..6; 0 cannot issue).
+  // (R4 Quote E2E) The quote lane worker issues quotes within the owner-approved write ceiling (1..SALES_F1_CANARY_MAX_WRITE_ACTIONS; 0 cannot issue).
   if (isQuoteLaneProfile(workerProfile(production))) assertF1CanaryWriteCeiling(config.execution.maxWriteActions, profileLabel(workerProfile(production)));
   const logger = createLogger({ service: 'r4-worker', level: config.logLevel });
   const pool = createPool({ connectionString: config.databaseUrl, logger, applicationName: 'r4-worker-bindings', max: 2 });

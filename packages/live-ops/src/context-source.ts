@@ -10,7 +10,7 @@ const MEANING: Readonly<Record<string, string>> = {
   dispatching: 'being sent right now',
   unknown: 'it is NOT known whether the contact received it (the provider did not confirm; it will not be re-sent automatically)',
   failed: 'the contact did NOT receive it',
-  cancelled: 'it was NOT sent',
+  cancelled: 'it was NOT sent: the contact never saw it, so it is not part of the conversation; do not refer to it as said',
 };
 
 /**
@@ -34,9 +34,11 @@ export class DeliveryStateContextSource implements ContextSource {
   async load(request: ContextSourceRequest): Promise<readonly ContextContributionInput[]> {
     const { task } = request.execution;
     const outbound = await this.#reader.outboundForTask(task.taskId);
+    // A pending response the platform already withdrew (superseded) will never be sent: say so, not "not sent yet".
+    const withdrawn = new Set(request.execution.interactions?.withdrawnResponses);
     return outbound
       .filter((o) => (o.origin === 'agent' && o.status in MEANING && o.status !== 'dispatching') || o.origin === 'platform')
-      .map((o) => (o.origin === 'platform' ? (o.noticeKey !== null ? noticeItem(o, task.taskId) : fallbackItem(o, task.taskId)) : item(o, task.taskId)));
+      .map((o) => (o.origin === 'platform' ? (o.noticeKey !== null ? noticeItem(o, task.taskId) : fallbackItem(o, task.taskId)) : item(o, task.taskId, withdrawn.has(o.responseStepId ?? ''))));
   }
 }
 
@@ -158,7 +160,9 @@ function noticeItem(o: OutboundRecord, taskId: string): ContextContributionInput
   };
 }
 
-function item(o: OutboundRecord, taskId: string): ContextContributionInput {
+const WITHDRAWN = 'it will NOT be sent: a newer contact message superseded it; the contact never sees it, so it is not part of the conversation; do not refer to it as said';
+
+function item(o: OutboundRecord, taskId: string, withdrawn = false): ContextContributionInput {
   return {
     itemId: `delivery:${o.outboundId}`,
     kind: 'episode',
@@ -168,7 +172,7 @@ function item(o: OutboundRecord, taskId: string): ContextContributionInput {
       about: 'Delivery state of one of your earlier responses to the contact, as the delivery owner recorded it. Accepting a response does not mean the contact received it.',
       responseStepId: o.responseStepId,
       status: o.status,
-      meaning: MEANING[o.status] ?? o.status,
+      meaning: withdrawn && o.status === 'pending' ? WITHDRAWN : (MEANING[o.status] ?? o.status),
       reason: o.cancelReason ?? o.holdReason ?? o.errorClass,
     },
     provenance: { recordType: 'outbound_message', recordId: o.outboundId, recordVersion: `${o.status}:${o.updatedAt}`, producedBy: 'delivery' },
