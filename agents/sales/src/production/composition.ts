@@ -32,6 +32,7 @@ import { SALES_AGENT_ID, SALES_TASK_TYPE, AUTONOMOUS_QUOTE_CAPABILITY_IDS, CAPAB
 import { SALES_ROOT_GOAL } from '../goal.js';
 import { SalesWorkspaceContextSource } from '../workspace/context-source.js';
 import { SalesQuoteRecoveryContextSource } from '../workspace/quote-recovery-source.js';
+import { SALES_QUOTE_LANE_V22_PROFILE_LABEL } from './profile-v22.js';
 import { PostgresSalesStore } from '../workspace/store.js';
 import { SALES_DOMAINS } from './profile.js';
 import { isAutonomousQuoteProfile } from './profile-v5.js';
@@ -293,8 +294,8 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
         new SalesWorkspaceContextSource(sales),
         new DeliveryStateContextSource(options.store),
         new PriorConversationContextSource(options.store, { windowDays: config.priorConversationDays }),
-        // (M3) Read-only; only where Quote V2 is REAL (the composition refused above otherwise), and only when enabled.
-        ...(options.quoteRecovery === true && quoteReal ? [new SalesQuoteRecoveryContextSource({ conversation: options.store, sales, quotes: options.quotes!, windowDays: config.priorConversationDays })] : []),
+        // (M3) Read-only; only when enabled AND the profile is one the owner allowed (@22; Quote V2 REAL there).
+        ...(quoteRecoveryComposed(profile, options) ? [new SalesQuoteRecoveryContextSource({ conversation: options.store, sales, quotes: options.quotes!, windowDays: config.priorConversationDays })] : []),
       ],
       actionPolicy: salesActionPolicyFor(profile),
       admission: controls,
@@ -543,6 +544,25 @@ export function loadQuoteRecovery(env: Readonly<Record<string, string | undefine
   const value = (env.R4_SALES_QUOTE_RECOVERY ?? 'disabled').trim();
   if (value !== 'enabled' && value !== 'disabled') throw new Error('R4_SALES_QUOTE_RECOVERY must be enabled or disabled');
   return value === 'enabled';
+}
+
+/** (M3, owner mandate 2026-11-18) The only profiles on which R4_SALES_QUOTE_RECOVERY takes effect. */
+export const SALES_QUOTE_RECOVERY_PROFILES: ReadonlySet<string> = new Set([SALES_QUOTE_LANE_V22_PROFILE_LABEL]);
+
+/**
+ * (M3) Whether the quote-recovery source is composed: enabled, an allowed profile, and a REAL Quote V2 binding. On any
+ * other profile the flag is IGNORED with a warning (not refused): the lane's rollback to @21 must stay a one-variable
+ * change (R4_PROD_POLICY_PROFILE), and a worker that refused to start over a leftover flag would turn a rollback into an
+ * outage. The `service.composed` log states the outcome (`features.quoteRecovery`).
+ */
+export function quoteRecoveryComposed(profile: ProductionProfile, options: Pick<SalesProductionWorkerOptions, 'quoteRecovery' | 'quotes' | 'logger'>): boolean {
+  if (options.quoteRecovery !== true) return false;
+  const label = profileLabel(profile);
+  if (!SALES_QUOTE_RECOVERY_PROFILES.has(label) || profile.domains[SALES_DOMAINS.quote]?.status !== 'REAL' || !options.quotes) {
+    options.logger.warn({ event: 'sales.quote_recovery.ignored', profile: label, allowed: [...SALES_QUOTE_RECOVERY_PROFILES] }, 'R4_SALES_QUOTE_RECOVERY=enabled is ignored: this profile does not compose quote recovery');
+    return false;
+  }
+  return true;
 }
 
 /** The Quote V2 port quote.create@5 uses: behind the kill switch; for the F1 profiles also single-flight (see below). */

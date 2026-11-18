@@ -1,6 +1,6 @@
 // (M3, quote recovery) Mutation checks: each mutation removes one guarantee of the conversation's earlier quotes in
 // the context (only this conversation's lineage, earlier tasks included, the owner's CURRENT state, no guessed
-// validity, bounded, one owner read per quote per run and never across runs, off unless enabled) and EVERY test listed
+// validity, bounded, one owner read per quote per run and never across runs, off unless enabled, @22 only, no stale total) and EVERY test listed
 // for it must FAIL (each test is run alone, by name). Sources are restored byte for byte. The tests use the local
 // PostgreSQL.
 //
@@ -9,6 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const UNIT = { project: 'unit', file: 'tests/unit/sales/quote-recovery-source.test.ts' };
+const CONTRACT = { project: 'contract', file: 'tests/contract/sales-quote-recovery.test.ts' };
 const IT = { project: 'integration', file: 'tests/integration/sales-quote-recovery.test.ts' };
 const SOURCE = 'agents/sales/src/workspace/quote-recovery-source.ts';
 const STORE = 'packages/persistence-postgres/src/production-store.ts';
@@ -28,12 +29,12 @@ const MUTATIONS = [
   },
   {
     name: 'QR-M3 an expired quote is shown as still valid',
-    edits: [{ file: SOURCE, from: "stillValid: status ? status === 'issued'", to: "stillValid: status ? status !== 'cancelled'" }],
+    edits: [{ file: SOURCE, from: "const stillValid = status ? status === 'issued'", to: "const stillValid = status ? status !== 'cancelled'" }],
     tests: [[UNIT, 'after the validity ends'], [IT, MAIN]],
   },
   {
     name: 'QR-M4 an unreachable owner is guessed valid',
-    edits: [{ file: SOURCE, from: ': pastValidity ? false : null,', to: ': pastValidity ? false : true,' }],
+    edits: [{ file: SOURCE, from: ': pastValidity ? false : null;', to: ': pastValidity ? false : true;' }],
     tests: [[UNIT, 'an unreachable owner degrades']],
   },
   {
@@ -54,13 +55,23 @@ const MUTATIONS = [
   },
   {
     name: 'QR-M8 composed without R4_SALES_QUOTE_RECOVERY=enabled',
-    edits: [{ file: SALES, from: 'options.quoteRecovery === true && quoteReal', to: 'quoteReal' }],
-    tests: [[IT, 'is off by default']],
+    edits: [{ file: SALES, from: 'if (options.quoteRecovery !== true) return false;', to: '' }],
+    tests: [[IT, 'is off by default'], [CONTRACT, '@22 composes the source when enabled']],
   },
   {
     name: 'QR-M9 an owner answer cached as issued stays valid after its validity ends within the run',
     edits: [{ file: SOURCE, from: "quote ? (quote.status === 'issued' && pastValidity ? 'expired' : quote.status) : null", to: 'quote ? quote.status : null' }],
     tests: [[UNIT, 'reads as expired once the validity ends within the same run']],
+  },
+  {
+    name: 'QR-M10 the flag takes effect on any profile, not only @22',
+    edits: [{ file: SALES, from: 'if (!SALES_QUOTE_RECOVERY_PROFILES.has(label) || ', to: 'if (' }],
+    tests: [[CONTRACT, 'ignores the flag with a warning']],
+  },
+  {
+    name: 'QR-M11 an expired quote still shows its (stale) total',
+    edits: [{ file: SOURCE, from: '...(stillValid === true ? { totalGrossClp', to: '...(quote ? { totalGrossClp' }],
+    tests: [[UNIT, 'after the validity ends'], [IT, MAIN]],
   },
 ];
 

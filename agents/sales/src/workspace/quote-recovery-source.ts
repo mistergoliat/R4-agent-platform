@@ -5,19 +5,23 @@ import { DomainError, type QuoteV2Quote, type QuoteV2Service } from '@r4-adapter
 import { QUOTE_RECOVERY_SOURCE_ID, SALES_TASK_TYPE } from '../ids.js';
 import type { ConversationQuoteRecord, PostgresSalesStore } from './store.js';
 
+// (v22 fit) Operational English like the definition's rules; what the agent may tell the customer is the quote number,
+// whether it is still valid, its total only while valid, and the items. No expiry instant enters (v22: never state,
+// compute or convert the expiry yourself; the PDF states it), and nothing here is to be repeated as a source.
 const ABOUT =
-  'Quotes formally issued earlier in this same conversation with this contact (this task or earlier tasks of the conversation), newest first, ' +
-  'each with its state as the Quote owner reports it NOW (stateFrom quote_owner) or, when the owner could not be read, what R4 recorded at issuance (stateFrom r4_record). ' +
-  'A quote can be relied on only while its state is issued (stillValid true). An expired or cancelled quote is no longer valid: it cannot be accepted, paid or issued again, and its prices are not current. ' +
-  'If the contact asks about it or about the same products, you may say its state and offer an updated proposal: put the items in the workspace (sales.workspace.update), read quote.preview for today\'s prices and availability, ' +
-  'present that new offer, and issue a NEW quote only when the contact accepts it. Never reuse an old quote number, total or validity for a new proposal, and never say a quote is valid when stillValid is not true. ' +
-  'When stillValid is null its current state is unknown: say you cannot confirm it right now. This is no reason to contact anyone on your own.';
+  'Quotes issued earlier in this same conversation (this task or earlier tasks of the conversation with this contact; each was an issued quote.create result), newest first, ' +
+  'each with its state as the quote owner holds it NOW. Tell the customer only what they need, in your own words: never mention where this comes from, states as codes, keys or records. ' +
+  'A quote can be relied on only while stillValid is true; then it stands at its totalGrossClp, even if prices changed since. An expired or cancelled quote is no longer valid: it cannot be accepted or issued again, and its prices are NOT current: never state them as today\'s prices. ' +
+  'If the customer brings it up or wants the same products again, say plainly whether it is still valid and offer to update it with today\'s price; never issue anything because of this list. ' +
+  'Updating is a new proposal: put the items in the workspace (sales.workspace.update; itemKey is the product id), read quote.preview, present its offerMessage, and propose quote.create only when the customer accepts that new offer. ' +
+  'Never reuse an old quote number, total or validity for a new proposal, and never say a quote is valid when stillValid is not true. When stillValid is null its state cannot be confirmed right now: say so simply. ' +
+  'This is no reason to contact anyone on your own.';
 
 const MEANING: Readonly<Record<string, string>> = {
-  issued: 'valid until validUntilExclusive (last valid day validThroughLocalDate, Chile)',
-  expired: 'expired: its validity ended; it can no longer be honored as issued',
-  cancelled: 'cancelled by the quote owner: not valid',
-  issuing: 'accepted by the quote owner but its document is not ready yet',
+  issued: 'still valid: it stands as issued (the PDF the customer received states the exact expiry; never state or compute it yourself)',
+  expired: 'expired: its validity ended; it can no longer be honored and its prices are not current',
+  cancelled: 'cancelled: not valid',
+  issuing: 'being issued: not available to the customer yet',
 };
 
 type OwnerRead = { readonly quote: QuoteV2Quote } | { readonly error: 'not_found' | 'unavailable' };
@@ -107,23 +111,22 @@ export class SalesQuoteRecoveryContextSource implements ContextSource {
 export function quoteView(r: ConversationQuoteRecord, owner: OwnerRead, currentTaskId: string, now: Date): Record<string, unknown> {
   const quote = 'quote' in owner ? owner.quote : null;
   const validUntilExclusive = quote?.validity?.validUntilExclusive ?? r.validUntilExclusive;
-  const validThroughLocalDate = quote?.validity?.validThroughLocalDate ?? r.validThroughLocalDate;
   // Without the owner: past R4's recorded validity the quote is expired or cancelled (both terminal), never valid again.
   const pastValidity = now.getTime() >= Date.parse(validUntilExclusive);
   // The owner's own projection (state machine T9), at THIS compilation's clock: an answer cached earlier in the run
   // as issued reads as expired once its validity ends.
   const status = quote ? (quote.status === 'issued' && pastValidity ? 'expired' : quote.status) : null;
+  const stillValid = status ? status === 'issued' : pastValidity ? false : null;
+  // The expiry instant is used, never shown (v22: the agent never states or computes it). A total is shown only while
+  // the quote stands at it, so an expired quote's prices can never be repeated as current.
   return {
     quoteNumber: r.quoteNumber,
-    issuedAt: r.issuedAt,
     earlierTask: r.taskId !== currentTaskId,
     state: status ?? 'unknown',
     stateFrom: quote ? 'quote_owner' : 'r4_record',
-    stillValid: status ? status === 'issued' : pastValidity ? false : null,
-    meaning: status ? (MEANING[status] ?? status) : pastValidity ? 'no longer valid (its recorded validity ended); the quote owner could not be read now' : `the quote owner could not be read now (${'error' in owner ? owner.error : ''}): its current state is unknown`,
-    validThroughLocalDate,
-    validUntilExclusive,
-    ...(quote ? { totalGrossClp: quote.totals.gross } : {}),
+    stillValid,
+    meaning: status ? (MEANING[status] ?? status) : pastValidity ? 'no longer valid (its validity ended)' : 'its current state cannot be confirmed right now',
+    ...(stillValid === true ? { totalGrossClp: quote!.totals.gross } : {}),
     items: r.snapshotLines ?? r.request.lines.map((l) => ({ itemKey: null, description: l.item.description, quantity: Number(l.quantity.value) })),
     delivery: r.request.shipping ? { commune: r.request.shipping.destination.commune, carrierName: r.request.shipping.carrier.name } : null,
   };

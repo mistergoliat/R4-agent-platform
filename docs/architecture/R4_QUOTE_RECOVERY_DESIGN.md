@@ -85,14 +85,36 @@ Reglas:
 - visibilidad: `getQuote` sólo ve las cotizaciones del principal creador (o con `quotes:read:any`). Si cambia el principal
   Quote de R4, las anteriores responden 404 y se muestran `unknown` (`stateFrom: r4_record`; seguro por defecto). El L3
   previo a la activación debe confirmar la visibilidad;
-- un item `state` AUTHORITATIVE `live` `sales_quotes:<task>` con, por cotización: `quoteNumber`, `issuedAt`, `earlierTask`,
-  `state`, `stateFrom` (`quote_owner` | `r4_record`), `stillValid`, `meaning`, `validThroughLocalDate`,
-  `validUntilExclusive`, `totalGrossClp` (sólo del dueño), `items` (`itemKey` cuando hubo instantánea autónoma), `delivery`;
+- un item `state` AUTHORITATIVE `live` `sales_quotes:<task>` con, por cotización: `quoteNumber`, `earlierTask`, `state`,
+  `stateFrom` (`quote_owner` | `r4_record`), `stillValid`, `meaning`, `totalGrossClp` (sólo del dueño y **sólo mientras
+  `stillValid` es true**), `items` (`itemKey` cuando hubo instantánea autónoma), `delivery`;
 - texto `about` con las reglas del §3 (actualizar = workspace → `quote.preview` → oferta → aceptación → `quote.create`).
 
-Activación: `R4_SALES_QUOTE_RECOVERY=enabled` (por defecto `disabled`; cualquier otro valor rechaza el arranque), y sólo
-en perfiles con Quote REAL. Sin versión nueva de definición: la instrucción viaja en el item de contexto, como los demás
-sources; desplegar el código no cambia el contexto del carril hasta que el owner active la variable.
+Compatibilidad con v22 (Don Pesín):
+
+- El item no trae fecha ni hora de vencimiento (`validUntilExclusive` se usa para decidir, nunca se muestra): v22 prohíbe
+  que el agente declare, calcule o convierta el vencimiento (lo dice el PDF).
+- Una cotización vencida o anulada no trae total: su precio nunca puede repetirse como actual (v22: precios sólo de
+  lecturas actuales). Una vigente sí, porque se respeta a ese total aunque el catálogo haya cambiado.
+- El texto operativo va en inglés como las reglas operativas de v22; la voz (español de Chile, tuteo, "¿Te actualizo
+  alguna con el precio de hoy?", ejemplo de tono de v22) la pone la definición. El `about` pide no mencionar de dónde
+  sale el dato, ni estados como códigos, claves o registros ("sin contar de dónde las sacaste").
+- No contradice v22: el número y el total que muestra son de un resultado `quote.create` emitido (regla "State a quote
+  number, totals or validity only from an issued quote.create result"); actualizar pasa por `quote.preview` y su
+  `offerMessage` exacto, y `quote.create` sólo tras la aceptación de esa nueva oferta.
+- Nunca emite: la fuente sólo lee (`getQuote`); el test de integración propone `quote.create` con el `previewId` de la
+  cotización anterior tras un "sí, mándamela de nuevo" y verifica que nada se emite (`sales-quote-recovery.test.ts`).
+
+Cierre por inactividad (#97): una task que espera 24 h se cancela `idle_timeout` y el siguiente mensaje abre otra. El
+linaje de `earlierConversationTasks` incluye las tasks canceladas (filtra por binding, no por estado), así que las
+cotizaciones de la task cerrada aparecen en la nueva (cubierto por el mismo test de integración).
+
+Activación (owner, 2026-11-18): **sólo en `sales-production@22`** (`SALES_QUOTE_RECOVERY_PROFILES`), con
+`R4_SALES_QUOTE_RECOVERY=enabled` en el entorno del worker del carril (por defecto `disabled`; cualquier otro valor
+rechaza el arranque). En cualquier otro perfil la variable se **ignora con un warning** (`sales.quote_recovery.ignored`)
+en vez de rechazar el arranque: así el rollback del carril a `@21` sigue siendo cambiar sólo `R4_PROD_POLICY_PROFILE`, y una
+variable olvidada no convierte un rollback en una caída. El log `service.composed` del worker dice el resultado
+(`features.quoteRecovery`). Sin versión nueva de definición: la instrucción viaja en el item de contexto.
 
 ## 5. Límites conocidos
 

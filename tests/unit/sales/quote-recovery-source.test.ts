@@ -62,7 +62,10 @@ describe('SalesQuoteRecoveryContextSource (M3)', () => {
     const [item] = await w.load();
     expect(item).toMatchObject({ itemId: `sales_quotes:${CURRENT}`, kind: 'state', authority: 'AUTHORITATIVE', temporality: 'live', required: true, taskId: CURRENT });
     const [q] = (item!.content as { quotes: Record<string, unknown>[] }).quotes;
-    expect(q).toMatchObject({ quoteNumber: 'PC-000001', earlierTask: true, state: 'issued', stateFrom: 'quote_owner', stillValid: true, validThroughLocalDate: '2026-11-14', totalGrossClp: w.quotes.quotes[0]!.totals.gross });
+    expect(q).toMatchObject({ quoteNumber: 'PC-000001', earlierTask: true, state: 'issued', stateFrom: 'quote_owner', stillValid: true, totalGrossClp: w.quotes.quotes[0]!.totals.gross });
+    // (v22) No expiry instant or date reaches the model: it never states or computes the expiry itself.
+    expect(Object.keys(q!)).not.toEqual(expect.arrayContaining(['validUntilExclusive']));
+    expect(JSON.stringify(item!.content)).not.toMatch(/2026-11-1[45]/);
     expect(q!.items).toEqual([{ itemKey: null, description: 'Barra Z 120 cm', quantity: 2 }]);
     expect(q!.delivery).toEqual({ commune: 'Ñuñoa', carrierName: 'Fixture Courier' });
     // Only this conversation's lineage is asked for, within the window, one more than shown.
@@ -81,7 +84,10 @@ describe('SalesQuoteRecoveryContextSource (M3)', () => {
     const w = await world(1);
     expect((await w.view('run-1')).quotes[0]).toMatchObject({ state: 'issued', stillValid: true });
     w.at('2026-11-15T04:00:00.000Z');
-    expect((await w.view('run-2')).quotes[0]).toMatchObject({ state: 'expired', stillValid: false, stateFrom: 'quote_owner' });
+    const expired = (await w.view('run-2')).quotes[0]!;
+    expect(expired).toMatchObject({ state: 'expired', stillValid: false, stateFrom: 'quote_owner' });
+    // An expired quote's total is never shown: its prices are not current.
+    expect(expired).not.toHaveProperty('totalGrossClp');
   });
 
   it('reads the owner once per quote per run (the context is compiled every iteration)', async () => {

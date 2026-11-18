@@ -7,17 +7,21 @@ import { FixtureCatalog, FixtureQuoteV2Service, FixtureShipping } from '@r4-adap
 import type { CatalogDiscoverPort } from '@r4-adapters/catalog-http';
 import { FakeModelProvider, type FakeModelScript } from '@r4/model-gateway';
 import { createSilentLogger } from '@r4/observability';
-import { AUTONOMOUS_QUOTE_CAPABILITY_IDS, CAPABILITY_IDS, ContextView, QUOTE_RECOVERY_SOURCE_ID, read, respond, type ScriptedStep } from '@r4-sales/agent';
+import { createPlatform } from '@r4/api';
+import { CaseIdleCloser } from '@r4/live-ops';
+import { PostgresProductionStore } from '@r4/persistence-postgres';
+import { AUTONOMOUS_QUOTE_CAPABILITY_IDS, CAPABILITY_IDS, ContextView, QUOTE_RECOVERY_SOURCE_ID, SALES_AGENT_DIR, read, respond, type ScriptedStep } from '@r4-sales/agent';
 import { initCanary, loadCanaryEnvironment, sendSynthetic, startCanaryRuntime, syntheticConversationKey, type CanaryEnvironment } from '@r4-sales/agent/canary';
 import { SALES_F1_CANARY_LIMITS } from '@r4-sales/agent/production';
 import { createTestDatabase, openPool, type TestDatabase } from '../support/database.js';
-import { RECONCILIATION_POLICY } from '../support/temporal.js';
+import { RECONCILIATION_POLICY, freezeTemporalClock } from '../support/temporal.js';
 
 /**
- * M3 — quote recovery. A quote issued in a conversation (sales-production@19, isolated canary: real ingress, worker,
+ * M3 — quote recovery. A quote issued in a conversation (sales-production@22, the only profile it is composed on; isolated canary: real ingress, worker,
  * Policy Engine, ActionExecutor, delivery owner; scripted model; fixture owners) is shown to the agent when the
- * customer writes again — later in the same task and in a new task of the same conversation — with its CURRENT
- * state read from the Quote V2 owner (expired once its validity ends). Read-only: nothing is re-issued.
+ * customer writes again — later in the same task and in a new task of the same conversation after the case idle close
+ * (#97) — with its CURRENT state read from the Quote V2 owner (expired once its validity ends). Read-only: nothing is
+ * re-issued, and the earlier offer cannot be accepted again.
  */
 const logger = createSilentLogger();
 let db: TestDatabase | null = null;
@@ -31,7 +35,7 @@ const http = <T extends object>(port: T): T & { bindingKind: string } =>
 const L = SALES_F1_CANARY_LIMITS;
 function canaryEnv(url: string, extra: Record<string, string>): Record<string, string> {
   const base = {
-    R4_EXECUTION_MODE: 'production', R4_PROD_POLICY_PROFILE: 'sales-production@19', R4_PROD_ROLLOUT_PERCENT: '0', R4_PROD_IDENTITY_HASH_KEY: 'r4-test-canary-identity-key-recovery-01',
+    R4_EXECUTION_MODE: 'production', R4_PROD_POLICY_PROFILE: 'sales-production@22', R4_PROD_ROLLOUT_PERCENT: '0', R4_PROD_IDENTITY_HASH_KEY: 'r4-test-canary-identity-key-recovery-01',
     R4_PROD_ALLOW_NETWORK: 'false', R4_PROD_HOLD_RECHECK_MS: '10', R4_CANARY_DATABASE_URL: url, R4_LOG_LEVEL: 'silent',
     R4_AUTONOMOUS_QUOTE_MAX_GROSS_CLP: String(L.maxGrossClp), R4_AUTONOMOUS_QUOTE_MAX_LINES: String(L.maxLines), R4_AUTONOMOUS_QUOTE_MAX_UNITS_PER_LINE: String(L.maxUnitsPerLine),
     R4_AUTONOMOUS_QUOTE_MAX_TOTAL_UNITS: String(L.maxTotalUnits), R4_AUTONOMOUS_QUOTE_MAX_PER_CONVERSATION: String(L.maxQuotesPerConversation),
@@ -63,7 +67,6 @@ const latest = (v: ContextView, id: string) => v.observations(id).filter((o) => 
 const preview = (v: ContextView) => latest(v, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).payload as { previewId: string; presentation: { offerMessage: string } };
 const propose: ScriptedStep = (v) => ({ type: 'propose_action', capabilityId: CAPABILITY_IDS.quoteCreate, arguments: { previewId: preview(v).previewId }, evidenceRefs: [latest(v, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).observationId] });
 const ISSUE = [ws([{ op: 'add_item', productId: 'BAR-EZ', quantity: 2 }]), ws([{ op: 'exclude_shipping' }]), read(AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview, {}), respond((v) => preview(v).presentation.offerMessage), propose, respond('Listo, te envié la cotización.')];
-const done: ScriptedStep = () => ({ type: 'complete', result: { summary: 'conversation ended', evidence: [] } });
 
 type Recovery = { quotes: { quoteNumber: string; state: string; stillValid: boolean | null; stateFrom: string; earlierTask: boolean; items: unknown[] }[] };
 /** A model step (by default an answer) that records the quote-recovery state it was shown (undefined when absent). */
@@ -122,11 +125,25 @@ async function conversation(env: Record<string, string>) {
       await pool.end();
     }
   };
-  return { quotes, say, rows, close: () => runtime.close(), ownerCreates: () => ownerCreates, advance: (ms: number) => (now = new Date(now.getTime() + ms)) };
+  /** (#97) The gateway's idle-case sweep, 25 h of temporal time after the newest input (r4_now() frozen there). */
+  const idleClose = async () => {
+    const pool = openPool(db!.url);
+    const platform = await createPlatform({ databaseUrl: db!.url, host: '127.0.0.1', port: 0, logLevel: 'silent', agentDefinitionsDir: SALES_AGENT_DIR, dbPoolMax: 2 }, { logger });
+    try {
+      const at = (await pool.query<{ at: Date }>('select max(received_at) as at from task_inputs')).rows[0]!.at;
+      await freezeTemporalClock(pool, new Date(at.getTime() + 25 * 3_600_000));
+      const channel = (await pool.query<{ channel: string }>('select channel from channel_conversation_bindings limit 1')).rows[0]!.channel;
+      return await new CaseIdleCloser({ store: new PostgresProductionStore(pool), temporal: platform.temporal, channel, idleForMs: 24 * 3_600_000, logger }).sweep();
+    } finally {
+      await platform.close();
+      await pool.end();
+    }
+  };
+  return { quotes, say, rows, idleClose, close: () => runtime.close(), ownerCreates: () => ownerCreates, advance: (ms: number) => (now = new Date(now.getTime() + ms)) };
 }
 
-describe('quote recovery (M3, sales-production@19)', { timeout: 150_000 }, () => {
-  it('a returning customer sees the quote with its CURRENT owner state — expired after its validity — in the same task and in a new task; nothing is re-issued', async () => {
+describe('quote recovery (M3, sales-production@22)', { timeout: 150_000 }, () => {
+  it('a returning customer sees the quote with its CURRENT owner state — expired after its validity — in the same task and in the new task after an idle close; nothing is re-issued', async () => {
     const c = await conversation({ R4_SALES_QUOTE_RECOVERY: 'enabled' });
     try {
       // Another contact's quote (PC-000001) never appears in this conversation.
@@ -134,7 +151,8 @@ describe('quote recovery (M3, sales-production@19)', { timeout: 150_000 }, () =>
       await c.say('si dale', ISSUE.slice(4), 'other');
       const view = shown(ISSUE[0]);
       const first = await c.say('Quiero 2 barras Z, sin despacho', [view.step, ...ISSUE.slice(1, 4)]);
-      await c.say('si dale', ISSUE.slice(4));
+      let earlierPreviewId = '';
+      await c.say('si dale', [(v) => ((earlierPreviewId = preview(v).previewId), propose(v)), ISSUE[5]!]);
       expect(c.ownerCreates()).toBe(2);
       // Before the quote existed, nothing was shown.
       expect(view.seen()).toEqual([undefined]);
@@ -150,15 +168,23 @@ describe('quote recovery (M3, sales-production@19)', { timeout: 150_000 }, () =>
       await c.say('Hola, ¿sigue vigente mi cotización?', [expired.step]);
       expect(expired.seen()[0]!.quotes[0]).toMatchObject({ quoteNumber: 'PC-000002', state: 'expired', stillValid: false, stateFrom: 'quote_owner' });
 
-      // The task ends; the next message opens a new task of the same conversation: the earlier quote is still shown.
+      // (#97) 25 h without a contact message: the case closes idle_timeout (cancelled task, closed binding).
+      expect((await c.idleClose()).closed).toBe(2);
+      expect(await c.rows(`select status, status_reason from agent_tasks where task_id = '${first}'`)).toEqual([{ status: 'cancelled', status_reason: 'idle_timeout' }]);
+
+      // The next message opens a new task of the same conversation: the quote of the cancelled task is found and shown expired.
       const later = shown();
-      await c.say('Ok, gracias', [done, done]);
       const second = await c.say('Hola de nuevo, quiero retomar la cotización', [later.step]);
       expect(second).not.toBe(first);
       expect(later.seen()[0]!.quotes).toEqual([expect.objectContaining({ quoteNumber: 'PC-000002', state: 'expired', stillValid: false, earlierTask: true })]);
-      // Read-only: nothing was re-issued, at the owner or in R4.
+      expect(later.seen()[0]!.quotes[0]).not.toHaveProperty('totalGrossClp');
+
+      // Recovering never issues: the customer says yes to the OLD quote and the agent even proposes it again with the
+      // earlier previewId — refused, since an issuance needs a quote.preview and its offer accepted in this task.
+      await c.say('sí, mándamela de nuevo', [() => ({ type: 'propose_action', capabilityId: CAPABILITY_IDS.quoteCreate, arguments: { previewId: earlierPreviewId }, evidenceRefs: [] }), respond('Esa ya venció; te preparo una actualizada con el precio de hoy.')]);
       expect(c.ownerCreates()).toBe(2);
       expect(await c.rows('select quote_number from sales.quote_v2_issued order by quote_number')).toEqual([{ quote_number: 'PC-000001' }, { quote_number: 'PC-000002' }]);
+      expect(await c.rows(`select count(*)::int as n from action_receipts where capability_id = 'quote.create' and status = 'succeeded'`)).toEqual([{ n: 2 }]);
     } finally {
       await c.close();
     }
