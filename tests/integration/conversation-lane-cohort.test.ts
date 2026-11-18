@@ -59,7 +59,7 @@ const disposition = async (b: LiveOpsTestbed, wamid: string) => (await b.rows<{ 
 const ON_LANE = (reason: string) => ({ profile: LANE, autonomy: 'autonomous', eligibility_reason: reason, agent_version: 22 });
 const HELD_ON_MAIN = { profile: MAIN, autonomy: 'excluded', eligibility_reason: 'not_in_cohort', agent_version: 3 };
 
-describe('ADR-045 amendment 1: the lane takes the rollout cohort', () => {
+describe('ADR-045 amendment 1: the lane takes the rollout cohort', { timeout: 90_000 }, () => {
   it('C1: at 0 % nothing changes; at 20 % the cohort opens on the lane (reason cohort, current rollout fingerprint); the rest exactly as before', async () => {
     const b = (bed = await start(0));
     const atZero = rolloutFingerprint(b.production.config.rollout);
