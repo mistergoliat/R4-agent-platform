@@ -273,8 +273,9 @@ export class PostgresProductionStore implements ProductionStore {
     return bindingFromRow(r.rows[0]);
   }
 
-  async closeBinding(bindingId: string, reason: string): Promise<void> {
-    await query(this.#pool, `update channel_conversation_bindings set status = 'closed', closed_at = clock_timestamp(), closed_reason = $2 where binding_id = $1 and status = 'open'`, [bindingId, reason]);
+  async closeBinding(bindingId: string, reason: string): Promise<boolean> {
+    const r = await query(this.#pool, `update channel_conversation_bindings set status = 'closed', closed_at = clock_timestamp(), closed_reason = $2 where binding_id = $1 and status = 'open'`, [bindingId, reason]);
+    return (r.rowCount ?? 0) > 0;
   }
 
   async touchBinding(bindingId: string, at: string): Promise<void> {
@@ -299,7 +300,20 @@ export class PostgresProductionStore implements ProductionStore {
                and coalesce((select max(i.received_at) from task_inputs i where i.task_id = t.task_id), b.created_at) <= r4_now() - $1::double precision * interval '1 millisecond'
                and not exists (select 1 from outbound_messages o where o.task_id = t.task_id and o.status in ('pending', 'dispatching', 'unknown'))
                and not exists (select 1 from human_requests h where h.task_id = t.task_id and h.status in ('requested', 'active'))
-               and not exists (select 1 from action_executions e where e.task_id = t.task_id and e.status not in ('succeeded', 'rejected', 'failed'))))
+               and not exists (select 1 from action_executions e where e.task_id = t.task_id and e.status not in ('succeeded', 'rejected', 'failed'))
+               and not exists (select 1 from task_terminal_intents ti where ti.task_id = t.task_id)
+               -- An approval outcome still to carry out: TemporalPersistence.pendingApprovalProposal, as an existence test.
+               and not exists (
+                 select 1 from human_requests h left join action_executions e on e.proposal_id = h.proposal_id
+                  where h.task_id = t.task_id and h.kind = 'approval' and (
+                        (h.status = 'approved' and (
+                           e.status in ('prepared', 'executing') or
+                           (e.execution_id is null and not exists (
+                              select 1 from policy_decisions d where d.proposal_id = h.proposal_id and d.decision_id <> (h.payload->>'policyDecisionId')::uuid))))
+                     or (h.status in ('rejected', 'expired', 'cancelled') and not exists (
+                           select 1 from observations ob where ob.approval_request_id = h.request_id))))
+               -- A message received but not ingested yet (e.g. an image being perceived) is activity.
+               and not exists (select 1 from inbound_events ie where ie.channel = b.channel and ie.conversation_key = b.conversation_key and ie.status = 'received')))
         order by b.created_at, b.binding_id limit $2`,
       [command.idleForMs, command.limit, command.channel],
     );

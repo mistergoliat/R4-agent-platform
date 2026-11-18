@@ -242,8 +242,14 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
         }, Math.max(1000, Math.floor(config.resumeAfterMs / 2)));
         if (workingSignals) signalTimer = setInterval(() => void workingSignals.tick().catch(() => undefined), 5_000);
         if (idleClose) {
+          // One sweep at a time in this process (a slow sweep is never overlapped by the next tick).
+          let sweeping = false;
           idleTimer = setInterval(() => {
-            void idleClose.sweep().catch((error: unknown) => logger.warn({ err: error instanceof Error ? error.message : String(error) }, 'idle-case sweep failed'));
+            if (sweeping) return;
+            sweeping = true;
+            idleClose.sweep()
+              .catch((error: unknown) => logger.warn({ err: error instanceof Error ? error.message : String(error) }, 'idle-case sweep failed'))
+              .finally(() => (sweeping = false));
           }, IDLE_SWEEP_MS);
         }
       },

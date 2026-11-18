@@ -180,7 +180,7 @@ function parsePlatformCancellation(cancellation: PlatformTaskCancellation): Plat
 export const IDLE_TIMEOUT_REASON = 'idle_timeout';
 
 /** Why a task is not closed as idle: what still needs it. */
-export type IdleRefusal = 'not_waiting_for_input' | 'terminal_intent' | 'human_request_open' | 'action_unsettled' | 'approval_pending' | 'recent_input';
+export type IdleRefusal = 'not_waiting_for_input' | 'terminal_intent' | 'human_request_open' | 'action_unsettled' | 'delivery_open' | 'approval_pending' | 'recent_input';
 
 /** The durable facts the idle rule reads, under the task row lock. */
 export interface IdleFacts {
@@ -189,8 +189,10 @@ export interface IdleFacts {
   readonly terminalIntent: boolean;
   /** Human requests (consultation, approval, handoff) still `requested` or `active`. */
   readonly openHumanRequests: number;
-  /** Action executions whose outcome is not established. */
+  /** Action executions not resolved: prepared, executing or awaiting reconciliation. */
   readonly unsettledActions: number;
+  /** Deliveries of the task's output still open: pending (or held), dispatching, or of unknown outcome. */
+  readonly openDeliveries: number;
   readonly approvalPending: boolean;
   /** The newest input's receipt time on the temporal clock; the task's creation when it has none. */
   readonly lastActivityAt: string;
@@ -201,13 +203,15 @@ export interface IdleFacts {
 /**
  * (Case idle close) A task may be closed as idle only while it is suspended waiting for input (an agent's WAIT_UNTIL
  * is its own timer; a blocked task — human handoff, platform hold, reconciliation — is left to its owner), nothing
- * else needs it, and its newest input is at least `idleForMs` old. Null: idle.
+ * else needs it (a human request, an unresolved action, an open delivery, an approval to carry out) and its newest
+ * input is at least `idleForMs` old. Null: idle.
  */
 export function idleRefusal(f: IdleFacts): IdleRefusal | null {
   if (f.status !== 'waiting' || f.waitKind !== 'WAIT_FOR_INPUT') return 'not_waiting_for_input';
   if (f.terminalIntent) return 'terminal_intent';
   if (f.openHumanRequests > 0) return 'human_request_open';
   if (f.unsettledActions > 0) return 'action_unsettled';
+  if (f.openDeliveries > 0) return 'delivery_open';
   if (f.approvalPending) return 'approval_pending';
   if (Date.parse(f.now) - Date.parse(f.lastActivityAt) < f.idleForMs) return 'recent_input';
   return null;
@@ -866,13 +870,15 @@ export class TemporalRuntime implements RunFailureHandoff, TurnCompletionGuard {
       if (isTerminalTaskStatus(task.status)) return { task, outcome: 'already_terminal' as const };
       const p = temporalOf(uow);
       const now = await p.now();
-      const lastActivityAt = (await p.latestInputAt(taskId)) ?? task.createdAt;
+      const activity = await p.idleActivity(taskId);
+      const lastActivityAt = activity.latestInputAt ?? task.createdAt;
       const refusal = idleRefusal({
         status: task.status,
         waitKind: (await p.activeWait(taskId))?.kind ?? null,
         terminalIntent: (await p.terminalIntent(taskId)) !== null,
         openHumanRequests: (await p.listHumans(taskId)).filter((h) => h.status === 'requested' || h.status === 'active').length,
-        unsettledActions: (await p.unresolved(taskId)).length,
+        unsettledActions: activity.unsettledActions,
+        openDeliveries: activity.openDeliveries,
         approvalPending: (await p.pendingApprovalProposal(taskId)) !== null,
         lastActivityAt,
         now,

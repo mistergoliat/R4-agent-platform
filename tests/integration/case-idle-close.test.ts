@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { FakeModelStep, ModelRequest } from '@r4/model-gateway';
 import { createSilentLogger } from '@r4/observability';
 import { CASE_IDLE_CLOSE_ACTOR, CaseIdleCloser, type ProductionStore } from '@r4/live-ops';
-import { LiveOpsTestbed, OPERATOR, say, type QueuedStep } from '../support/live-ops.js';
+import { LiveOpsTestbed, OPERATOR, keyOf, say, type QueuedStep } from '../support/live-ops.js';
 import { freezeTemporalClock } from '../support/temporal.js';
 
 /**
@@ -91,15 +91,15 @@ describe('case idle close (R4_PROD_CASE_IDLE_CLOSE_HOURS)', { timeout: 90_000 },
     const sends = b.provider.sends.length;
     const outbound = await b.rows('select outbound_id from outbound_messages');
 
-    expect(await sweep(b)).toEqual({ closed: 0, notIdle: 0 });
+    expect(await sweep(b)).toEqual({ closed: 0, notIdle: 0, failed: 0 });
     await idleFor(b, DAY - 60_000);
-    expect(await sweep(b)).toEqual({ closed: 0, notIdle: 0 });
+    expect(await sweep(b)).toEqual({ closed: 0, notIdle: 0, failed: 0 });
     expect((await taskRow(b, taskId)).status).toBe('waiting');
 
     await idleFor(b, DAY);
     // Each gateway closes only its own channel's cases.
-    expect(await new CaseIdleCloser({ store: b.store, temporal: b.api.temporal, channel: 'web', idleForMs: DAY, logger: createSilentLogger() }).sweep()).toEqual({ closed: 0, notIdle: 0 });
-    expect(await sweep(b)).toEqual({ closed: 1, notIdle: 0 });
+    expect(await new CaseIdleCloser({ store: b.store, temporal: b.api.temporal, channel: 'web', idleForMs: DAY, logger: createSilentLogger() }).sweep()).toEqual({ closed: 0, notIdle: 0, failed: 0 });
+    expect(await sweep(b)).toEqual({ closed: 1, notIdle: 0, failed: 0 });
     expect(await taskRow(b, taskId)).toEqual({ status: 'cancelled', status_reason: 'idle_timeout' });
     expect(await bindings(b)).toEqual([{ task_id: taskId, status: 'closed', closed_reason: 'idle_timeout' }]);
     const events = await b.rows<{ actor_ref: string; data: Record<string, unknown> }>(`select actor_ref, data from temporal_events where task_id = $1 and event_type = 'task.cancelled'`, [taskId]);
@@ -112,7 +112,7 @@ describe('case idle close (R4_PROD_CASE_IDLE_CLOSE_HOURS)', { timeout: 90_000 },
     expect(await b.rows('select outbound_id from outbound_messages')).toEqual(outbound);
 
     // A second run is a no-op.
-    expect(await sweep(b)).toEqual({ closed: 0, notIdle: 0 });
+    expect(await sweep(b)).toEqual({ closed: 0, notIdle: 0, failed: 0 });
     expect(await b.rows(`select 1 from temporal_events where task_id = $1 and event_type = 'task.cancelled'`, [taskId])).toHaveLength(1);
   });
 
@@ -145,14 +145,14 @@ describe('case idle close (R4_PROD_CASE_IDLE_CLOSE_HOURS)', { timeout: 90_000 },
     await b.store.materializeResponses({ limit: 10 });
     await idleFor(b, 2 * DAY);
     expect(await b.rows('select status from outbound_messages')).toEqual([{ status: 'pending' }]);
-    expect(await sweep(b)).toEqual({ closed: 0, notIdle: 0 });
+    expect(await sweep(b)).toEqual({ closed: 0, notIdle: 0, failed: 0 });
     for (const status of ['dispatching', 'unknown']) {
       await b.pool.query(`update outbound_messages set status = $1, lease_owner = case when $1 = 'dispatching' then 'x' end, lease_expires_at = case when $1 = 'dispatching' then clock_timestamp() end`, [status]);
-      expect(await sweep(b)).toEqual({ closed: 0, notIdle: 0 });
+      expect(await sweep(b)).toEqual({ closed: 0, notIdle: 0, failed: 0 });
     }
     expect((await taskRow(b, taskId)).status).toBe('waiting');
     await b.pool.query(`update outbound_messages set status = 'accepted', lease_owner = null, lease_expires_at = null`);
-    expect(await sweep(b)).toEqual({ closed: 1, notIdle: 0 });
+    expect(await sweep(b)).toEqual({ closed: 1, notIdle: 0, failed: 0 });
   });
 
   it.each([
@@ -166,7 +166,7 @@ describe('case idle close (R4_PROD_CASE_IDLE_CLOSE_HOURS)', { timeout: 90_000 },
     await b.deliver();
     const taskId = await b.taskOf(CUSTOMER);
     await idleFor(b, 2 * DAY);
-    expect(await sweep(b)).toEqual({ closed: 0, notIdle: 0 });
+    expect(await sweep(b)).toEqual({ closed: 0, notIdle: 0, failed: 0 });
     expect((await taskRow(b, taskId)).status).not.toBe('cancelled');
     expect((await bindings(b))[0]!.status).toBe('open');
   });
@@ -176,7 +176,7 @@ describe('case idle close (R4_PROD_CASE_IDLE_CLOSE_HOURS)', { timeout: 90_000 },
     const taskId = await answered(b, 'wamid.t1', 'Hola', 'Hola, ¿en qué te ayudo?');
     await b.api.temporal.takeOver(taskId, { responseKey: 'takeover-1', note: 'Un ejecutivo toma la conversación.' }, OPERATOR);
     await idleFor(b, 2 * DAY);
-    expect(await sweep(b)).toEqual({ closed: 0, notIdle: 0 });
+    expect(await sweep(b)).toEqual({ closed: 0, notIdle: 0, failed: 0 });
     expect(await taskRow(b, taskId)).toMatchObject({ status: 'blocked', status_reason: 'human_handoff' });
   });
 
@@ -185,7 +185,7 @@ describe('case idle close (R4_PROD_CASE_IDLE_CLOSE_HOURS)', { timeout: 90_000 },
     const taskId = await answered(b, 'wamid.r1', 'Hola', 'Hola, ¿en qué te ayudo?');
     await idleFor(b, 2 * DAY);
     const store = racing(b.store, () => b.customer(CUSTOMER, 'wamid.r2', 'Sigo aquí'));
-    expect(await closer(b, store).sweep()).toEqual({ closed: 0, notIdle: 1 });
+    expect(await closer(b, store).sweep()).toEqual({ closed: 0, notIdle: 1, failed: 0 });
     expect((await taskRow(b, taskId)).status).toBe('running');
     expect(await inputsOf(b, taskId)).toBe(2);
     expect((await bindings(b)).map((r) => r.status)).toEqual(['open']);
@@ -207,7 +207,7 @@ describe('case idle close (R4_PROD_CASE_IDLE_CLOSE_HOURS)', { timeout: 90_000 },
         return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(target) : value;
       },
     });
-    await expect(closer(b, crashing).sweep()).rejects.toThrow('crash');
+    expect(await closer(b, crashing).sweep()).toEqual({ closed: 0, notIdle: 0, failed: 1 });
     expect(await taskRow(b, first)).toEqual({ status: 'cancelled', status_reason: 'idle_timeout' });
     expect((await bindings(b))[0]!.status).toBe('open');
 
@@ -233,8 +233,8 @@ describe('case idle close (R4_PROD_CASE_IDLE_CLOSE_HOURS)', { timeout: 90_000 },
         return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(target) : value;
       },
     });
-    await expect(closer(b, crashing).sweep()).rejects.toThrow('crash');
-    expect(await closer(b).sweep()).toEqual({ closed: 1, notIdle: 0 });
+    expect(await closer(b, crashing).sweep()).toEqual({ closed: 0, notIdle: 0, failed: 1 });
+    expect(await closer(b).sweep()).toEqual({ closed: 1, notIdle: 0, failed: 0 });
     expect(await bindings(b)).toEqual([{ task_id: taskId, status: 'closed', closed_reason: 'idle_timeout' }]);
     expect(await b.rows(`select 1 from temporal_events where task_id = $1 and event_type = 'task.cancelled'`, [taskId])).toHaveLength(1);
   });
@@ -245,9 +245,71 @@ describe('case idle close (R4_PROD_CASE_IDLE_CLOSE_HOURS)', { timeout: 90_000 },
     await idleFor(b, 2 * DAY);
     const results = await Promise.all([closer(b).sweep(), closer(b).sweep(), sweep(b)]);
     expect(results.reduce((n, r) => n + r.notIdle, 0)).toBe(0);
+    // Only the sweep that actually closed the binding counts it.
+    expect(results.reduce((n, r) => n + r.closed, 0)).toBe(1);
     expect(await taskRow(b, taskId)).toEqual({ status: 'cancelled', status_reason: 'idle_timeout' });
     expect(await b.rows(`select 1 from temporal_events where task_id = $1 and event_type = 'task.cancelled'`, [taskId])).toHaveLength(1);
     expect(await bindings(b)).toEqual([{ task_id: taskId, status: 'closed', closed_reason: 'idle_timeout' }]);
+  });
+
+  it('the Core re-check under the lock refuses an open delivery even when the pre-selection let it through', async () => {
+    const b = await start();
+    b.next(say('Te respondo enseguida.'));
+    await b.customer(CUSTOMER, 'wamid.v1', 'Hola');
+    await b.runAgent();
+    const taskId = await b.taskOf(CUSTOMER);
+    await b.store.materializeResponses({ limit: 10 });
+    await idleFor(b, 2 * DAY);
+    const [binding] = await b.rows<{ binding_id: string }>('select binding_id from channel_conversation_bindings');
+    const stale = new Proxy(b.store, {
+      get(target, property) {
+        if (property === 'idleConversations') return () => Promise.resolve([{ bindingId: binding!.binding_id, channel: 'whatsapp', taskId, taskStatus: 'waiting' }]);
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(target) : value;
+      },
+    });
+    expect(await closer(b, stale).sweep()).toEqual({ closed: 0, notIdle: 1, failed: 0 });
+    expect((await taskRow(b, taskId)).status).toBe('waiting');
+  });
+
+  it('one failing candidate does not stop the others, and a binding someone else closed is not counted', async () => {
+    const b = await start();
+    const taskId = await answered(b, 'wamid.f1', 'Hola', 'Hola, ¿en qué te ayudo?');
+    await idleFor(b, 2 * DAY);
+    const missing = { bindingId: '01a19ddb-0000-7000-8000-00000000dead', channel: 'whatsapp', taskId: '01a19ddb-0000-7000-8000-00000000beef', taskStatus: 'waiting' };
+    const failing = new Proxy(b.store, {
+      get(target, property) {
+        if (property === 'idleConversations') return async (command: Parameters<ProductionStore['idleConversations']>[0]) => [missing, ...(await target.idleConversations(command))];
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(target) : value;
+      },
+    });
+    expect(await closer(b, failing).sweep()).toEqual({ closed: 1, notIdle: 0, failed: 1 });
+    expect(await taskRow(b, taskId)).toEqual({ status: 'cancelled', status_reason: 'idle_timeout' });
+    // A stale candidate whose binding is already closed: nothing to count.
+    const [binding] = await b.rows<{ binding_id: string }>('select binding_id from channel_conversation_bindings');
+    const stale = new Proxy(b.store, {
+      get(target, property) {
+        if (property === 'idleConversations') return () => Promise.resolve([{ bindingId: binding!.binding_id, channel: 'whatsapp', taskId, taskStatus: 'cancelled' }]);
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(target) : value;
+      },
+    });
+    expect(await closer(b, stale).sweep()).toEqual({ closed: 0, notIdle: 0, failed: 0 });
+  });
+
+  it('a message received but not ingested yet (e.g. an image being perceived) keeps the case open', async () => {
+    const b = await start();
+    const taskId = await answered(b, 'wamid.i1', 'Hola', 'Hola, ¿en qué te ayudo?');
+    await idleFor(b, 2 * DAY);
+    const { record } = await b.store.recordInbound({
+      inboundId: '01a19ddb-0000-7000-8000-0000000000a1', channel: 'whatsapp', providerEventId: 'wamid.i2', contentKind: 'media', contentType: 'image', content: 'x', contentSha256: null,
+      conversationKey: keyOf(CUSTOMER), accountRef: 'acct', conversationRef: CUSTOMER, occurredAt: new Date().toISOString(), status: 'received', failureCode: null, correlationId: 'test',
+    });
+    expect(await sweep(b)).toEqual({ closed: 0, notIdle: 0, failed: 0 });
+    expect((await taskRow(b, taskId)).status).toBe('waiting');
+    await b.store.settleInbound(record.inboundId, { status: 'failed', failureCode: 'test' });
+    expect(await sweep(b)).toEqual({ closed: 1, notIdle: 0, failed: 0 });
   });
 
   it('a message racing the sweep is never lost: it is an input of a live task, old or new', async () => {

@@ -6,7 +6,7 @@ const DAY = 86_400_000;
 const NOW = '2026-11-17T12:00:00.000Z';
 const ago = (ms: number) => new Date(Date.parse(NOW) - ms).toISOString();
 const idle: IdleFacts = {
-  status: 'waiting', waitKind: 'WAIT_FOR_INPUT', terminalIntent: false, openHumanRequests: 0, unsettledActions: 0, approvalPending: false,
+  status: 'waiting', waitKind: 'WAIT_FOR_INPUT', terminalIntent: false, openHumanRequests: 0, unsettledActions: 0, openDeliveries: 0, approvalPending: false,
   lastActivityAt: ago(DAY + 1), now: NOW, idleForMs: DAY,
 };
 
@@ -26,6 +26,7 @@ describe('case idle close: the selection rule (idleRefusal)', () => {
     expect(idleRefusal({ ...idle, terminalIntent: true })).toBe('terminal_intent');
     expect(idleRefusal({ ...idle, openHumanRequests: 1 })).toBe('human_request_open');
     expect(idleRefusal({ ...idle, unsettledActions: 1 })).toBe('action_unsettled');
+    expect(idleRefusal({ ...idle, openDeliveries: 1 })).toBe('delivery_open');
     expect(idleRefusal({ ...idle, approvalPending: true })).toBe('approval_pending');
   });
 });

@@ -24,7 +24,7 @@ function shownBy(step: QueuedStep): { step: QueuedStep; seen: () => Record<strin
 }
 const agentTurns = (items: Record<string, unknown>[]) =>
   items.filter((i) => i.kind === 'conversation_turn' && (i.content as { actor: { role: string } }).actor.role === 'agent').map((i) => (i.content as { text: string }).text);
-const deliveryEpisodes = (items: Record<string, unknown>[]) => items.filter((i) => String(i.itemId).startsWith('delivery:')).map((i) => i.content as { status: string; reason: string | null });
+const deliveryEpisodes = (items: Record<string, unknown>[]) => items.filter((i) => String(i.itemId).startsWith('delivery:')).map((i) => i.content as { status: string; meaning: string; reason: string | null });
 
 describe('a cancelled reply is not in the agent context as said', { timeout: 90_000 }, () => {
   it('superseded by a newer message: left out while pending (it can only be cancelled) and once cancelled; the delivery episode says it was not sent', async () => {
@@ -39,6 +39,7 @@ describe('a cancelled reply is not in the agent context as said', { timeout: 90_
     await b.customer(CUSTOMER, 'wamid.s2', 'Mejor uno plegable');
     await b.runAgent();
     expect(agentTurns(whilePending.seen())).toEqual([]);
+    expect(deliveryEpisodes(whilePending.seen())).toEqual([expect.objectContaining({ status: 'pending', meaning: expect.stringMatching(/^it will NOT be sent/) })]);
     await b.deliver();
     expect(await b.rows('select status, cancel_reason from outbound_messages order by created_at')).toEqual([
       { status: 'cancelled', cancel_reason: 'superseded_by_newer_input' },
@@ -71,6 +72,32 @@ describe('a cancelled reply is not in the agent context as said', { timeout: 90_
     // The operator thread still shows every message with its delivery state.
     const thread = await b.store.thread((await b.rows<{ task_id: string }>('select task_id from agent_tasks order by created_at limit 1'))[0]!.task_id);
     expect(thread.find((e) => e.text?.startsWith('Borrador'))?.delivery).toMatchObject({ status: 'cancelled', cancelReason: 'superseded_by_newer_input' });
+  });
+
+  it('the production race: the second message arrives during the first reply\'s model call, and run 2 compiles before the reply is materialized', async () => {
+    const b = (bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER], autonomy: true }));
+    // Run 1's model call: the contact writes again while the model drafts the reply.
+    b.next(async () => {
+      await b.customer(CUSTOMER, 'wamid.p2', 'Mejor uno plegable');
+      return say('Borrador: el banco Atlas cuesta $89.990.');
+    });
+    const run2 = shownBy(say('Te cuento de ambos bancos.'));
+    b.next(run2.step);
+    await b.customer(CUSTOMER, 'wamid.p1', 'Hola, busco un banco');
+    // No delivery tick between the runs: run 2 is claimed at once, before the gateway materializes the first reply.
+    await b.runAgent();
+    expect(await b.rows<{ n: number }>('select count(*)::int as n from agent_runs')).toEqual([{ n: 2 }]);
+    expect(await b.rows('select 1 from outbound_messages')).toEqual([]);
+    expect(agentTurns(run2.seen())).toEqual([]);
+    expect(JSON.stringify(run2.seen())).not.toContain('Borrador');
+    // Materialized afterwards, it is cancelled as superseded and never sent; the second reply is.
+    await b.deliver();
+    await b.deliver();
+    expect(await b.rows('select status, cancel_reason from outbound_messages order by created_at')).toEqual([
+      { status: 'cancelled', cancel_reason: 'superseded_by_newer_input' },
+      { status: 'accepted', cancel_reason: null },
+    ]);
+    expect(b.provider.sends.map((s) => s.text)).toEqual(['Te cuento de ambos bancos.']);
   });
 
   it('a delivered reply stays said', async () => {
