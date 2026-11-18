@@ -295,14 +295,26 @@ describe('OpenAICompatibleModelProvider', () => {
   });
 
   it.each([
-    [402, 'Insufficient Balance', 'quota_exhausted', false],
-    [402, 'This request requires more credits', 'quota_exhausted', false],
-    [403, 'Key limit exceeded (total limit). Manage it using the settings page', 'quota_exhausted', false],
-    [429, 'Your account has insufficient credits', 'quota_exhausted', false],
-    [429, 'Rate limit exceeded, retry shortly', 'rate_limited', true],
+    // balance: the account has nothing left to spend
+    [402, 'Insufficient Balance', 'insufficient_balance', false],
+    [402, 'Your account or API key has insufficient credits. Add more credits and re-run your request.', 'insufficient_balance', false],
+    [402, 'This request requires more credits, or fewer max_tokens. You requested up to 4096 tokens, but can only afford 1200.', 'insufficient_balance', false],
+    [402, 'Payment Required', 'insufficient_balance', false],
+    [429, 'You exceeded your current quota, please check your plan and billing details.', 'insufficient_balance', false],
+    // spend limit: a key, workspace or budget cap, whatever the status
+    [403, 'Key limit exceeded (total limit). Manage it using the key settings page.', 'spend_limit_reached', false],
+    [403, 'Key limit exceeded (monthly limit). Manage it using the key settings page.', 'spend_limit_reached', false],
+    [402, 'Workspace budget exceeded: spend has reached the monthly limit of $10.', 'spend_limit_reached', false],
+    [429, 'Spend limit reached for this API key.', 'spend_limit_reached', false],
+    // rate saturation: load, retryable, even when the text also mentions credits
+    [429, 'Rate limit exceeded: new-account-rpm/openai/gpt-6-luna: new accounts are limited to 20 requests per minute for this model', 'rate_limited', true],
+    [429, 'Rate limit exceeded: free-models-per-min. Add credits to raise the limit.', 'rate_limited', true],
+    [429, 'Too Many Requests', 'rate_limited', true],
+    // anything else keeps its old meaning
     [403, 'Forbidden', 'provider_error', false],
+    [403, 'Insufficient permissions for this model', 'provider_error', false],
   ] as const)('maps HTTP %i "%s" to %s (retryable=%s): a refusal for money is never retried', async (status, message, kind, retryable) => {
-    const { fetch } = fakeFetch(() => ({ status, body: { error: { message } } }));
+    const { fetch } = fakeFetch(() => ({ status, body: { error: { message, code: status } } }));
     const result = await new DefaultModelGateway({ provider: new OpenAICompatibleModelProvider(CONFIG, { fetch }), logger: createSilentLogger() }).generate(request());
     expect(result).toMatchObject({ ok: false, error: { kind, retryable } });
   });

@@ -93,8 +93,10 @@ export interface ModelResponse {
 export type ModelErrorKind =
   | 'provider_error'
   | 'rate_limited'
-  /** The provider refuses for money, not load: no balance or credits, or a spend limit reached. Never retryable. */
-  | 'quota_exhausted'
+  /** The provider refuses for money: the account has no balance or credits left. Never retryable. */
+  | 'insufficient_balance'
+  /** The provider refuses for money: a key, workspace or budget spend cap is reached. Never retryable. */
+  | 'spend_limit_reached'
   | 'timeout'
   | 'cancelled'
   | 'invalid_provider_response';

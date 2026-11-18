@@ -97,4 +97,8 @@ assert.equal(recovered.recoveries, 1);
 assert.deepEqual(recovered.latencyS, { p50: 130, p90: 130, p95: 130 }); // measured from the failed turn's input
 assert.equal(recovered.unansweredInputs, 0);
 assert.equal(r.tasksBySegment.find((g) => g.key === 'other:denied').estimatedCostUsd, 6); // but the task's cost covers its whole life
+// A key that cannot read the account balance: the measured cost falls back to the key's own usage, labelled as such.
+writeFileSync(join(dir, 'usage.jsonl'), ['2026-11-02T00:00:00Z', '2026-11-15T00:00:00Z'].map((at, i) => JSON.stringify({ at, keyUsageUsd: [3, 4][i] })).join(String.fromCharCode(10)));
+execFileSync(process.execPath, [fileURLToPath(new URL('./report.mjs', import.meta.url)), join(dir, 'facts.json'), '--models', join(dir, 'models.json'), '--measured', join(dir, 'usage.jsonl'), '--json', join(dir, 'out.json')]);
+assert.deepEqual(JSON.parse(readFileSync(join(dir, 'out.json'), 'utf8')).costs.measured, { usd: 1, from: '2026-11-02T00:00:00Z', to: '2026-11-15T00:00:00Z', scope: 'this API key only' });
 process.stdout.write('report.mjs self-check: OK\n');
