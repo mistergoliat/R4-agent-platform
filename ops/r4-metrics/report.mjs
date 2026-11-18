@@ -12,9 +12,10 @@
 // per call, so a window not covered is 'unattributed' and gets no cost). It is an upper bound for the calls R4 records:
 // every input token is priced as not cached (the database keeps no cache counts); perception (vision, speech) calls are
 // not in it. MEASURED = the provider's own account usage: --measured takes the snapshots the provider budget monitor
-// (ops/r4-provider-budget, its own PR) appends, {"at", "accountUsageUsd"} per line, and reports the spend between the first and the
-// last snapshot inside the window. It covers the whole provider account (every worker, web QA and perception), and it is
-// wrong across a usage-counter reset (a new account). Not visible here: quote executions still held, with no receipt yet.
+// (ops/r4-provider-budget) appends, {"at", "accountUsageUsd", "keyUsageUsd"} per line, and reports the spend between the
+// first and the last snapshot inside the window. It covers the whole provider account (every worker, web QA and
+// perception) when the key may read it; otherwise it is this key's own usage, labelled as such. It is wrong across a
+// usage-counter reset (a new account or key). Not visible here: quote executions still held, with no receipt yet.
 // TURN tables cover the runs started in the window; TASK tables cover each task of the population whole. Output: text on stdout; --json also writes the aggregates.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
@@ -152,12 +153,16 @@ function groupTasks(key) {
 
 const measured = (() => {
   if (!args.measured) return null;
-  const inWindow = readFileSync(args.measured, 'utf8').split(/\r?\n/).filter(Boolean).map((l) => JSON.parse(l))
-    .filter((p) => Number.isFinite(p.accountUsageUsd) && Date.parse(p.at) >= Date.parse(facts.since) && Date.parse(p.at) <= Date.parse(facts.generatedAt))
+  const snapshots = readFileSync(args.measured, 'utf8').split(/\r?\n/).filter(Boolean).map((l) => JSON.parse(l))
+    .filter((p) => Date.parse(p.at) >= Date.parse(facts.since) && Date.parse(p.at) <= Date.parse(facts.generatedAt))
     .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  // The account's usage when the key may read it; otherwise the key's own lifetime usage (a key that cannot read /credits).
+  const series = (field) => snapshots.filter((p) => Number.isFinite(p[field]));
+  const [field, scope] = series('accountUsageUsd').length >= 2 ? ['accountUsageUsd', 'whole provider account'] : ['keyUsageUsd', 'this API key only'];
+  const inWindow = series(field);
   if (inWindow.length < 2) return { usd: null, note: 'fewer than two provider snapshots in the window' };
   const [first, last] = [inWindow[0], inWindow.at(-1)];
-  return { usd: last.accountUsageUsd - first.accountUsageUsd, from: first.at, to: last.at, scope: 'whole provider account' };
+  return { usd: last[field] - first[field], from: first.at, to: last.at, scope };
 })();
 
 const report = {
