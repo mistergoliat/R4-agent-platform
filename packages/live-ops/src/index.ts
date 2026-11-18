@@ -14,3 +14,4 @@ export * from './operator.js';
 export * from './context-source.js';
 export * from './guard.js';
 export * from './administration.js';
+export * from './idle-close.js';

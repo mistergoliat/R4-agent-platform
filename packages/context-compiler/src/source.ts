@@ -82,6 +82,11 @@ export interface InteractionFacts {
   readonly waits: readonly TaskWait[];
   /** (R4-J4-R7-2) `turn.closure.reconsider` events: a silent closing the platform asked the agent to reconsider. */
   readonly closures?: readonly TemporalEvent[];
+  /**
+   * `respond` steps the participant will never receive (delivery cancelled before sending, or causally superseded):
+   * never projected as said, in this run or an earlier one. The delivery owner's episode says they were not sent.
+   */
+  readonly withdrawnResponses?: readonly string[];
 }
 
 export interface ContextSourceRequest {
