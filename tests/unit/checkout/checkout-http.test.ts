@@ -198,3 +198,31 @@ describe('sandbox consent directory (R-3: Checkout-issued artifacts only, R4 nev
     expect(() => new SandboxConsentDirectory({ dir: 'relative/dir' })).toThrow(/absolute/);
   });
 });
+
+describe('F2-R03: the CIA purchase grant in its own header', () => {
+  const request = { quoteId: SESSION.quote.quoteId, quoteVersion: 2, consent: { format: 'checkout-sbx-test-consent.v1', token: 'x'.repeat(40) } };
+  const GRANT = 'eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJl';
+
+  it('is sent only in x-customer-access-grant, never in the body or the telemetry', async () => {
+    const t = stub(() => ({ status: 201, body: SESSION }));
+    const events: CheckoutCallTelemetry[] = [];
+    await client(t.fetch, (e) => events.push(e)).createSession({ ...request, customerAccessGrant: GRANT }, KEY);
+    expect(t.calls[0]!.headers['x-customer-access-grant']).toBe(GRANT);
+    expect(JSON.parse(t.calls[0]!.body!)).toEqual(request);
+    expect(JSON.stringify(events)).not.toContain(GRANT);
+  });
+
+  it('absent grant = no header (today\'s request, unchanged)', async () => {
+    const t = stub(() => ({ status: 201, body: SESSION }));
+    await client(t.fetch).createSession(request, KEY);
+    expect(Object.keys(t.calls[0]!.headers)).not.toContain('x-customer-access-grant');
+  });
+
+  it('a grant that is not a compact JWS is refused before anything is sent', async () => {
+    for (const bad of ['', 'not-a-jws', 'a.b', 'a.b.c\nx', `${'a'.repeat(4096)}.b.c`]) {
+      const t = stub(() => ({ status: 201, body: SESSION }));
+      await expect(client(t.fetch).createSession({ ...request, customerAccessGrant: bad }, KEY)).rejects.toMatchObject({ code: 'invalid_customer_access_grant' });
+      expect(t.calls).toHaveLength(0);
+    }
+  });
+});

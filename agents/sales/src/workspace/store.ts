@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import type { QuoteV2CreateRequest } from '@r4-adapters/domains';
+import type { PurchaseActEvidence } from '../capabilities/purchase-act.js';
 import { applyOperations, emptyWorkspace, type Workspace, type WorkspaceApplication, type WorkspaceChange, type WorkspaceState, type WorkspaceUpdateInput, type WorkspaceUpdateV2Input } from './model.js';
 
 /** Who a conversation acts for, as the Sales ingress established it. */
@@ -65,6 +66,12 @@ export interface CheckoutPurchaseRequestRecord {
   readonly quoteVersion: number;
   readonly consent: { readonly format: string; readonly token: string };
   readonly recordedAt: string;
+}
+
+/** (0012, F2-R02) The customer's purchase act recorded for one checkout.start_purchase execution: ids, times and a hash only. */
+export interface PurchaseActRecord extends PurchaseActEvidence {
+  readonly executionKey: string;
+  readonly taskId: string;
 }
 
 /** (0010) A Checkout session of the conversation, with the quote it buys. */
@@ -378,6 +385,61 @@ export class PostgresSalesStore {
     const stored = await this.checkoutPurchaseRequest(request.executionKey);
     if (!stored) throw new Error(`checkout purchase request ${request.executionKey} was not recorded`);
     return stored;
+  }
+
+  /**
+   * (0010 + 0012, F2-R02) Freezes the create-session body AND records the customer's purchase act, in one transaction,
+   * once per execution key. `input_already_used` (nothing written) when that customer message is already the act of
+   * ANOTHER quote or quote version; starts of the same quote may share it. A replay of the same key returns the stored
+   * body; if the stored act names another input, quote or version, it throws (a key never changes what it recorded).
+   */
+  async recordCheckoutPurchaseRequestWithAct(request: Omit<CheckoutPurchaseRequestRecord, 'recordedAt'>, act: PurchaseActEvidence): Promise<CheckoutPurchaseRequestRecord | 'input_already_used'> {
+    if (act.quoteId !== request.quoteId || act.quoteVersion !== request.quoteVersion) throw new Error('the purchase act names another quote than the request');
+    const client = await this.#pool.connect();
+    try {
+      await client.query('begin');
+      await client.query('select pg_advisory_xact_lock(hashtextextended($1, 12))', [act.requestInputId]);
+      const stored = await this.purchaseAct(request.executionKey, client);
+      if (stored) {
+        if (stored.requestInputId !== act.requestInputId || stored.quoteId !== act.quoteId || stored.quoteVersion !== act.quoteVersion) throw new Error(`execution ${request.executionKey} already recorded another purchase act`);
+      } else {
+        const other = await client.query('select 1 from sales.purchase_act_evidence where request_input_id = $1 and (quote_id <> $2 or quote_version <> $3) limit 1', [act.requestInputId, act.quoteId, act.quoteVersion]);
+        if (other.rowCount) {
+          await client.query('rollback');
+          return 'input_already_used';
+        }
+        await client.query(
+          `insert into sales.checkout_purchase_requests (execution_key, task_id, quote_id, quote_version, consent_format, consent_token) values ($1, $2, $3, $4, $5, $6)
+           on conflict (execution_key) do nothing`,
+          [request.executionKey, request.taskId, request.quoteId, request.quoteVersion, request.consent.format, request.consent.token],
+        );
+        await client.query(
+          `insert into sales.purchase_act_evidence (execution_key, task_id, quote_id, quote_version, quote_recorded_at, request_input_id, request_at, request_text_sha256, grammar_version)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [request.executionKey, request.taskId, act.quoteId, act.quoteVersion, act.quoteRecordedAt, act.requestInputId, act.requestAt, act.requestTextSha256, act.grammarVersion],
+        );
+      }
+      await client.query('commit');
+    } catch (error) {
+      await client.query('rollback').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+    const body = await this.checkoutPurchaseRequest(request.executionKey);
+    if (!body) throw new Error(`checkout purchase request ${request.executionKey} was not recorded`);
+    return body;
+  }
+
+  async purchaseAct(executionKey: string, client: pg.Pool | pg.PoolClient = this.#pool): Promise<PurchaseActRecord | null> {
+    const r = await client.query<{ execution_key: string; task_id: string; quote_id: string; quote_version: number; quote_recorded_at: Date; request_input_id: string; request_at: Date; request_text_sha256: string; grammar_version: string }>(
+      'select * from sales.purchase_act_evidence where execution_key = $1',
+      [executionKey],
+    );
+    const row = r.rows[0];
+    return row
+      ? { executionKey: row.execution_key, taskId: row.task_id, quoteId: row.quote_id, quoteVersion: row.quote_version, quoteRecordedAt: row.quote_recorded_at.toISOString(), requestInputId: row.request_input_id, requestAt: row.request_at.toISOString(), requestTextSha256: row.request_text_sha256, grammarVersion: row.grammar_version }
+      : null;
   }
 
   async checkoutPurchaseRequest(executionKey: string): Promise<CheckoutPurchaseRequestRecord | null> {

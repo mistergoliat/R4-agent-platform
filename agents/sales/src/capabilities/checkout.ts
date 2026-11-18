@@ -19,7 +19,7 @@ import {
 import { CapabilityFailure, type CapabilityRegistration, type WriteCapabilityRegistration, type WriteExecutionResult, type WriteHandlerContext, type WriteReconciliationResult } from '@r4/capability-runtime';
 import { CHECKOUT_CAPABILITY_IDS, CHECKOUT_SCOPES } from '../ids.js';
 import type { PostgresSalesStore } from '../workspace/store.js';
-import { normalizeMessage } from './confirmation-grammar.js';
+import { PURCHASE_GRAMMAR_VERSION, isExplicitPurchaseRequest, purchaseActEvidence } from './purchase-act.js';
 import type { ConversationThreadEntry, ConversationThreadReader } from './quote-v4.js';
 
 /**
@@ -50,6 +50,11 @@ export interface CheckoutCapabilityDeps {
   readonly consent: CheckoutConsentSource;
   readonly conversation: ConversationThreadReader;
   readonly notices: PlatformNoticeSink;
+  /**
+   * (F2-R02, O-5) Record the customer's purchase act (0012) with the frozen request. OFF unless exactly `true`; no
+   * production profile or app sets it (contract test f2-purchase-boundaries). Off = checkout.start_purchase@1 unchanged.
+   */
+  readonly purchaseActRecording?: boolean;
   readonly now?: () => Date;
   /** Tests: polling bounds and the wait between reads. */
   readonly poll?: { readonly intervalMs: number; readonly prepareMaxMs: number; readonly linkMaxMs: number; readonly sleep?: (ms: number) => Promise<void> };
@@ -88,32 +93,7 @@ export const CHECKOUT_WRITE_TIMEOUT_MS = 75_000;
 
 // ---------------------------------------------------------------------------------------------- purchase grammar
 
-export const PURCHASE_GRAMMAR_VERSION = 'r4-sales-purchase-es-v1';
-const PURCHASE_REQUESTS: ReadonlySet<string> = new Set([
-  'quiero pagar', 'quiero comprar', 'quiero comprarlo', 'quiero comprarla', 'lo compro', 'la compro', 'compro', 'pagar', 'quiero pagarlo', 'quiero pagarla',
-  'envíame el link de pago', 'enviame el link de pago', 'mandame el link de pago', 'mándame el link de pago', 'quiero el link de pago', 'el link de pago', 'link de pago',
-  'quiero un link nuevo', 'quiero un nuevo link', 'mandame otro link', 'enviame otro link', 'otro link de pago', 'nuevo link de pago',
-].map(normalizeMessage));
-const AFFIRMATIONS = ['si', 'ok', 'dale', 'perfecto', 'listo', 'claro', 'si claro'];
-const COURTESY = ['', 'por favor', 'porfa', 'gracias'];
-const PURCHASE_DISQUALIFIERS = /\b(no|nunca|todavia|aun|pero|aunque|cambia|cambiar|despues|luego|espera|esperar|quizas|tal vez|creo|cuanto|cuando|que pasa)\b/;
-
-/**
- * Whether one customer message is an explicit, unconditional request to pay (`[AFFIRMATION] REQUEST [COURTESY]`
- * over a closed phrase list). Questions, conditions and anything outside the list are not. Pure and deterministic.
- */
-export function isExplicitPurchaseRequest(text: string | null): boolean {
-  if (text === null || text.length > 120 || /[?¿]/.test(text)) return false;
-  const n = normalizeMessage(text);
-  if (n === '' || PURCHASE_DISQUALIFIERS.test(n)) return false;
-  for (const a of ['', ...AFFIRMATIONS]) {
-    for (const c of COURTESY) {
-      const core = n.slice(a ? a.length + 1 : 0, c ? n.length - c.length - 1 : n.length).trim();
-      if ((a === '' || n.startsWith(`${a} `)) && (c === '' || n.endsWith(` ${c}`)) && PURCHASE_REQUESTS.has(core)) return true;
-    }
-  }
-  return false;
-}
+// The grammar r4-sales-purchase-es-v1 lives in purchase-act.ts (one module, no import cycle).
 
 /** The latest contact message after `since` (exclusive), when it is an explicit purchase request. */
 function explicitRequestSince(thread: readonly ConversationThreadEntry[], since: string): ConversationThreadEntry | null {
@@ -249,23 +229,37 @@ export function checkoutStartPurchaseCapability(deps: CheckoutCapabilityDeps): W
       if (!record) {
         const limited = await financialLimitReached(deps, taskId, context.executionKey, callOptions(context));
         if (limited) return limited;
-        const issued = (await deps.store.quoteV2Issued(taskId)).find((q) => q.quoteId === input.quoteId);
+        const issuedInTask = await deps.store.quoteV2Issued(taskId);
+        const issued = issuedInTask.find((q) => q.quoteId === input.quoteId);
         if (!issued) return rejected('quote_not_in_conversation', 'only a quote issued in this conversation can be bought');
         let quoteVersion: number;
+        let validUntilExclusive: string;
         try {
           const quote = await deps.quotes.getQuote(input.quoteId, callOptions(context));
           if (quote.status !== 'issued') return rejected('checkout_not_purchasable', `the quote is ${quote.status}`, { quoteStatus: quote.status });
           if (!quote.validity || Date.parse(quote.validity.validUntilExclusive) <= now().getTime()) return rejected('checkout_not_purchasable', 'the quote is no longer valid; a new quote is needed');
           quoteVersion = quote.version;
+          validUntilExclusive = quote.validity.validUntilExclusive;
         } catch (error) {
           if (error instanceof DomainError) return { status: 'failed', code: 'quote_unavailable', message: error.message, details: { category: error.category, retryable: error.retryable } };
           throw error;
         }
-        const request = explicitRequestSince(await deps.conversation.thread(taskId), issued.issuedAt);
+        const thread = await deps.conversation.thread(taskId);
+        const request = explicitRequestSince(thread, issued.issuedAt);
         if (!request) return rejected('purchase_not_requested', 'the customer\'s latest message after the quote is not an explicit request to pay', { grammar: PURCHASE_GRAMMAR_VERSION });
+        // (F2-R02) The act is checked before anything else is asked for, and written only with the frozen body below.
+        const act = deps.purchaseActRecording === true ? purchaseActEvidence(thread, { quoteId: input.quoteId, quoteVersion, recordedAt: issued.recordedAt, validUntilExclusive }, issuedInTask) : null;
+        if (act && act.status !== 'recorded') return rejected('purchase_act_not_recorded', 'the customer\'s request to pay is not about this quote, the latest one shown', { reason: act.code, grammar: PURCHASE_GRAMMAR_VERSION });
         const consent = await deps.consent.obtain({ taskId, quoteId: input.quoteId, quoteVersion }, callOptions(context));
         if (!consent) return rejected('purchase_consent_unavailable', 'no purchase consent artifact can be issued for this buyer (contract R-3)');
-        record = await deps.store.recordCheckoutPurchaseRequest({ executionKey: context.executionKey, taskId, quoteId: input.quoteId, quoteVersion, consent });
+        const body = { executionKey: context.executionKey, taskId, quoteId: input.quoteId, quoteVersion, consent };
+        if (act) {
+          const stored = await deps.store.recordCheckoutPurchaseRequestWithAct(body, act.evidence);
+          if (stored === 'input_already_used') return rejected('purchase_act_already_used', 'that customer message is already the request to pay another quote; a new explicit request is needed');
+          record = stored;
+        } else {
+          record = await deps.store.recordCheckoutPurchaseRequest(body);
+        }
       }
       try {
         const created = await deps.checkout.createSession({ quoteId: record.quoteId, quoteVersion: record.quoteVersion, consent: record.consent }, checkoutIdempotencyKey(context.executionKey, 'session'), callOptions(context));

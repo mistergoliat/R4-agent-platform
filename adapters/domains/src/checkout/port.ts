@@ -65,6 +65,12 @@ export interface CheckoutCreateSessionRequest {
   readonly quoteId: string;
   readonly quoteVersion: number;
   readonly consent: CheckoutConsentEvidence;
+  /**
+   * (F2-R03, R4L-D3 / O-5) The CIA `purpose: purchase` grant, opaque, relayed in its own header (`x-customer-access-grant`,
+   * Checkout /v1 1.0.4-proposed). Obtained at call time: never frozen with the request, persisted, logged or shown to the
+   * model. No R4 code obtains one yet (the CIA has no `purchase` purpose): absent = today's request, unchanged.
+   */
+  readonly customerAccessGrant?: string;
 }
 
 /** A command's answer: the view, and whether Checkout replayed a stored answer for the same key (`Idempotent-Replay`). */
