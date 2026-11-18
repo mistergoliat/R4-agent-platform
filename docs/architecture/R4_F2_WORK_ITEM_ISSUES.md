@@ -1,12 +1,20 @@
 ---
 title: R4 F2 — Cuerpos de issue por item de trabajo (listos para pegar)
-status: BORRADOR — no se creó ningún issue; generado desde la tabla de R4_F2_WORK_ITEMS.md §1
+status: LISTO PARA PEGAR — O-5 y O-6 aprobados (2026-11-18); no se creó ningún issue; generado desde la tabla de R4_F2_WORK_ITEMS.md §1
 date: 2026-11-18
 ---
 
-# F2 — Borradores de issues
+# F2 — Cuerpos de issue
 
 Uno por item de R4_F2_WORK_ITEMS.md (`docs/architecture/R4_F2_WORK_ITEMS.md`). Título sugerido = `[F2-xxx] <entregable>`. Etiquetas sugeridas: `f2` + el área. Sin datos productivos: los valores de tienda, hosts y credenciales van fuera de los repositorios públicos.
+
+## Decisiones aprobadas (owner, 2026-11-18)
+
+- **O-5:** «Checkout issues the purchase-consent evidence from an explicit act that R4 records and transmits.» Registro: `docs/architecture/R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` (opción D; identidad = grant CIA `purchase` relevado en `x-customer-access-grant`).
+- **O-6:** «Delivery is integrated through a PrestaShop module that preserves exactly the commercial conditions authorized by Quote.» Registro: `docs/architecture/R4_F2_O6_DELIVERY_CART_DECISION.md` (opción C; requisitos M-1..M-6; sin recálculo silencioso).
+- Pagos y rollout real siguen deshabilitados.
+
+Los items marcados «Hecho» están cerrados: no abrir issue.
 
 ---
 
@@ -29,54 +37,55 @@ Revisión y merge del PR #64 (plan + auditoría R4-L)
 
 **¿Puede empezar ahora?** Sí
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-D01); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-D01); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
-## [F2-D02] Decisión O-5 y R4L-D2 sobre el registro O-5 (`docs/architecture/R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md`)
+## [F2-D02] O-5: emisor del consentimiento
 
 **Repositorio / destino:** R4-agent-platform (decisión del owner; issue de seguimiento) · **Etiquetas:** `f2`, `decision`
 
-**Dueño:** Owner + Checkout + CIA (decisión)
+**Dueño:** Owner (decisión)
 
 **Entregable**
 
-Decisión O-5 y R4L-D2 sobre el registro O-5 (`docs/architecture/R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md`)
+O-5: emisor del consentimiento
 
 **Criterios de aceptación**
 
-- [ ] El registro pasa a DECIDIDO con respuesta a Q1..Q6
+- [ ] Aprobado 2026-11-18: opción D
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** —
 
-**¿Puede empezar ahora?** Sí
+**¿Puede empezar ahora?** Hecho
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-D02); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
+**Decisión aplicable:** O-5 aprobada (opción D: Checkout emite la evidencia de consentimiento desde el acto que R4 registra y transmite)
 
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-D02); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
-## [F2-D03] Decisión O-6 sobre el registro O-6 (`docs/architecture/R4_F2_O6_DELIVERY_CART_DECISION.md`)
+## [F2-D03] O-6: entrega y carrito
 
 **Repositorio / destino:** R4-agent-platform (decisión del owner; issue de seguimiento) · **Etiquetas:** `f2`, `decision`
 
-**Dueño:** Owner comercial + e-commerce (decisión)
+**Dueño:** Owner (decisión)
 
 **Entregable**
 
-Decisión O-6 sobre el registro O-6 (`docs/architecture/R4_F2_O6_DELIVERY_CART_DECISION.md`)
+O-6: entrega y carrito
 
 **Criterios de aceptación**
 
-- [ ] El registro pasa a DECIDIDO con opción elegida y respuestas Q1..Q5
+- [ ] Aprobado 2026-11-18: opción C (módulo)
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** —
 
-**¿Puede empezar ahora?** Sí
+**¿Puede empezar ahora?** Hecho
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-D03); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
+**Decisión aplicable:** O-6 aprobada (opción C: módulo de PrestaShop; requisitos M-1..M-6 del registro O-6 §4)
 
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-D03); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-D04] O-7: si un reintento (`waiting_retry`) o un pago offline cuentan como «iniciado» en C1, y tope de demora
@@ -99,8 +108,7 @@ O-7: si un reintento (`waiting_retry`) o un pago offline cuentan como «iniciado
 
 **¿Puede empezar ahora?** Sí
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-D04); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-D04); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-D05] O-4: topología del E2E desde WhatsApp ((a) tienda aislada clonada, (b) E2E hasta la emisión, (c) esperar el camino productivo)
@@ -122,8 +130,7 @@ O-4: topología del E2E desde WhatsApp ((a) tienda aislada clonada, (b) E2E hast
 
 **¿Puede empezar ahora?** Sí
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-D05); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-D05); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-D06] O-8 / D-10: número de perfil y definición del carril de compra sobre el linaje vigente (`@22`)
@@ -146,8 +153,7 @@ O-8 / D-10: número de perfil y definición del carril de compra sobre el linaje
 
 **¿Puede empezar ahora?** Sí
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-D06); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-D06); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-D07] D7-6 / D-06: política FINANCIAL fuera de sandbox (ADR de autonomía con identidad `verified` y tope de importe, o aprobación humana)
@@ -170,8 +176,7 @@ D7-6 / D-06: política FINANCIAL fuera de sandbox (ADR de autonomía con identid
 
 **¿Puede empezar ahora?** Sí (decisión)
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-D07); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-D07); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-D08] R4L-D1: tope de operaciones financieras por task en sandbox (2 hoy; 3 permite un relink)
@@ -194,8 +199,7 @@ R4L-D1: tope de operaciones financieras por task en sandbox (2 hoy; 3 permite un
 
 **¿Puede empezar ahora?** Sí
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-D08); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-D08); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-D09] O-1: nombre del incremento (evitar la colisión con F2 de J5)
@@ -217,8 +221,7 @@ O-1: nombre del incremento (evitar la colisión con F2 de J5)
 
 **¿Puede empezar ahora?** Sí
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-D09); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-D09); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-D10] OA-04 / D7 / J7: correos y datos reales para OTP e identidad
@@ -240,8 +243,103 @@ OA-04 / D7 / J7: correos y datos reales para OTP e identidad
 
 **¿Puede empezar ahora?** Sí (decisión)
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-D10); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-D10); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
+---
 
+## [F2-D11] FU-2 de O-5 (R4L-D2): un consentimiento por sesión con un acto por enlace, o uno por intento
+
+**Repositorio / destino:** R4-agent-platform (decisión del owner; issue de seguimiento) · **Etiquetas:** `f2`, `decision`
+
+**Dueño:** Owner R4 + owner Checkout (decisión)
+
+**Entregable**
+
+FU-2 de O-5 (R4L-D2): un consentimiento por sesión con un acto por enlace, o uno por intento
+
+**Criterios de aceptación**
+
+- [ ] Regla confirmada en el registro O-5 §4
+- [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
+
+**Depende de:** —
+
+**¿Puede empezar ahora?** Sí
+
+**Decisión aplicable:** O-5 aprobada (opción D: Checkout emite la evidencia de consentimiento desde el acto que R4 registra y transmite)
+
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-D11); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
+---
+
+## [F2-D12] FU-4 de O-5: texto legal que acepta el cliente y retención del consentimiento y del mensaje
+
+**Repositorio / destino:** R4-agent-platform (decisión del owner; issue de seguimiento) · **Etiquetas:** `f2`, `decision`
+
+**Dueño:** Owner comercial + legal (decisión)
+
+**Entregable**
+
+FU-4 de O-5: texto legal que acepta el cliente y retención del consentimiento y del mensaje
+
+**Criterios de aceptación**
+
+- [ ] Texto versionado y plazos de retención escritos
+- [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
+
+**Depende de:** —
+
+**¿Puede empezar ahora?** Sí (no bloquea el sandbox)
+
+**Decisión aplicable:** O-5 aprobada (opción D: Checkout emite la evidencia de consentimiento desde el acto que R4 registra y transmite)
+
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-D12); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
+---
+
+## [F2-D13] FU-6 de O-5: ¿el primer E2E exige el texto determinista de compra (F2-R10) o basta la gramática cerrada?
+
+**Repositorio / destino:** R4-agent-platform (decisión del owner; issue de seguimiento) · **Etiquetas:** `f2`, `decision`
+
+**Dueño:** Owner R4 (decisión)
+
+**Entregable**
+
+FU-6 de O-5: ¿el primer E2E exige el texto determinista de compra (F2-R10) o basta la gramática cerrada?
+
+**Criterios de aceptación**
+
+- [ ] Decisión escrita
+- [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
+
+**Depende de:** —
+
+**¿Puede empezar ahora?** Sí
+
+**Decisión aplicable:** O-5 aprobada (opción D: Checkout emite la evidencia de consentimiento desde el acto que R4 registra y transmite)
+
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-D13); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
+---
+
+## [F2-D14] FU-O6-3: ¿un E2E sandbox con retiro (`pickup-zero-v1`) antes del módulo? Opcional; no es parte de O-6
+
+**Repositorio / destino:** R4-agent-platform (decisión del owner; issue de seguimiento) · **Etiquetas:** `f2`, `decision`
+
+**Dueño:** Owner comercial (decisión)
+
+**Entregable**
+
+FU-O6-3: ¿un E2E sandbox con retiro (`pickup-zero-v1`) antes del módulo? Opcional; no es parte de O-6
+
+**Criterios de aceptación**
+
+- [ ] Sí/no escrito y transportista de retiro (O-10) si es sí
+- [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
+
+**Depende de:** —
+
+**¿Puede empezar ahora?** Sí (opcional)
+
+**Decisión aplicable:** O-6 aprobada (opción C: módulo de PrestaShop; requisitos M-1..M-6 del registro O-6 §4)
+
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-D14); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-C01] Publicar el candidato H3 (rama local `docs/h3-purchase-authorization-candidate` @ `39342b2`) en el remoto CIA y abrir PR de revisión
@@ -264,11 +362,10 @@ Publicar el candidato H3 (rama local `docs/h3-purchase-authorization-candidate` 
 
 **¿Puede empezar ahora?** Sí
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-C01); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-C01); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
-## [F2-C02] Aceptación cruzada de H3, incluida X-1 (`azp`, OQ-H3-1), OQ-H3-2 y OQ-H3-10
+## [F2-C02] Aceptación cruzada de H3, incluida X-1 (`azp`, OQ-H3-1), OQ-H3-2 y OQ-H3-10; §10 alineado con O-5 (Checkout emite desde el acto de R4)
 
 **Repositorio / destino:** MS-pesaschile-customer-identity-authority · **Etiquetas:** `f2`, `cia`
 
@@ -276,7 +373,7 @@ Publicar el candidato H3 (rama local `docs/h3-purchase-authorization-candidate` 
 
 **Entregable**
 
-Aceptación cruzada de H3, incluida X-1 (`azp`, OQ-H3-1), OQ-H3-2 y OQ-H3-10
+Aceptación cruzada de H3, incluida X-1 (`azp`, OQ-H3-1), OQ-H3-2 y OQ-H3-10; §10 alineado con O-5 (Checkout emite desde el acto de R4)
 
 **Criterios de aceptación**
 
@@ -288,8 +385,9 @@ Aceptación cruzada de H3, incluida X-1 (`azp`, OQ-H3-1), OQ-H3-2 y OQ-H3-10
 
 **¿Puede empezar ahora?** No
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-C02); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
+**Decisión aplicable:** O-5 aprobada (opción D: Checkout emite la evidencia de consentimiento desde el acto que R4 registra y transmite)
 
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-C02); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-C03] Propósito `purchase` y audiencia por propósito en modo sintético (C-CIA-1/-3; H3-D2/D3)
@@ -313,11 +411,10 @@ Propósito `purchase` y audiencia por propósito en modo sintético (C-CIA-1/-3;
 
 **¿Puede empezar ahora?** No
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-C03); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-C03); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
-## [F2-C04] Frescura de la prueba OTP para `purchase` (OQ-H3-3)
+## [F2-C04] FU-3 de O-5: frescura de la prueba OTP para `purchase` (OQ-H3-3)
 
 **Repositorio / destino:** MS-pesaschile-customer-identity-authority · **Etiquetas:** `f2`, `cia`
 
@@ -325,7 +422,7 @@ Propósito `purchase` y audiencia por propósito en modo sintético (C-CIA-1/-3;
 
 **Entregable**
 
-Frescura de la prueba OTP para `purchase` (OQ-H3-3)
+FU-3 de O-5: frescura de la prueba OTP para `purchase` (OQ-H3-3)
 
 **Criterios de aceptación**
 
@@ -336,8 +433,9 @@ Frescura de la prueba OTP para `purchase` (OQ-H3-3)
 
 **¿Puede empezar ahora?** Sí (decisión)
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-C04); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
+**Decisión aplicable:** O-5 aprobada (opción D: Checkout emite la evidencia de consentimiento desde el acto que R4 registra y transmite)
 
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-C04); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-C05] Modo no sintético: claves en KMS (C-CIA-8, DEP-6), credencial (DEP-2), correo real (DEP-5), revocación (OD-CIA-4)
@@ -360,8 +458,7 @@ Modo no sintético: claves en KMS (C-CIA-8, DEP-6), credencial (DEP-2), correo r
 
 **¿Puede empezar ahora?** No
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-C05); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-C05); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-E01] Productor del proveedor de cuentas (DEP-3, `ACCOUNT_PROVIDER_V1_CONTRACT.md` de la CIA) en la tienda aislada
@@ -385,11 +482,10 @@ Productor del proveedor de cuentas (DEP-3, `ACCOUNT_PROVIDER_V1_CONTRACT.md` de 
 
 **¿Puede empezar ahora?** Sí
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-E01); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-E01); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
-## [F2-E02] Designar el transportista de retiro a costo 0 (E-5 / O-10) en la tienda aislada
+## [F2-E02] Transportista de retiro a costo 0 (E-5 / O-10) en la tienda aislada, sólo si F2-D14 es sí
 
 **Repositorio / destino:** owner e-commerce (fuera de los repos de servicios) · **Etiquetas:** `f2`, `ecommerce`
 
@@ -397,23 +493,21 @@ Productor del proveedor de cuentas (DEP-3, `ACCOUNT_PROVIDER_V1_CONTRACT.md` de 
 
 **Entregable**
 
-Designar el transportista de retiro a costo 0 (E-5 / O-10) en la tienda aislada
+Transportista de retiro a costo 0 (E-5 / O-10) en la tienda aislada, sólo si F2-D14 es sí
 
 **Criterios de aceptación**
 
 - [ ] Referencia documentada fuera del repo público
-- [ ] Quote arranca con `QUOTE_CART_PICKUP_CARRIER_REFERENCE`
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
-**Depende de:** —
+**Depende de:** F2-D14
 
-**¿Puede empezar ahora?** Sí
+**¿Puede empezar ahora?** No
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-E02); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-E02); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
-## [F2-E03] Endpoint gobernado `ps-cart-totals/v1` (E-3) en la tienda aislada
+## [F2-E03] Endpoint gobernado `ps-cart-totals/v1` (E-3) en la tienda aislada, informando el despacho por el camino de la orden (O-6 M-5)
 
 **Repositorio / destino:** owner e-commerce (fuera de los repos de servicios) · **Etiquetas:** `f2`, `ecommerce`
 
@@ -421,20 +515,22 @@ Designar el transportista de retiro a costo 0 (E-5 / O-10) en la tienda aislada
 
 **Entregable**
 
-Endpoint gobernado `ps-cart-totals/v1` (E-3) en la tienda aislada
+Endpoint gobernado `ps-cart-totals/v1` (E-3) en la tienda aislada, informando el despacho por el camino de la orden (O-6 M-5)
 
 **Criterios de aceptación**
 
 - [ ] `parseCartTotals` de Quote lo acepta
 - [ ] `calculationPath` = camino de la orden
+- [ ] `totals.shipping` presente
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** —
 
 **¿Puede empezar ahora?** Sí
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-E03); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
+**Decisión aplicable:** O-6 aprobada (opción C: módulo de PrestaShop; requisitos M-1..M-6 del registro O-6 §4)
 
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-E03); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-E04] Llaves Webservice dedicadas de mínimo privilegio para Quote y Checkout (E-6)
@@ -456,8 +552,7 @@ Llaves Webservice dedicadas de mínimo privilegio para Quote y Checkout (E-6)
 
 **¿Puede empezar ahora?** Sí
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-E04); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-E04); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-E05] Lectura de direcciones existentes del cliente (E-7 / H2)
@@ -480,11 +575,10 @@ Lectura de direcciones existentes del cliente (E-7 / H2)
 
 **¿Puede empezar ahora?** Sí
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-E05); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-E05); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
-## [F2-E06] Inventario B2 (transportistas, rangos, reglas de envío gratis) y mapa estable (transportista, servicio) → referencia de PrestaShop; códigos estables en pc-carrier
+## [F2-E06] FU-O6-2: inventario B2 (transportistas, rangos, reglas de envío gratis) y mapa versionado (transportista, servicio) → referencia de PrestaShop; códigos estables en pc-carrier
 
 **Repositorio / destino:** owner e-commerce (fuera de los repos de servicios) · **Etiquetas:** `f2`, `ecommerce`
 
@@ -492,7 +586,7 @@ Lectura de direcciones existentes del cliente (E-7 / H2)
 
 **Entregable**
 
-Inventario B2 (transportistas, rangos, reglas de envío gratis) y mapa estable (transportista, servicio) → referencia de PrestaShop; códigos estables en pc-carrier
+FU-O6-2: inventario B2 (transportistas, rangos, reglas de envío gratis) y mapa versionado (transportista, servicio) → referencia de PrestaShop; códigos estables en pc-carrier
 
 **Criterios de aceptación**
 
@@ -504,32 +598,45 @@ Inventario B2 (transportistas, rangos, reglas de envío gratis) y mapa estable (
 
 **¿Puede empezar ahora?** Sí
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-E06); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
+**Decisión aplicable:** O-6 aprobada (opción C: módulo de PrestaShop; requisitos M-1..M-6 del registro O-6 §4)
 
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-E06); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
-## [F2-E07] Módulo de transportista con costo congelado (opción C de O-6)
+## [F2-E07] FU-O6-1: **módulo de PrestaShop** que aplica las condiciones de despacho congeladas por Quote (O-6 §4, M-1..M-6): primero el diseño, luego el módulo en la tienda aislada
 
 **Repositorio / destino:** owner e-commerce (fuera de los repos de servicios) · **Etiquetas:** `f2`, `ecommerce`
 
-**Dueño:** e-commerce
+**Dueño:** e-commerce (+ Quote)
 
 **Entregable**
 
-Módulo de transportista con costo congelado (opción C de O-6)
+FU-O6-1: **módulo de PrestaShop** que aplica las condiciones de despacho congeladas por Quote (O-6 §4, M-1..M-6): primero el diseño, luego el módulo en la tienda aislada
 
 **Criterios de aceptación**
 
-- [ ] En la tienda aislada, un carrito preparado por Quote cobra exactamente el despacho escrito por Quote
-- [ ] nadie más puede escribirlo
+- [ ] Diseño aceptado por e-commerce y Quote
+- [ ] en la tienda aislada, un carrito preparado por Quote cobra exactamente el despacho fijado
+- [ ] nadie más puede fijarlo
+- [ ] reglas de envío gratis no lo alteran
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
-**Depende de:** F2-D03 (= C), F2-E06
+**Depende de:** F2-E06 (mapa), F2-E04
 
-**¿Puede empezar ahora?** No
+**¿Puede empezar ahora?** Sí (diseño)
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-E07); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
+**Decisión aplicable:** O-6 aprobada (opción C: módulo de PrestaShop; requisitos M-1..M-6 del registro O-6 §4)
 
+**Requisitos del módulo (O-6 §4)**
+
+- **M-1** El módulo aplica, para un carrito preparado por Quote, el transportista y el costo de despacho que Quote fijó desde la cotización emitida (importe con impuesto incluido igual al congelado). No consulta pc-carrier ni recalcula
+- **M-2** Sólo Quote puede fijar esas condiciones, con su llave dedicada (E-6), ligadas al `id_cart` que Quote creó; un carrito sin condiciones fijadas no usa el módulo
+- **M-3** Ninguna regla de la tienda (envío gratis por monto, reglas de carrito automáticas, manejo) altera el resultado: si lo haría, `ps-cart-totals/v1` lo muestra y la paridad falla
+- **M-4** El transportista se identifica por un código estable del mapa (transportista, servicio) → referencia de PrestaShop, versionado entre Shipping y e-commerce (F2-E06)
+- **M-5** `ps-cart-totals/v1` informa el despacho calculado por el camino de la orden; Quote exige `shipping.taxIncl` = despacho congelado y `total.taxIncl` = `totals.gross`
+- **M-6** La orden creada por Checkout conserva transportista y costo (la logística de la tienda opera sobre ella)
+
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-E07); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-E08] Entorno para el E2E según O-4 (E-9)
@@ -551,8 +658,31 @@ Entorno para el E2E según O-4 (E-9)
 
 **¿Puede empezar ahora?** No
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-E08); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-E08); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
+---
 
+## [F2-E09] FU-O6-5: medición en la tienda aislada: cotizaciones reales del carril reproducidas por el módulo con paridad exacta, sin cobrar
+
+**Repositorio / destino:** owner e-commerce (fuera de los repos de servicios) · **Etiquetas:** `f2`, `ecommerce`
+
+**Dueño:** e-commerce + Quote
+
+**Entregable**
+
+FU-O6-5: medición en la tienda aislada: cotizaciones reales del carril reproducidas por el módulo con paridad exacta, sin cobrar
+
+**Criterios de aceptación**
+
+- [ ] Informe fuera del repo público: N cotizaciones, 0 diferencias, incluida la banda de $1
+- [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
+
+**Depende de:** F2-E07, F2-Q04
+
+**¿Puede empezar ahora?** No
+
+**Decisión aplicable:** O-6 aprobada (opción C: módulo de PrestaShop; requisitos M-1..M-6 del registro O-6 §4)
+
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-E09); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-K01] Remoto privado y CI (D-11) desde el respaldo verificado
@@ -575,8 +705,7 @@ Remoto privado y CI (D-11) desde el respaldo verificado
 
 **¿Puede empezar ahora?** Sí
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-K01); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-K01); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-K02] Corregir las dos guardas estáticas rotas desde `14335cb` (`scripts/sbx2/localStack.ts` importa código de prueba)
@@ -598,11 +727,10 @@ Corregir las dos guardas estáticas rotas desde `14335cb` (`scripts/sbx2/localSt
 
 **¿Puede empezar ahora?** Sí
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-K02); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-K02); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
-## [F2-K03] Comprador desde el grant CIA (R4L-D3): verificar `x-customer-access-grant`; comprador = `grant.sub`; el consentimiento sólo prueba el acto
+## [F2-K03] Comprador desde el grant CIA (R4L-D3): verificar `x-customer-access-grant`; comprador = `grant.sub`
 
 **Repositorio / destino:** MS-pesaschile-checkout (sin remoto: abrir cuando exista, F2-K01) · **Etiquetas:** `f2`, `checkout`
 
@@ -610,7 +738,7 @@ Corregir las dos guardas estáticas rotas desde `14335cb` (`scripts/sbx2/localSt
 
 **Entregable**
 
-Comprador desde el grant CIA (R4L-D3): verificar `x-customer-access-grant`; comprador = `grant.sub`; el consentimiento sólo prueba el acto
+Comprador desde el grant CIA (R4L-D3): verificar `x-customer-access-grant`; comprador = `grant.sub`
 
 **Criterios de aceptación**
 
@@ -623,33 +751,34 @@ Comprador desde el grant CIA (R4L-D3): verificar `x-customer-access-grant`; comp
 
 **¿Puede empezar ahora?** Sí (contra la CIA sintética)
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-K03); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-K03); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
-## [F2-K04] Consentimiento según O-5: emisión y registro por Checkout desde la evidencia del acto; audiencia; cancelación de sesión
+## [F2-K04] **O-5:** contrato de transmisión del acto (FU-1) y emisión de la evidencia de consentimiento por Checkout desde el acto que R4 transmite (`assurance = service_attested`, `consentId`)
 
 **Repositorio / destino:** MS-pesaschile-checkout (sin remoto: abrir cuando exista, F2-K01) · **Etiquetas:** `f2`, `checkout`
 
-**Dueño:** Checkout
+**Dueño:** Checkout (+ R4)
 
 **Entregable**
 
-Consentimiento según O-5: emisión y registro por Checkout desde la evidencia del acto; audiencia; cancelación de sesión
+**O-5:** contrato de transmisión del acto (FU-1) y emisión de la evidencia de consentimiento por Checkout desde el acto que R4 transmite (`assurance = service_attested`, `consentId`)
 
 **Criterios de aceptación**
 
-- [ ] Pruebas: acto de otra cotización/versión/importe → rechazo
-- [ ] un acto por sesión
-- [ ] cancelación antes del pago
+- [ ] Contrato escrito (sin texto ni PII)
+- [ ] pruebas: acto de otra cotización/versión/importe → rechazo
+- [ ] un acto por sesión (o por intento según F2-D11)
+- [ ] acto sin grant válido → rechazo
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
-**Depende de:** F2-D02
+**Depende de:** F2-K01, F2-K03, F2-D11
 
-**¿Puede empezar ahora?** No
+**¿Puede empezar ahora?** Sí (contrato)
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-K04); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
+**Decisión aplicable:** O-5 aprobada (opción D: Checkout emite la evidencia de consentimiento desde el acto que R4 registra y transmite)
 
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-K04); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-K05] Sonda C1 como prueba de caracterización (en proceso al minuto 10, captura 3 días después)
@@ -665,15 +794,13 @@ Sonda C1 como prueba de caracterización (en proceso al minuto 10, captura 3 dí
 **Criterios de aceptación**
 
 - [ ] La prueba existe y documenta el comportamiento actual
-- [ ] se marcará como regresión cuando llegue F2-K06
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** —
 
 **¿Puede empezar ahora?** Sí
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-K05); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-K05); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-K06] Corrección C1 según O-7
@@ -697,11 +824,10 @@ Corrección C1 según O-7
 
 **¿Puede empezar ahora?** No
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-K06); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-K06); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
-## [F2-K07] Publicar y aceptar `/v1 1.0.4-proposed` (G0) junto con H3 y A7
+## [F2-K07] Publicar y aceptar `/v1 1.0.4-proposed` (G0) junto con H3 y A7, incluyendo la transmisión del acto (F2-K04)
 
 **Repositorio / destino:** MS-pesaschile-checkout (sin remoto: abrir cuando exista, F2-K01) · **Etiquetas:** `f2`, `checkout`
 
@@ -709,7 +835,7 @@ Corrección C1 según O-7
 
 **Entregable**
 
-Publicar y aceptar `/v1 1.0.4-proposed` (G0) junto con H3 y A7
+Publicar y aceptar `/v1 1.0.4-proposed` (G0) junto con H3 y A7, incluyendo la transmisión del acto (F2-K04)
 
 **Criterios de aceptación**
 
@@ -721,11 +847,10 @@ Publicar y aceptar `/v1 1.0.4-proposed` (G0) junto con H3 y A7
 
 **¿Puede empezar ahora?** Sí (publicar)
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-K07); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-K07); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
-## [F2-K08] Coherencia de dirección con la comuna cotizada y paridad de importe en sesión y enlace (O-6)
+## [F2-K08] **O-6:** dirección coherente con la comuna cotizada y paridad de importe en sesión, enlace y conciliación; mapear los motivos `NOT_READY` nuevos
 
 **Repositorio / destino:** MS-pesaschile-checkout (sin remoto: abrir cuando exista, F2-K01) · **Etiquetas:** `f2`, `checkout`
 
@@ -733,7 +858,7 @@ Publicar y aceptar `/v1 1.0.4-proposed` (G0) junto con H3 y A7
 
 **Entregable**
 
-Coherencia de dirección con la comuna cotizada y paridad de importe en sesión y enlace (O-6)
+**O-6:** dirección coherente con la comuna cotizada y paridad de importe en sesión, enlace y conciliación; mapear los motivos `NOT_READY` nuevos
 
 **Criterios de aceptación**
 
@@ -741,12 +866,13 @@ Coherencia de dirección con la comuna cotizada y paridad de importe en sesión 
 - [ ] importe distinto → sin enlace
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
-**Depende de:** F2-D03, F2-E05
+**Depende de:** F2-E05, FU-O6-4 (origen de la dirección)
 
 **¿Puede empezar ahora?** No
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-K08); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
+**Decisión aplicable:** O-6 aprobada (opción C: módulo de PrestaShop; requisitos M-1..M-6 del registro O-6 §4)
 
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-K08); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-K09] OD-06 / D-07: evidencia del vencimiento efectivo del enlace en el proveedor
@@ -768,8 +894,32 @@ OD-06 / D-07: evidencia del vencimiento efectivo del enlace en el proveedor
 
 **¿Puede empezar ahora?** No
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-K09); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-K09); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
+---
 
+## [F2-K10] FU-5 de O-5: cancelación de sesión antes del pago (revocación)
+
+**Repositorio / destino:** MS-pesaschile-checkout (sin remoto: abrir cuando exista, F2-K01) · **Etiquetas:** `f2`, `checkout`
+
+**Dueño:** Checkout
+
+**Entregable**
+
+FU-5 de O-5: cancelación de sesión antes del pago (revocación)
+
+**Criterios de aceptación**
+
+- [ ] Ruta documentada en `/v1`
+- [ ] prueba: sesión cancelada → sin enlace
+- [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
+
+**Depende de:** F2-K01
+
+**¿Puede empezar ahora?** Sí
+
+**Decisión aplicable:** O-5 aprobada (opción D: Checkout emite la evidencia de consentimiento desde el acto que R4 registra y transmite)
+
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-K10); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-Q01] Publicar A7 §12 (rama local `docs/a7-f0-review`) para revisión cruzada con H3
@@ -791,8 +941,7 @@ Publicar A7 §12 (rama local `docs/a7-f0-review`) para revisión cruzada con H3
 
 **¿Puede empezar ahora?** Sí
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-Q01); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-Q01); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-Q02] Verificador del grant de producción: `azp` según X-1, exactamente `["purchase"]`, claims `bv` y `amount`, consumo del `jti`, sin `details.code` público
@@ -814,8 +963,7 @@ Verificador del grant de producción: `azp` según X-1, exactamente `["purchase"
 
 **¿Puede empezar ahora?** No
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-Q02); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-Q02); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-Q03] Ensayo local de H3 `verify` (fuera de `NODE_ENV=production`) en la tienda aislada con grant de la CIA sintética o el emisor de prueba de Checkout
@@ -830,18 +978,17 @@ Ensayo local de H3 `verify` (fuera de `NODE_ENV=production`) en la tienda aislad
 
 **Criterios de aceptación**
 
-- [ ] Un `POST carts`, carrito `READY` con paridad, retiro a costo 0
+- [ ] Un `POST carts`, carrito `READY` con paridad
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
-**Depende de:** F2-E02; F2-E03 o paridad sintética
+**Depende de:** F2-E03 o paridad sintética
 
 **¿Puede empezar ahora?** Sí (con el emisor de prueba)
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-Q03); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-Q03); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
-## [F2-Q04] Representar el despacho según O-6 (quitar H1 para el método elegido; motivos `NOT_READY` tipados nuevos)
+## [F2-Q04] **O-6:** quitar el bloqueo H1 para el módulo: fijar transportista desde el código, escribir las condiciones congeladas para el `id_cart`, verificar la paridad del despacho; motivos `NOT_READY` tipados
 
 **Repositorio / destino:** MS-pesaschile-quote-service · **Etiquetas:** `f2`, `quote`
 
@@ -849,23 +996,34 @@ Ensayo local de H3 `verify` (fuera de `NODE_ENV=production`) en la tienda aislad
 
 **Entregable**
 
-Representar el despacho según O-6 (quitar H1 para el método elegido; motivos `NOT_READY` tipados nuevos)
+**O-6:** quitar el bloqueo H1 para el módulo: fijar transportista desde el código, escribir las condiciones congeladas para el `id_cart`, verificar la paridad del despacho; motivos `NOT_READY` tipados
 
 **Criterios de aceptación**
 
 - [ ] Carrito con despacho `READY` sólo con paridad de despacho y total
 - [ ] cada desajuste → motivo tipado
+- [ ] sin recálculo
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
-**Depende de:** F2-D03, F2-E06 (+ E07 si C)
+**Depende de:** F2-E07 (diseño), F2-E06
 
 **¿Puede empezar ahora?** No
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-Q04); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
+**Decisión aplicable:** O-6 aprobada (opción C: módulo de PrestaShop; requisitos M-1..M-6 del registro O-6 §4)
 
+**Requisitos del módulo (O-6 §4)**
+
+- **M-1** El módulo aplica, para un carrito preparado por Quote, el transportista y el costo de despacho que Quote fijó desde la cotización emitida (importe con impuesto incluido igual al congelado). No consulta pc-carrier ni recalcula
+- **M-2** Sólo Quote puede fijar esas condiciones, con su llave dedicada (E-6), ligadas al `id_cart` que Quote creó; un carrito sin condiciones fijadas no usa el módulo
+- **M-3** Ninguna regla de la tienda (envío gratis por monto, reglas de carrito automáticas, manejo) altera el resultado: si lo haría, `ps-cart-totals/v1` lo muestra y la paridad falla
+- **M-4** El transportista se identifica por un código estable del mapa (transportista, servicio) → referencia de PrestaShop, versionado entre Shipping y e-commerce (F2-E06)
+- **M-5** `ps-cart-totals/v1` informa el despacho calculado por el camino de la orden; Quote exige `shipping.taxIncl` = despacho congelado y `total.taxIncl` = `totals.gross`
+- **M-6** La orden creada por Checkout conserva transportista y costo (la logística de la tienda opera sobre ella)
+
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-Q04); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
-## [F2-R01] Evidencia determinista del acto de compra (sin conectar)
+## [F2-R01] Evidencia determinista del acto de compra
 
 **Repositorio / destino:** R4-agent-platform · **Etiquetas:** `f2`, `r4`
 
@@ -873,22 +1031,21 @@ Representar el despacho según O-6 (quitar H1 para el método elegido; motivos `
 
 **Entregable**
 
-Evidencia determinista del acto de compra (sin conectar)
+Evidencia determinista del acto de compra
 
 **Criterios de aceptación**
 
-- [ ] **Hecho en este PR**: `purchase-act.ts`, unit 7/7, tripwire de contrato
+- [ ] `purchase-act.ts`, unit 7/7
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** —
 
 **¿Puede empezar ahora?** Hecho
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-R01); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-R01); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
-## [F2-R02] Persistir el acto (migración Sales append-only, `request_input_id` único) en la transacción de `recordCheckoutPurchaseRequest`
+## [F2-R02] Persistir el acto (Sales `0012`, append-only, `request_input_id` único) en `checkout.start_purchase@1`, detrás de `purchaseActRecording` (apagado)
 
 **Repositorio / destino:** R4-agent-platform · **Etiquetas:** `f2`, `r4`
 
@@ -896,24 +1053,23 @@ Evidencia determinista del acto de compra (sin conectar)
 
 **Entregable**
 
-Persistir el acto (migración Sales append-only, `request_input_id` único) en la transacción de `recordCheckoutPurchaseRequest`
+Persistir el acto (Sales `0012`, append-only, `request_input_id` único) en `checkout.start_purchase@1`, detrás de `purchaseActRecording` (apagado)
 
 **Criterios de aceptación**
 
-- [ ] Integración: un acto por input
-- [ ] inmutable
-- [ ] sin texto ni `customerRef`
+- [ ] Integration 4/4: apagado = sin registro
+- [ ] encendido = un registro, réplica idempotente, un mensaje = un inicio, fila inmutable
+- [ ] tripwire: ningún perfil, composición ni app lo enciende
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
-**Depende de:** F2-D02; autorización de la migración
+**Depende de:** —
 
-**¿Puede empezar ahora?** No
+**¿Puede empezar ahora?** Hecho (este PR)
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-R02); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-R02); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
-## [F2-R03] Transporte del grant en `x-customer-access-grant` en el adaptador Checkout, sin conectar a ningún perfil
+## [F2-R03] Cabecera `x-customer-access-grant` en el adaptador Checkout (opcional en el puerto); ningún código de R4 la provee aún
 
 **Repositorio / destino:** R4-agent-platform · **Etiquetas:** `f2`, `r4`
 
@@ -921,23 +1077,24 @@ Persistir el acto (migración Sales append-only, `request_input_id` único) en l
 
 **Entregable**
 
-Transporte del grant en `x-customer-access-grant` en el adaptador Checkout, sin conectar a ningún perfil
+Cabecera `x-customer-access-grant` en el adaptador Checkout (opcional en el puerto); ningún código de R4 la provee aún
 
 **Criterios de aceptación**
 
-- [ ] Unit/contract: la cabecera se envía
-- [ ] el grant nunca aparece en salidas al modelo, logs, recibos ni el cuerpo congelado
+- [ ] Unit 3/3: sólo en la cabecera, nunca en el cuerpo ni la telemetría
+- [ ] ausente = petición de hoy
+- [ ] un grant que no es JWS compacto se rechaza sin enviar
+- [ ] tripwire: nadie en `agents/` o `apps/` la provee
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
-**Depende de:** Contrato `/v1 1.0.4-proposed` (F2-K07)
+**Depende de:** Contrato `/v1 1.0.4-proposed` (F2-K07) para cerrar
 
-**¿Puede empezar ahora?** Sí (contra el candidato)
+**¿Puede empezar ahora?** Hecho (este PR)
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-R03); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-R03); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
-## [F2-R04] Propósito `purchase` en el cliente CIA y `resolve` determinista dentro de `checkout.start_purchase`
+## [F2-R04] Propósito `purchase` en el cliente CIA y `resolve` determinista dentro de `checkout.start_purchase`; el grant pasa a F2-R03
 
 **Repositorio / destino:** R4-agent-platform · **Etiquetas:** `f2`, `r4`
 
@@ -945,23 +1102,22 @@ Transporte del grant en `x-customer-access-grant` en el adaptador Checkout, sin 
 
 **Entregable**
 
-Propósito `purchase` en el cliente CIA y `resolve` determinista dentro de `checkout.start_purchase`
+Propósito `purchase` en el cliente CIA y `resolve` determinista dentro de `checkout.start_purchase`; el grant pasa a F2-R03
 
 **Criterios de aceptación**
 
 - [ ] Unit + interop contra la CIA sintética con `purchase`
-- [ ] tripwire F2-R04 actualizado
+- [ ] tripwires F2-R03/F2-R04 actualizados
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** F2-C03
 
 **¿Puede empezar ahora?** No
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-R04); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-R04); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
-## [F2-R05] Perfil de carril de compra (inactivo) sobre el linaje vigente, con identidad + Checkout
+## [F2-R05] Perfil de carril de compra (inactivo) sobre el linaje vigente, con identidad + Checkout + acto
 
 **Repositorio / destino:** R4-agent-platform · **Etiquetas:** `f2`, `r4`
 
@@ -969,7 +1125,7 @@ Propósito `purchase` en el cliente CIA y `resolve` determinista dentro de `chec
 
 **Entregable**
 
-Perfil de carril de compra (inactivo) sobre el linaje vigente, con identidad + Checkout
+Perfil de carril de compra (inactivo) sobre el linaje vigente, con identidad + Checkout + acto
 
 **Criterios de aceptación**
 
@@ -978,15 +1134,14 @@ Perfil de carril de compra (inactivo) sobre el linaje vigente, con identidad + C
 - [ ] no registrado en producción
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
-**Depende de:** F2-D06, F2-R02, F2-R03, F2-R04
+**Depende de:** F2-D06, F2-R04, F2-R11
 
 **¿Puede empezar ahora?** No
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-R05); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-R05); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
-## [F2-R06] Enviar `carrier.code` y `serviceType.code` a Quote (CART-00 M8)
+## [F2-R06] Enviar `carrier.code` y `serviceType.code` a Quote (O-6 M-4)
 
 **Repositorio / destino:** R4-agent-platform · **Etiquetas:** `f2`, `r4`
 
@@ -994,7 +1149,7 @@ Perfil de carril de compra (inactivo) sobre el linaje vigente, con identidad + C
 
 **Entregable**
 
-Enviar `carrier.code` y `serviceType.code` a Quote (CART-00 M8)
+Enviar `carrier.code` y `serviceType.code` a Quote (O-6 M-4)
 
 **Criterios de aceptación**
 
@@ -1005,8 +1160,9 @@ Enviar `carrier.code` y `serviceType.code` a Quote (CART-00 M8)
 
 **¿Puede empezar ahora?** No
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-R06); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
+**Decisión aplicable:** O-6 aprobada (opción C: módulo de PrestaShop; requisitos M-1..M-6 del registro O-6 §4)
 
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-R06); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-R07] Mapear motivos `NOT_READY` de paridad/despacho/destino a «cotización nueva para aceptar» o derivación (nunca enlace)
@@ -1029,8 +1185,7 @@ Mapear motivos `NOT_READY` de paridad/despacho/destino a «cotización nueva par
 
 **¿Puede empezar ahora?** No
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-R07); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-R07); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-R08] Extender el evaluador de afirmaciones de pago (R-6): el modelo no afirma «pagado», URL ni importe sin `purchase_status`
@@ -1052,8 +1207,7 @@ Extender el evaluador de afirmaciones de pago (R-6): el modelo no afirma «pagad
 
 **¿Puede empezar ahora?** Sí
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-R08); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-R08); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-R09] E2E sandbox desde WhatsApp (S8 del plan)
@@ -1072,12 +1226,11 @@ E2E sandbox desde WhatsApp (S8 del plan)
 - [ ] L3 + F-1..F-7 en PASS
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
-**Depende de:** F2-D05, F2-R05, F2-K03/K04, F2-Q03, E-S1 nueva
+**Depende de:** F2-D05, F2-D13, F2-R05, F2-K03/K04, F2-Q03, E-S1 nueva
 
 **¿Puede empezar ahora?** No
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-R09); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
-
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-R09); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
 ## [F2-R10] Texto determinista de la oferta de compra generado desde Quote (aviso de plataforma) y exigido por el acto
@@ -1095,8 +1248,34 @@ Texto determinista de la oferta de compra generado desde Quote (aviso de platafo
 - [ ] Unit: el acto exige el aviso inmediatamente anterior con número y total de la cotización
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
-**Depende de:** F2-D02
+**Depende de:** F2-D13
 
 **¿Puede empezar ahora?** No
 
-**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-R10); estado en `R4_CHECKOUT_STATUS_2026-11.md`; decisiones en `R4_F2_O5_PURCHASE_IDENTITY_CONSENT_DECISION.md` y `R4_F2_O6_DELIVERY_CART_DECISION.md`.
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-R10); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
+---
+
+## [F2-R11] **O-5:** transmitir el acto registrado (`0012`) a Checkout según el contrato de F2-K04
+
+**Repositorio / destino:** R4-agent-platform · **Etiquetas:** `f2`, `r4`
+
+**Dueño:** R4
+
+**Entregable**
+
+**O-5:** transmitir el acto registrado (`0012`) a Checkout según el contrato de F2-K04
+
+**Criterios de aceptación**
+
+- [ ] Unit/contract contra el contrato: sin texto ni PII
+- [ ] mismo acto en réplicas
+- [ ] tripwire sin perfiles
+- [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
+
+**Depende de:** F2-K04, F2-K07
+
+**¿Puede empezar ahora?** No
+
+**Decisión aplicable:** O-5 aprobada (opción D: Checkout emite la evidencia de consentimiento desde el acto que R4 registra y transmite)
+
+**Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-R11); estado en `R4_CHECKOUT_STATUS_2026-11.md`.

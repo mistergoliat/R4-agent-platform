@@ -20,6 +20,7 @@ import { CapabilityFailure, type CapabilityRegistration, type WriteCapabilityReg
 import { CHECKOUT_CAPABILITY_IDS, CHECKOUT_SCOPES } from '../ids.js';
 import type { PostgresSalesStore } from '../workspace/store.js';
 import { normalizeMessage } from './confirmation-grammar.js';
+import { purchaseActEvidence } from './purchase-act.js';
 import type { ConversationThreadEntry, ConversationThreadReader } from './quote-v4.js';
 
 /**
@@ -50,6 +51,11 @@ export interface CheckoutCapabilityDeps {
   readonly consent: CheckoutConsentSource;
   readonly conversation: ConversationThreadReader;
   readonly notices: PlatformNoticeSink;
+  /**
+   * (F2-R02, O-5) Record the customer's purchase act (0012) before freezing the request. OFF unless exactly `true`; no
+   * production profile or app sets it (contract test f2-purchase-boundaries). Off = checkout.start_purchase@1 unchanged.
+   */
+  readonly purchaseActRecording?: boolean;
   readonly now?: () => Date;
   /** Tests: polling bounds and the wait between reads. */
   readonly poll?: { readonly intervalMs: number; readonly prepareMaxMs: number; readonly linkMaxMs: number; readonly sleep?: (ms: number) => Promise<void> };
@@ -252,17 +258,27 @@ export function checkoutStartPurchaseCapability(deps: CheckoutCapabilityDeps): W
         const issued = (await deps.store.quoteV2Issued(taskId)).find((q) => q.quoteId === input.quoteId);
         if (!issued) return rejected('quote_not_in_conversation', 'only a quote issued in this conversation can be bought');
         let quoteVersion: number;
+        let validUntilExclusive: string;
         try {
           const quote = await deps.quotes.getQuote(input.quoteId, callOptions(context));
           if (quote.status !== 'issued') return rejected('checkout_not_purchasable', `the quote is ${quote.status}`, { quoteStatus: quote.status });
           if (!quote.validity || Date.parse(quote.validity.validUntilExclusive) <= now().getTime()) return rejected('checkout_not_purchasable', 'the quote is no longer valid; a new quote is needed');
           quoteVersion = quote.version;
+          validUntilExclusive = quote.validity.validUntilExclusive;
         } catch (error) {
           if (error instanceof DomainError) return { status: 'failed', code: 'quote_unavailable', message: error.message, details: { category: error.category, retryable: error.retryable } };
           throw error;
         }
-        const request = explicitRequestSince(await deps.conversation.thread(taskId), issued.issuedAt);
+        const thread = await deps.conversation.thread(taskId);
+        const request = explicitRequestSince(thread, issued.issuedAt);
         if (!request) return rejected('purchase_not_requested', 'the customer\'s latest message after the quote is not an explicit request to pay', { grammar: PURCHASE_GRAMMAR_VERSION });
+        if (deps.purchaseActRecording === true) {
+          const act = purchaseActEvidence(thread, { quoteId: input.quoteId, quoteVersion, issuedAt: issued.issuedAt, validUntilExclusive });
+          if (act.status !== 'recorded') return rejected('purchase_act_not_recorded', 'the customer\'s purchase act could not be recorded', { reason: act.code, grammar: PURCHASE_GRAMMAR_VERSION });
+          if ((await deps.store.recordPurchaseAct({ executionKey: context.executionKey, taskId, ...act.evidence })) === 'input_already_used') {
+            return rejected('purchase_act_already_used', 'that customer message already started another purchase; a new explicit request is needed');
+          }
+        }
         const consent = await deps.consent.obtain({ taskId, quoteId: input.quoteId, quoteVersion }, callOptions(context));
         if (!consent) return rejected('purchase_consent_unavailable', 'no purchase consent artifact can be issued for this buyer (contract R-3)');
         record = await deps.store.recordCheckoutPurchaseRequest({ executionKey: context.executionKey, taskId, quoteId: input.quoteId, quoteVersion, consent });

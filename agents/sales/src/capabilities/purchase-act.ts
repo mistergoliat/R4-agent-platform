@@ -7,9 +7,10 @@ import type { ConversationThreadEntry } from './quote-v4.js';
  * derived deterministically from the conversation the platform recorded — the same provenance as quote acceptance
  * (ADR-035): `contact` entries come only from the authenticated channel ingress, never from the model.
  *
- * NOT WIRED: no capability, profile or composition uses this module (a contract test enforces it). It signs nothing,
- * issues nothing and is not a consent artifact (R-3): it is the evidence a consent authority (O-5) will need.
- * Persisting it needs a Sales migration and its own authorization (work item F2-R02).
+ * O-5 (approved 2026-11-18): Checkout issues the purchase-consent evidence from this act, which R4 records and
+ * transmits. R4 signs nothing and issues nothing (R-3). checkout.start_purchase@1 records it (Sales 0012, F2-R02) only
+ * when its `purchaseActRecording` dependency is exactly `true`; no production profile or app sets it (contract test
+ * f2-purchase-boundaries).
  */
 
 /** The quote the act is about, as R4 recorded its issuance and Quote reports its validity (never model arguments). */

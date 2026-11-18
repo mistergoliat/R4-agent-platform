@@ -215,11 +215,11 @@ class Notices {
   }
 }
 
-function setup(options: { quote?: QuoteV2Service; consent?: CheckoutConsentSource } = {}) {
+function setup(options: { quote?: QuoteV2Service; consent?: CheckoutConsentSource; purchaseActRecording?: boolean } = {}) {
   const c = new Conversation();
   const checkout = new StubCheckout();
   const notices = new Notices();
-  const deps: CheckoutCapabilityDeps = { store, checkout: killSwitchGuardedCheckout(checkout, controls, logger), quotes: options.quote ?? quotes(), consent: options.consent ?? consent, conversation: c.reader, notices, now: () => NOW, poll: { intervalMs: 1, prepareMaxMs: 10, linkMaxMs: 10, sleep: () => Promise.resolve() } };
+  const deps: CheckoutCapabilityDeps = { store, checkout: killSwitchGuardedCheckout(checkout, controls, logger), quotes: options.quote ?? quotes(), consent: options.consent ?? consent, conversation: c.reader, notices, ...(options.purchaseActRecording ? { purchaseActRecording: true } : {}), now: () => NOW, poll: { intervalMs: 1, prepareMaxMs: 10, linkMaxMs: 10, sleep: () => Promise.resolve() } };
   return { c, checkout, notices, start: checkoutStartPurchaseCapability(deps), link: checkoutRequestLinkCapability(deps), status: checkoutPurchaseStatusCapability(deps) };
 }
 
@@ -500,3 +500,44 @@ describe('10. an unauthorized initiation cannot reach Checkout', () => {
   });
 });
 
+
+describe('F2-R02: the purchase act (0012), behind purchaseActRecording (off by default)', () => {
+  it('off: the purchase starts exactly as before and no act is recorded', async () => {
+    const s = setup();
+    await issueQuote(s.c, s.c.tick());
+    s.c.customer('quiero pagar');
+    const ctx = wctx(s.c.taskId);
+    expect(await s.start.execute({ quoteId: s.c.quoteId }, ctx)).toMatchObject({ status: 'applied' });
+    expect(await store.purchaseAct(ctx.executionKey)).toBeNull();
+  });
+
+  it('on: the act is recorded once (ids, platform times, hash; never the text) and a replay keeps it', async () => {
+    const s = setup({ purchaseActRecording: true });
+    const issuedAt = s.c.tick();
+    await issueQuote(s.c, issuedAt);
+    s.c.customer('sí, quiero pagar por favor');
+    const last = s.c.entries[s.c.entries.length - 1]!;
+    const ctx = wctx(s.c.taskId);
+    expect(await s.start.execute({ quoteId: s.c.quoteId }, ctx)).toMatchObject({ status: 'applied' });
+    expect(await s.start.execute({ quoteId: s.c.quoteId }, ctx)).toMatchObject({ status: 'applied' });
+    const act = await store.purchaseAct(ctx.executionKey);
+    expect(act).toMatchObject({ taskId: s.c.taskId, quoteId: s.c.quoteId, quoteVersion: 1, quoteIssuedAt: issuedAt, requestInputId: last.refs.inputId, requestAt: last.at, grammarVersion: 'r4-sales-purchase-es-v1' });
+    expect(act!.requestTextSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(act)).not.toContain('quiero pagar');
+    const rows = await pool.query('select count(*)::int as n from sales.purchase_act_evidence where task_id = $1', [s.c.taskId]);
+    expect(rows.rows[0].n).toBe(1);
+  });
+
+  it('on: one customer message is the act of one purchase start only; another start needs a new request (nothing sent)', async () => {
+    const s = setup({ purchaseActRecording: true });
+    await issueQuote(s.c, s.c.tick());
+    s.c.customer('quiero pagar');
+    expect(await s.start.execute({ quoteId: s.c.quoteId }, wctx(s.c.taskId))).toMatchObject({ status: 'applied' });
+    expect(await s.start.execute({ quoteId: s.c.quoteId }, wctx(s.c.taskId))).toMatchObject({ status: 'rejected', code: 'purchase_act_already_used' });
+    expect(s.checkout.counters.sessionCreates).toBe(1);
+  });
+
+  it('the evidence row is immutable', async () => {
+    await expect(pool.query("update sales.purchase_act_evidence set grammar_version = 'x'")).rejects.toThrow();
+  });
+});
