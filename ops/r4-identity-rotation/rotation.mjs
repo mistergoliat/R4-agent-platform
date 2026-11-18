@@ -118,11 +118,13 @@ export async function planRotation(client, { oldKey, newKey, lists, rolloutPerce
   let unverifiedOpen = 0;
   let unverifiedClosed = 0;
   let collisions = 0;
+  const unverifiedKeys = [];
   for (const r of rows) {
     const verified = conversationKeyOf(oldKey, r.channel, r.account_ref, r.recipient_ref) === r.conversation_key;
     if (!verified) {
       if (r.status === 'open') unverifiedOpen += 1;
       else unverifiedClosed += 1;
+      unverifiedKeys.push(r.conversation_key);
       continue;
     }
     const identity = `${r.channel}\u0000${r.account_ref}\u0000${r.recipient_ref}`;
@@ -133,6 +135,9 @@ export async function planRotation(client, { oldKey, newKey, lists, rolloutPerce
     mapping.set(r.conversation_key, next);
     rewrites.push({ bindingId: r.binding_id, from: r.conversation_key, to: next });
   }
+  // An unverifiable row under a verified row's key is in that conversation's lineage today (earlier turns, quote
+  // recovery and idle-closed cases are all found by (channel, conversation_key)): leaving it behind would cut it off.
+  const lineageOrphans = unverifiedKeys.filter((k) => mapping.has(k)).length;
   const reverse = new Map();
   for (const [from, to] of mapping) {
     if (reverse.has(to) && reverse.get(to) !== from) collisions += 1;
@@ -153,14 +158,16 @@ export async function planRotation(client, { oldKey, newKey, lists, rolloutPerce
   const blockers = [];
   const role = (await client.query(`select (select tableowner from pg_tables where schemaname = 'public' and tablename = 'channel_conversation_bindings') = current_user or (select rolsuper from pg_roles where rolname = current_user) as ok`)).rows[0];
   if (!role.ok) blockers.push('the connected role cannot disable the binding identity trigger (neither owner nor superuser)');
-  if (rolloutPercent !== undefined && rolloutPercent !== '0') blockers.push('R4_PROD_ROLLOUT_PERCENT is not 0 (the cohort would reshuffle)');
+  // 0 % (no cohort) and 100 % (everyone) are the only percentages a new key cannot reshuffle (the bucket is the key's prefix).
+  if (rolloutPercent !== undefined && Number(rolloutPercent) !== 0 && Number(rolloutPercent) !== 100) blockers.push('R4_PROD_ROLLOUT_PERCENT is not 0 or 100 (the cohort would reshuffle)');
   if (unverifiedOpen > 0) blockers.push(`${unverifiedOpen} open binding(s) do not verify under the old key (routing would break)`);
   if (collisions > 0) blockers.push(`${collisions} key collision(s)`);
+  if (lineageOrphans > 0) blockers.push(`${lineageOrphans} unverifiable binding(s) share a verified conversation's key (their lineage would be cut)`);
   if (received > 0) blockers.push(`${received} inbound event(s) not settled (drain them first)`);
   if (protectedExpectations > 0) blockers.push(`${protectedExpectations} identity-verification expectation(s) live or protected (wait until none)`);
   for (const [name, s] of Object.entries(listSummary)) if (s.unmapped > 0) blockers.push(`${name}: ${s.unmapped} entr(y/ies) without a verifiable identity (the owner must provide those numbers)`);
   const summary = {
-    bindings: { total: rows.length, open: rows.filter((r) => r.status === 'open').length, verified: rewrites.length, unverifiedOpen, unverifiedClosed },
+    bindings: { total: rows.length, open: rows.filter((r) => r.status === 'open').length, verified: rewrites.length, unverifiedOpen, unverifiedClosed, lineageOrphans },
     distinctIdentities: mapping.size,
     collisions,
     inboundUnsettled: received,

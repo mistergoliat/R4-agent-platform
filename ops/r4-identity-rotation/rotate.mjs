@@ -5,7 +5,7 @@
 //   rotate.mjs apply      --env-file F [--env-file F] --new-key-file K --out LISTS
 //   rotate.mjs verify     --env-file F [--env-file F] (--new-key-file K | --key-from-env)
 //   rotate.mjs install    --env-file F [--env-file F] --new-key-file K --lists LISTS --old-env-file BACKUP
-//   rotate.mjs export-key --env-file F [--env-file F] --out K
+//   rotate.mjs export-key --env-file F [--env-file F] --out K [--values-out V]   (V: the key and every list entry, one per line, for grep -F -f)
 //
 // The OLD key, the key lists and R4_PROD_ROLLOUT_PERCENT come from the env file(s) (parsed like the deployment reads
 // them; the same variable twice is refused); the database from R4_ROTATION_DATABASE_URL (a restored copy) or else the
@@ -24,7 +24,7 @@ const fail = (message, code = 2) => {
 };
 
 const [mode, ...rest] = process.argv.slice(2);
-const args = { envFiles: [], newKeyFile: null, out: null, lists: null, oldEnvFile: null, keyFromEnv: false };
+const args = { envFiles: [], newKeyFile: null, out: null, lists: null, oldEnvFile: null, valuesOut: null, keyFromEnv: false };
 for (let i = 0; i < rest.length; i += 1) {
   const a = rest[i];
   if (a === '--key-from-env') args.keyFromEnv = true;
@@ -33,6 +33,7 @@ for (let i = 0; i < rest.length; i += 1) {
   else if (a === '--out') args.out = rest[++i];
   else if (a === '--lists') args.lists = rest[++i];
   else if (a === '--old-env-file') args.oldEnvFile = rest[++i];
+  else if (a === '--values-out') args.valuesOut = rest[++i];
   else fail(`unknown argument ${a}`);
 }
 if (!['plan', 'apply', 'verify', 'install', 'export-key'].includes(mode) || args.envFiles.length === 0) fail('usage: see the header of rotate.mjs');
@@ -46,6 +47,7 @@ try {
     if (!args.out) fail('export-key needs --out');
     if (shape.length > 0) fail(`refusing: ${shape.join('; ')}`, 1);
     writeFileSync(args.out, env.R4_PROD_IDENTITY_HASH_KEY ?? '', { mode: 0o600 });
+    if (args.valuesOut) writeFileSync(args.valuesOut, `${[env.R4_PROD_IDENTITY_HASH_KEY ?? '', ...Object.values(keyListsOf(env)).flat()].filter((v) => v.length >= 32).join('\n')}\n`, { mode: 0o600 });
     print(process.stdout, { mode, written: args.out, present: Boolean(env.R4_PROD_IDENTITY_HASH_KEY) });
   } else if (mode === 'install') {
     if (!args.newKeyFile || !args.lists || !args.oldEnvFile) fail('install needs --new-key-file, --lists and --old-env-file');
