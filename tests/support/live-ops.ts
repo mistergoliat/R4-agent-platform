@@ -156,7 +156,8 @@ export class LiveOpsTestbed {
    * database with another allowlist (and, if given, another percentage;
    * everything else unchanged). Open bindings keep the eligibility they were opened with.
    */
-  async redeployGateway(rollout: { readonly allowlist: readonly string[]; readonly lane?: readonly string[]; readonly percent?: number }): Promise<void> {
+  async redeployGateway(rollout: { readonly allowlist: readonly string[]; readonly lane?: readonly string[]; readonly percent?: number; readonly laneProfile?: string }): Promise<void> {
+    if (rollout.laneProfile) this.#laneProfile = rollout.laneProfile;
     const { R4_PROD_LANE_PROFILE: _p, R4_PROD_LANE_ALLOWLIST: _a, ...rest } = this.env;
     const env = {
       ...rest, R4_PROD_ROLLOUT_ALLOWLIST: rollout.allowlist.map(keyOf).join(','), ...laneEnv(rollout.lane, this.#laneProfile),

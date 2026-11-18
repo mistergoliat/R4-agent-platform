@@ -4,7 +4,7 @@ import { SALES_LANE_PROFILES, composeSalesGateway } from '@r4-sales/agent/produc
 
 /**
  * (ADR-045 amendment 1) The Sales WhatsApp gateway composes R4_PROD_ROLLOUT_PERCENT > 0 only with an owner-approved
- * cohort lane (sales-production@22): never with the cohort on the main profile, never with another lane profile.
+ * cohort lane (sales-production@22, or @21 as its rollback): never with the cohort on the main profile, never with another lane profile.
  */
 const KEY = 'b'.repeat(64);
 const WHATSAPP = {
@@ -30,12 +30,13 @@ describe('Sales WhatsApp gateway: rollout percentage and the cohort lane', () =>
     expect(() => gateway(1)).toThrow(/R4_PROD_ROLLOUT_PERCENT=1 without a lane would serve the cohort with the main profile/);
   });
 
-  it('refuses a percentage > 0 with a lane profile outside the approved cohort set; composes it with sales-production@22', () => {
-    for (const p of SALES_LANE_PROFILES.map(profileLabel).filter((l) => l !== 'sales-production@22')) {
+  it('refuses a percentage > 0 with a lane profile outside the approved cohort set; composes it with @22 and with @21 (the lane rollback, no drop to 0 %)', () => {
+    for (const p of SALES_LANE_PROFILES.map(profileLabel).filter((l) => l !== 'sales-production@22' && l !== 'sales-production@21')) {
       expect(() => gateway(1, p)).toThrow(new RegExp(`lane profile ${p}, which is not approved for the rollout cohort`));
     }
     const composed = gateway(20, 'sales-production@22').bindings;
     expect(profileLabel(composed.profile)).toBe('sales-production@3');
     expect(profileLabel(composed.lane!.profile)).toBe('sales-production@22');
+    expect(profileLabel(gateway(20, 'sales-production@21').bindings.lane!.profile)).toBe('sales-production@21');
   });
 });

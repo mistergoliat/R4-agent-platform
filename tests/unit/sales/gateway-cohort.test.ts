@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { profileLabel, type ConversationLane } from '@r4/live-ops';
-import { SALES_COHORT_LANE_PROFILES, SALES_LANE_PROFILES, SALES_PRODUCTION_PROFILE_V22, assertSalesGatewayCohort } from '@r4-sales/agent/production';
+import { SALES_COHORT_LANE_PROFILES, SALES_LANE_PROFILES, SALES_PRODUCTION_PROFILE_V21, SALES_PRODUCTION_PROFILE_V22, assertSalesGatewayCohort } from '@r4-sales/agent/production';
 
 /** (ADR-045 amendment 1) A percentage > 0 is served only through an owner-approved cohort lane. */
 const lane = (profile: ConversationLane['profile']): ConversationLane => ({ conversationKeys: ['a'.repeat(64)], profile, taskFactory: {} as never });
@@ -16,10 +16,11 @@ describe('Sales gateway cohort guard', () => {
     expect(() => assertSalesGatewayCohort(100, undefined)).toThrow(/without a lane/);
   });
 
-  it('refuses a percentage > 0 with every lane profile outside the approved set; accepts only sales-production@22 today', () => {
-    expect(SALES_COHORT_LANE_PROFILES).toEqual(['sales-production@22']);
+  it('refuses a percentage > 0 with every lane profile outside the approved set; accepts only @22 (live) and @21 (its rollback) today', () => {
+    expect(SALES_COHORT_LANE_PROFILES).toEqual(['sales-production@22', 'sales-production@21']);
     expect(() => assertSalesGatewayCohort(5, lane(SALES_PRODUCTION_PROFILE_V22))).not.toThrow();
-    const others = SALES_LANE_PROFILES.filter((p) => profileLabel(p) !== 'sales-production@22');
+    expect(() => assertSalesGatewayCohort(5, lane(SALES_PRODUCTION_PROFILE_V21))).not.toThrow();
+    const others = SALES_LANE_PROFILES.filter((p) => !SALES_COHORT_LANE_PROFILES.includes(profileLabel(p)));
     expect(others.length).toBeGreaterThan(0);
     for (const p of others) expect(() => assertSalesGatewayCohort(5, lane(p))).toThrow(new RegExp(`lane profile ${profileLabel(p)}, which is not approved for the rollout cohort`));
   });

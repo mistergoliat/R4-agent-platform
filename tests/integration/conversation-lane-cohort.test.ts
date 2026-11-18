@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { catalogDiscoverResponseSchema, type CatalogDiscoverAnswer, type CatalogDiscoverPort } from '@r4-adapters/catalog-http';
 import { FixtureCatalog, FixtureQuoteV2Service, type ShippingService } from '@r4-adapters/domains';
 import { rolloutBucket, rolloutFingerprint } from '@r4/live-ops';
-import { LiveOpsTestbed, OPERATOR, keyOf, say } from '../support/live-ops.js';
+import { LiveOpsTestbed, OPERATOR, keyOf, registerLaneDefinition, say } from '../support/live-ops.js';
 import { freezeTemporalClock } from '../support/temporal.js';
 
 /**
@@ -221,5 +221,19 @@ describe('ADR-045 amendment 1: cohort lifecycle on @22', { timeout: 90_000 }, ()
     expect(await routed(b, COHORT2)).toEqual(ON_LANE('cohort'));
     const status = async (waId: string) => (await b.rows<{ status: string; status_reason: string | null }>('select status, status_reason from agent_tasks where task_id = $1', [await b.taskOf(waId)]))[0];
     expect(await status(COHORT)).toEqual(await status(OWNER));
+  });
+
+  it('C8: lane rollback @22 → @21 with the percentage still > 0 (owner decision 2026-11-18): the gateway starts, open @22 bindings keep their task, new cohort conversations open on @21', async () => {
+    const b = (bed = await start(20));
+    await b.customer(COHORT, 'wamid.c8a', 'Hola');
+    const task22 = await b.taskOf(COHORT);
+    // As a deployment: the rollback definition is registered, then the gateway is redeployed with it.
+    await registerLaneDefinition(b.env, 'sales-production@21');
+    await b.redeployGateway({ ...rollout(20), laneProfile: 'sales-production@21' });
+    await b.customer(COHORT, 'wamid.c8b', 'Sigo');
+    expect(await b.taskOf(COHORT)).toBe(task22);
+    expect(await routed(b, COHORT)).toEqual(ON_LANE('cohort'));
+    await b.customer(COHORT2, 'wamid.c8c', 'Hola');
+    expect(await routed(b, COHORT2)).toEqual({ profile: 'sales-production@21', autonomy: 'autonomous', eligibility_reason: 'cohort', agent_version: 21 });
   });
 });
