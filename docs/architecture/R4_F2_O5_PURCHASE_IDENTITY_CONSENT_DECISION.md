@@ -59,7 +59,7 @@ un acto por mensaje del cliente (índice único en `0012`); un consentimiento po
 | Qué | Dónde | Contenido | Retención | PII |
 |---|---|---|---|---|
 | Mensaje del cliente | Core de R4 (`task_inputs`, `memory_entries`) | El texto, como hoy | La del Core (DEP-10, FU-4) | Lo que el cliente escribió; ya existía |
-| Acto de compra | R4, Sales `0012 sales.purchase_act_evidence` (**hecho**, detrás de un flag apagado) | `request_input_id` (único), `request_at`, SHA-256 del texto, versión de la gramática, cotización (id, versión, hora de emisión) | Append-only e inmutable, como la evidencia de aceptación `0009` | **Ninguna** |
+| Acto de compra | R4, Sales `0012 sales.purchase_act_evidence` (**hecho**, detrás de un flag apagado), en la misma transacción que el cuerpo congelado de `0010` | `request_input_id` (un mensaje = el acto de una sola cotización y versión), `request_at`, SHA-256 del texto, versión de la gramática, cotización (id, versión, hora en que R4 registró la emisión) | Append-only e inmutable, como la evidencia de aceptación `0009` | **Ninguna** |
 | Evidencia de consentimiento | Checkout (`purchase_authorization` hoy; se extiende en F2-K04) | `subjectRef` (= `grant.sub`), cotización, versión, hash semántico, importe, identificador del acto, canal, `assurance`, `consentedAt` | Checkout + legal (FU-4) | Sólo la referencia del cliente |
 | Grant | Nadie guarda el token | Checkout guarda `jti`, `sub`, `exp`; la CIA, `grant_issuance` | CIA y Checkout | Referencia del cliente |
 
@@ -67,7 +67,7 @@ un acto por mensaje del cliente (índice único en `0012`); un consentimiento po
 
 | Aspecto | Regla (vigente salvo que FU-2 la cambie) |
 |---|---|
-| Unidad | Un consentimiento por sesión de Checkout; un acto nuevo por cada enlace (R4 ya exige un pedido explícito posterior al último intento antes de pedir otro enlace) |
+| Unidad | Un consentimiento por sesión de Checkout. **Pendiente de FU-2:** si cada enlace nuevo exige además un acto nuevo transmitido a Checkout (hoy R4 sólo exige, sin registrarlo como acto, un pedido explícito posterior al último intento antes de pedir otro enlace) |
 | Importe | Exactamente `totals.gross` de la cotización; Checkout lo copia de Quote |
 | Vínculo | `quoteId`, `quoteVersion`, hash semántico, importe, `sub` del grant. Cualquier cambio exige una cotización nueva y un acto nuevo |
 | Vencimiento | `min(vigencia de la cotización, emisión + 15 min)` |
@@ -82,14 +82,20 @@ crear), con gramática cerrada `r4-sales-purchase-es-v1`.
 | Regla | Implementación |
 |---|---|
 | Sólo entradas `contact` (ingreso de canal autenticado) | `agents/sales/src/capabilities/purchase-act.ts` |
-| El **último** mensaje del cliente posterior a la emisión registrada se ajusta por completo a la gramática | ídem |
+| «Después de la emisión» se mide desde que **R4 registró** la cotización (`quote_v2_issued.recorded_at`, el mismo reloj de base de datos que fecha los mensajes del cliente), nunca desde el `issuedAt` de Quote (otro reloj): un mensaje recibido mientras `quote.create` corría no cuenta | ídem |
+| El **último** mensaje del cliente posterior a ese registro se ajusta por completo a la gramática | ídem |
+| Ninguna **otra** cotización de la conversación fue registrada entre esa cotización y el mensaje: el pedido es sobre la última cotización mostrada, no sobre la que elija el modelo (`superseded_by_later_quote`) | ídem |
 | Llegó antes del fin de la vigencia de la cotización; tiene `inputId` de la plataforma | ídem |
 | Evidencia: ids, horas de la plataforma, SHA-256; nunca el texto, `customerRef` ni el grant | ídem; Sales `0012` |
-| Un mensaje es el acto de un solo inicio de compra | `request_input_id` único; `checkout.start_purchase@1` rechaza `purchase_act_already_used` sin enviar nada |
-| Se registra **sólo** con `purchaseActRecording === true` | `CheckoutCapabilityDeps.purchaseActRecording`; ningún perfil, composición ni app lo fija (tripwire) |
+| El acto se escribe **después** de obtener el consentimiento y en la **misma transacción** que el cuerpo congelado (`0010`, clave foránea): un inicio rechazado antes no deja acto ni «gasta» el mensaje | `recordCheckoutPurchaseRequestWithAct` |
+| Un mensaje es el acto de **una** cotización y versión; varios inicios de la misma cotización pueden compartirlo (Checkout mantiene una sesión viva por cotización). Otra versión u otra cotización → `purchase_act_already_used`, sin enviar nada. Una réplica con la misma clave nunca registra otro acto | ídem (bloqueo por mensaje) |
+| Se registra **sólo** con `purchaseActRecording === true` | `CheckoutCapabilityDeps.purchaseActRecording`; ningún perfil, composición, CLI ni app lo fija (tripwire) |
 
-Pendiente: la **transmisión** del acto a Checkout (F2-R11) espera el formato que Checkout defina (FU-1, F2-K04). El
-texto determinista de la oferta de compra generado desde Quote (F2-R10) depende de FU-6.
+**Límite conocido.** «Registrada por R4» no es «vista por el cliente». Por eso **F2-R10** (un aviso de compra
+determinista, generado desde Quote, inmediatamente antes del acto) es **requisito obligatorio** para transmitir el acto
+a Checkout (F2-R11) y para encender `purchaseActRecording` en cualquier perfil.
+
+Pendiente: la **transmisión** del acto a Checkout (F2-R11) espera además el formato que Checkout defina (FU-1, F2-K04).
 
 ## 6. Seguimientos (antes «preguntas abiertas»)
 
@@ -100,7 +106,7 @@ texto determinista de la oferta de compra generado desde Quote (F2-R10) depende 
 | FU-3 | Frescura de la prueba OTP para `purchase` (propuesta: misma conversación, ≤ 30 min; OQ-H3-3) | Owner CIA + owner comercial | Sí para F2-C03 en producción; no para el sandbox |
 | FU-4 | Texto legal que acepta el cliente y retención del consentimiento y del mensaje (DEP-10, OQ-H3-4) | Owner comercial + legal | Sí para producción (G7); no para el sandbox |
 | FU-5 | Cancelación de sesión en Checkout antes del pago (revocación) y su ruta en el puerto de R4 | Owner Checkout | Sí para producción; no para el sandbox |
-| FU-6 | ¿Basta la gramática cerrada, o el primer E2E exige el texto determinista de compra (F2-R10)? | Owner R4 | Sí para F2-R09 (E2E sandbox) |
+| FU-6 | Texto determinista de compra (F2-R10): **obligatorio** (revisión independiente del PR #98, S-2) antes de F2-R11 y de encender el flag; queda su redacción, junto con FU-4 | Owner R4 (+ owner comercial para el texto) | **Sí**: F2-R11, encender el flag, F2-R09 |
 
 ## 7. Qué cambia en cada servicio
 

@@ -52,8 +52,8 @@ O-5: emisor del consentimiento
 
 **Criterios de aceptación**
 
-- [ ] Aprobado 2026-11-18: opción D
-- [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
+- [x] Aprobado 2026-11-18: opción D
+- [x] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** —
 
@@ -76,8 +76,8 @@ O-6: entrega y carrito
 
 **Criterios de aceptación**
 
-- [ ] Aprobado 2026-11-18: opción C (módulo)
-- [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
+- [x] Aprobado 2026-11-18: opción C (módulo)
+- [x] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** —
 
@@ -100,8 +100,7 @@ O-7: si un reintento (`waiting_retry`) o un pago offline cuentan como «iniciado
 
 **Criterios de aceptación**
 
-- [ ] Regla escrita con un ejemplo por caso (en proceso min 10 + captura 3 días después
-- [ ] offline)
+- [ ] Regla escrita con un ejemplo por caso (en proceso min 10 + captura 3 días después; offline)
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** —
@@ -145,8 +144,7 @@ O-8 / D-10: número de perfil y definición del carril de compra sobre el linaje
 
 **Criterios de aceptación**
 
-- [ ] Número y versión de definición reservados por escrito
-- [ ] respetan los retiros y reservas previas
+- [ ] Número y versión de definición reservados por escrito; respetan los retiros y reservas previas
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** —
@@ -168,8 +166,7 @@ D7-6 / D-06: política FINANCIAL fuera de sandbox (ADR de autonomía con identid
 
 **Criterios de aceptación**
 
-- [ ] ADR o decisión escrita
-- [ ] sin efecto hasta G3
+- [ ] ADR o decisión escrita; sin efecto hasta G3
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** F2-C03 (para la opción a)
@@ -191,8 +188,7 @@ R4L-D1: tope de operaciones financieras por task en sandbox (2 hoy; 3 permite un
 
 **Criterios de aceptación**
 
-- [ ] Valor escrito
-- [ ] `CHECKOUT_FINANCIAL_OPERATIONS_PER_TASK` y su prueba coinciden
+- [ ] Valor escrito; `CHECKOUT_FINANCIAL_OPERATIONS_PER_TASK` y su prueba coinciden
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** —
@@ -294,7 +290,7 @@ FU-4 de O-5: texto legal que acepta el cliente y retención del consentimiento y
 **Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-D12); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
-## [F2-D13] FU-6 de O-5: ¿el primer E2E exige el texto determinista de compra (F2-R10) o basta la gramática cerrada?
+## [F2-D13] FU-6 de O-5: texto determinista de compra (F2-R10)
 
 **Repositorio / destino:** R4-agent-platform (decisión del owner; issue de seguimiento) · **Etiquetas:** `f2`, `decision`
 
@@ -302,16 +298,16 @@ FU-4 de O-5: texto legal que acepta el cliente y retención del consentimiento y
 
 **Entregable**
 
-FU-6 de O-5: ¿el primer E2E exige el texto determinista de compra (F2-R10) o basta la gramática cerrada?
+FU-6 de O-5: texto determinista de compra (F2-R10)
 
 **Criterios de aceptación**
 
-- [ ] Decisión escrita
-- [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
+- [x] Resuelto: F2-R10 es requisito obligatorio de F2-R11, de encender `purchaseActRecording` y de F2-R09 (mandato 2026-11-18, revisión S-2 del PR #98)
+- [x] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** —
 
-**¿Puede empezar ahora?** Sí
+**¿Puede empezar ahora?** Hecho
 
 **Decisión aplicable:** O-5 aprobada (opción D: Checkout emite la evidencia de consentimiento desde el acto que R4 registra y transmite)
 
@@ -354,8 +350,7 @@ Publicar el candidato H3 (rama local `docs/h3-purchase-authorization-candidate` 
 
 **Criterios de aceptación**
 
-- [ ] PR abierto en el repo CIA con el documento sin cambios
-- [ ] revisores de CIA, Quote y Checkout
+- [ ] PR abierto en el repo CIA con el documento sin cambios; revisores de CIA, Quote y Checkout
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** —
@@ -377,8 +372,7 @@ Aceptación cruzada de H3, incluida X-1 (`azp`, OQ-H3-1), OQ-H3-2 y OQ-H3-10; §
 
 **Criterios de aceptación**
 
-- [ ] H3 marcado ACEPTADO por los tres owners
-- [ ] X-1 cerrado con un valor
+- [ ] H3 marcado ACEPTADO por los tres owners; X-1 cerrado con un valor
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** F2-C01, F2-Q01, F2-K07
@@ -402,9 +396,7 @@ Propósito `purchase` y audiencia por propósito en modo sintético (C-CIA-1/-3;
 
 **Criterios de aceptación**
 
-- [ ] `resolve(['purchase'])` para `r4-sales` → grant `aud=quote-cart-preparer`, `purposes=["purchase"]`
-- [ ] mezcla de propósitos → 400 sin emitir
-- [ ] suite existente (304 + 41) verde
+- [ ] `resolve(['purchase'])` para `r4-sales` → grant `aud=quote-cart-preparer`, `purposes=["purchase"]`; mezcla de propósitos → 400 sin emitir; suite existente (304 + 41) verde
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** F2-C02
@@ -450,8 +442,7 @@ Modo no sintético: claves en KMS (C-CIA-8, DEP-6), credencial (DEP-2), correo r
 
 **Criterios de aceptación**
 
-- [ ] Instancia no productiva con el proveedor real de la tienda aislada
-- [ ] G3 en entorno no productivo
+- [ ] Instancia no productiva con el proveedor real de la tienda aislada; G3 en entorno no productivo
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** F2-E01, F2-D10
@@ -473,9 +464,7 @@ Productor del proveedor de cuentas (DEP-3, `ACCOUNT_PROVIDER_V1_CONTRACT.md` de 
 
 **Criterios de aceptación**
 
-- [ ] El cliente remoto de la CIA pasa contra él (`find-by-email`, `revalidate`)
-- [ ] respuestas cerradas por schema
-- [ ] nunca `passwd`, `secure_key`, direcciones ni pedidos
+- [ ] El cliente remoto de la CIA pasa contra él (`find-by-email`, `revalidate`); respuestas cerradas por schema; nunca `passwd`, `secure_key`, direcciones ni pedidos
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** Aceptación del contrato por e-commerce
@@ -519,9 +508,7 @@ Endpoint gobernado `ps-cart-totals/v1` (E-3) en la tienda aislada, informando el
 
 **Criterios de aceptación**
 
-- [ ] `parseCartTotals` de Quote lo acepta
-- [ ] `calculationPath` = camino de la orden
-- [ ] `totals.shipping` presente
+- [ ] `parseCartTotals` de Quote lo acepta; `calculationPath` = camino de la orden; `totals.shipping` presente
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** —
@@ -567,8 +554,7 @@ Lectura de direcciones existentes del cliente (E-7 / H2)
 
 **Criterios de aceptación**
 
-- [ ] Checkout obtiene las direcciones del `sub` del grant en la tienda aislada
-- [ ] ningún id de dirección llega a R4
+- [ ] Checkout obtiene las direcciones del `sub` del grant en la tienda aislada; ningún id de dirección llega a R4
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** F2-E04
@@ -590,8 +576,7 @@ FU-O6-2: inventario B2 (transportistas, rangos, reglas de envío gratis) y mapa 
 
 **Criterios de aceptación**
 
-- [ ] Inventario y mapa versionados fuera del repo público
-- [ ] pc-carrier devuelve códigos
+- [ ] Inventario y mapa versionados fuera del repo público; pc-carrier devuelve códigos
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** —
@@ -615,10 +600,7 @@ FU-O6-1: **módulo de PrestaShop** que aplica las condiciones de despacho congel
 
 **Criterios de aceptación**
 
-- [ ] Diseño aceptado por e-commerce y Quote
-- [ ] en la tienda aislada, un carrito preparado por Quote cobra exactamente el despacho fijado
-- [ ] nadie más puede fijarlo
-- [ ] reglas de envío gratis no lo alteran
+- [ ] Diseño aceptado por e-commerce y Quote; en la tienda aislada, un carrito preparado por Quote cobra exactamente el despacho fijado; nadie más puede fijarlo; reglas de envío gratis no lo alteran
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** F2-E06 (mapa), F2-E04
@@ -697,8 +679,7 @@ Remoto privado y CI (D-11) desde el respaldo verificado
 
 **Criterios de aceptación**
 
-- [ ] Remoto privado con las ramas `pay-*`
-- [ ] CI corre unit + domain + contract en cada push
+- [ ] Remoto privado con las ramas `pay-*`; CI corre unit + domain + contract en cada push
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** Permisos P-1..P-8
@@ -742,9 +723,7 @@ Comprador desde el grant CIA (R4L-D3): verificar `x-customer-access-grant`; comp
 
 **Criterios de aceptación**
 
-- [ ] Pruebas con JWKS de la CIA sintética: sin grant → rechazo
-- [ ] `sub` ≠ sujeto del acto → rechazo
-- [ ] comprador registrado = `sub`
+- [ ] Pruebas con JWKS de la CIA sintética: sin grant → rechazo; `sub` ≠ sujeto del acto → rechazo; comprador registrado = `sub`
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** F2-K01; formato de F2-C01
@@ -766,10 +745,7 @@ Comprador desde el grant CIA (R4L-D3): verificar `x-customer-access-grant`; comp
 
 **Criterios de aceptación**
 
-- [ ] Contrato escrito (sin texto ni PII)
-- [ ] pruebas: acto de otra cotización/versión/importe → rechazo
-- [ ] un acto por sesión (o por intento según F2-D11)
-- [ ] acto sin grant válido → rechazo
+- [ ] Contrato escrito (sin texto ni PII); pruebas: acto de otra cotización/versión/importe → rechazo; un acto por sesión (o por intento según F2-D11); acto sin grant válido → rechazo
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** F2-K01, F2-K03, F2-D11
@@ -815,9 +791,7 @@ Corrección C1 según O-7
 
 **Criterios de aceptación**
 
-- [ ] Sonda C1 con el resultado decidido
-- [ ] LATE-A/B/C sin cambios
-- [ ] revisión independiente
+- [ ] Sonda C1 con el resultado decidido; LATE-A/B/C sin cambios; revisión independiente
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** F2-D04, F2-K05
@@ -839,8 +813,7 @@ Publicar y aceptar `/v1 1.0.4-proposed` (G0) junto con H3 y A7, incluyendo la tr
 
 **Criterios de aceptación**
 
-- [ ] Contrato publicado en el remoto
-- [ ] estado ACEPTADO
+- [ ] Contrato publicado en el remoto; estado ACEPTADO
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** F2-K01, F2-C01
@@ -862,8 +835,7 @@ Publicar y aceptar `/v1 1.0.4-proposed` (G0) junto con H3 y A7, incluyendo la tr
 
 **Criterios de aceptación**
 
-- [ ] Pruebas: dirección fuera de la comuna → no `READY`
-- [ ] importe distinto → sin enlace
+- [ ] Pruebas: dirección fuera de la comuna → no `READY`; importe distinto → sin enlace
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** F2-E05, FU-O6-4 (origen de la dirección)
@@ -909,8 +881,7 @@ FU-5 de O-5: cancelación de sesión antes del pago (revocación)
 
 **Criterios de aceptación**
 
-- [ ] Ruta documentada en `/v1`
-- [ ] prueba: sesión cancelada → sin enlace
+- [ ] Ruta documentada en `/v1`; prueba: sesión cancelada → sin enlace
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** F2-K01
@@ -1000,9 +971,7 @@ Ensayo local de H3 `verify` (fuera de `NODE_ENV=production`) en la tienda aislad
 
 **Criterios de aceptación**
 
-- [ ] Carrito con despacho `READY` sólo con paridad de despacho y total
-- [ ] cada desajuste → motivo tipado
-- [ ] sin recálculo
+- [ ] Carrito con despacho `READY` sólo con paridad de despacho y total; cada desajuste → motivo tipado; sin recálculo
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** F2-E07 (diseño), F2-E06
@@ -1035,8 +1004,8 @@ Evidencia determinista del acto de compra
 
 **Criterios de aceptación**
 
-- [ ] `purchase-act.ts`, unit 7/7
-- [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
+- [x] `purchase-act.ts`, unit 8/8
+- [x] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** —
 
@@ -1045,7 +1014,7 @@ Evidencia determinista del acto de compra
 **Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-R01); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
-## [F2-R02] Persistir el acto (Sales `0012`, append-only, `request_input_id` único) en `checkout.start_purchase@1`, detrás de `purchaseActRecording` (apagado)
+## [F2-R02] Persistir el acto (Sales `0012`, append-only) en `checkout.start_purchase@1`, detrás de `purchaseActRecording` (apagado): después del consentimiento, en la misma transacción que el cuerpo congelado (`0010`, clave foránea); anclado al registro de R4 de la cotización; rechaza una cotización superada por otra posterior
 
 **Repositorio / destino:** R4-agent-platform · **Etiquetas:** `f2`, `r4`
 
@@ -1053,14 +1022,12 @@ Evidencia determinista del acto de compra
 
 **Entregable**
 
-Persistir el acto (Sales `0012`, append-only, `request_input_id` único) en `checkout.start_purchase@1`, detrás de `purchaseActRecording` (apagado)
+Persistir el acto (Sales `0012`, append-only) en `checkout.start_purchase@1`, detrás de `purchaseActRecording` (apagado): después del consentimiento, en la misma transacción que el cuerpo congelado (`0010`, clave foránea); anclado al registro de R4 de la cotización; rechaza una cotización superada por otra posterior
 
 **Criterios de aceptación**
 
-- [ ] Integration 4/4: apagado = sin registro
-- [ ] encendido = un registro, réplica idempotente, un mensaje = un inicio, fila inmutable
-- [ ] tripwire: ningún perfil, composición ni app lo enciende
-- [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
+- [x] Integration 9/9: apagado = sin registro; encendido = un registro y réplica idempotente; sin consentimiento = sin acto y el reintento funciona; misma cotización comparte el mensaje; otra versión → `purchase_act_already_used`; cotización superada y mensaje anterior al registro → rechazados; una réplica nunca cambia el acto; UPDATE y DELETE fallan. Tripwire: ningún perfil, composición, CLI ni app lo enciende
+- [x] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** —
 
@@ -1081,11 +1048,8 @@ Cabecera `x-customer-access-grant` en el adaptador Checkout (opcional en el puer
 
 **Criterios de aceptación**
 
-- [ ] Unit 3/3: sólo en la cabecera, nunca en el cuerpo ni la telemetría
-- [ ] ausente = petición de hoy
-- [ ] un grant que no es JWS compacto se rechaza sin enviar
-- [ ] tripwire: nadie en `agents/` o `apps/` la provee
-- [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
+- [x] Unit 3/3: sólo en la cabecera, nunca en el cuerpo ni la telemetría; ausente = petición de hoy; un grant que no es JWS compacto se rechaza sin enviar; tripwire: nadie en `agents/` o `apps/` la provee
+- [x] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** Contrato `/v1 1.0.4-proposed` (F2-K07) para cerrar
 
@@ -1106,8 +1070,7 @@ Propósito `purchase` en el cliente CIA y `resolve` determinista dentro de `chec
 
 **Criterios de aceptación**
 
-- [ ] Unit + interop contra la CIA sintética con `purchase`
-- [ ] tripwires F2-R03/F2-R04 actualizados
+- [ ] Unit + interop contra la CIA sintética con `purchase`; tripwires F2-R03/F2-R04 actualizados
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** F2-C03
@@ -1129,9 +1092,7 @@ Perfil de carril de compra (inactivo) sobre el linaje vigente, con identidad + C
 
 **Criterios de aceptación**
 
-- [ ] Contrato del perfil
-- [ ] L2 completo
-- [ ] no registrado en producción
+- [ ] Contrato del perfil; L2 completo; no registrado en producción
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** F2-D06, F2-R04, F2-R11
@@ -1177,8 +1138,7 @@ Mapear motivos `NOT_READY` de paridad/despacho/destino a «cotización nueva par
 
 **Criterios de aceptación**
 
-- [ ] Unit por motivo
-- [ ] motivo desconocido → derivación
+- [ ] Unit por motivo; motivo desconocido → derivación
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** F2-Q04, F2-K08
@@ -1222,8 +1182,7 @@ E2E sandbox desde WhatsApp (S8 del plan)
 
 **Criterios de aceptación**
 
-- [ ] R4-CK-01..12 reales
-- [ ] L3 + F-1..F-7 en PASS
+- [ ] R4-CK-01..12 reales; L3 + F-1..F-7 en PASS
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
 **Depende de:** F2-D05, F2-D13, F2-R05, F2-K03/K04, F2-Q03, E-S1 nueva
@@ -1233,7 +1192,7 @@ E2E sandbox desde WhatsApp (S8 del plan)
 **Contexto:** R4 `docs/architecture/R4_F2_WORK_ITEMS.md` (F2-R09); estado en `R4_CHECKOUT_STATUS_2026-11.md`.
 ---
 
-## [F2-R10] Texto determinista de la oferta de compra generado desde Quote (aviso de plataforma) y exigido por el acto
+## [F2-R10] Texto determinista de la oferta de compra generado desde Quote (aviso de plataforma: número, total, entrega, vigencia) y exigido por el acto inmediatamente después. **Requisito obligatorio** de F2-R11 y de encender el flag
 
 **Repositorio / destino:** R4-agent-platform · **Etiquetas:** `f2`, `r4`
 
@@ -1241,14 +1200,14 @@ E2E sandbox desde WhatsApp (S8 del plan)
 
 **Entregable**
 
-Texto determinista de la oferta de compra generado desde Quote (aviso de plataforma) y exigido por el acto
+Texto determinista de la oferta de compra generado desde Quote (aviso de plataforma: número, total, entrega, vigencia) y exigido por el acto inmediatamente después. **Requisito obligatorio** de F2-R11 y de encender el flag
 
 **Criterios de aceptación**
 
-- [ ] Unit: el acto exige el aviso inmediatamente anterior con número y total de la cotización
+- [ ] Unit: el acto exige el aviso inmediatamente anterior de la misma cotización y versión; sin aviso, o con otro mensaje del agente entre medio → rechazo
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
-**Depende de:** F2-D13
+**Depende de:** Redacción del texto (F2-D12)
 
 **¿Puede empezar ahora?** No
 
@@ -1267,12 +1226,10 @@ Texto determinista de la oferta de compra generado desde Quote (aviso de platafo
 
 **Criterios de aceptación**
 
-- [ ] Unit/contract contra el contrato: sin texto ni PII
-- [ ] mismo acto en réplicas
-- [ ] tripwire sin perfiles
+- [ ] Unit/contract contra el contrato: sin texto ni PII; mismo acto en réplicas; tripwire sin perfiles
 - [ ] Sin pagos, órdenes, carritos ni Checkout productivos; sin datos productivos en repositorios públicos
 
-**Depende de:** F2-K04, F2-K07
+**Depende de:** F2-R10, F2-K04, F2-K07
 
 **¿Puede empezar ahora?** No
 

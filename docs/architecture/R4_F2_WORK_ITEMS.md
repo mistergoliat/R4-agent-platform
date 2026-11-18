@@ -39,7 +39,7 @@ issues: R4_F2_WORK_ITEM_ISSUES.md (un cuerpo de issue por item, listo para pegar
 | F2-D10 | Owner de datos (decisión) | OA-04 / D7 / J7: correos y datos reales para OTP e identidad | Decisión escrita con alcance (allowlist interna) y retención (DEP-10) | — | Sí (decisión) |
 | F2-D11 | Owner R4 + owner Checkout (decisión) | FU-2 de O-5 (R4L-D2): un consentimiento por sesión con un acto por enlace, o uno por intento | Regla confirmada en el registro O-5 §4 | — | Sí |
 | F2-D12 | Owner comercial + legal (decisión) | FU-4 de O-5: texto legal que acepta el cliente y retención del consentimiento y del mensaje | Texto versionado y plazos de retención escritos | — | Sí (no bloquea el sandbox) |
-| F2-D13 | Owner R4 (decisión) | FU-6 de O-5: ¿el primer E2E exige el texto determinista de compra (F2-R10) o basta la gramática cerrada? | Decisión escrita | — | Sí |
+| F2-D13 | Owner R4 (decisión) | FU-6 de O-5: texto determinista de compra (F2-R10) | Resuelto: F2-R10 es requisito obligatorio de F2-R11, de encender `purchaseActRecording` y de F2-R09 (mandato 2026-11-18, revisión S-2 del PR #98) | — | Hecho |
 | F2-D14 | Owner comercial (decisión) | FU-O6-3: ¿un E2E sandbox con retiro (`pickup-zero-v1`) antes del módulo? Opcional; no es parte de O-6 | Sí/no escrito y transportista de retiro (O-10) si es sí | — | Sí (opcional) |
 | F2-C01 | CIA | Publicar el candidato H3 (rama local `docs/h3-purchase-authorization-candidate` @ `39342b2`) en el remoto CIA y abrir PR de revisión | PR abierto en el repo CIA con el documento sin cambios; revisores de CIA, Quote y Checkout | — | Sí |
 | F2-C02 | CIA + Quote + Checkout | Aceptación cruzada de H3, incluida X-1 (`azp`, OQ-H3-1), OQ-H3-2 y OQ-H3-10; §10 alineado con O-5 (Checkout emite desde el acto de R4) | H3 marcado ACEPTADO por los tres owners; X-1 cerrado con un valor | F2-C01, F2-Q01, F2-K07 | No |
@@ -69,8 +69,8 @@ issues: R4_F2_WORK_ITEM_ISSUES.md (un cuerpo de issue por item, listo para pegar
 | F2-Q02 | Quote | Verificador del grant de producción: `azp` según X-1, exactamente `["purchase"]`, claims `bv` y `amount`, consumo del `jti`, sin `details.code` público | Pruebas por regla en la suite de Quote | F2-C02 | No |
 | F2-Q03 | Quote | Ensayo local de H3 `verify` (fuera de `NODE_ENV=production`) en la tienda aislada con grant de la CIA sintética o el emisor de prueba de Checkout | Un `POST carts`, carrito `READY` con paridad | F2-E03 o paridad sintética | Sí (con el emisor de prueba) |
 | F2-Q04 | Quote | **O-6:** quitar el bloqueo H1 para el módulo: fijar transportista desde el código, escribir las condiciones congeladas para el `id_cart`, verificar la paridad del despacho; motivos `NOT_READY` tipados | Carrito con despacho `READY` sólo con paridad de despacho y total; cada desajuste → motivo tipado; sin recálculo | F2-E07 (diseño), F2-E06 | No |
-| F2-R01 | R4 | Evidencia determinista del acto de compra | `purchase-act.ts`, unit 7/7 | — | Hecho |
-| F2-R02 | R4 | Persistir el acto (Sales `0012`, append-only, `request_input_id` único) en `checkout.start_purchase@1`, detrás de `purchaseActRecording` (apagado) | Integration 4/4: apagado = sin registro; encendido = un registro, réplica idempotente, un mensaje = un inicio, fila inmutable; tripwire: ningún perfil, composición ni app lo enciende | — | Hecho (este PR) |
+| F2-R01 | R4 | Evidencia determinista del acto de compra | `purchase-act.ts`, unit 8/8 | — | Hecho |
+| F2-R02 | R4 | Persistir el acto (Sales `0012`, append-only) en `checkout.start_purchase@1`, detrás de `purchaseActRecording` (apagado): después del consentimiento, en la misma transacción que el cuerpo congelado (`0010`, clave foránea); anclado al registro de R4 de la cotización; rechaza una cotización superada por otra posterior | Integration 9/9: apagado = sin registro; encendido = un registro y réplica idempotente; sin consentimiento = sin acto y el reintento funciona; misma cotización comparte el mensaje; otra versión → `purchase_act_already_used`; cotización superada y mensaje anterior al registro → rechazados; una réplica nunca cambia el acto; UPDATE y DELETE fallan. Tripwire: ningún perfil, composición, CLI ni app lo enciende | — | Hecho (este PR) |
 | F2-R03 | R4 | Cabecera `x-customer-access-grant` en el adaptador Checkout (opcional en el puerto); ningún código de R4 la provee aún | Unit 3/3: sólo en la cabecera, nunca en el cuerpo ni la telemetría; ausente = petición de hoy; un grant que no es JWS compacto se rechaza sin enviar; tripwire: nadie en `agents/` o `apps/` la provee | Contrato `/v1 1.0.4-proposed` (F2-K07) para cerrar | Hecho (este PR) |
 | F2-R04 | R4 | Propósito `purchase` en el cliente CIA y `resolve` determinista dentro de `checkout.start_purchase`; el grant pasa a F2-R03 | Unit + interop contra la CIA sintética con `purchase`; tripwires F2-R03/F2-R04 actualizados | F2-C03 | No |
 | F2-R05 | R4 | Perfil de carril de compra (inactivo) sobre el linaje vigente, con identidad + Checkout + acto | Contrato del perfil; L2 completo; no registrado en producción | F2-D06, F2-R04, F2-R11 | No |
@@ -78,8 +78,8 @@ issues: R4_F2_WORK_ITEM_ISSUES.md (un cuerpo de issue por item, listo para pegar
 | F2-R07 | R4 | Mapear motivos `NOT_READY` de paridad/despacho/destino a «cotización nueva para aceptar» o derivación (nunca enlace) | Unit por motivo; motivo desconocido → derivación | F2-Q04, F2-K08 | No |
 | F2-R08 | R4 | Extender el evaluador de afirmaciones de pago (R-6): el modelo no afirma «pagado», URL ni importe sin `purchase_status` | Casos de evaluación negativos y positivos en verde | — | Sí |
 | F2-R09 | R4 | E2E sandbox desde WhatsApp (S8 del plan) | R4-CK-01..12 reales; L3 + F-1..F-7 en PASS | F2-D05, F2-D13, F2-R05, F2-K03/K04, F2-Q03, E-S1 nueva | No |
-| F2-R10 | R4 | Texto determinista de la oferta de compra generado desde Quote (aviso de plataforma) y exigido por el acto | Unit: el acto exige el aviso inmediatamente anterior con número y total de la cotización | F2-D13 | No |
-| F2-R11 | R4 | **O-5:** transmitir el acto registrado (`0012`) a Checkout según el contrato de F2-K04 | Unit/contract contra el contrato: sin texto ni PII; mismo acto en réplicas; tripwire sin perfiles | F2-K04, F2-K07 | No |
+| F2-R10 | R4 | Texto determinista de la oferta de compra generado desde Quote (aviso de plataforma: número, total, entrega, vigencia) y exigido por el acto inmediatamente después. **Requisito obligatorio** de F2-R11 y de encender el flag | Unit: el acto exige el aviso inmediatamente anterior de la misma cotización y versión; sin aviso, o con otro mensaje del agente entre medio → rechazo | Redacción del texto (F2-D12) | No |
+| F2-R11 | R4 | **O-5:** transmitir el acto registrado (`0012`) a Checkout según el contrato de F2-K04 | Unit/contract contra el contrato: sin texto ni PII; mismo acto en réplicas; tripwire sin perfiles | F2-R10, F2-K04, F2-K07 | No |
 
 ## 2. Grafo (resumen)
 
@@ -99,13 +99,15 @@ D05 (O-4) ─► E08 ───────────────────�
 | # | Incremento | Item | Estado |
 |---|---|---|---|
 | 1 | Evidencia determinista del acto de compra (pura) | F2-R01 | **Implementado** |
-| 2 | Persistencia del acto (Sales `0012`, aditiva) en `checkout.start_purchase@1` detrás de `purchaseActRecording`, apagado | F2-R02 | **Implementado en este PR** |
+| 2 | Persistencia del acto (Sales `0012`, aditiva) en `checkout.start_purchase@1` detrás de `purchaseActRecording`, apagado; corregida tras la revisión (S-1: misma transacción que el cuerpo; S-2: anclaje en el registro de R4 y cotización superada) | F2-R02 | **Implementado en este PR** |
 | 3 | Cabecera del grant CIA en el adaptador Checkout, sin proveedor | F2-R03 | **Implementado en este PR** |
 | 4 | Tripwires de contrato F2 (nada alcanzable desde perfiles, composiciones ni apps; sin `purchase`; sin modo Checkout productivo) | F2-R01..R04 | **Implementado en este PR** |
 | 5 | Evaluador de afirmaciones de pago | F2-R08 | Especificado |
 | 6 | Sonda C1, guardas estáticas, cancelación de sesión, contrato de transmisión | F2-K05, K02, K10, K04 | Especificados (repo Checkout; no se tocó) |
 | 7 | Ensayo local de H3 `verify`; diseño del módulo | F2-Q03, F2-E07 | Especificados (Quote, e-commerce) |
 | 8 | Publicación de H3 y A7 §12 | F2-C01, F2-Q01 | Especificados (repos CIA y Quote) |
+
+**Encender el flag** exige F2-R10 (aviso de compra determinista), además de las decisiones pendientes y del perfil de F2-R05.
 
 **Despliegue.** `0012` es una migración Sales aditiva: el próximo despliegue que incluya este cambio la aplicará
 (una tabla vacía, sin escrituras mientras el flag esté apagado). Ningún perfil, composición ni app enciende el flag ni

@@ -16,25 +16,31 @@ const files = (dir: string): string[] =>
     return statSync(path).isDirectory() ? files(path) : /\.(ts|mjs)$/.test(name) ? [path] : [];
   });
 const rel = (f: string) => f.slice(ROOT.length + 1).replaceAll('\\', '/');
-/** Everything that composes or runs a production profile: the profiles, both compositions and every app. */
-const PRODUCTION = () => [...files(join(ROOT, 'agents/sales/src/production')), ...files(join(ROOT, 'apps')), join(ROOT, 'agents/sales/src/composition.ts')];
+/** Everything that composes or runs a production profile: the profiles, both compositions, the operator CLIs and every app. */
+const PRODUCTION = () => [
+  ...files(join(ROOT, 'agents/sales/src/production')),
+  ...files(join(ROOT, 'agents/sales/src/cli')),
+  ...files(join(ROOT, 'apps')),
+  join(ROOT, 'agents/sales/src/composition.ts'),
+];
 
 describe('F2 purchase boundaries', () => {
-  it('F2-R01/R02: no production profile, composition or app enables or calls the purchase-act recording', () => {
-    const wired = PRODUCTION().filter((f) => /purchaseActRecording|purchaseActEvidence|purchase-act|recordPurchaseAct/.test(readFileSync(f, 'utf8')));
+  it('F2-R01/R02: no production profile, composition, CLI or app enables or calls the purchase-act recording', () => {
+    const wired = PRODUCTION().filter((f) => /purchaseActRecording|purchaseActEvidence|purchase-act|recordCheckoutPurchaseRequestWithAct/.test(readFileSync(f, 'utf8')));
     expect(wired.map(rel)).toEqual([]);
   }, 60_000);
 
   it('F2-R02: only checkout.start_purchase records an act, and only when the flag is exactly true', () => {
     const callers = [...files(join(ROOT, 'agents')), ...files(join(ROOT, 'apps')), ...files(join(ROOT, 'adapters'))]
-      .filter((f) => !f.endsWith('workspace/store.ts') && !f.endsWith('workspace\\store.ts'))
-      .filter((f) => /recordPurchaseAct\(/.test(readFileSync(f, 'utf8')));
+      .filter((f) => !rel(f).endsWith('workspace/store.ts'))
+      .filter((f) => /recordCheckoutPurchaseRequestWithAct\(/.test(readFileSync(f, 'utf8')));
     expect(callers.map(rel)).toEqual(['agents/sales/src/capabilities/checkout.ts']);
-    expect(readFileSync(join(ROOT, 'agents/sales/src/capabilities/checkout.ts'), 'utf8')).toContain('if (deps.purchaseActRecording === true) {');
+    expect(readFileSync(join(ROOT, 'agents/sales/src/capabilities/checkout.ts'), 'utf8')).toContain('deps.purchaseActRecording === true ? purchaseActEvidence(');
   }, 60_000);
 
   it('F2-R03: nothing in R4 supplies a customer access grant to Checkout yet (no grant source exists)', () => {
-    const suppliers = [...files(join(ROOT, 'agents')), ...files(join(ROOT, 'apps'))].filter((f) => /customerAccessGrant/.test(readFileSync(f, 'utf8')));
+    // A supplier SETS the field (`customerAccessGrant: …`); the port only declares it optional and the client only reads it.
+    const suppliers = [...files(join(ROOT, 'agents')), ...files(join(ROOT, 'apps')), ...files(join(ROOT, 'adapters'))].filter((f) => /customerAccessGrant\s*:/.test(readFileSync(f, 'utf8')));
     expect(suppliers.map(rel)).toEqual([]);
   }, 60_000);
 

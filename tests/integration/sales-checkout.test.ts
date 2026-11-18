@@ -500,8 +500,18 @@ describe('10. an unauthorized initiation cannot reach Checkout', () => {
   });
 });
 
-
 describe('F2-R02: the purchase act (0012), behind purchaseActRecording (off by default)', () => {
+  // The act is anchored to R4's own record of the issuance (database clock), so these conversations live in real time.
+  const later = () => quotes('issued', new Date(Date.now() + 3600_000));
+  const at = (iso: string, ms: number) => new Date(Date.parse(iso) + ms).toISOString();
+  async function issue(c: Conversation, quoteId: string): Promise<string> {
+    const executionKey = `r4x_${randomBytes(16).toString('hex')}`;
+    await store.recordQuoteV2Request({ executionKey, taskId: c.taskId, workspaceVersion: 1, request: {} as never, requestSha256: '0'.repeat(64) });
+    const issued = await store.recordQuoteV2Issued({ executionKey, taskId: c.taskId, quoteId, quoteNumber: 'PC-000002', issuedAt: c.tick(), validThroughLocalDate: '2026-11-18', validUntilExclusive: new Date(Date.now() + 3600_000).toISOString(), pdfSha256: 'a'.repeat(64), byteLength: 1, documentVerification: 'verified' });
+    return issued.recordedAt;
+  }
+  const acts = async (taskId: string) => (await pool.query<{ n: number }>('select count(*)::int as n from sales.purchase_act_evidence where task_id = $1', [taskId])).rows[0]!.n;
+
   it('off: the purchase starts exactly as before and no act is recorded', async () => {
     const s = setup();
     await issueQuote(s.c, s.c.tick());
@@ -511,33 +521,91 @@ describe('F2-R02: the purchase act (0012), behind purchaseActRecording (off by d
     expect(await store.purchaseAct(ctx.executionKey)).toBeNull();
   });
 
-  it('on: the act is recorded once (ids, platform times, hash; never the text) and a replay keeps it', async () => {
-    const s = setup({ purchaseActRecording: true });
-    const issuedAt = s.c.tick();
-    await issueQuote(s.c, issuedAt);
-    s.c.customer('sí, quiero pagar por favor');
+  it('on: the act is recorded with the frozen body (ids, platform times, hash; never the text) and a replay keeps it', async () => {
+    const s = setup({ purchaseActRecording: true, quote: later() });
+    const recordedAt = await issue(s.c, s.c.quoteId);
+    s.c.customer('sí, quiero pagar por favor', at(recordedAt, 1000));
     const last = s.c.entries[s.c.entries.length - 1]!;
     const ctx = wctx(s.c.taskId);
     expect(await s.start.execute({ quoteId: s.c.quoteId }, ctx)).toMatchObject({ status: 'applied' });
     expect(await s.start.execute({ quoteId: s.c.quoteId }, ctx)).toMatchObject({ status: 'applied' });
     const act = await store.purchaseAct(ctx.executionKey);
-    expect(act).toMatchObject({ taskId: s.c.taskId, quoteId: s.c.quoteId, quoteVersion: 1, quoteIssuedAt: issuedAt, requestInputId: last.refs.inputId, requestAt: last.at, grammarVersion: 'r4-sales-purchase-es-v1' });
-    expect(act!.requestTextSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(act).toMatchObject({ taskId: s.c.taskId, quoteId: s.c.quoteId, quoteVersion: 1, quoteRecordedAt: recordedAt, requestInputId: last.refs.inputId, requestAt: last.at, grammarVersion: 'r4-sales-purchase-es-v1' });
     expect(JSON.stringify(act)).not.toContain('quiero pagar');
-    const rows = await pool.query('select count(*)::int as n from sales.purchase_act_evidence where task_id = $1', [s.c.taskId]);
-    expect(rows.rows[0].n).toBe(1);
+    expect(await acts(s.c.taskId)).toBe(1);
   });
 
-  it('on: one customer message is the act of one purchase start only; another start needs a new request (nothing sent)', async () => {
-    const s = setup({ purchaseActRecording: true });
-    await issueQuote(s.c, s.c.tick());
-    s.c.customer('quiero pagar');
+  it('S-1: a start refused before the body is frozen (no consent) leaves no act, and a retry with the same message works', async () => {
+    const none: CheckoutConsentSource = { obtain: () => Promise.resolve(null) };
+    const first = setup({ purchaseActRecording: true, quote: later(), consent: none });
+    const recordedAt = await issue(first.c, first.c.quoteId);
+    first.c.customer('quiero pagar', at(recordedAt, 1000));
+    expect(await first.start.execute({ quoteId: first.c.quoteId }, wctx(first.c.taskId))).toMatchObject({ status: 'rejected', code: 'purchase_consent_unavailable' });
+    expect(await acts(first.c.taskId)).toBe(0);
+    // The same conversation, consent now available: the customer's message is not burnt.
+    const retry = checkoutStartPurchaseCapability({ store, checkout: killSwitchGuardedCheckout(first.checkout, controls, logger), quotes: later(), consent, conversation: first.c.reader, notices: first.notices, purchaseActRecording: true, now: () => NOW, poll: { intervalMs: 1, prepareMaxMs: 10, linkMaxMs: 10, sleep: () => Promise.resolve() } });
+    expect(await retry.execute({ quoteId: first.c.quoteId }, wctx(first.c.taskId))).toMatchObject({ status: 'applied' });
+    expect(await acts(first.c.taskId)).toBe(1);
+  });
+
+  it('S-1: two starts of the same quote may share the message (Checkout keeps one live session)', async () => {
+    const s = setup({ purchaseActRecording: true, quote: later() });
+    const recordedAt = await issue(s.c, s.c.quoteId);
+    s.c.customer('quiero pagar', at(recordedAt, 1000));
+    expect(await s.start.execute({ quoteId: s.c.quoteId }, wctx(s.c.taskId))).toMatchObject({ status: 'applied' });
+    expect(await s.start.execute({ quoteId: s.c.quoteId }, wctx(s.c.taskId))).toMatchObject({ status: 'applied' });
+    expect(s.checkout.counters.sessionCreates).toBe(1);
+  });
+
+  it('one customer message is the act of one quote version only: another version needs a new request (nothing sent)', async () => {
+    let version = 0;
+    const amended: QuoteV2Service = { ...later(), getQuote: (quoteId: string) => Promise.resolve({ quoteId, status: 'issued', version: ++version, validity: { validUntilExclusive: new Date(Date.now() + 3600_000).toISOString() } } as unknown as QuoteV2Quote) };
+    const s = setup({ purchaseActRecording: true, quote: amended });
+    const recordedAt = await issue(s.c, s.c.quoteId);
+    s.c.customer('quiero pagar', at(recordedAt, 1000));
     expect(await s.start.execute({ quoteId: s.c.quoteId }, wctx(s.c.taskId))).toMatchObject({ status: 'applied' });
     expect(await s.start.execute({ quoteId: s.c.quoteId }, wctx(s.c.taskId))).toMatchObject({ status: 'rejected', code: 'purchase_act_already_used' });
     expect(s.checkout.counters.sessionCreates).toBe(1);
   });
 
-  it('the evidence row is immutable', async () => {
-    await expect(pool.query("update sales.purchase_act_evidence set grammar_version = 'x'")).rejects.toThrow();
+  it('S-2 stale quote: Q1 then Q2 then «quiero pagar» → a start for Q1 is refused; Q2 is bought', async () => {
+    const s = setup({ purchaseActRecording: true, quote: later() });
+    const q2 = randomUUID();
+    await issue(s.c, s.c.quoteId);
+    const r2 = await issue(s.c, q2);
+    s.c.customer('quiero pagar', at(r2, 1000));
+    expect(await s.start.execute({ quoteId: s.c.quoteId }, wctx(s.c.taskId))).toMatchObject({ status: 'rejected', code: 'purchase_act_not_recorded', details: { reason: 'superseded_by_later_quote' } });
+    expect(s.checkout.counters.sessionCreates).toBe(0);
+    expect(await s.start.execute({ quoteId: q2 }, wctx(s.c.taskId))).toMatchObject({ status: 'applied' });
+  });
+
+  it('S-2 unseen quote: a request received after Quote issued it but before R4 recorded it is not an act for it', async () => {
+    const s = setup({ purchaseActRecording: true, quote: later() });
+    const recordedAt = await issue(s.c, s.c.quoteId);
+    s.c.customer('quiero pagar', at(recordedAt, -1));
+    expect(await s.start.execute({ quoteId: s.c.quoteId }, wctx(s.c.taskId))).toMatchObject({ status: 'rejected', code: 'purchase_act_not_recorded', details: { reason: 'no_request_after_issuance' } });
+    expect(await acts(s.c.taskId)).toBe(0);
+  });
+
+  it('L-3: a replay of one key never records another act (the store compares input, quote and version)', async () => {
+    const s = setup({ purchaseActRecording: true, quote: later() });
+    const recordedAt = await issue(s.c, s.c.quoteId);
+    const body = { executionKey: `r4x_${randomBytes(16).toString('hex')}`, taskId: s.c.taskId, quoteId: s.c.quoteId, quoteVersion: 1, consent: { format: 'checkout-sbx-test-consent.v1', token: `stub-consent-${'x'.repeat(24)}` } };
+    const act = { quoteId: s.c.quoteId, quoteVersion: 1, quoteRecordedAt: recordedAt, requestInputId: randomUUID(), requestAt: at(recordedAt, 1000), requestTextSha256: 'b'.repeat(64), grammarVersion: 'r4-sales-purchase-es-v1' };
+    expect(await store.recordCheckoutPurchaseRequestWithAct(body, act)).toMatchObject({ executionKey: body.executionKey });
+    expect(await store.recordCheckoutPurchaseRequestWithAct(body, act)).toMatchObject({ executionKey: body.executionKey });
+    await expect(store.recordCheckoutPurchaseRequestWithAct(body, { ...act, requestInputId: randomUUID() })).rejects.toThrow(/another purchase act/);
+    expect(await acts(s.c.taskId)).toBe(1);
+  });
+
+  it('L-1: a recorded act can be neither updated nor deleted', async () => {
+    const s = setup({ purchaseActRecording: true, quote: later() });
+    const recordedAt = await issue(s.c, s.c.quoteId);
+    s.c.customer('quiero pagar', at(recordedAt, 1000));
+    const ctx = wctx(s.c.taskId);
+    expect(await s.start.execute({ quoteId: s.c.quoteId }, ctx)).toMatchObject({ status: 'applied' });
+    await expect(pool.query("update sales.purchase_act_evidence set grammar_version = 'x' where execution_key = $1", [ctx.executionKey])).rejects.toThrow();
+    await expect(pool.query('delete from sales.purchase_act_evidence where execution_key = $1', [ctx.executionKey])).rejects.toThrow();
+    expect(await store.purchaseAct(ctx.executionKey)).not.toBeNull();
   });
 });
