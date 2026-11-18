@@ -12,6 +12,7 @@ import {
   type ModelResponse,
   type ModelResult,
 } from './types.js';
+import type { RequestRateLimiter } from './rate-limit.js';
 
 /** Shape a provider adapter must return. Validated because adapters are fallible. */
 const providerResponseSchema = z.object({
@@ -39,6 +40,13 @@ const CANCELLED = Symbol('cancelled');
 export interface DefaultModelGatewayOptions {
   provider: ModelProvider;
   logger: StructuredLogger;
+  /**
+   * The provider account's request-rate budget for this process (R4_MODEL_MAX_REQUESTS_PER_MINUTE). Absent ⇒ unlimited.
+   * A call waits for a start at most its own timeout, else fails `rate_limited` (retryable) without reaching the provider;
+   * once started, the provider gets its full timeout, as without a budget. A worker runs one call at a time, so it never
+   * waits longer than one window minus its previous call: with the default 60 s timeout its own calls are never refused.
+   */
+  rateLimiter?: RequestRateLimiter;
 }
 
 /**
@@ -46,22 +54,25 @@ export interface DefaultModelGatewayOptions {
  * - hard timeout enforced here, even if the provider ignores the abort signal;
  * - every failure classified into a `ModelError` value (no leaked exceptions);
  * - provider responses validated before they reach the runtime;
- * - metadata-only telemetry (no prompt or output text is logged).
+ * - metadata-only telemetry (no prompt or output text is logged);
+ * - optionally, a request-rate budget: a burst waits for capacity instead of meeting the provider's 429.
  *
  * Model routing across providers is intentionally not implemented (deferred).
  */
 export class DefaultModelGateway implements ModelGateway {
   readonly #provider: ModelProvider;
   readonly #logger: StructuredLogger;
+  readonly #rateLimiter: RequestRateLimiter | undefined;
 
   constructor(options: DefaultModelGatewayOptions) {
     this.#provider = options.provider;
     this.#logger = options.logger;
+    this.#rateLimiter = options.rateLimiter;
   }
 
   async generate(request: ModelRequest, options: ModelCallOptions = {}): Promise<ModelResult> {
     const providerId = this.#provider.providerId;
-    const started = performance.now();
+    let started = performance.now();
     const elapsed = () => Math.round(performance.now() - started);
 
     if (!Number.isInteger(request.limits.timeoutMs) || request.limits.timeoutMs <= 0) {
@@ -69,6 +80,25 @@ export class DefaultModelGateway implements ModelGateway {
     }
     if (options.signal?.aborted) {
       return this.#fail(request, { kind: 'cancelled', retryable: false, message: 'call cancelled before start', providerId, latencyMs: 0 });
+    }
+
+    // latencyMs stays the provider's own time: the wait is reported by model.call.throttled.
+    if (this.#rateLimiter) {
+      const limiter = this.#rateLimiter;
+      const maxWaitMs = request.limits.timeoutMs;
+      let waitMs: number | null;
+      try {
+        waitMs = await limiter.acquire(maxWaitMs, options.signal);
+      } catch {
+        return this.#fail(request, { kind: 'cancelled', retryable: false, message: 'call cancelled while waiting for provider capacity', providerId, latencyMs: 0 });
+      }
+      if (waitMs === null || waitMs > 0) {
+        emitTelemetry(this.#logger, 'model.call.throttled', { ...request.correlation, providerId, outcome: waitMs === null ? 'refused' : 'waited', waitMs: Math.round(waitMs ?? 0), maxRequests: limiter.maxRequests, windowMs: limiter.windowMs });
+      }
+      if (waitMs === null) {
+        return this.#fail(request, { kind: 'rate_limited', retryable: true, message: `no provider capacity within ${maxWaitMs}ms (local budget: ${limiter.maxRequests} requests per ${limiter.windowMs}ms)`, providerId, latencyMs: 0 });
+      }
+      started = performance.now();
     }
 
     const controller = new AbortController();

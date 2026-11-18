@@ -1,4 +1,4 @@
-import { ChatCompletionsImageDescriber, OpenAICompatibleModelProvider, OpenAISpeechTranscriber, describeModelConfig, describePerceptionConfig, loadOpenAICompatibleConfig, loadPerceptionConfig } from '@r4-adapters/openai-compatible';
+import { ChatCompletionsImageDescriber, OpenAICompatibleModelProvider, OpenAISpeechTranscriber, describeModelConfig, describePerceptionConfig, loadOpenAICompatibleConfig, loadPerceptionConfig, perceptionRateLimiter } from '@r4-adapters/openai-compatible';
 import type { ModelProvider } from '@r4/model-gateway';
 
 /**
@@ -26,10 +26,12 @@ export function configuredMediaPerception(env: Readonly<Record<string, string | 
   description: Record<string, string | boolean>;
 } {
   const c = loadPerceptionConfig(env, { allowNetwork: options.allowNetwork });
+  // One budget for vision and speech (R4_PERCEPTION_MAX_REQUESTS_PER_MINUTE): this process's share of the provider account.
+  const limiter = perceptionRateLimiter(c);
   return {
     enabled: c.enabled,
-    ...(c.vision ? { describer: new ChatCompletionsImageDescriber(c.vision, { instructions: options.imageInstructions }) } : {}),
-    ...(c.speech ? { transcriber: new OpenAISpeechTranscriber(c.speech) } : {}),
+    ...(c.vision ? { describer: new ChatCompletionsImageDescriber(c.vision, { instructions: options.imageInstructions, ...(limiter ? { limiter } : {}) }) } : {}),
+    ...(c.speech ? { transcriber: new OpenAISpeechTranscriber(c.speech, limiter ? { limiter } : {}) } : {}),
     transcriptionPromptOverride: c.speech?.promptOverride ?? null,
     description: describePerceptionConfig(c),
   };

@@ -13,6 +13,9 @@
 //   provider refusals R4 logs       model.call.failed by errorKind in the last CHECK_WINDOW_MINUTES:
 //                                   insufficient_balance and spend_limit_reached (money, never retried) are CRITICAL;
 //                                   rate_limited (rate saturation, retried) and provider_error alert above a threshold
+//   local throttling  R4 logs       model.call.throttled in the window: calls held back by the process's own
+//                                   R4_MODEL_MAX_REQUESTS_PER_MINUTE budget (waited, refused, total wait); WARN at
+//                                   WARN_THROTTLED waits (sustained saturation: the split or the provider limit is too small)
 // Per-model activity needs a management key and is not read.
 //
 // Thresholds live in an env file (default ~/.config/r4/provider-budget.env; see provider-budget.env.example), so they
@@ -31,7 +34,7 @@ const T = {
   warnDaysLeft: num('WARN_DAYS_LEFT', 7), critDaysLeft: num('CRIT_DAYS_LEFT', 2),
   warnBalanceUsd: num('WARN_BALANCE_USD', 5), critBalanceUsd: num('CRIT_BALANCE_USD', 1),
   warnRateLimited: num('WARN_RATE_LIMITED', 5), critRateLimited: num('CRIT_RATE_LIMITED', 50),
-  warnProviderErrors: num('WARN_PROVIDER_ERRORS', 3),
+  warnProviderErrors: num('WARN_PROVIDER_ERRORS', 3), warnThrottled: num('WARN_THROTTLED', 30),
   windowMinutes: num('CHECK_WINDOW_MINUTES', 60), alertRepeatMinutes: num('ALERT_REPEAT_MINUTES', 180),
 };
 const keyEnv = envFile(cfg.KEY_ENV_FILE ?? join(home, '.config/r4/production.env'));
@@ -97,24 +100,35 @@ else {
   } else flag('WARN', `account balance unreadable (${credits.reason.message})`);
 }
 
-// model.call.failed in the window, by kind (the logs are JSON lines; only the event, its time and errorKind are read).
+// model.call.failed by kind and model.call.throttled by outcome, in the window (the logs are JSON lines; only the event,
+// its time, errorKind, outcome and waitMs are read).
 const since = now.getTime() - T.windowMinutes * 60_000;
 const failures = {};
+const throttled = { waited: 0, refused: 0, waitMs: 0 };
 for (const file of logFiles.filter((f) => existsSync(f))) {
   for (const line of readFileSync(file, 'utf8').split('\n')) {
-    if (!line.includes('"model.call.failed"')) continue;
-    const time = Date.parse(line.match(/"time":"([^"]+)"/)?.[1] ?? '');
-    const kind = line.match(/"errorKind":"([a-z_]+)"/)?.[1] ?? 'unknown';
-    if (time >= since) failures[kind] = (failures[kind] ?? 0) + 1;
+    const failed = line.includes('"model.call.failed"');
+    if (!failed && !line.includes('"model.call.throttled"')) continue;
+    if (!(Date.parse(line.match(/"time":"([^"]+)"/)?.[1] ?? '') >= since)) continue;
+    if (failed) {
+      const kind = line.match(/"errorKind":"([a-z_]+)"/)?.[1] ?? 'unknown';
+      failures[kind] = (failures[kind] ?? 0) + 1;
+    } else {
+      throttled[line.includes('"outcome":"refused"') ? 'refused' : 'waited'] += 1;
+      throttled.waitMs += Number(line.match(/"waitMs":(\d+)/)?.[1] ?? 0);
+    }
   }
 }
 snapshot.failures = failures;
+snapshot.throttled = throttled;
 const inWindow = `in ${T.windowMinutes} min`;
 if (failures.insufficient_balance) flag('CRITICAL', `${failures.insufficient_balance} model calls refused for insufficient balance ${inWindow}`);
 if (failures.spend_limit_reached) flag('CRITICAL', `${failures.spend_limit_reached} model calls refused for a spend limit ${inWindow}`);
 const rateLimited = failures.rate_limited ?? 0;
 if (rateLimited >= T.critRateLimited) flag('CRITICAL', `${rateLimited} rate-limited model calls ${inWindow} (rate saturation)`);
 else if (rateLimited >= T.warnRateLimited) flag('WARN', `${rateLimited} rate-limited model calls ${inWindow} (rate saturation)`);
+// A refused call is also a model.call.failed rate_limited (counted above); this counts the calls that waited, then went.
+if (throttled.waited >= T.warnThrottled) flag('WARN', `${throttled.waited} model calls waited for the request-rate budget ${inWindow} (${Math.round(throttled.waitMs / 1000)} s in all; sustained saturation)`);
 if ((failures.provider_error ?? 0) >= T.warnProviderErrors) flag('WARN', `${failures.provider_error} provider errors ${inWindow}`);
 
 const alerting = findings.filter(([level]) => level !== 'INFO');
@@ -123,7 +137,7 @@ const info = findings.filter(([level]) => level === 'INFO').map(([, text]) => ` 
 const budget = snapshot.budgets?.find((b) => b.scope === snapshot.effectiveBudgetScope) ?? snapshot.budgets?.[0];
 const summary = `${now.toISOString()} provider-budget ${status}${alerting.length ? `: ${alerting.map(([, text]) => text).join('; ')}` : ''}${info}`
   + ` | budget ${budget ? `${budget.remainingUsd.toFixed(2)}/${budget.limitUsd.toFixed(2)} ${budget.scope}` : '–'} | balance ${snapshot.balanceUsd?.toFixed(2) ?? '–'}`
-  + ` | today ${snapshot.usageDailyUsd?.toFixed(2) ?? '–'} | week ${snapshot.usageWeeklyUsd?.toFixed(2) ?? '–'} | failures ${JSON.stringify(failures)}`;
+  + ` | today ${snapshot.usageDailyUsd?.toFixed(2) ?? '–'} | week ${snapshot.usageWeeklyUsd?.toFixed(2) ?? '–'} | failures ${JSON.stringify(failures)} | throttled ${throttled.waited}+${throttled.refused}`;
 process.stdout.write(`${summary}\n`);
 
 mkdirSync(dirname(snapshotsFile), { recursive: true });
