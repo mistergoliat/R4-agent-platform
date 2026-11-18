@@ -7,9 +7,10 @@
 //   - N active conversations (closed system). Each customer thinks ~Exp(THINK_S) after a reply, then sends a turn.
 //   - k lane workers; each runs ONE turn at a time (apps/worker: one task per worker), turns queue FIFO.
 //   - A turn makes C sequential model calls, C ~ Geometric(1/3.3) on 1..16 (production: mean 3.3, p90 7, max 16).
-//   - A call takes U(3, 8) s at the provider, after the lane's RequestRateLimiter (the shipped class, 61 s window)
-//     grants its start. A call whose start is more than 60 s away (the call timeout) is refused: in
-//     production it fails rate_limited and the run is retried; here it is counted and then waits for the next start.
+//   - A call takes U(3, 8) s at the provider, after its worker's RequestRateLimiter (the shipped class, 61 s window;
+//     one per process, so each of k workers gets floor(lane budget / k)) grants its start. A call whose start is more
+//     than max(60 s timeout, 61 s window) away is refused: in production it fails rate_limited and the run is retried;
+//     here it is counted and then waits for the next start.
 // Prints, per (lane budget, workers), the largest N whose turn latency stays acceptable: p90 <= 60 s and mean <= 30 s
 // (unloaded: mean ~18 s, p90 ~37 s), with no refusals above 0.1 % of calls.
 import { RequestRateLimiter } from '@r4/model-gateway';
@@ -28,7 +29,7 @@ function simulate({ conversations, workers, laneRpm, seed }) {
   const exp = (mean) => -Math.log(1 - rand()) * mean;
   const calls = () => Math.min(16, 1 + Math.floor(Math.log(1 - rand()) / Math.log(1 - 1 / 3.3)));
   let now = 0;
-  const limiter = laneRpm === Infinity ? null : new RequestRateLimiter(laneRpm, { now: () => now });
+  const limiters = Array.from({ length: workers }, () => (laneRpm === Infinity ? null : new RequestRateLimiter(Math.floor(laneRpm / workers), { now: () => now })));
   const events = []; // [time, fn], kept sorted
   const at = (time, fn) => {
     let i = events.length;
@@ -36,7 +37,7 @@ function simulate({ conversations, workers, laneRpm, seed }) {
     events.splice(i, 0, [time, fn]);
   };
   const queue = [];
-  let idle = workers;
+  const idle = limiters.map((_, i) => i);
   const latencies = [];
   let callCount = 0;
   let refused = 0;
@@ -45,7 +46,8 @@ function simulate({ conversations, workers, laneRpm, seed }) {
 
   const call = (turn) => {
     callCount++;
-    let wait = limiter ? limiter.reserve(60_000) : 0;
+    const limiter = limiters[turn.worker];
+    let wait = limiter ? limiter.reserve(61_000) : 0;
     if (wait === null) {
       refused++;
       wait = limiter.reserve(Infinity);
@@ -53,14 +55,15 @@ function simulate({ conversations, workers, laneRpm, seed }) {
     at(now + wait + (3 + 5 * rand()) * 1000, () => (--turn.left > 0 ? call(turn) : finish(turn)));
   };
   const start = () => {
-    while (idle > 0 && queue.length > 0) {
-      idle--;
-      call(queue.shift());
+    while (idle.length > 0 && queue.length > 0) {
+      const turn = queue.shift();
+      turn.worker = idle.shift();
+      call(turn);
     }
   };
   const finish = (turn) => {
     if (turn.arrived >= warmup) latencies.push(now - turn.arrived);
-    idle++;
+    idle.push(turn.worker);
     at(now + exp(THINK_S * 1000), arrive);
     start();
   };
@@ -101,9 +104,9 @@ const out = (line) => process.stdout.write(`${line}\n`);
 out(`think time ${THINK_S} s; ${HOURS} h simulated x ${SEEDS.length} seeds per point`);
 out(`unloaded: ${fmt(measure(1, 1, Infinity))}`);
 const scenarios = [
-  ['20 RPM', 14, [1, 2]],
-  ['50 RPM', 44, [1, 2, 4]],
-  ['100 RPM', 94, [1, 2, 4, 8]],
+  ['20 RPM', 12, [1, 2]],
+  ['50 RPM', 42, [1, 2, 4]],
+  ['100 RPM', 92, [1, 2, 4, 8]],
   ['unlimited', Infinity, [1]],
 ];
 for (const [label, laneRpm, ks] of scenarios) {

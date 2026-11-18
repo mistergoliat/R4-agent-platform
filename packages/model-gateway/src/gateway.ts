@@ -42,9 +42,10 @@ export interface DefaultModelGatewayOptions {
   logger: StructuredLogger;
   /**
    * The provider account's request-rate budget for this process (R4_MODEL_MAX_REQUESTS_PER_MINUTE). Absent ⇒ unlimited.
-   * A call waits for a start at most its own timeout, else fails `rate_limited` (retryable) without reaching the provider;
-   * once started, the provider gets its full timeout, as without a budget. A worker runs one call at a time, so it never
-   * waits longer than one window minus its previous call: with the default 60 s timeout its own calls are never refused.
+   * A call waits for a start at most its own timeout or one window, whichever is longer, else fails `rate_limited`
+   * (retryable) without reaching the provider; once started, the provider gets its full timeout, as without a budget.
+   * A worker runs one call at a time, so it never needs more than one window: its own calls are never refused, whatever
+   * the budget or the timeout. A 429 from the provider marks the window full (`saturate`).
    */
   rateLimiter?: RequestRateLimiter;
 }
@@ -85,7 +86,7 @@ export class DefaultModelGateway implements ModelGateway {
     // latencyMs stays the provider's own time: the wait is reported by model.call.throttled.
     if (this.#rateLimiter) {
       const limiter = this.#rateLimiter;
-      const maxWaitMs = request.limits.timeoutMs;
+      const maxWaitMs = Math.max(request.limits.timeoutMs, limiter.windowMs);
       let waitMs: number | null;
       try {
         waitMs = await limiter.acquire(maxWaitMs, options.signal);
@@ -164,6 +165,8 @@ export class DefaultModelGateway implements ModelGateway {
         return this.#fail(request, { kind, retryable: kind === 'timeout', message: kind === 'timeout' ? `model call exceeded ${request.limits.timeoutMs}ms` : 'model call cancelled', providerId, latencyMs: elapsed() });
       }
       if (error instanceof ModelProviderError) {
+        // The provider limited us anyway: back off for one window instead of meeting the next 429 at once.
+        if (error.kind === 'rate_limited') this.#rateLimiter?.saturate();
         return this.#fail(request, { kind: error.kind, retryable: error.retryable, message: error.message, providerId, latencyMs: elapsed() });
       }
       const message = error instanceof Error ? error.message : 'unknown provider failure';

@@ -123,15 +123,43 @@ describe('DefaultModelGateway with a request-rate budget', () => {
     expect(logs.events('model.call.failed')).toHaveLength(0);
   });
 
-  it('fails as retryable rate_limited, without calling the provider, when no start fits within the call timeout', async () => {
+  it('fails as retryable rate_limited, without calling the provider, when no start fits within the timeout or one window', async () => {
     const { gateway, starts, logs } = rig(20);
-    const first = await Promise.all(Array.from({ length: 20 }, (_, i) => gateway.generate(request(i, 60_000))));
-    expect(first.every((r) => r.ok)).toBe(true);
-    const refused = await gateway.generate(request(20, 60_000));
+    // 40 concurrent callers: 20 start now, 20 wait one window; the 41st would need two windows.
+    const queued = Array.from({ length: 40 }, (_, i) => gateway.generate(request(i, 60_000)));
+    const refused = await gateway.generate(request(40, 60_000));
     expect(refused).toMatchObject({ ok: false, error: { kind: 'rate_limited', retryable: true } });
-    expect(starts).toHaveLength(20);
-    expect(logs.events('model.call.throttled')).toMatchObject([{ outcome: 'refused', waitMs: 0, correlationId: 'corr-20' }]);
+    await vi.advanceTimersByTimeAsync(61_000);
+    expect((await Promise.all(queued)).every((r) => r.ok)).toBe(true);
+    expect(starts).toHaveLength(40);
+    expect(logs.events('model.call.throttled').filter((e) => e.outcome === 'refused')).toMatchObject([{ waitMs: 0, correlationId: 'corr-40' }]);
     expect(logs.events('model.call.failed')).toMatchObject([{ errorKind: 'rate_limited', retryable: true }]);
+  });
+
+  it('budget 1: a call 400 ms after a fast failure waits for the window, it is not refused (recovery run on main)', async () => {
+    const provider = new FakeModelProvider((_, i) => (i === 0 ? { type: 'provider_error', message: 'upstream 500', retryable: true } : { type: 'text', content: 'ok' }));
+    const starts: number[] = [];
+    const recorded = { providerId: provider.providerId, invoke: (r: ModelRequest, s: AbortSignal) => (starts.push(Date.now()), provider.invoke(r, s)) };
+    const gateway = new DefaultModelGateway({ provider: recorded, logger: captureLogs().logger, rateLimiter: new RequestRateLimiter(1, { now: () => Date.now() }) });
+    expect((await gateway.generate(request(0, 60_000))).ok).toBe(false);
+    await vi.advanceTimersByTimeAsync(400);
+    const retry = gateway.generate(request(1, 60_000));
+    await vi.advanceTimersByTimeAsync(60_600);
+    expect(await retry).toMatchObject({ ok: true });
+    expect(starts).toEqual([0, 61_000]);
+  });
+
+  it('a 429 from the provider marks the window full: the next call waits one window instead of meeting another 429', async () => {
+    const provider = new FakeModelProvider((_, i) => (i === 0 ? { type: 'provider_error', kind: 'rate_limited', retryable: true } : { type: 'text', content: 'ok' }));
+    const starts: number[] = [];
+    const recorded = { providerId: provider.providerId, invoke: (r: ModelRequest, s: AbortSignal) => (starts.push(Date.now()), provider.invoke(r, s)) };
+    const gateway = new DefaultModelGateway({ provider: recorded, logger: captureLogs().logger, rateLimiter: new RequestRateLimiter(20, { now: () => Date.now() }) });
+    expect(await gateway.generate(request(0, 60_000))).toMatchObject({ ok: false, error: { kind: 'rate_limited' } });
+    await vi.advanceTimersByTimeAsync(5_000);
+    const next = gateway.generate(request(1, 60_000));
+    await vi.advanceTimersByTimeAsync(61_000);
+    expect(await next).toMatchObject({ ok: true });
+    expect(starts).toEqual([0, 61_000]); // one window after the 429, not 1 of 20 starts
   });
 
   it('a call cancelled while waiting for capacity is cancelled, not sent', async () => {

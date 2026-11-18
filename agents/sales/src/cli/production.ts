@@ -287,7 +287,9 @@ async function gateway(production: ReturnType<typeof loadProductionConfig>): Pro
   const logger = createLogger({ service: 'r4-channel-gateway', level: config.logLevel });
   const pool = createPool({ connectionString: config.databaseUrl, logger, applicationName: 'r4-gateway-bindings', max: 2 });
   await assertSalesProductionPrerequisites(selectedSalesProductionProfile(production.config), pool);
-  const { bindings } = composeSalesGateway({ pool, production, env: process.env });
+  const { bindings, describe } = composeSalesGateway({ pool, production, env: process.env });
+  // The vision model's request-rate share of this process (R4_PERCEPTION_VISION_MAX_REQUESTS_PER_MINUTE), for the operator.
+  logger.info({ event: 'model.rate_guard', perceptionVisionMaxRequestsPerMinute: describe.perceptionVisionMaxRequestsPerMinute ?? 'unlimited' }, 'perception request-rate budget');
   await runGatewayProcess(config, bindings, { logger });
 }
 

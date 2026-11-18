@@ -39,6 +39,16 @@ export class RequestRateLimiter {
   }
 
   /**
+   * The provider answered 429 anyway (another user of the key, or a restart that forgot this process's earlier starts):
+   * treat the window as full from now, so the next start is one window away instead of another 429 at once.
+   * Reservations already handed out keep their starts.
+   */
+  saturate(): void {
+    const from = Math.max(this.#now(), this.#starts.at(-1) ?? 0);
+    this.#starts.splice(0, this.#starts.length, ...Array<number>(this.maxRequests).fill(from));
+  }
+
+  /**
    * Waits for a start within `maxWaitMs`. Resolves with the time waited (ms), or null when refused (nothing reserved);
    * rejects with the signal's reason when it aborts while waiting.
    * ponytail: an aborted waiter keeps its reservation (one start of the window lost); fine at a few aborts per hour.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ChatCompletionsImageDescriber, OpenAISpeechTranscriber, describePerceptionConfig, loadPerceptionConfig, perceptionRateLimiter, wordsFromLogprobs } from '@r4-adapters/openai-compatible';
+import { ChatCompletionsImageDescriber, OpenAISpeechTranscriber, describePerceptionConfig, loadPerceptionConfig, visionRateLimiter, wordsFromLogprobs } from '@r4-adapters/openai-compatible';
 import { RequestRateLimiter } from '@r4/model-gateway';
 
 /** (Inbound multimodal v1) The perception adapters: configuration (fail closed), image output validation, transcription. */
@@ -35,13 +35,13 @@ describe('loadPerceptionConfig', () => {
   });
 });
 
-describe('perception request-rate budget (R4_PERCEPTION_MAX_REQUESTS_PER_MINUTE)', () => {
+describe('vision request-rate budget (R4_PERCEPTION_VISION_MAX_REQUESTS_PER_MINUTE)', () => {
   const env = { R4_MEDIA_PERCEPTION: 'enabled', R4_PERCEPTION_VISION_API_KEY: 'vk' };
 
   it('is unlimited unless set, and must be a positive integer', () => {
-    expect(perceptionRateLimiter(loadPerceptionConfig(env, { allowNetwork: true }))).toBeUndefined();
-    expect(perceptionRateLimiter(loadPerceptionConfig({ ...env, R4_PERCEPTION_MAX_REQUESTS_PER_MINUTE: '2' }, { allowNetwork: true }))?.maxRequests).toBe(2);
-    expect(() => loadPerceptionConfig({ ...env, R4_PERCEPTION_MAX_REQUESTS_PER_MINUTE: '0' }, { allowNetwork: true })).toThrow(/positive integer/);
+    expect(visionRateLimiter(loadPerceptionConfig(env, { allowNetwork: true }))).toBeUndefined();
+    expect(visionRateLimiter(loadPerceptionConfig({ ...env, R4_PERCEPTION_VISION_MAX_REQUESTS_PER_MINUTE: '2' }, { allowNetwork: true }))?.maxRequests).toBe(2);
+    expect(() => loadPerceptionConfig({ ...env, R4_PERCEPTION_VISION_MAX_REQUESTS_PER_MINUTE: '0' }, { allowNetwork: true })).toThrow(/positive integer/);
   });
 
   it('refuses a call beyond the budget without sending it (the perceiver degrades it, as it does a 429 today)', async () => {
