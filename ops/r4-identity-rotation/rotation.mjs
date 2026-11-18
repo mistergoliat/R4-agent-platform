@@ -182,9 +182,17 @@ export async function planRotation(client, { oldKey, newKey, lists, rolloutPerce
  * every verified key, re-enable the trigger, verify every rewritten row under the new key, commit. Any mismatch aborts
  * (rollback) and nothing changes. Only bindings change: settled inbound events, task inputs, memory and snapshots keep
  * the old derived values as history (they are never compared across keys).
+ * `beforeCommit(result)` runs inside the transaction just before COMMIT (the CLI writes the recomputed lists there, so
+ * they exist whenever the commit may have happened). A thrown error carries `rolledBack: true` only when COMMIT was never
+ * sent and the ROLLBACK succeeded: then nothing changed for certain. Without it the outcome is unknown.
  */
-export async function applyRotation(client, { oldKey, newKey, lists, rolloutPercent }) {
-  await client.query('begin');
+export async function applyRotation(client, { oldKey, newKey, lists, rolloutPercent }, { beforeCommit } = {}) {
+  let committing = false;
+  try {
+    await client.query('begin');
+  } catch (error) {
+    throw Object.assign(error instanceof Error ? error : new Error(String(error)), { rolledBack: true });
+  }
   try {
     // A leftover idle-in-transaction session must make this fail fast, not hang with production stopped.
     await client.query(`set local lock_timeout = '5s'`);
@@ -201,11 +209,19 @@ export async function applyRotation(client, { oldKey, newKey, lists, rolloutPerc
     if (check.rewrittenVerified !== plan.rewrites.length || check.unverifiedOpen !== 0) throw new Error('post-rotation verification failed');
     const trigger = (await client.query(`select tgenabled from pg_trigger where tgname = $1`, [BINDING_TRIGGER])).rows[0];
     if (!trigger || trigger.tgenabled !== 'O') throw new Error('the binding identity trigger is not enabled');
+    const result = { summary: plan.summary, rewritten: updated, newLists: plan.newLists };
+    if (beforeCommit) await beforeCommit(result);
+    committing = true;
     await client.query('commit');
-    return { summary: plan.summary, rewritten: updated, newLists: plan.newLists };
+    return result;
   } catch (error) {
-    await client.query('rollback');
-    throw error;
+    if (committing) throw error;
+    try {
+      await client.query('rollback');
+    } catch {
+      throw error;
+    }
+    throw Object.assign(error instanceof Error ? error : new Error(String(error)), { rolledBack: true });
   }
 }
 

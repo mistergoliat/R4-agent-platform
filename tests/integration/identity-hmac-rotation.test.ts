@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -76,8 +76,10 @@ describe('identity HMAC rotation (operator CLI)', { timeout: 120_000 }, () => {
     const plan = await cli('plan', env, join(dir, 'new.key'));
     expect(plan.out.blockers).toEqual(['1 open binding(s) do not verify under the old key (routing would break)']);
     const refused = await cli('apply', env, join(dir, 'new.key'), ['--out', join(dir, 'refused.env')]);
-    expect(refused.code).toBe(1);
-    expect(refused.stderr).toMatch(/^apply failed: refusing to rotate: 1 open binding/);
+    expect(refused.code).toBe(3); // refused inside the transaction and certainly rolled back
+    expect(refused.stderr).toMatch(/^apply failed \(rolled back: nothing changed\): refusing to rotate: 1 open binding/);
+    // The lists are written inside the transaction, before COMMIT: a refused apply leaves none behind.
+    expect(existsSync(join(dir, 'refused.env'))).toBe(false);
     for (const out of [plan.stdout, refused.stdout, refused.stderr]) for (const secret of [IDENTITY_KEY, newKey, A, B, keyOf(A), 'cd'.repeat(32)]) expect(out).not.toContain(secret);
     expect(await bed.rows('select binding_id, conversation_key from channel_conversation_bindings order by binding_id')).toEqual(before);
     expect((await bed.rows<{ tgenabled: string }>(`select tgenabled from pg_trigger where tgname = 'channel_conversation_bindings_identity_immutable'`))[0]!.tgenabled).toBe('O');

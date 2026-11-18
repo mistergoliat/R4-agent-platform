@@ -218,7 +218,7 @@ describe('identity HMAC rotation keeps today\'s conversation continuity (sales-p
     const lists = join(dir, 'lists.env');
     expect((await tool(ROTATE, ['plan', ...envs, '--new-key-file', join(dir, 'new.key')])).code).toBe(0);
     expect(lastJson((await tool(ROTATE, ['apply', ...envs, '--new-key-file', join(dir, 'new.key'), '--out', lists])).stdout)).toMatchObject({ rewritten: 3 });
-    expect((await tool(ROTATE, ['install', ...envs, '--new-key-file', join(dir, 'new.key'), '--lists', lists, '--old-env-file', join(dir, 'production.env.backup')])).code).toBe(0);
+    expect((await tool(ROTATE, ['install', ...envs, '--new-key-file', join(dir, 'new.key'), '--lists', lists, '--old-env-file', join(dir, 'production.env.backup'), '--old-env-file', join(dir, 'production-lane.env.backup')])).code).toBe(0);
     expect(lastJson((await tool(ROTATE, ['verify', ...envs, '--key-from-env'])).stdout)).toMatchObject({ ok: true, rewrittenVerified: 3 });
     const checked = await tool(CONTINUITY, ['check', ...envs, '--snapshot', snap, '--repo', process.cwd()]);
     expect(lastJson(checked.stdout)).toMatchObject({ subjects: 2, failures: [], ok: true });

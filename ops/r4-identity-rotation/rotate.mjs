@@ -4,7 +4,7 @@
 //   rotate.mjs plan       --env-file F [--env-file F] --new-key-file K
 //   rotate.mjs apply      --env-file F [--env-file F] --new-key-file K --out LISTS
 //   rotate.mjs verify     --env-file F [--env-file F] (--new-key-file K | --key-from-env)
-//   rotate.mjs install    --env-file F [--env-file F] --new-key-file K --lists LISTS --old-env-file BACKUP
+//   rotate.mjs install    --env-file F [--env-file F] --new-key-file K --lists LISTS --old-env-file BACKUP [--old-env-file BACKUP]
 //   rotate.mjs export-key --env-file F [--env-file F] --out K [--values-out V]   (V: the key and every list entry, one per line, for grep -F -f)
 //
 // The OLD key, the key lists and R4_PROD_ROLLOUT_PERCENT come from the env file(s) (parsed like the deployment reads
@@ -12,6 +12,8 @@
 // env files' R4_DATABASE_URL. `apply` writes the recomputed lists to LISTS (0600); `install` writes the new key and those
 // lists into the env files atomically and checks the result (no old value may survive). Errors print a code and a
 // message only (never a database error detail, which could carry a derived key).
+// Exit codes: 0 done; 1 failed (for apply: the transaction outcome is UNKNOWN); 2 usage; 3 apply refused and certainly
+// rolled back (nothing changed). apply writes LISTS inside the transaction, before COMMIT is sent.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -28,7 +30,7 @@ const fail = (message, code = 2) => {
 };
 
 const [mode, ...rest] = process.argv.slice(2);
-const args = { envFiles: [], newKeyFile: null, out: null, lists: null, oldEnvFile: null, valuesOut: null, keyFromEnv: false };
+const args = { envFiles: [], newKeyFile: null, out: null, lists: null, oldEnvFiles: [], valuesOut: null, keyFromEnv: false };
 for (let i = 0; i < rest.length; i += 1) {
   const a = rest[i];
   if (a === '--key-from-env') args.keyFromEnv = true;
@@ -36,7 +38,7 @@ for (let i = 0; i < rest.length; i += 1) {
   else if (a === '--new-key-file') args.newKeyFile = rest[++i];
   else if (a === '--out') args.out = rest[++i];
   else if (a === '--lists') args.lists = rest[++i];
-  else if (a === '--old-env-file') args.oldEnvFile = rest[++i];
+  else if (a === '--old-env-file') args.oldEnvFiles.push(rest[++i]);
   else if (a === '--values-out') args.valuesOut = rest[++i];
   else fail(`unknown argument ${a}`);
 }
@@ -45,6 +47,7 @@ if (!['plan', 'apply', 'verify', 'install', 'export-key'].includes(mode) || args
 const files = args.envFiles.map((f) => ({ name: f, text: readFileSync(f, 'utf8') }));
 const env = Object.assign({}, ...files.map((f) => parseEnvFile(f.text)));
 const shape = envShapeProblems(files);
+let applyStarted = false;
 
 try {
   if (mode === 'export-key') {
@@ -54,9 +57,9 @@ try {
     if (args.valuesOut) writeFileSync(args.valuesOut, `${[env.R4_PROD_IDENTITY_HASH_KEY ?? '', ...Object.values(keyListsOf(env)).flat()].filter((v) => v.length >= 32).join('\n')}\n`, { mode: 0o600 });
     print(process.stdout, { mode, written: args.out, present: Boolean(env.R4_PROD_IDENTITY_HASH_KEY) });
   } else if (mode === 'install') {
-    if (!args.newKeyFile || !args.lists || !args.oldEnvFile) fail('install needs --new-key-file, --lists and --old-env-file');
+    if (!args.newKeyFile || !args.lists || args.oldEnvFiles.length === 0) fail('install needs --new-key-file, --lists and --old-env-file');
     const lists = parseEnvFile(readFileSync(args.lists, 'utf8'));
-    const old = parseEnvFile(readFileSync(args.oldEnvFile, 'utf8'));
+    const old = Object.assign({}, ...args.oldEnvFiles.map((f) => parseEnvFile(readFileSync(f, 'utf8'))));
     const next = { R4_PROD_IDENTITY_HASH_KEY: readFileSync(args.newKeyFile, 'utf8').trim() };
     for (const v of MANAGED_VARS.slice(1)) if (lists[v] !== undefined) next[v] = lists[v];
     const forbidden = [old.R4_PROD_IDENTITY_HASH_KEY ?? '', ...Object.values(keyListsOf(old)).flat()];
@@ -78,10 +81,15 @@ try {
         print(process.stdout, { mode, summary: plan.summary, blockers, ready: blockers.length === 0 });
         process.exitCode = blockers.length === 0 ? 0 : 1;
       } else if (mode === 'apply') {
-        if (shape.length > 0) fail(`refusing: ${shape.join('; ')}`, 1);
-        const result = await applyRotation(client, params);
-        const lines = Object.entries(result.newLists).filter(([name]) => params.lists[name].length > 0).map(([name, keys]) => `${name}=${keys.join(',')}`);
-        writeFileSync(args.out, `${lines.join('\n')}\n`, { mode: 0o600 });
+        if (shape.length > 0) fail(`refusing: ${shape.join('; ')}`, 3);
+        applyStarted = true;
+        // The lists are written BEFORE the commit: whenever the database may be rotated, its lists exist.
+        const result = await applyRotation(client, params, {
+          beforeCommit: (r) => {
+            const lines = Object.entries(r.newLists).filter(([name]) => params.lists[name].length > 0).map(([name, keys]) => `${name}=${keys.join(',')}`);
+            writeFileSync(args.out, `${lines.join('\n')}\n`, { mode: 0o600 });
+          },
+        });
         print(process.stdout, { mode, summary: result.summary, rewritten: result.rewritten, listsWrittenTo: args.out });
       } else {
         const check = await verifyRotation(client, { newKey });
@@ -95,5 +103,6 @@ try {
   }
 } catch (error) {
   // Never the error detail (a unique violation would print the conflicting derived key).
-  fail(`${mode} failed: ${error?.code ? `[${error.code}] ` : ''}${String(error?.message ?? error).replace(/[0-9a-f]{32,}/g, '<hex>')}`, 1);
+  const certain = mode === 'apply' && (!applyStarted || error?.rolledBack === true);
+  fail(`${mode} failed${certain ? ' (rolled back: nothing changed)' : mode === 'apply' ? ' (OUTCOME UNKNOWN: the commit may have happened)' : ''}: ${error?.code ? `[${error.code}] ` : ''}${String(error?.message ?? error).replace(/[0-9a-f]{32,}/g, '<hex>')}`, certain ? 3 : 1);
 }

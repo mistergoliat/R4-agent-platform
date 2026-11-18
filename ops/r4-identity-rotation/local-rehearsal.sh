@@ -56,13 +56,13 @@ case "\$1" in
   start|restart|stop) [ "\${FAKE_PM2_FAIL:-}" = "\$1 \$2" ] && { echo "pm2: \$1 \$2 failed" >&2; exit 1; }
     [ "\$1" = stop ] && echo stopped > "\$S/\$2.status" || echo online > "\$S/\$2.status"
     [ "\$1" = restart ] && printf '%s' "\${R4_PROD_IDENTITY_HASH_KEY:-}" > "\$S/\$2.key"; exit 0 ;;
-  save) for f in "\$S"/*.status; do n=\$(basename "\$f" .status); echo "\$n \$(cat "\$f") R4_PROD_IDENTITY_HASH_KEY=\$(cat "\$S/\$n.key" 2>/dev/null)"; done > "\$D" ;;
+  save) [ -f "\$D" ] && mv "\$D" "\$D.bak"; for f in "\$S"/*.status; do n=\$(basename "\$f" .status); echo "\$n \$(cat "\$f") R4_PROD_IDENTITY_HASH_KEY=\$(cat "\$S/\$n.key" 2>/dev/null)"; done > "\$D" ;;
   jlist) node -e 'const fs=require("fs");const S=process.argv[1];console.log(JSON.stringify(fs.readdirSync(S).filter(f=>f.endsWith(".status")).map(f=>({name:f.slice(0,-7),pm2_env:{status:fs.readFileSync(S+"/"+f,"utf8").trim()}}))))' "\$S" ;;
 esac
 EOF
 chmod +x "$T/bin/pm2"
 for p in r4-scheduler r4-sales-worker r4-sales-worker-lane r4-channel-gateway; do echo online > "$T/pm2/$p.status"; [ "$p" = r4-scheduler ] || printf '%s' "$OLD" > "$T/pm2/$p.key"; done
-PATH="$T/bin:$PATH" pm2 save
+PATH="$T/bin:$PATH" pm2 save; PATH="$T/bin:$PATH" pm2 save   # dump.pm2 and dump.pm2.bak both hold the old key, as on the host
 PORT=$((20000 + $$ % 20000)); node -e "require('http').createServer((q,s)=>s.end('ok')).listen($PORT,'127.0.0.1')" & HPID=$!
 export PATH="$T/bin:$PATH" PM2_HOME="$H/.pm2" R4_REPO="$REPO" R4_CONFIG="$C" R4_BACKUPS="$H/backups" R4_PG_CONTAINER="$PGC" R4_PG_USER=r4 R4_PG_DB="$NAME"
 export R4_GATEWAY_HEALTH="127.0.0.1:$PORT/health" R4_WEB_QA_CONFIG="$W" R4_ACTIVE_EXTRA="$H/r4-lane-switch-v2.sh $H/r4-inbound-media" R4_HISTORY_DIRS="$C $H/backups $W"
@@ -107,7 +107,7 @@ check "new key file mode" "$(stat -c %a "$B/new.key")" 600
 check "old key left in the active env files" "$(cat "$C/production.env" "$C/production-lane.env" | grep -cF -f "$B/old.values" || true)" 0
 check "workers and gateway carry the new key" "$(for p in r4-sales-worker r4-sales-worker-lane r4-channel-gateway; do [ "$(cat "$T/pm2/$p.key")" = "$NEW" ] && echo y; done | wc -l | tr -d ' ')" 3
 check "the scheduler carries no key" "$(cat "$T/pm2/r4-scheduler.key")" ""
-check "old key in the pm2 dump" "$(grep -cF -f "$B/old.key" "$H/.pm2/dump.pm2" || true)" 0
+check "old values in any pm2 dump file (dump.pm2, dump.pm2.bak)" "$(cat "$H"/.pm2/dump.pm2* | grep -cF -f "$B/old.values" || true)" 0
 check "no key, list entry or synthetic contact printed" "$(grep -cF -e "$OLD" -e "$NEW" -e synthetic: -f "$B/old.values" "$T/rotate.log" || true)" 0
 check "bindings changed" "$([ "$(sums)" != "$ORIGINAL" ] && echo yes)" yes
 
@@ -120,5 +120,14 @@ has "rollback done" "ROLLBACK DONE" "$T/rollback.log"
 check "every binding back to its original key" "$(sums)" "$ORIGINAL"
 check "env files hold the old key again" "$(grep -c "^R4_PROD_IDENTITY_HASH_KEY='$OLD'$" "$C/production.env")" 1
 check "workers and gateway carry the old key" "$(for p in r4-sales-worker r4-sales-worker-lane r4-channel-gateway; do [ "$(cat "$T/pm2/$p.key")" = "$OLD" ] && echo y; done | wc -l | tr -d ' ')" 3
+check "autonomy as found before the rollback" "$(ctl status | grep -oE '"autonomy": "[a-z]+"' | head -1)" '"autonomy": "enabled"'
+
+echo "== rollback after an apply whose process died before install (database rotated, env files still on the old key)"
+(set -a; . "$C/production.env"; set +a; node "$HERE/rotate.mjs" apply --env-file "$C/production.env" --env-file "$C/production-lane.env" --new-key-file "$B/new.key" --out "$B/lists.env" >/dev/null)
+check "bindings rotated, env files untouched" "$([ "$(sums)" != "$ORIGINAL" ] && grep -c "^R4_PROD_IDENTITY_HASH_KEY='$OLD'$" "$C/production.env")" 1
+B=$B bash "$HERE/rollback-production.sh" > "$T/rollback2.log" 2>&1 || { cat "$T/rollback2.log"; exit 1; }
+has "nothing installed when the files already hold the old key" "already hold the old key: nothing to install" "$T/rollback2.log"
+has "rollback done" "ROLLBACK DONE" "$T/rollback2.log"
+check "every binding back to its original key" "$(sums)" "$ORIGINAL"
 echo "== timings: rotate-production.sh ${ROTATE_S} s, rollback-production.sh ${ROLLBACK_S} s; $(grep '^window' "$T/rotate.log")"
 echo "REHEARSAL PASSED (copy, stand-ins and files destroyed on exit)"
