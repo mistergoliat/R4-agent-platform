@@ -7,6 +7,7 @@ const configSchema = z.object({
   R4_LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   R4_AGENT_DEFINITIONS_DIR: z.string().min(1).default('./agents'),
   R4_DB_POOL_MAX: z.coerce.number().int().min(1).max(100).default(10),
+  R4_SERVICE_READER_TOKEN_SHA256: z.string().optional(),
 });
 
 export interface ApiConfig {
@@ -16,6 +17,8 @@ export interface ApiConfig {
   readonly logLevel: z.infer<typeof configSchema>['R4_LOG_LEVEL'];
   readonly agentDefinitionsDir: string;
   readonly dbPoolMax: number;
+  /** ADR-049: SHA-256 (hex) of the read-only service token; absent = no service reader. */
+  readonly serviceReaderTokenSha256?: string;
 }
 
 /** Configuration comes only from the environment; invalid config fails the boot. */
@@ -32,5 +35,6 @@ export function loadConfig(env: NodeJS.ProcessEnv): ApiConfig {
     logLevel: c.R4_LOG_LEVEL,
     agentDefinitionsDir: c.R4_AGENT_DEFINITIONS_DIR,
     dbPoolMax: c.R4_DB_POOL_MAX,
+    ...(c.R4_SERVICE_READER_TOKEN_SHA256 ? { serviceReaderTokenSha256: c.R4_SERVICE_READER_TOKEN_SHA256 } : {}),
   };
 }

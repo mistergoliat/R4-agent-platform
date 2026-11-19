@@ -4,3 +4,4 @@ export * from './errors.js';
 export * from './platform.js';
 export * from './principal.js';
 export * from './registration.js';
+export * from './service-reader.js';

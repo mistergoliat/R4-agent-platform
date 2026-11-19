@@ -18,6 +18,7 @@ import { AutonomyControls, ProductionOperator } from '@r4/live-ops';
 import { buildApp, type ReadinessReport, type AppDependencies } from './app.js';
 import type { ApiConfig } from './config.js';
 import type { PrincipalResolver } from './principal.js';
+import { createServiceReader } from './service-reader.js';
 
 export interface Platform {
   readonly app: FastifyInstance;
@@ -37,6 +38,7 @@ export interface PlatformOverrides {
   readonly ids?: IdGenerator;
   readonly principal?: PrincipalResolver;
   readonly humanContext?: AppDependencies['humanContext'];
+  readonly serviceReader?: AppDependencies['serviceReader'];
 }
 
 /**
@@ -79,7 +81,9 @@ export async function createPlatform(config: ApiConfig, overrides: PlatformOverr
       };
     };
 
+    const serviceReader = overrides.serviceReader ?? createServiceReader(config.serviceReaderTokenSha256);
     const app = buildApp({ logger, tasks, agents, readiness, temporal, production,
+      ...(serviceReader ? { serviceReader } : {}),
       ...(overrides.humanContext ? { humanContext: overrides.humanContext } : {}),
       ...(overrides.principal ? { principal: overrides.principal } : {}) });
     await app.ready();
