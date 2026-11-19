@@ -16,7 +16,7 @@ import {
 import type { AgentRegistry } from '@r4/agent-registry';
 import type { TaskRuntime, TemporalRuntime } from '@r4/task-runtime';
 import type { ProductionOperator } from '@r4/live-ops';
-import { INCIDENT_SIGNATURE, type PostgresConsoleReads, type PostgresIncidents } from '@r4/persistence-postgres';
+import { INCIDENT_SIGNATURE, type PostgresConsoleReads, type PostgresIncidents, type PostgresInsights, type PostgresKnowledge } from '@r4/persistence-postgres';
 import { resolveCorrelationId, runWithCorrelation } from '@r4/observability';
 import { toErrorResponse } from './errors.js';
 import { unauthenticatedPrincipalResolver, type PrincipalResolver } from './principal.js';
@@ -50,6 +50,10 @@ export interface AppDependencies {
   readonly consoleReads?: PostgresConsoleReads;
   /** (ADR-051) Incident groups (read) and their human triage (write). */
   readonly incidents?: PostgresIncidents;
+  /** (ADR-052) Releases, quality funnel, learning gaps and autonomy reads. */
+  readonly insights?: PostgresInsights;
+  /** (ADR-052) Curated knowledge entries (read; signed operator writes). */
+  readonly knowledge?: PostgresKnowledge;
   /** ADR-050: 'disabled' refuses unauthenticated callers on POST /v1/tasks and /v1/tasks/:id/inputs. Default 'enabled'. */
   readonly anonymousWrites?: 'enabled' | 'disabled';
 }
@@ -309,6 +313,80 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
           if (!operator.scopes.includes('incident.triage')) throw new PlatformError('precondition', 'human_scope_denied', 'operator lacks the incident.triage scope');
           const { signature, state, note, requestUrl } = parse(triageBody, request.body ?? undefined, 'body');
           return { signature, triage: await incidents.triage(signature, { state, note, requestUrl: requestUrl ?? null }, operator.humanRef, request.id) };
+        }),
+      );
+    }
+
+    if (deps.insights) {
+      // ADR-052: deterministic reads (service reader or operator). Only the learning gaps carry text (masked).
+      const insights = deps.insights;
+      const windowQuery = (fallback: number) => z.strictObject({ days: z.coerce.number().int().min(1).max(31).default(fallback) });
+      const stage = z.string().regex(/^[a-z][a-z0-9_.-]{0,63}$/, 'expected a capability id prefix');
+      const funnelQuery = z.strictObject({
+        days: z.coerce.number().int().min(1).max(31).default(14),
+        // One `stage` arrives as a string, several as an array.
+        stage: z.union([stage.transform((s) => [s]), z.array(stage)]).pipe(z.array(z.string()).min(1).max(6)),
+      });
+      app.get('/v1/production/versions', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          return insights.versions(parse(windowQuery(14), request.query, 'query').days);
+        }),
+      );
+      app.get('/v1/quality/funnel', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          const { days, stage: stages } = parse(funnelQuery, request.query, 'query');
+          return insights.funnel(days, stages);
+        }),
+      );
+      app.get('/v1/learning/gaps', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          return insights.gaps(parse(windowQuery(14), request.query, 'query').days);
+        }),
+      );
+      app.get('/v1/autonomy', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          return insights.autonomy(parse(windowQuery(30), request.query, 'query').days);
+        }),
+      );
+    }
+
+    if (deps.knowledge) {
+      // ADR-052: curated knowledge (no agent reads it). Writes: signed operator with knowledge.curate / knowledge.sign.
+      const knowledge = deps.knowledge;
+      const entryBody = z.strictObject({
+        topic: z.string().trim().min(1).max(120),
+        statement: z.string().trim().min(1).max(2000),
+        source: z.string().trim().min(1).max(300),
+        sourceRef: z.string().trim().min(1).max(300).optional(),
+        expiresAt: z.iso.date().optional(),
+      });
+      const transitionBody = z.strictObject({ entryId: uuidSchema, to: z.enum(['verified', 'signed', 'retired']), note: z.string().trim().min(1).max(500) });
+      app.get('/v1/learning/knowledge', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          parse(z.strictObject({}), request.query, 'query');
+          return { entries: await knowledge.list() };
+        }),
+      );
+      app.post('/v1/learning/knowledge', (request, reply) =>
+        inContext(request, async () => {
+          const operator = human(request);
+          if (!operator.scopes.includes('knowledge.curate')) throw new PlatformError('precondition', 'human_scope_denied', 'operator lacks the knowledge.curate scope');
+          const body = parse(entryBody, request.body ?? undefined, 'body');
+          const entry = await knowledge.propose({ ...body, sourceRef: body.sourceRef ?? null, expiresAt: body.expiresAt ?? null }, operator.humanRef, request.id);
+          return reply.status(201).send({ entry });
+        }),
+      );
+      // The required scope depends on the entry's current state (proposed→verified and →retired: curate; verified→signed: sign).
+      app.post('/v1/learning/knowledge/transition', (request) =>
+        inContext(request, async () => {
+          const operator = human(request);
+          const { entryId, to, note } = parse(transitionBody, request.body ?? undefined, 'body');
+          return { entry: await knowledge.transition(entryId, to, note, operator, request.id) };
         }),
       );
     }
