@@ -1,9 +1,10 @@
 # ADR-049 — Consola R4: aplicación web de operación, fuera del CRM y fuera de este repositorio
 
 - **Identificador:** `R4-CONSOLE-01`
-- **Estado:** **Aceptado. Fases 1, 2 y 3 en producción** (owner, 2026-11-19): lectura con el lector de servicio
-  (Decisión 6), lecturas nuevas de la Fase 2 y acciones de operador y de servidor según **ADR-050**. La Fase 4 y la
-  Fase 5 necesitan autorización explícita del owner.
+- **Estado:** **Aceptado. Fases 1 a 4 (v1) en producción** (owner, 2026-11-19): lectura con el lector de servicio
+  (Decisión 6), lecturas nuevas de la Fase 2, acciones de operador y de servidor según **ADR-050**, incidentes según
+  **ADR-051** y lanzamientos, calidad, aprendizaje y autonomía deterministas según **ADR-052**. Lo pendiente de la
+  Fase 4 y la Fase 5 necesitan autorización explícita del owner.
 - **Fecha:** 2026-11-19
 - **Mandato:** owner, 2026-11-18 y 2026-11-19: una consola en vivo para ver y operar los agentes, en una aplicación
   aparte del CRM. Se construye primero la consola; la app de ventas (ADR-048) queda para después.
@@ -157,8 +158,13 @@ queda para otra autorización.
 | 1. Solo lectura | En producción (`47248fd`, PR #102) |
 | 2. Lecturas nuevas | En producción (`3adc226`, PR #103) |
 | 3. Acciones | En producción (`45187a4`, PR #104, ADR-050). La consola corre en el mismo host, detrás de nginx con HTTPS y login de Google; también lanza despliegues, vuelta a la versión anterior, cambio de carril y porcentaje de clientes con los scripts del host, y avisa por ntfy |
-| 4. Mejora continua | No autorizada |
+| 4a. Incidentes | En producción (`589b39e`, PR #106, ADR-051). Detectores deterministas, triage, pedidos internos y avisos por ntfy cada 10 minutos |
+| 4b/4c. Lanzamientos, calidad, aprendizaje y autonomía (v1) | En producción (`ab917a0`, PR #107, ADR-052). Lecturas deterministas, conocimiento curado y firmado, y topes del carril editables como operación de servidor |
+| 4. Pendiente | Necesita decisión del owner: que el agente use el conocimiento firmado (versión nueva con evaluación), auditor de calidad con modelo (presupuesto), simulador y vuelta atrás automática, modos «sombra» y «copiloto», pedidos en GitHub con agente de código |
 | 5. Mesa de ventas y otros | Depende de ADR-048 |
+
+Las Fases 3 y 4 se desplegaron con autorización explícita del owner para cada PR; las dos últimas las lanzó el owner
+desde la propia consola (Operaciones).
 
 La guía de operación de la consola (claves, sesiones, versiones, operadores) vive en el repositorio privado de la
 consola, porque nombra rutas y servicios del host.
