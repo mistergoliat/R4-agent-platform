@@ -10,3 +10,4 @@ export * from './action-store.js';
 export * from './production-store.js';
 export * from './worker-presence-store.js';
 export * from './console-reads.js';
+export * from './incidents.js';

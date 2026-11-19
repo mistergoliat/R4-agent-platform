@@ -82,6 +82,16 @@ export interface PlatformEvent {
   readonly code: string;
 }
 
+/**
+ * Reply latency (`metrics().latency.customerTurnMs`): an agent reply accepted by the channel, measured from
+ * the newest task input the replying step could have seen. One row per reply accepted in [since, until] (no upper
+ * bound without `until`).
+ */
+export const customerTurns = (since: string, until?: string): string =>
+  `select o.accepted_at as at, o.task_id, s.run_id, extract(epoch from (o.accepted_at - (select max(i.received_at) from task_inputs i where i.task_id = o.task_id and i.received_at <= s.created_at))) * 1000 as ms
+     from outbound_messages o join agent_run_steps s on s.step_id = o.response_step_id
+    where o.accepted_at >= ${since}${until ? ` and o.accepted_at <= ${until}` : ''}`;
+
 const ms = (from: unknown, to: unknown): number | null => (from == null || to == null ? null : new Date(to as string).getTime() - new Date(from as string).getTime());
 const actor = (col: string) => `case when ${col} ~ '^[a-z][a-z0-9_.-]{0,63}:[0-9a-f]{32}$' then 'contact' when ${col} like '%@%' then 'redacted' else ${col} end`;
 
@@ -130,10 +140,7 @@ export class PostgresConsoleReads {
     const since = `((date_trunc('day', $3::timestamptz at time zone $2) - make_interval(days => $1::int - 1)) at time zone $2)`;
     const daily = await query<Row>(
       this.#pool,
-      `with turns as (
-         select o.accepted_at as at, extract(epoch from (o.accepted_at - (select max(i.received_at) from task_inputs i where i.task_id = o.task_id and i.received_at <= s.created_at))) * 1000 as ms
-           from outbound_messages o join agent_run_steps s on s.step_id = o.response_step_id
-          where o.accepted_at >= ${since} and o.accepted_at <= $3::timestamptz)
+      `with turns as (${customerTurns(since, '$3::timestamptz')})
        select to_char(d, 'YYYY-MM-DD') as day,
               (select percentile_cont(0.5) within group (order by t.ms) from turns t where (t.at at time zone $2)::date = d::date) as p50,
               (select count(t.ms) from turns t where (t.at at time zone $2)::date = d::date) as n

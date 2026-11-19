@@ -30,6 +30,7 @@ const API_WRITE_ROUTES: Readonly<Record<string, string>> = {
   'POST /v1/tasks/:id/operator-messages': 'E-6 BA-05 operator text, persisted and sent to the customer',
   'POST /v1/outbound/:id/resolve': 'E-7 BA-02 procedure: operator note',
   'POST /v1/outbound/:id/cancel': 'no text (empty body)',
+  'POST /v1/incidents/triage': 'ADR-051 operator note on an incident signature, persisted in the triage tables (never in a task or its context)',
 };
 
 describe('AT-ALT-01: alternative inputs are inventoried and none of them is treated as a protected channel input', () => {

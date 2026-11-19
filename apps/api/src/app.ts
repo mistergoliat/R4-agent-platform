@@ -16,7 +16,7 @@ import {
 import type { AgentRegistry } from '@r4/agent-registry';
 import type { TaskRuntime, TemporalRuntime } from '@r4/task-runtime';
 import type { ProductionOperator } from '@r4/live-ops';
-import type { PostgresConsoleReads } from '@r4/persistence-postgres';
+import { INCIDENT_SIGNATURE, type PostgresConsoleReads, type PostgresIncidents } from '@r4/persistence-postgres';
 import { resolveCorrelationId, runWithCorrelation } from '@r4/observability';
 import { toErrorResponse } from './errors.js';
 import { unauthenticatedPrincipalResolver, type PrincipalResolver } from './principal.js';
@@ -48,6 +48,8 @@ export interface AppDependencies {
   readonly production?: ProductionOperator;
   /** (ADR-049 Phase 2) Console reads: run step trace, activity per day and agent, event feed. */
   readonly consoleReads?: PostgresConsoleReads;
+  /** (ADR-051) Incident groups (read) and their human triage (write). */
+  readonly incidents?: PostgresIncidents;
   /** ADR-050: 'disabled' refuses unauthenticated callers on POST /v1/tasks and /v1/tasks/:id/inputs. Default 'enabled'. */
   readonly anonymousWrites?: 'enabled' | 'disabled';
 }
@@ -279,6 +281,34 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
           const { before, limit } = parse(eventsQuery, request.query, 'query');
           const [at, id] = before?.split('|') ?? [];
           return reads.events(limit, at && id ? { at, id } : undefined);
+        }),
+      );
+    }
+
+    if (deps.incidents) {
+      // ADR-051: incident groups (service reader or operator) and their triage (signed operator with incident.triage).
+      const incidents = deps.incidents;
+      const incidentsQuery = z.strictObject({ days: z.coerce.number().int().min(1).max(31).default(7) });
+      const triageBody = z
+        .strictObject({
+          signature: z.string().max(300).regex(INCIDENT_SIGNATURE, 'not an incident signature'),
+          state: z.enum(['ignored', 'requested']),
+          note: z.string().trim().min(1).max(1000),
+          requestUrl: z.url({ protocol: /^https$/ }).max(2000).optional(),
+        })
+        .refine((b) => b.state !== 'requested' || b.requestUrl !== undefined, { message: 'requestUrl is required when state is requested', path: ['requestUrl'] });
+      app.get('/v1/incidents', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          return incidents.list(parse(incidentsQuery, request.query, 'query').days);
+        }),
+      );
+      app.post('/v1/incidents/triage', (request) =>
+        inContext(request, async () => {
+          const operator = human(request);
+          if (!operator.scopes.includes('incident.triage')) throw new PlatformError('precondition', 'human_scope_denied', 'operator lacks the incident.triage scope');
+          const { signature, state, note, requestUrl } = parse(triageBody, request.body ?? undefined, 'body');
+          return { signature, triage: await incidents.triage(signature, { state, note, requestUrl: requestUrl ?? null }, operator.humanRef, request.id) };
         }),
       );
     }
