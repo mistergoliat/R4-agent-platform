@@ -33,6 +33,8 @@ export interface AppDependencies {
   readonly temporal?: TemporalRuntime;
   /** Auth adapter seam: absent by default; no header/body impersonation fallback. */
   readonly humanContext?: (request: FastifyRequest) => TrustedHumanContext | null;
+  /** ADR-049: read-only service credential for operator-plane GETs. Never authorizes a write. */
+  readonly serviceReader?: (request: FastifyRequest) => boolean;
   /** (R4-I) Operator plane of production conversations (thread, delivery, manual reply, autonomy controls). */
   readonly production?: ProductionOperator;
 }
@@ -161,6 +163,11 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       if (!context) throw new PlatformError('precondition', 'trusted_human_required', 'an authenticated human context adapter is required');
       return parse(trustedHumanContextSchema, { ...context, correlationId: request.id }, 'trusted human context');
     };
+    // ADR-049: operator-plane READS also accept the read-only service credential. Writes keep `human`.
+    const reader = (request: FastifyRequest): void => {
+      if (deps.serviceReader?.(request)) return;
+      human(request);
+    };
     const executionParams = z.strictObject({ id: uuidSchema });
     const responseKeyBody = z.strictObject({ responseKey: z.string().min(1).max(256) });
 
@@ -187,13 +194,13 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     );
     app.get('/v1/tasks/:id/temporal', (request) =>
       inContext(request, async () => {
-        human(request);
+        reader(request);
         return temporal.inspect(parse(taskParams, request.params, 'path').id);
       }),
     );
     app.get('/v1/attention', (request) =>
       inContext(request, async () => {
-        human(request);
+        reader(request);
         return temporal.attention();
       }),
     );
@@ -220,25 +227,25 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       const listQuery = z.strictObject({ limit: z.coerce.number().int().min(1).max(500).optional() });
       app.get('/v1/production/conversations', (request) =>
         inContext(request, async () => {
-          human(request);
+          reader(request);
           return { conversations: await production.conversations(parse(listQuery, request.query, 'query').limit) };
         }),
       );
       app.get('/v1/production/attention', (request) =>
         inContext(request, async () => {
-          human(request);
+          reader(request);
           return production.attention();
         }),
       );
       app.get('/v1/production/metrics', (request) =>
         inContext(request, async () => {
-          human(request);
+          reader(request);
           return { metrics: await production.metrics() };
         }),
       );
       app.get('/v1/production/controls', (request) =>
         inContext(request, async () => {
-          human(request);
+          reader(request);
           return production.controls();
         }),
       );
@@ -251,20 +258,20 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       // Thread with an incremental cursor: operators poll for new entries (the channel operation's "live" thread).
       app.get('/v1/tasks/:id/thread', (request) =>
         inContext(request, async () => {
-          human(request);
+          reader(request);
           const { id } = parse(taskParams, request.params, 'path');
           return production.thread(id, parse(threadQuery, request.query, 'query').after);
         }),
       );
       app.get('/v1/tasks/:id/outbound', (request) =>
         inContext(request, async () => {
-          human(request);
+          reader(request);
           return { outbound: await production.outboundForTask(parse(taskParams, request.params, 'path').id) };
         }),
       );
       app.get('/v1/outbound/:id', (request) =>
         inContext(request, async () => {
-          human(request);
+          reader(request);
           return production.outbound(parse(outboundParams, request.params, 'path').id);
         }),
       );
