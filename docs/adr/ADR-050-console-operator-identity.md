@@ -24,9 +24,12 @@
 3. **El adapter de ADR-033 no sirve para una aplicación web.** Es de terminal (cliente de escritorio, redirect a
    loopback) y cada ID token sirve una sola vez dentro del proceso que hizo el login. `r4-api` en producción no tiene
    ningún adapter: toda escritura humana responde `trusted_human_required`.
-4. **La consola ya verifica el login.** Su backend hace el login OIDC de Google Workspace con un cliente **web**
-   propio, con las mismas verificaciones del ID token que ADR-033 (incluida `hd`), autoriza por `(iss, sub)` en su
-   lista y mantiene una sesión del lado del servidor (ADR-049, Decisión 3).
+4. **La consola ya verifica el login.** Su backend hace el login OIDC de Google con un cliente **web** propio
+   (aplicación OAuth «Externa»: la cuenta del owner no es de Google Workspace), con las verificaciones del ID token
+   de ADR-033 (firma RS256, `iss`, `aud`, `azp`, `exp`, antigüedad de `iat`, `nonce`, `email_verified`). La
+   verificación de dominio (`hd`) es opcional y se aplica solo si se configura un dominio de Workspace. Quien
+   admite o rechaza es la lista por `(iss, sub)`, nunca el correo. La sesión es una cookie firmada del lado del
+   servidor (ADR-049, Decisión 3).
 5. **Mismo host.** El backend de la consola corre en el mismo host que `r4-api`, que escucha solo en loopback detrás
    de nginx.
 6. **`r4-api` usa hoy un rol de base de datos de solo lectura** (ADR-049, Decisión 6), que además mantiene cerradas
