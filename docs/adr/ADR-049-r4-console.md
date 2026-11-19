@@ -188,6 +188,7 @@ consola, porque nombra rutas y servicios del host.
      de operador.
    - **Corrección propuesta:** un rol propio de `r4-api` con solo los permisos que usan sus rutas. Necesita
      autorización del owner y una ventana corta de reinicio de `r4-api`.
+   - Queda registrada como brecha **S-1**, en la sección «Brechas de seguridad previas al despliegue productivo».
 4. **Sin copia de datos (Decisión 2).** Sigue vigente para los datos de R4. Las operaciones del servidor (despliegues,
    carril, porcentaje y topes) dejan su bitácora en archivos del host. No son datos de R4 y no tienen contenido de
    clientes.
@@ -201,6 +202,16 @@ consola, porque nombra rutas y servicios del host.
    - Las escrituras exigen la aserción de operador de ADR-050, y las anónimas están apagadas.
    - Las lecturas del plano de operador exigen el lector de servicio o una persona verificada.
    - Lo que queda abierto: cualquier proceso del host con el token de lectura puede leer conversaciones.
+
+## Brechas de seguridad previas al despliegue productivo
+
+Decisión del owner (2026-11-19): quedan anotadas y se cierran antes del despliegue productivo, no ahora.
+
+| Id | Brecha | Cierre |
+|---|---|---|
+| S-1 | `r4-api` usa el rol superusuario de la base de producción. Si falla una capa de la consola o de `r4-api`, el alcance es la base entera y el contenedor (`DROP`, roles, `COPY … FROM PROGRAM`) | Rol propio de `r4-api` con permisos solo sobre las tablas de sus rutas, sin DDL ni roles |
+| S-2 | Gateway, workers y scheduler usan ese mismo rol superusuario. Están menos expuestos: no reciben pedidos desde la web | Un rol por proceso, con lo que cada uno usa |
+| S-3 | Crear órdenes (futuro): las llaves del webservice de PrestaShop dan permisos por recurso y método, no por orden. Una llave que modifica órdenes puede cambiar cualquier orden de la tienda | R4 nunca guarda la llave de PrestaShop. Las órdenes las crea el servicio dueño (como Quote V2 y Checkout), que valida el pedido. Su llave tiene lo mínimo: sin borrar, sin clientes ni empleados y, si se puede, restringida a la IP del servidor. En R4, crear una orden es una capacidad de escritura por código (ADR-054, D8) |
 
 ## Fuera de alcance
 
@@ -228,4 +239,4 @@ consola, porque nombra rutas y servicios del host.
 2. ~~Cuándo exponer la consola a internet, y con qué subdominio.~~ Resuelta: publicada con login (revisión, punto 2).
 3. Quién, además del owner, puede entrar y con qué rol.
 4. Si las vistas de conversación muestran los datos de contacto completos o siempre enmascarados.
-5. Crear el rol acotado de base de datos para `r4-api` (revisión, punto 3).
+5. Cuándo se cierran las brechas S-1 a S-3, antes del despliegue productivo.
