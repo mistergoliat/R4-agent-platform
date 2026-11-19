@@ -249,3 +249,17 @@ describe('ADR-051 POST /v1/incidents/triage', () => {
     await expect(bed.rows('delete from incident_triage_events')).rejects.toThrow(/immutable/);
   });
 });
+
+describe('ADR-051 customer_unanswered ignores conversations that already ended', () => {
+  it('a cancelled or completed task is not an unanswered customer (production dry run: 7 of 7 were ended tasks)', async () => {
+    const before = find(await view(later), 'customer_unanswered:')[0]!;
+    const [cancelled, completed] = [tasks.waiting0!, tasks.waiting1!];
+    // Runs last: the status change is what an idle close, an operator cancel or a lane retirement leaves behind.
+    await bed.rows(`update agent_tasks set status = 'cancelled', status_reason = 'cancelled' where task_id = $1`, [cancelled]);
+    await bed.rows(`update agent_tasks set status = 'completed', status_reason = 'run_completed' where task_id = $1`, [completed]);
+    const after = find(await view(later), 'customer_unanswered:')[0]!;
+    expect(after.count).toBe(before.count - 2);
+    expect(after.exampleTaskIds).not.toContain(cancelled);
+    expect(after.exampleTaskIds).not.toContain(completed);
+  });
+});

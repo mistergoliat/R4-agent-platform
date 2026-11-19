@@ -117,11 +117,14 @@ export class PostgresIncidents {
       this.#pool,
       `with occ (detector, agent_id, agent_version, code, task_id, at) as (
          -- The newest input of a task, still without any channel-accepted reply after it, on an autonomous
-         -- conversation that no human holds (requested or active handoff).
+         -- conversation that no human holds (requested or active handoff). A task that already ended
+         -- (completed or cancelled: idle close, operator cancel, lane retirement) left its last input
+         -- unanswered on purpose; a failed one is reported by run_failed and its fallback notice.
          select 'customer_unanswered', t.agent_id, t.agent_version, 'no_accepted_reply', li.task_id, li.at
            from (select task_id, max(received_at) as at from task_inputs where received_at >= ${since} group by task_id) li
            join agent_tasks t on t.task_id = li.task_id
           where li.at <= $2::timestamptz
+            and t.status not in ('completed', 'cancelled', 'failed')
             and exists (select 1 from channel_conversation_bindings b where b.task_id = li.task_id and b.autonomy = 'autonomous')
             and not exists (select 1 from outbound_messages o where o.task_id = li.task_id and o.accepted_at >= li.at)
             and not exists (select 1 from human_requests h where h.task_id = li.task_id and h.kind = 'handoff' and h.status in ('requested', 'active'))

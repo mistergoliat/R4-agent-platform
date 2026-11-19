@@ -62,7 +62,11 @@ Los umbrales (10 minutos, 60 s) son constantes con nombre en el código; cambiar
   `no_accepted_reply`.
 - «Respondido» en `customer_unanswered`: existe un envío de la tarea (de cualquier origen) con `accepted_at` igual o
   posterior a la última entrada de la tarea (`task_inputs.received_at`). Además la conversación debe tener un binding
-  `autonomy = 'autonomous'` y la tarea no tener un traspaso `requested` ni `active`.
+  `autonomy = 'autonomous'`, la tarea no tener un traspaso `requested` ni `active`, y **no haber terminado**
+  (`completed`, `cancelled` o `failed`). Una conversación cerrada (cierre por inactividad, cancelación del operador,
+  retiro de un carril) deja su último mensaje sin respuesta a propósito; una tarea fallida ya aparece en `run_failed`
+  y recibe el aviso de plataforma. Prueba en seco sobre producción (2026-11-19, 14 días): las 7 tareas que el
+  detector habría marcado sin esta condición estaban terminadas (6 canceladas, 1 completada).
 - `slow_reply` reutiliza la definición de latencia de turno de la consola (`customerTurns`, la misma de `activity` y de
   `metrics().latency.customerTurnMs`).
 - Ventana: las últimas `N × 24 h` hasta ahora, sin límite superior (una diferencia de reloj entre la API y la base no
