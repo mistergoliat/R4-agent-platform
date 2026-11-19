@@ -16,7 +16,7 @@ import {
 import type { AgentRegistry } from '@r4/agent-registry';
 import type { TaskRuntime, TemporalRuntime } from '@r4/task-runtime';
 import type { ProductionOperator } from '@r4/live-ops';
-import { INCIDENT_SIGNATURE, type PostgresConsoleReads, type PostgresIncidents, type PostgresInsights, type PostgresKnowledge } from '@r4/persistence-postgres';
+import { INCIDENT_SIGNATURE, type PostgresAgentDrafts, type PostgresConsoleReads, type PostgresIncidents, type PostgresInsights, type PostgresKnowledge } from '@r4/persistence-postgres';
 import { resolveCorrelationId, runWithCorrelation } from '@r4/observability';
 import { toErrorResponse } from './errors.js';
 import { unauthenticatedPrincipalResolver, type PrincipalResolver } from './principal.js';
@@ -54,6 +54,8 @@ export interface AppDependencies {
   readonly insights?: PostgresInsights;
   /** (ADR-052) Curated knowledge entries (read; signed operator writes). */
   readonly knowledge?: PostgresKnowledge;
+  /** (ADR-054) Agent drafts (read; signed operator writes with agent.draft). A draft never runs in production. */
+  readonly drafts?: PostgresAgentDrafts;
   /** ADR-050: 'disabled' refuses unauthenticated callers on POST /v1/tasks and /v1/tasks/:id/inputs. Default 'enabled'. */
   readonly anonymousWrites?: 'enabled' | 'disabled';
 }
@@ -387,6 +389,69 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
           const operator = human(request);
           const { entryId, to, note } = parse(transitionBody, request.body ?? undefined, 'body');
           return { entry: await knowledge.transition(entryId, to, note, operator, request.id) };
+        }),
+      );
+    }
+
+    if (deps.drafts) {
+      // ADR-054 (W1): agent drafts. Reads: service reader or person; writes: signed operator with agent.draft.
+      const drafts = deps.drafts;
+      const slug = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/);
+      const edits = {
+        displayName: z.string().trim().min(1).max(120),
+        description: z.string().trim().min(1).max(2000),
+        instructions: z.string().trim().min(1).max(50_000),
+        capabilityScopes: z.array(z.string().min(1).max(128)).max(64),
+        budgets: z.record(z.string().min(1).max(64), z.number().int().nonnegative()),
+        note: z.string().trim().min(1).max(500).optional(),
+      };
+      const createBody = z.strictObject({
+        agentId: z.string().regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/).max(64),
+        base: z.strictObject({ agentId: z.string().min(1).max(64), version: z.number().int().positive() }),
+        template: slug,
+        channel: slug.optional(),
+        ...edits,
+      });
+      const draftParams = z.strictObject({ id: uuidSchema });
+      const operatorWith = (request: FastifyRequest) => {
+        const operator = human(request);
+        if (!operator.scopes.includes('agent.draft')) throw new PlatformError('precondition', 'human_scope_denied', 'operator lacks the agent.draft scope');
+        return operator;
+      };
+      app.get('/v1/agent-drafts', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          parse(z.strictObject({}), request.query, 'query');
+          return { drafts: await drafts.list() };
+        }),
+      );
+      app.get('/v1/agent-drafts/:id', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          return drafts.get(parse(draftParams, request.params, 'path').id);
+        }),
+      );
+      app.post('/v1/agent-drafts', (request, reply) =>
+        inContext(request, async () => {
+          const operator = operatorWith(request);
+          const { agentId, base, template, channel, note, ...rest } = parse(createBody, request.body ?? undefined, 'body');
+          const created = await drafts.create({ agentId, base, template, channel: channel ?? null, edits: rest, note: note ?? null }, operator.humanRef, request.id);
+          return reply.status(201).send(created);
+        }),
+      );
+      app.post('/v1/agent-drafts/:id/revisions', (request, reply) =>
+        inContext(request, async () => {
+          const operator = operatorWith(request);
+          const { id } = parse(draftParams, request.params, 'path');
+          const { note, ...rest } = parse(z.strictObject(edits), request.body ?? undefined, 'body');
+          return reply.status(201).send(await drafts.revise(id, rest, note ?? null, operator.humanRef, request.id));
+        }),
+      );
+      app.post('/v1/agent-drafts/:id/discard', (request) =>
+        inContext(request, async () => {
+          const operator = operatorWith(request);
+          parse(z.strictObject({}), request.body ?? {}, 'body');
+          return { draft: await drafts.discard(parse(draftParams, request.params, 'path').id, operator.humanRef) };
         }),
       );
     }
