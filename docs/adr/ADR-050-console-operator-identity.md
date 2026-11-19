@@ -1,9 +1,11 @@
 # ADR-050 — Identidad de operador de la consola R4: aserción firmada por solicitud
 
 - **Identificador:** `R4-CONSOLE-02`
-- **Estado:** **Aceptado para la Fase 3 de ADR-049** (owner, 2026-11-19). Implementado en R4; el despliegue en
-  producción, el cambio de rol de base de datos de `r4-api` y la exposición de la consola necesitan autorización
-  explícita del owner.
+- **Estado:** **Aceptado e implementado** (owner, 2026-11-19). En producción desde `45187a4` (PR #104), con
+  autorización explícita del owner para el despliegue, el rol de base de datos con escritura de `r4-api`
+  (`R4_API_ANONYMOUS_WRITES=disabled`) y la exposición de la consola con login de Google. Verificado en producción:
+  kill switch, tomar, responder y devolver una conversación, y un despliegue completo lanzado desde la consola,
+  cada acción registrada a nombre del operador (`oidc:<operatorRef>`).
 - **Fecha:** 2026-11-19
 - **Mandato:** owner, 2026-11-19: la consola debe poder hacer toda escritura de operador que R4 ya expone.
 - **Autoridad superior:** Constitución ("las escrituras requieren ejecución gobernada"); PRD §17 (operador humano);
