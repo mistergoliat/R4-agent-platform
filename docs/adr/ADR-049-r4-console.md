@@ -1,7 +1,8 @@
 # ADR-049 — Consola R4: aplicación web de operación, fuera del CRM y fuera de este repositorio
 
 - **Identificador:** `R4-CONSOLE-01`
-- **Estado:** **Aceptado. Fases 1 a 4 (v1) en producción** (owner, 2026-11-19): lectura con el lector de servicio
+- **Estado:** **Aceptado. Fases 1 a 4 (v1) en producción, Fase 5 empezada** (owner, 2026-11-19; ver «Revisión del
+  2026-11-19»): lectura con el lector de servicio
   (Decisión 6), lecturas nuevas de la Fase 2, acciones de operador y de servidor según **ADR-050**, incidentes según
   **ADR-051** y lanzamientos, calidad, aprendizaje y autonomía deterministas según **ADR-052**. Lo pendiente de la
   Fase 4 y la Fase 5 necesitan autorización explícita del owner.
@@ -160,14 +161,46 @@ queda para otra autorización.
 | 3. Acciones | En producción (`45187a4`, PR #104, ADR-050). La consola corre en el mismo host, detrás de nginx con HTTPS y login de Google; también lanza despliegues, vuelta a la versión anterior, cambio de carril y porcentaje de clientes con los scripts del host, y avisa por ntfy |
 | 4a. Incidentes | En producción (`589b39e`, PR #106, ADR-051). Detectores deterministas, triage, pedidos internos y avisos por ntfy cada 10 minutos |
 | 4b/4c. Lanzamientos, calidad, aprendizaje y autonomía (v1) | En producción (`ab917a0`, PR #107, ADR-052). Lecturas deterministas, conocimiento curado y firmado, y topes del carril editables como operación de servidor |
-| 4. Pendiente | Necesita decisión del owner: que el agente use el conocimiento firmado (versión nueva con evaluación), auditor de calidad con modelo (presupuesto), simulador y vuelta atrás automática, modos «sombra» y «copiloto», pedidos en GitHub con agente de código |
-| 5. Mesa de ventas y otros | Depende de ADR-048 |
+| 4. Pendiente | Necesita decisión del owner: que el agente use el conocimiento firmado (versión nueva con evaluación), auditor de calidad con modelo (presupuesto), vuelta atrás automática, modos «sombra» y «copiloto», pedidos en GitHub con agente de código. El simulador pasa a ADR-054 (probador) |
+| Pendientes de diseño de las pantallas | En producción (consola `06485b7`): titular de Hoy («atendió N de M sola»), diagnóstico automático por conversación, «Cuándo pide ayuda» y costo de modelo por cotización en la página del agente, y Auditoría (quién hizo qué y cuándo) |
+| Un agente por canal | En producción (consola `031016b`, ADR-053): «Don Pesín · WhatsApp», y Web, Instagram y Facebook como planificados mientras R4 no los ejecute |
+| 5. Mesa de ventas, canales y nuevos agentes | Empezada. Las respuestas de una persona al chat web están en `main` (`e63e063`, PR #109), sin desplegar: el chat web no está en producción. ADR-053 (omnicanalidad) está propuesto y ADR-054 (nuevo agente) está en revisión (PR #111). La mesa con vendedores depende de ADR-048 |
 
 Las Fases 3 y 4 se desplegaron con autorización explícita del owner para cada PR; las dos últimas las lanzó el owner
 desde la propia consola (Operaciones).
 
 La guía de operación de la consola (claves, sesiones, versiones, operadores) vive en el repositorio privado de la
 consola, porque nombra rutas y servicios del host.
+
+## Revisión del 2026-11-19: lo que cambió respecto de lo escrito arriba
+
+1. **Login (Decisión 3).**
+   - El cliente OAuth web de Google es una app externa, con la cuenta personal del owner, sin `hd`. El acceso lo decide
+     la lista de operadores por `(issuer, subject)`.
+   - La sesión es una cookie firmada, `HttpOnly` y `Secure`, con `SameSite=Lax`, no una sesión del lado del servidor.
+     `Strict` impide volver desde Google con la sesión.
+2. **Exposición (Decisiones 3 y 6).** La consola está publicada con HTTPS en un subdominio genérico, detrás de nginx y
+   del login. El túnel SSH ya no es el acceso normal.
+3. **Rol de base de datos de `r4-api` (Decisión 6 y ADR-050, Decisión 4).**
+   - **Hallazgo:** al habilitar las escrituras, `r4-api` pasó a usar el rol principal de la base de producción, no un
+     rol con escritura acotado. Funciona y las salvaguardas de ADR-050 están activas (aserción de operador, escrituras
+     anónimas apagadas, carpeta de definiciones vacía), pero el rol tiene más permisos de los que necesitan las rutas
+     de operador.
+   - **Corrección propuesta:** un rol propio de `r4-api` con solo los permisos que usan sus rutas. Necesita
+     autorización del owner y una ventana corta de reinicio de `r4-api`.
+4. **Sin copia de datos (Decisión 2).** Sigue vigente para los datos de R4. Las operaciones del servidor (despliegues,
+   carril, porcentaje y topes) dejan su bitácora en archivos del host. No son datos de R4 y no tienen contenido de
+   clientes.
+5. **Fase 5 (Decisión 4).**
+   - Autonomía y aprendizaje se adelantaron a la Fase 4 (ADR-052).
+   - La Fase 5 queda en: mesa de ventas (ADR-048), contacto con clientes, omnicanalidad (ADR-053) y nuevo agente
+     (ADR-054).
+   - La consola nombra a cada agente por canal y agrega «Nuevo agente» al pie del menú (ADR-054). Los borradores se
+     listan en Agentes.
+6. **Autenticación de la API (Consecuencias).**
+   - Las escrituras exigen la aserción de operador de ADR-050, y las anónimas están apagadas.
+   - Las lecturas del plano de operador exigen el lector de servicio o una persona verificada.
+   - Lo que queda abierto: cualquier proceso del host con el token de lectura puede leer conversaciones.
 
 ## Fuera de alcance
 
@@ -190,7 +223,9 @@ consola, porque nombra rutas y servicios del host.
 
 ## Decisiones abiertas del owner
 
-1. Registrar el cliente OAuth web de Google Workspace y confirmar el dominio (`hd`).
-2. Cuándo exponer la consola a internet, y con qué subdominio.
+1. ~~Registrar el cliente OAuth web y confirmar el dominio (`hd`).~~ Resuelta: app externa, sin `hd` (revisión,
+   punto 1).
+2. ~~Cuándo exponer la consola a internet, y con qué subdominio.~~ Resuelta: publicada con login (revisión, punto 2).
 3. Quién, además del owner, puede entrar y con qué rol.
 4. Si las vistas de conversación muestran los datos de contacto completos o siempre enmascarados.
+5. Crear el rol acotado de base de datos para `r4-api` (revisión, punto 3).
