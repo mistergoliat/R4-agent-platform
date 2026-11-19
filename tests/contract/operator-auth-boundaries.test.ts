@@ -21,6 +21,7 @@ function files(dir: string): string[] {
   });
 }
 const SALES = files(join(ROOT, 'agents/sales/src')).map(rel);
+const API = files(join(ROOT, 'apps/api/src')).map(rel);
 const AUTH = SALES.filter((f) => f.startsWith('agents/sales/src/operator-auth/'));
 const DECISION = ['agents/sales/src/cli/operator-approval.ts', 'agents/sales/src/cli/operator-command.ts', 'agents/sales/src/cli/operator.ts'];
 
@@ -65,5 +66,23 @@ describe('R4-J3D-S boundaries: trusted human approval', () => {
   it('is exposed as exactly one operator script', () => {
     const scripts = (JSON.parse(text('package.json')) as { scripts: Record<string, string> }).scripts;
     expect(Object.entries(scripts).filter(([k]) => k.startsWith('production:sales:operator'))).toEqual([['production:sales:operator', 'node agents/sales/dist/cli/operator.js']]);
+  });
+});
+
+describe('ADR-050 boundaries: the console operator assertion', () => {
+  it('is the only human-context builder in the API and reads only the assertion header, method, URL and raw body', () => {
+    expect(API.filter((f) => /\bhumanRef:/.test(code(f)))).toEqual(['apps/api/src/console-operator.ts']);
+    const adapter = code('apps/api/src/console-operator.ts');
+    const reads = [...new Set([...adapter.matchAll(/\brequest\.([A-Za-z]+(?:\[[^\]]+\])?)/g)].map((m) => m[1]))].sort();
+    expect(reads).toEqual(["headers['x-r4-console-assertion']", 'id', 'log', 'method', 'rawBody', 'url']);
+    expect(adapter).not.toMatch(/\bemail\b/i);
+    // Identity by (iss, sub) only; signature in constant time; single-use jti.
+    expect(adapter).toMatch(/operators\.get\(identityKey\(p\.iss, p\.sub\)\)/);
+    expect(adapter).toMatch(/timingSafeEqual\(given, expected\)/);
+    expect(adapter).toMatch(/if \(used\.has\(p\.jti\)\) return 'replayed';/);
+  });
+
+  it('the composition root takes the human context only from an override or the console adapter', () => {
+    expect(code('apps/api/src/platform.ts')).toMatch(/const humanContext = overrides\.humanContext \?\? createConsoleOperatorContext\(/);
   });
 });

@@ -13,7 +13,14 @@ describe('loadConfig', () => {
       logLevel: 'info',
       agentDefinitionsDir: './agents',
       dbPoolMax: 10,
+      anonymousWrites: 'enabled',
     });
+  });
+
+  it('reads the ADR-050 console operator settings', () => {
+    const config = loadConfig({ R4_DATABASE_URL: 'postgres://x', R4_CONSOLE_OPERATOR_KEY: 'k', R4_CONSOLE_OPERATORS_FILE: '/etc/r4/ops.json', R4_API_ANONYMOUS_WRITES: 'disabled' });
+    expect(config).toMatchObject({ consoleOperatorKey: 'k', consoleOperatorsFile: '/etc/r4/ops.json', anonymousWrites: 'disabled' });
+    expect(() => loadConfig({ R4_DATABASE_URL: 'postgres://x', R4_API_ANONYMOUS_WRITES: 'off' })).toThrow(/R4_API_ANONYMOUS_WRITES/);
   });
 
   it('fails the boot on invalid configuration', () => {

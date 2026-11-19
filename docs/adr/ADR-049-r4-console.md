@@ -1,8 +1,9 @@
 # ADR-049 — Consola R4: aplicación web de operación, fuera del CRM y fuera de este repositorio
 
 - **Identificador:** `R4-CONSOLE-01`
-- **Estado:** **Aceptado para la Fase 1** (owner, 2026-11-19), incluido el lector de servicio (Decisión 6). El
-  despliegue en producción y cada fase siguiente necesitan autorización explícita del owner.
+- **Estado:** **Aceptado para la Fase 1** (owner, 2026-11-19), incluido el lector de servicio (Decisión 6). La
+  Fase 3 (acciones) se rige por **ADR-050** (identidad de operador de la consola). El despliegue en producción y cada
+  fase siguiente necesitan autorización explícita del owner.
 - **Fecha:** 2026-11-19
 - **Mandato:** owner, 2026-11-18 y 2026-11-19: una consola en vivo para ver y operar los agentes, en una aplicación
   aparte del CRM. Se construye primero la consola; la app de ventas (ADR-048) queda para después.
