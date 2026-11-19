@@ -15,6 +15,7 @@ import {
 import type { AgentRegistry } from '@r4/agent-registry';
 import type { TaskRuntime, TemporalRuntime } from '@r4/task-runtime';
 import type { ProductionOperator } from '@r4/live-ops';
+import type { PostgresConsoleReads } from '@r4/persistence-postgres';
 import { resolveCorrelationId, runWithCorrelation } from '@r4/observability';
 import { toErrorResponse } from './errors.js';
 import { unauthenticatedPrincipalResolver, type PrincipalResolver } from './principal.js';
@@ -37,7 +38,12 @@ export interface AppDependencies {
   readonly serviceReader?: (request: FastifyRequest) => boolean;
   /** (R4-I) Operator plane of production conversations (thread, delivery, manual reply, autonomy controls). */
   readonly production?: ProductionOperator;
+  /** (ADR-049 Phase 2) Console reads: run step trace, activity per day and agent, event feed. */
+  readonly consoleReads?: PostgresConsoleReads;
 }
+
+/** (ADR-049 Phase 2) Local days of the activity read. */
+export const CONSOLE_TIME_ZONE = 'America/Santiago';
 
 export const CORRELATION_HEADER = 'x-correlation-id';
 const MAX_BODY_BYTES = 256 * 1024;
@@ -218,6 +224,36 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         return { schedule: await temporal.rescheduleReconciliation(id, parse(responseKeyBody, request.body ?? undefined, 'body'), human(request)) };
       }),
     );
+
+    if (deps.consoleReads) {
+      // ADR-049 Phase 2: console reads (no message text, no reasoning, no contact addresses).
+      const reads = deps.consoleReads;
+      const activityQuery = z.strictObject({ days: z.coerce.number().int().min(1).max(31).default(7) });
+      const eventsQuery = z.strictObject({
+        before: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\|[0-9a-f-]{36}$/, 'expected <iso>|<id>').refine((v) => !Number.isNaN(Date.parse(v.slice(0, 24))), 'invalid timestamp').optional(),
+        limit: z.coerce.number().int().min(1).max(200).default(50),
+      });
+      app.get('/v1/runs/:id/steps', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          return reads.runSteps(parse(runParams, request.params, 'path').id);
+        }),
+      );
+      app.get('/v1/production/activity', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          return reads.activity(parse(activityQuery, request.query, 'query').days, CONSOLE_TIME_ZONE);
+        }),
+      );
+      app.get('/v1/events', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          const { before, limit } = parse(eventsQuery, request.query, 'query');
+          const [at, id] = before?.split('|') ?? [];
+          return reads.events(limit, at && id ? { at, id } : undefined);
+        }),
+      );
+    }
 
     if (deps.production) {
       // R4-I operator plane (API-only): the proven operator semantics of the channel operation, on R4's owners.
