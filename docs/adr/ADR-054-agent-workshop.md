@@ -1,4 +1,4 @@
-# ADR-054 — Taller de agentes: borrador, probador y lanzamiento
+# ADR-054 — Nuevo agente: borrador, probador y lanzamiento
 
 - **Identificador:** `R4-WORKSHOP-01`
 - **Estado:** **Propuesto** (owner, 2026-11-19: «dale, escribe el ADR-054»). Implementar cada fase necesita
@@ -38,6 +38,10 @@ nadie. Se arma desde una plantilla:
 Un borrador tiene: la base (`agentId@version`), la identidad destino, la definición propuesta, el autor, las
 revisiones y un estado: `draft`, `ready`, `launched` o `discarded`. Cada guardado crea una revisión nueva; nada se
 sobrescribe.
+
+**En la consola** (decisión del owner, 2026-11-19), la entrada es el botón «Nuevo agente», al pie del menú. No hay una
+sección aparte. Un borrador en curso aparece en la lista de Agentes marcado «(borrador)», con un punto distinto al de
+un agente activo. Desde su página se prueba y se lanza.
 
 ## Decisión 2 — Qué puede cambiar un borrador
 
@@ -92,7 +96,7 @@ como «listo, sin canal».
 
 El curador del grafo y otros agentes internos necesitan capacidades que R4 no tiene, y en general otro disparador: por
 horario o por lote, no por conversación. Primero va su ADR y el contrato con el servicio dueño de los datos (Catalog,
-para el grafo). Cuando esas capacidades existan en un paquete, el taller suma una plantilla para ellos, con su propio
+para el grafo). Cuando esas capacidades existan en un paquete, «Nuevo agente» suma una plantilla para ellos, con su propio
 probador por lote.
 
 ## Core
