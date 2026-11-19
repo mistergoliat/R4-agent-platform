@@ -69,7 +69,8 @@ export type GoalRejectionCode = (typeof GOAL_REJECTION_CODES)[number];
 // (R4-I) `autonomy.control`: change the operational autonomy controls (kill switch).
 // (ADR-051) `incident.triage`: record the human decision (ignored / requested) on an incident group.
 // (ADR-052) `knowledge.curate`: propose, verify and retire knowledge entries; `knowledge.sign`: sign a verified entry.
-export const HUMAN_SCOPES = ['consultation.answer', 'approval.decide', 'handoff.manage', 'task.cancel', 'reconciliation.manage', 'autonomy.control', 'incident.triage', 'knowledge.curate', 'knowledge.sign'] as const;
+// (ADR-054) `agent.draft`: create, revise and discard agent drafts (a draft never runs in production).
+export const HUMAN_SCOPES = ['consultation.answer', 'approval.decide', 'handoff.manage', 'task.cancel', 'reconciliation.manage', 'autonomy.control', 'incident.triage', 'knowledge.curate', 'knowledge.sign', 'agent.draft'] as const;
 export type HumanScope = (typeof HUMAN_SCOPES)[number];
 
 /**
