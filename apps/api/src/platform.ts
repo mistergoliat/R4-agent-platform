@@ -8,6 +8,7 @@ import {
   PostgresTaskRuntimeStore,
   PostgresExecutionStore,
   PostgresProductionStore,
+  PostgresConsoleReads,
   checkDatabaseReadiness,
   createPool,
   migrationStatus,
@@ -82,7 +83,7 @@ export async function createPlatform(config: ApiConfig, overrides: PlatformOverr
     };
 
     const serviceReader = overrides.serviceReader ?? createServiceReader(config.serviceReaderTokenSha256);
-    const app = buildApp({ logger, tasks, agents, readiness, temporal, production,
+    const app = buildApp({ logger, tasks, agents, readiness, temporal, production, consoleReads: new PostgresConsoleReads(pool, clock),
       ...(serviceReader ? { serviceReader } : {}),
       ...(overrides.humanContext ? { humanContext: overrides.humanContext } : {}),
       ...(overrides.principal ? { principal: overrides.principal } : {}) });

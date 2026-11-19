@@ -126,6 +126,29 @@ El owner eligió esta vía (2026-11-19) para tener la consola funcionando antes 
 
 Con esto la Fase 1 sí modifica R4, pero solo en la API: la consola sigue sin escribir.
 
+## Fase 2 — Lecturas nuevas (autorizada por el owner, 2026-11-19)
+
+Tres `GET` nuevos en la API, detrás del mismo lector de servicio (o de una persona verificada). Solo leen tablas
+durables; ninguno devuelve texto de mensajes, razonamiento del modelo, contenido libre de una decisión, teléfonos ni
+correos.
+
+- **`GET /v1/runs/:id/steps`** — los pasos de un run, del más antiguo al más nuevo: origen, resultado, código de
+  error (nunca el mensaje), tipo de decisión, capability invocada, tokens y tiempos. `decideMs` es el tiempo desde el
+  fin del paso anterior (o el inicio del run) hasta que se registró el paso: contexto más llamada al modelo.
+  `executeMs` es el tiempo de la lectura o de la acción hasta su observación.
+- **`GET /v1/production/activity?days=N`** (1 a 31, 7 por defecto) — por día local de `America/Santiago` y por
+  agente: tareas creadas, mensajes entrantes, salientes entregados o leídos, derivaciones a humano, runs, runs
+  fallidos, llamadas al modelo, tokens y llamadas a capabilities. Por día, la mediana del tiempo de respuesta al
+  cliente (del último mensaje del cliente a la aceptación de la respuesta por el proveedor).
+- **`GET /v1/events?before=<cursor>&limit=N`** (1 a 200, 50 por defecto) — la bitácora, la forma mínima de C-4:
+  transiciones de tareas, eventos temporales (derivaciones, consultas, aprobaciones, esperas), cambios de autonomía y
+  recibos de acciones, del más nuevo al más antiguo, con cursor estable `<iso>|<id>`. Un contacto aparece como
+  `contact` y cualquier referencia con `@` como `redacted`. El motivo de un cambio de autonomía sigue en
+  `GET /v1/production/controls`.
+
+El costo del modelo en dinero sigue sin registrarse: la consola muestra tokens. El resumen de conversación enriquecido
+queda para otra autorización.
+
 ## Fuera de alcance
 
 - La app de ventas (ADR-048).
