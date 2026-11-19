@@ -70,7 +70,7 @@ En la consola, el operador hace de cliente y conversa con el borrador, turno a t
 
 **Dónde corre:** en un proceso aparte, `r4-trial`, con su propia base (`r4_trial`) en el mismo Postgres. Así las
 pruebas no aparecen en incidentes, calidad ni métricas de producción. El proceso escucha solo en `127.0.0.1`. Acepta la
-misma aserción de operador de ADR-050, con un scope nuevo, `agent.workshop`, y la consola le habla a través de su BFF
+misma aserción de operador de ADR-050, con un scope nuevo, `agent.draft`, y la consola le habla a través de su BFF
 con lista permitida, como a `r4-api`.
 
 **Gasto:** las pruebas usan modelo real. Tienen un tope diario propio (`R4_TRIAL_MAX_USD_PER_DAY`) y un límite de
