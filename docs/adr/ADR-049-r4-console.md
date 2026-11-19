@@ -1,9 +1,9 @@
 # ADR-049 — Consola R4: aplicación web de operación, fuera del CRM y fuera de este repositorio
 
 - **Identificador:** `R4-CONSOLE-01`
-- **Estado:** **Aceptado para la Fase 1** (owner, 2026-11-19), incluido el lector de servicio (Decisión 6). La
-  Fase 3 (acciones) se rige por **ADR-050** (identidad de operador de la consola). El despliegue en producción y cada
-  fase siguiente necesitan autorización explícita del owner.
+- **Estado:** **Aceptado. Fases 1, 2 y 3 en producción** (owner, 2026-11-19): lectura con el lector de servicio
+  (Decisión 6), lecturas nuevas de la Fase 2 y acciones de operador y de servidor según **ADR-050**. La Fase 4 y la
+  Fase 5 necesitan autorización explícita del owner.
 - **Fecha:** 2026-11-19
 - **Mandato:** owner, 2026-11-18 y 2026-11-19: una consola en vivo para ver y operar los agentes, en una aplicación
   aparte del CRM. Se construye primero la consola; la app de ventas (ADR-048) queda para después.
@@ -149,6 +149,19 @@ correos.
 
 El costo del modelo en dinero sigue sin registrarse: la consola muestra tokens. El resumen de conversación enriquecido
 queda para otra autorización.
+
+## Estado de las fases (2026-11-19)
+
+| Fase | Estado |
+|---|---|
+| 1. Solo lectura | En producción (`47248fd`, PR #102) |
+| 2. Lecturas nuevas | En producción (`3adc226`, PR #103) |
+| 3. Acciones | En producción (`45187a4`, PR #104, ADR-050). La consola corre en el mismo host, detrás de nginx con HTTPS y login de Google; también lanza despliegues, vuelta a la versión anterior, cambio de carril y porcentaje de clientes con los scripts del host, y avisa por ntfy |
+| 4. Mejora continua | No autorizada |
+| 5. Mesa de ventas y otros | Depende de ADR-048 |
+
+La guía de operación de la consola (claves, sesiones, versiones, operadores) vive en el repositorio privado de la
+consola, porque nombra rutas y servicios del host.
 
 ## Fuera de alcance
 
