@@ -10,6 +10,7 @@ import {
   inputSubmissionSchema,
   humanResponseSchema,
   trustedHumanContextSchema,
+  type Principal,
   type TrustedHumanContext,
 } from '@r4/contracts';
 import type { AgentRegistry } from '@r4/agent-registry';
@@ -19,6 +20,13 @@ import type { PostgresConsoleReads } from '@r4/persistence-postgres';
 import { resolveCorrelationId, runWithCorrelation } from '@r4/observability';
 import { toErrorResponse } from './errors.js';
 import { unauthenticatedPrincipalResolver, type PrincipalResolver } from './principal.js';
+
+declare module 'fastify' {
+  interface FastifyRequest {
+    /** ADR-050: the exact bytes of a JSON body (the console assertion binds their SHA-256). */
+    rawBody?: Buffer;
+  }
+}
 
 export interface ReadinessReport {
   readonly ready: boolean;
@@ -40,6 +48,8 @@ export interface AppDependencies {
   readonly production?: ProductionOperator;
   /** (ADR-049 Phase 2) Console reads: run step trace, activity per day and agent, event feed. */
   readonly consoleReads?: PostgresConsoleReads;
+  /** ADR-050: 'disabled' refuses unauthenticated callers on POST /v1/tasks and /v1/tasks/:id/inputs. Default 'enabled'. */
+  readonly anonymousWrites?: 'enabled' | 'disabled';
 }
 
 /** (ADR-049 Phase 2) Local days of the activity read. */
@@ -70,6 +80,13 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
 
   // The API speaks JSON only; other media types are refused with 415.
   app.removeContentTypeParser('text/plain');
+  // ADR-050: keep the exact JSON body bytes next to the parsed value; parsing stays Fastify's default.
+  const parseJson = app.getDefaultJsonParser('error', 'error');
+  app.removeContentTypeParser('application/json');
+  app.addContentTypeParser('application/json', { parseAs: 'buffer' }, (request, body, done) => {
+    request.rawBody = body as Buffer;
+    void parseJson(request, request.rawBody.toString('utf8'), done);
+  });
 
   app.addHook('onRequest', async (request, reply) => {
     reply.header(CORRELATION_HEADER, request.id);
@@ -104,6 +121,15 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     });
   });
 
+  // ADR-050: with anonymous writes disabled, the R4-B open writes refuse an unauthenticated caller.
+  const writer = (request: FastifyRequest): Principal => {
+    const principal = resolvePrincipal(request);
+    if (deps.anonymousWrites === 'disabled' && principal.kind === 'unauthenticated') {
+      throw new PlatformError('precondition', 'anonymous_writes_disabled', 'this API does not accept unauthenticated writes');
+    }
+    return principal;
+  };
+
   // Liveness: the process is up and serving. Deliberately no dependency checks.
   app.get('/health', (_request, reply) => reply.send({ status: 'ok' }));
 
@@ -115,12 +141,13 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
 
   app.post('/v1/tasks', (request, reply) =>
     inContext(request, async () => {
+      const requestedBy = writer(request);
       const body = parse(createTaskRequestSchema, request.body ?? undefined, 'body');
       const rawKey = request.headers['idempotency-key'];
       const idempotencyKey = rawKey === undefined ? undefined : parse(idempotencyKeySchema, rawKey, 'Idempotency-Key header');
       const { view, replayed } = await deps.tasks.createTask({
         request: body,
-        requestedBy: resolvePrincipal(request),
+        requestedBy,
         correlationId: request.id,
         idempotencyKey,
       });
@@ -180,8 +207,9 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     // Canonical inbound input (any channel adapter): the caller is the resolved principal.
     app.post('/v1/tasks/:id/inputs', (request, reply) =>
       inContext(request, async () => {
+        const submittedBy = writer(request);
         const { id } = parse(taskParams, request.params, 'path');
-        const result = await temporal.submitInput(id, parse(inputSubmissionSchema, request.body ?? undefined, 'body'), resolvePrincipal(request), request.id);
+        const result = await temporal.submitInput(id, parse(inputSubmissionSchema, request.body ?? undefined, 'body'), submittedBy, request.id);
         return reply.status(result.replayed ? 200 : 201).header('idempotency-replayed', String(result.replayed)).send(result);
       }),
     );
