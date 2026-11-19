@@ -125,6 +125,20 @@ Se hace en el mejor esfuerzo:
 
 Va solo en el paquete de Ventas y solo para perfiles web. No cambia Core, `live-ops` ni WhatsApp.
 
+## Respuestas de una persona desde la consola (2026-11-19)
+
+«Tomar» y «Responder» de la consola (`/handoff`, `/operator-messages`) ya funcionaban en cualquier canal: la respuesta
+queda como un outbound de origen `operator`, y mientras la tarea es de una persona el agente no corre ni envía. Lo que
+faltaba era que el chat web distinguiera quién escribe:
+- `OutboundSubmission` lleva ahora el `origin` del outbound (`agent`, `operator` o `platform`). Es opcional y genérico.
+  Un adapter que no lo usa no cambia, y WhatsApp lo ignora.
+- El adapter web agrega `from: "person"` cuando el origen es `operator`. Es un campo opcional del contrato v1 del edge.
+- El edge muestra ese mensaje como del «Equipo de ventas», nunca como Don Pesín, y pasa la conversación a modo «te
+  atiende el equipo». La siguiente respuesta del agente la devuelve.
+
+**Sigue igual:** `sales-web@6` no deriva, y el botón «Hablar con una persona» muestra el contacto. Que el visitante pida
+una persona y alguien lo atienda dentro de un plazo es parte de la mesa (ADR-048).
+
 ## Fuera de alcance
 
 - **Excluido:** Quote V2, Checkout, CIA, Customer Profile, escrituras, el botón «Continuar por WhatsApp» y cambios en
