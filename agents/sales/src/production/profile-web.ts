@@ -88,10 +88,51 @@ export const SALES_WEB_PROFILE_V7: ProductionProfile = Object.freeze({
   description: 'sales-web@6 citing products already shown as sellable as provisional recommendations, without re-reading them only because their price and stock expired; no writes.',
 } satisfies ProductionProfile);
 
-export const SALES_WEB_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_WEB_PROFILE_V1, SALES_WEB_PROFILE_V2, SALES_WEB_PROFILE_V3, SALES_WEB_PROFILE_V4, SALES_WEB_PROFILE_V5, SALES_WEB_PROFILE_V6, SALES_WEB_PROFILE_V7]);
+/**
+ * EXPERIMENT ONLY (graph A/B, owner OK 2026-11-18, isolated F2 instance; never web QA or production). sales-web@7 plus
+ * catalog.set_complements: the store-curated relations of a chosen product, to complete a set in one read.
+ */
+export const SALES_WEB_PROFILE_V8: ProductionProfile = Object.freeze({
+  ...SALES_WEB_PROFILE_V1,
+  version: 8,
+  description: 'sales-web@7 plus catalog.set_complements (experiment: store-curated relations to complete a set); no writes.',
+  capabilities: [...SALES_WEB_PROFILE_V1.capabilities, { capabilityId: LANE_CAPABILITY_IDS.catalogSetComplements, domain: SALES_DOMAINS.catalog, effect: 'read' }],
+} satisfies ProductionProfile);
+
+/** EXPERIMENT ONLY (graph A/B confirmation): sales-web@8 whose definition keeps each version's products, a useful minimum load and the budget. */
+export const SALES_WEB_PROFILE_V9: ProductionProfile = Object.freeze({
+  ...SALES_WEB_PROFILE_V8,
+  version: 9,
+  description: 'sales-web@8 delivering exactly the priced version, with a useful minimum load and using the stated budget (experiment); no writes.',
+} satisfies ProductionProfile);
+
+/** EXPERIMENT ONLY (sequential home-gym builder, owner idea 2026-11-19): sales-web@7 plus catalog.build_step; the home gym is built one piece at a time. */
+export const SALES_WEB_PROFILE_V10: ProductionProfile = Object.freeze({
+  ...SALES_WEB_PROFILE_V1,
+  version: 10,
+  description: 'sales-web@7 building the home gym step by step with catalog.build_step (experiment); no writes.',
+  capabilities: [...SALES_WEB_PROFILE_V1.capabilities, { capabilityId: LANE_CAPABILITY_IDS.catalogBuildStep, domain: SALES_DOMAINS.catalog, effect: 'read' }],
+} satisfies ProductionProfile);
+
+/** EXPERIMENT ONLY: sales-web@10 whose definition keeps Pesín on the store and gives an unavailable product a way out (alert, second selection, alternatives). */
+export const SALES_WEB_PROFILE_V11: ProductionProfile = Object.freeze({
+  ...SALES_WEB_PROFILE_V10,
+  version: 11,
+  description: 'sales-web@10 that declines tasks unrelated to the store and offers the back-in-stock alert, second selection and sellable alternatives for an unavailable product (experiment); no writes.',
+} satisfies ProductionProfile);
+
+/** EXPERIMENT ONLY: sales-web@11 plus catalog.replacements (an unavailable product gets its second selection and replacements in one read). */
+export const SALES_WEB_PROFILE_V12: ProductionProfile = Object.freeze({
+  ...SALES_WEB_PROFILE_V11,
+  version: 12,
+  description: 'sales-web@11 plus catalog.replacements: second selection and sellable replacements of an unavailable product from the store graph (experiment); no writes.',
+  capabilities: [...SALES_WEB_PROFILE_V11.capabilities, { capabilityId: LANE_CAPABILITY_IDS.catalogReplacements, domain: SALES_DOMAINS.catalog, effect: 'read' }],
+} satisfies ProductionProfile);
+
+export const SALES_WEB_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_WEB_PROFILE_V1, SALES_WEB_PROFILE_V2, SALES_WEB_PROFILE_V3, SALES_WEB_PROFILE_V4, SALES_WEB_PROFILE_V5, SALES_WEB_PROFILE_V6, SALES_WEB_PROFILE_V7, SALES_WEB_PROFILE_V8, SALES_WEB_PROFILE_V9, SALES_WEB_PROFILE_V10, SALES_WEB_PROFILE_V11, SALES_WEB_PROFILE_V12]);
 
 /** The sales-web definition version each web profile pins. */
-const SALES_WEB_AGENT_VERSIONS: Readonly<Record<string, number>> = Object.freeze({ 'sales-web@1': 1, 'sales-web@2': 2, 'sales-web@3': 3, 'sales-web@4': 4, 'sales-web@5': 5, 'sales-web@6': 6, 'sales-web@7': 7 });
+const SALES_WEB_AGENT_VERSIONS: Readonly<Record<string, number>> = Object.freeze({ 'sales-web@1': 1, 'sales-web@2': 2, 'sales-web@3': 3, 'sales-web@4': 4, 'sales-web@5': 5, 'sales-web@6': 6, 'sales-web@7': 7, 'sales-web@8': 8, 'sales-web@9': 9, 'sales-web@10': 10, 'sales-web@11': 11, 'sales-web@12': 12 });
 
 export function salesWebProfile(label: string): ProductionProfile | null {
   return SALES_WEB_PROFILES.find((p) => profileLabel(p) === label) ?? null;
