@@ -410,6 +410,7 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         base: z.strictObject({ agentId: z.string().min(1).max(64), version: z.number().int().positive() }),
         template: slug,
         channel: slug.optional(),
+        label: z.string().trim().min(1).max(60).optional(),
         ...edits,
       });
       const draftParams = z.strictObject({ id: uuidSchema });
@@ -434,8 +435,8 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       app.post('/v1/agent-drafts', (request, reply) =>
         inContext(request, async () => {
           const operator = operatorWith(request);
-          const { agentId, base, template, channel, note, ...rest } = parse(createBody, request.body ?? undefined, 'body');
-          const created = await drafts.create({ agentId, base, template, channel: channel ?? null, edits: rest, note: note ?? null }, operator.humanRef, request.id);
+          const { agentId, base, template, channel, label, note, ...rest } = parse(createBody, request.body ?? undefined, 'body');
+          const created = await drafts.create({ agentId, base, template, channel: channel ?? null, label: label ?? null, edits: rest, note: note ?? null }, operator.humanRef, request.id);
           return reply.status(201).send(created);
         }),
       );

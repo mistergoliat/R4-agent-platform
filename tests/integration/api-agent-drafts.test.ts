@@ -57,7 +57,7 @@ const BUDGETS = { maxDurationMs: 120000, maxModelCalls: 20, maxCapabilityCalls: 
 const EDITS = { displayName: 'Probe · Instagram', description: 'Draft for a new channel', instructions: 'Short replies.', capabilityScopes: ['platform_test.read'], budgets: { ...BUDGETS, maxModelCalls: 10 } };
 const CREATE = { agentId: 'action-probe-instagram', base: { agentId: 'action-probe', version: 1 }, template: 'channel', channel: 'instagram', ...EDITS, note: 'primer borrador' };
 
-interface Draft { draftId: string; agentId: string; state: string; revision: number; createdBy: string; updatedBy: string; channel: string | null }
+interface Draft { draftId: string; agentId: string; state: string; revision: number; createdBy: string; updatedBy: string; channel: string | null; label: string | null }
 interface Revision { revision: number; definition: { agentId: string; version: number; capabilityScopes: string[]; budgets: Record<string, number>; instructions: string }; note: string | null; createdBy: string }
 
 describe('agent drafts', () => {
@@ -126,5 +126,30 @@ describe('agent drafts', () => {
     expect(code(await post(`/v1/agent-drafts/${draftId}/discard`, {}))).toBe('agent_draft_closed');
     expect((await post('/v1/agent-drafts', CREATE)).statusCode).toBe(201);
     expect(code(await post(`/v1/agent-drafts/${randomUUID()}/discard`, {}))).toBe('agent_draft_not_found');
+  });
+});
+
+describe('variants (ADR-054 revision 2, W2a)', () => {
+  const VARIANT = { agentId: 'action-probe', base: { agentId: 'action-probe', version: 1 }, template: 'variant', ...EDITS };
+
+  it('a variant keeps its base agent id, needs a label, and an agent can have several open variants', async () => {
+    const a = await post('/v1/agent-drafts', { ...VARIANT, label: 'A · pregunta el uso' });
+    expect(a.statusCode, a.body).toBe(201);
+    expect(a.json<{ draft: Draft }>().draft).toMatchObject({ agentId: 'action-probe', label: 'A · pregunta el uso', state: 'draft' });
+    expect((await post('/v1/agent-drafts', { ...VARIANT, label: 'B · más breve' })).statusCode).toBe(201);
+    const dup = await post('/v1/agent-drafts', { ...VARIANT, label: 'A · pregunta el uso' });
+    expect([dup.statusCode, code(dup)]).toEqual([409, 'agent_draft_open']);
+  });
+
+  it.each([
+    ['without a label', { ...VARIANT }],
+    ['with another agent id', { ...VARIANT, agentId: 'action-probe-other', label: 'C' }],
+  ])('refuses a variant %s', async (_name, body) => {
+    expect(code(await post('/v1/agent-drafts', body))).toBe('variant_identity');
+  });
+
+  it('a long label is a 400', async () => {
+    const res = await post('/v1/agent-drafts', { ...VARIANT, label: 'x'.repeat(61) });
+    expect([res.statusCode, code(res)]).toEqual([400, 'validation_failed']);
   });
 });
