@@ -65,10 +65,12 @@ import { SALES_F1_SHIPPING_PROFILES, SALES_INTENT_ACCEPTANCE_PROFILES } from './
 import { SALES_QUOTE_LANE_V21_PROFILE_LABEL } from './profile-v21.js';
 import { quoteDocumentDelivery } from '../capabilities/quote-document.js';
 import { catalogDiscoverCapability } from '../capabilities/catalog-discover.js';
+import { catalogSetComplementsCapability } from '../capabilities/catalog-set-complements.js';
+import { catalogBuildStepCapability, catalogReplacementsCapability } from '../capabilities/catalog-build-step.js';
 import type { CatalogDiscoverPort } from '@r4-adapters/catalog-http';
 import { checkoutPurchaseStatusCapability, checkoutRequestLinkCapability, checkoutStartPurchaseCapability } from '../capabilities/checkout.js';
 import { SALES_WEB_PROFILES, isSalesWebProfile, salesWebAgentVersion, salesWebProfile } from './profile-web.js';
-import { SALES_WEB_AGENT_ID } from '../ids.js';
+import { LANE_CAPABILITY_IDS, SALES_WEB_AGENT_ID } from '../ids.js';
 
 /** (ADR-046) The agent (identity and pinned definition version) a Sales profile runs: `sales-web@N` for web profiles, `sales@vN` otherwise. */
 export function salesAgentOf(profile: ProductionProfile): { readonly agentId: string; readonly version: number } {
@@ -205,6 +207,23 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
     // A port whose Discover key (or V2 source) is missing would compose and then fail every call: refuse at start.
     if (!catalogReal || !options.catalogDiscover?.discoverConfigured) throw new Error(`refusing production composition: ${profileLabel(profile)} requires Catalog V2 Discover (R4_CATALOG_V2_* and R4_CATALOG_V2_DISCOVER_API_KEY)`);
     capabilities.register(progress(catalogDiscoverCapability(options.catalogDiscover)));
+  }
+  // EXPERIMENT ONLY (graph A/B): sales-web@8 reads the exported store graph named by R4_EXP_GRAPH_FILE; refuses without it.
+  if (capabilityAvailability(profile, LANE_CAPABILITY_IDS.catalogSetComplements).available) {
+    const graphFile = process.env.R4_EXP_GRAPH_FILE;
+    if (!catalogReal || !graphFile) throw new Error(`refusing production composition: ${profileLabel(profile)} requires a REAL Catalog and R4_EXP_GRAPH_FILE`);
+    capabilities.register(progress(catalogSetComplementsCapability(catalog, graphFile)));
+  }
+  if (capabilityAvailability(profile, LANE_CAPABILITY_IDS.catalogBuildStep).available) {
+    const graphFile = process.env.R4_EXP_GRAPH_FILE;
+    if (!catalogReal || !graphFile) throw new Error(`refusing production composition: ${profileLabel(profile)} requires a REAL Catalog and R4_EXP_GRAPH_FILE`);
+    // Its progress (what it found and filtered) goes to the store chat as the build step's own report (web only).
+    capabilities.register(catalogBuildStepCapability(catalog, graphFile, webProgress ? (taskId, detail, products) => webProgress.report(taskId, 'build', detail, products) : undefined));
+  }
+  if (capabilityAvailability(profile, LANE_CAPABILITY_IDS.catalogReplacements).available) {
+    const graphFile = process.env.R4_EXP_GRAPH_FILE;
+    if (!catalogReal || !graphFile) throw new Error(`refusing production composition: ${profileLabel(profile)} requires a REAL Catalog and R4_EXP_GRAPH_FILE`);
+    capabilities.register(catalogReplacementsCapability(catalog, graphFile, webProgress ? (taskId, detail, products) => webProgress.report(taskId, 'build', detail, products) : undefined));
   }
   // Shipping is bound only when the profile makes it REAL (v3): the pc-carrier HTTP adapter, never a fixture.
   // Its order basis reads Catalog, so a REAL Shipping without a REAL Catalog is refused too.
