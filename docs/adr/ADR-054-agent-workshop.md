@@ -1,209 +1,190 @@
-# ADR-054 — Nuevo agente: borrador, probador y lanzamiento
+# ADR-054 — Variantes de agentes: borrador, prueba y experimento
 
 - **Identificador:** `R4-WORKSHOP-01`
-- **Estado:** **Propuesto** (owner, 2026-11-19: «dale, escribe el ADR-054»). Implementar cada fase necesita
-  autorización explícita del owner.
-- **Fecha:** 2026-11-19
-- **Mandato:** owner, 2026-11-19. Un botón en la consola para crear agentes y probarlos, por ejemplo Don Pesín en
-  Instagram, antes de que atiendan clientes.
+- **Estado:** **Propuesto, revisión 2** (owner, 2026-11-20: «dale, reescríbelo»). W1 (borradores) está en producción
+  desde el 2026-11-19. Implementar cada fase siguiente necesita autorización explícita del owner.
+- **Fecha:** 2026-11-19; revisión 2, 2026-11-20.
+- **Mandato:**
+  - owner, 2026-11-19: un botón en la consola para crear agentes y probarlos antes de que atiendan clientes;
+  - owner, 2026-11-20: el alcance actual son **variantes de los agentes que ya existen**, por ejemplo «iterar el
+    prompt para ver cuál rinde mejor». Las capacidades y los canales nuevos (Instagram) siguen el camino de siempre:
+    PRD, ADR, código y evaluación.
 - **Autoridad superior:** Constitución («la salida del modelo no es confiable»; «las escrituras requieren ejecución
   gobernada»; «la evaluación se entrega con la implementación»; «no agregar infraestructura sin necesidad
-  demostrada»); ADR-027 (ejecución shadow); ADR-049 (consola); ADR-050 (identidad de operador); ADR-052
-  (lanzamientos); ADR-053 (un agente por canal).
+  demostrada»); ADR-027 (ejecución shadow); ADR-045 (carril de conversación); ADR-049 (consola); ADR-050 (identidad
+  de operador); ADR-052 (lanzamientos y calidad); ADR-053 (un agente por canal).
+
+## Qué cambió en la revisión 2
+
+- La plantilla principal es **«Variante de un agente»**, no «canal nuevo».
+- **Probar** suma la repetición de conversaciones reales, lado a lado con la versión actual.
+- **Lanzar** deja de ser un PR: es un **experimento** con porcentaje de conversaciones nuevas, comparación por versión
+  y decisión firmada.
+- Las plantillas «Don Pesín en un canal nuevo» y «Agente en blanco», el catálogo de capacidades y los conectores de
+  lectura pasan a «Más adelante». No se descartan: esperan su código.
 
 ## Contexto
 
 Hechos verificados:
 - **Una definición de agente es un archivo revisado.** Vive en el repositorio (`agents/sales/candidates/*.json`), y
   una vez registrada en `agent_definitions` es inmutable por versión. Lo que puede hacer un agente lo fija su perfil,
-  en código: capacidades, bindings y políticas.
-- **R4 ya sabe ejecutar sin efectos reales.** El modo shadow (ADR-027) usa el modelo real y lecturas reales
-  (`live-read`), y simula las escrituras (`SHADOW_WRITE`). Las respuestas van a un sumidero y nunca a un cliente.
-  Además deja un manifiesto que comprueba que no hubo efectos de producción. Hoy se usa solo desde la línea de
-  comandos (`shadow:sales`), con un corpus fijo.
-- **Probar una versión exige hoy una sesión de desarrollo.** Hay que editar el JSON, correr el corpus y abrir un PR.
-  El owner no puede conversar con una versión antes de lanzarla.
-- **Los casos que motivan esto son distintos.** «Don Pesín · Instagram» reutiliza el paquete de Ventas y sus
-  capacidades: solo cambian las instrucciones y el canal. El curador del grafo, en cambio, necesita capacidades que
-  R4 no tiene.
+  **en código**: capacidades, bindings y políticas (`agents/sales/src/production/profile-v*.ts`).
+- **Los borradores ya existen (W1).** Migración `0019_agent_drafts`, API `/v1/agent-drafts` y la pantalla «Nuevo
+  agente» de la consola. Un borrador parte de una definición registrada y solo puede reducirla
+  (`draftDefinition`, `packages/agent-registry`). Nunca se registra ni corre en producción.
+- **El carril ya reparte conversaciones nuevas en dos brazos** (ADR-045, enmienda 1):
+  - con carril compuesto, una conversación **nueva** abre en el perfil del carril si está en la lista permitida o si
+    cae en la cohorte del porcentaje (`R4_PROD_ROLLOUT_PERCENT`). Si no, abre en el perfil principal (`laneRoute`);
+  - el bucket es determinista y la asignación se guarda en la conversación (`profile`, `eligibility_reason`,
+    `rollout_fingerprint`). **Una conversación abierta nunca cambia de versión**;
+  - los perfiles admitidos en la cohorte son una lista fija en código (`SALES_COHORT_LANE_PROFILES`): admitir uno es
+    un cambio revisado.
+- **Calidad y Lanzamientos ya miden por versión** (ADR-052): embudo, traspasos, fallas, tiempos y costo por
+  `agentId@version`.
+- **El modo shadow existe, pero las implementaciones shadow de Ventas son de ejemplo.** ADR-027 distingue lecturas
+  reales (`live-read`) de escrituras simuladas, y deja un manifiesto de cero efectos. Las implementaciones shadow del
+  paquete de Ventas, en cambio, leen datos de ejemplo, no Catalog real. La composición de producción exige
+  implementaciones reales (`bindingKind: 'http'`) para Quote y Checkout.
+- **La repetición existe, solo con datos sintéticos.** `workloadFromReplay` (`packages/shadow`) toma solo los mensajes
+  del cliente, los anonimiza y deja que el agente responda de nuevo. Nunca se ha usado con conversaciones reales: no
+  había una decisión del owner al respecto.
 
-## Decisión 1 — El botón crea un borrador, nunca un agente que atiende
+## Decisión 1 — «Nuevo agente» crea una variante
 
-«Nuevo agente» crea un **borrador**: una definición propuesta que no se registra en `agent_definitions` y no atiende a
-nadie. Se arma desde una plantilla:
-- **«Don Pesín en un canal nuevo»** copia la definición vigente de un agente de Ventas. Se editan el nombre, el canal
-  de destino (`sales-<canal>`, ADR-053), las instrucciones y los topes.
-- Las demás plantillas llegan cuando existan sus capacidades (ver Decisión 6).
+El botón «Nuevo agente», al pie del menú, crea un **borrador**. La plantilla principal es **«Variante de un agente»**:
+- copia la definición vigente de un agente que ya atiende, por ejemplo Don Pesín · WhatsApp @22;
+- se editan el **nombre de la variante** («más breve», «pregunta el uso primero»), las instrucciones y los topes;
+- conserva la identidad del agente (`sales`). La variante es una **versión candidata del mismo agente**, para que
+  Calidad y Lanzamientos la comparen con la versión actual;
+- puede haber **varias variantes abiertas** del mismo agente a la vez (A, B, C). W1 permite una sola por identidad;
+  W2 lo cambia con una migración aditiva (etiqueta de variante, índice único por etiqueta).
 
-Un borrador tiene: la base (`agentId@version`), la identidad destino, la definición propuesta, el autor, las
-revisiones y un estado: `draft`, `ready`, `launched` o `discarded`. Cada guardado crea una revisión nueva; nada se
-sobrescribe.
+Las reglas de W1 siguen:
+- **Solo puede reducir:** quita capacidades o baja topes, nunca suma.
+- **Revisiones inmutables:** cada guardado es una revisión nueva.
+- **La valida R4**, no la consola.
 
-**En la consola** (decisión del owner, 2026-11-19), la entrada es el botón «Nuevo agente», al pie del menú. No hay una
-sección aparte. Un borrador en curso aparece en la lista de Agentes marcado «(borrador)», con un punto distinto al de
-un agente activo. Desde su página se prueba y se lanza.
+En la consola, una variante abierta aparece en Agentes, bajo su agente, como «Don Pesín · WhatsApp · variante B
+(borrador)».
 
-## Decisión 2 — Qué puede cambiar un borrador
+## Decisión 2 — Probar: chat de prueba y repetición de conversaciones reales
 
-Con la plantilla «Don Pesín en un canal nuevo», el borrador parte de una base y solo puede reducirla. La plantilla
-«Agente en blanco» (Decisión 7) no tiene base y elige del catálogo de capacidades.
+Dos maneras de probar, ambas sin efectos reales:
 
-| Se puede | No se puede |
-|---|---|
-| Nombre visible, descripción e instrucciones | Crear capacidades, adaptadores de canal o políticas |
-| Quitar capacidades de la base | Agregar capacidades que la base no tiene |
-| Bajar topes (llamadas, duración, escrituras) | Subir topes sobre los de la base |
-| Elegir el canal de destino | Activar el canal |
+**1. Chat de prueba.** El operador hace de cliente y conversa con la variante:
+- modelo real;
+- **lecturas reales** de Catalog, Discover y Despacho;
+- **escrituras simuladas**: una cotización o un link de pago se muestran como «lo que habría emitido»;
+- respuestas a un sumidero, nunca a un canal.
 
-Todo esto se valida en R4 contra el esquema de definición y contra la base, no en la consola. Las instrucciones son
-texto del operador y nunca se generan con el modelo en esta fase.
+Cada turno muestra la respuesta, los pasos, el tiempo y el costo.
 
-## Decisión 3 — El probador: conversar con el borrador en modo shadow
+**2. Repetición de conversaciones reales.** La variante responde, en modo prueba, los mensajes de clientes de las
+últimas N conversaciones reales del agente. Se ven **lado a lado**: lo que respondió la versión actual y lo que habría
+respondido la variante.
+- Solo se repiten los mensajes del cliente, **anonimizados antes de usarse** (`workloadFromReplay`). La identidad del
+  cliente nunca pasa a la prueba.
+- **Límite honesto:** desde el segundo turno, el cliente respondía a lo que dijo la versión actual, no a la variante.
+  La comparación es más confiable en los primeros turnos. La pantalla marca cuándo la conversación ya divergió.
+- Usar conversaciones reales para pruebas necesita una decisión del owner (abierta 1).
 
-En la consola, el operador hace de cliente y conversa con el borrador, turno a turno:
-- **Modelo real** y **lecturas reales** de catálogo, stock y despacho (`live-read`).
-- **Escrituras simuladas** (`SHADOW_WRITE`): una cotización o un link de pago se muestran como «lo que habría
-  emitido», sin emitirse.
-- **Ninguna respuesta sale a un canal:** van al sumidero de ADR-027.
-- Cada turno muestra la respuesta, los pasos (qué leyó, qué intentó escribir y qué decidió la política), el tiempo y
-  el costo. Se cierra con el manifiesto shadow (`production_effects_zero`, `real_outbound_deliveries_zero`).
+**Dónde corre:** en un proceso aparte, `r4-trial`, con su propia base (`r4_trial`) en el mismo Postgres, para que las
+pruebas no aparezcan en incidentes, calidad ni métricas.
+- La composición de prueba es **nueva y separada de la de producción**: usa el perfil de la base, las lecturas reales
+  y escrituras simuladas para Quote y Checkout, y el sumidero de ADR-027. No modifica la composición de producción.
+- El proceso escucha solo en `127.0.0.1`. Acepta la aserción de operador de ADR-050 con el scope `agent.draft`, y la
+  consola le habla a través de su BFF con lista permitida.
 
-**Dónde corre:** en un proceso aparte, `r4-trial`, con su propia base (`r4_trial`) en el mismo Postgres. Así las
-pruebas no aparecen en incidentes, calidad ni métricas de producción. El proceso escucha solo en `127.0.0.1`. Acepta la
-misma aserción de operador de ADR-050, con un scope nuevo, `agent.draft`, y la consola le habla a través de su BFF
-con lista permitida, como a `r4-api`.
+**Gasto:** tope diario propio (`R4_TRIAL_MAX_USD_PER_DAY`) y un límite de turnos por minuto. Al llegar al tope, la
+prueba se detiene y lo dice.
 
-**Gasto:** las pruebas usan modelo real. Tienen un tope diario propio (`R4_TRIAL_MAX_USD_PER_DAY`) y un límite de
-turnos por minuto. Al llegar al tope, el probador se detiene y lo dice.
+## Decisión 3 — Lanzar es un experimento, no un despliegue
 
-## Decisión 4 — Evaluación antes de lanzar
+«Lanzar» una variante abre un **experimento** sobre las conversaciones nuevas:
+1. **Antes de empezar:** la variante pasa el corpus de regresión de su paquete, en modo prueba, sin fallas críticas.
+   El resultado queda adjunto.
+2. **Firma del owner:** elige el porcentaje (por ejemplo 20 %) y firma. Queda en la Auditoría.
+3. **R4 registra la variante** como versión nueva del agente (`sales@23`) y corre **el perfil de la base con la
+   definición de la variante**.
+   - Es la única pieza nueva de producción: un perfil derivado.
+   - Hereda capacidades, implementaciones y políticas del perfil base, que ya está admitido.
+   - Como la variante solo reduce respecto de la base, queda admitida en la cohorte **por regla**: no hace falta otro
+     cambio de código por cada variante.
+4. **Reparto:** el carril reparte las conversaciones **nuevas** entre la base y la variante según el porcentaje, con el
+   bucket determinista de hoy. Una conversación empezada termina con la versión con que abrió.
+5. **Comparación:** la consola muestra, por versión:
+   - cuántas conversaciones lleva cada una;
+   - el embudo y cuántas llegan a cotización;
+   - traspasos y fallas;
+   - tiempo de respuesta y costo por conversación;
+   - si **ya hay muestra suficiente** para decidir.
 
-Un borrador pasa a `ready` solo si corre el corpus de regresión de su paquete (R4-G) en shadow, sin fallas críticas.
-El resultado queda adjunto al borrador. Las conversaciones del probador se pueden guardar como casos nuevos del corpus.
+   Con el volumen actual, un experimento puede tardar días.
+6. **Decisión firmada:**
+   - **promover:** la variante pasa al 100 % y queda como versión vigente;
+   - **seguir:** sigue con el mismo porcentaje;
+   - **descartar:** el porcentaje vuelve a 0, sin conversaciones nuevas para la variante, y las abiertas terminan
+     con su versión.
 
-## Decisión 5 — Lanzar es una versión revisada, no un clic que registra
+**Vuelta atrás automática:** si la variante supera un umbral de fallas o traspasos de la plataforma, el experimento
+baja a 0 % solo y avisa por ntfy.
 
-«Lanzar» **no** registra la definición en producción. Arma el paquete de lanzamiento:
-- el archivo candidato (`<agente>.v<N>.candidate.json`);
-- la evaluación;
-- el diff contra la base;
-- las conversaciones de prueba.
+**Un experimento a la vez por agente** en esta fase. Dos variantes contra la base es una extensión posterior.
 
-Con ese paquete se abre el pedido de cambio (PR). Después siguen el flujo de Lanzamientos (ADR-052), la firma del owner
-y el despliegue.
+## Decisión 4 — Lo que no hace el botón
 
-Un canal nuevo necesita además su adaptador y su worker (ADR-053, F4). Mientras no existan, el borrador lanzado queda
-como «listo, sin canal».
+- No crea capacidades ni canales. Instagram necesita su gateway, la app de Meta y el token de la cuenta: es código y
+  configuración del servidor (ADR-053, F4). Cuando el gateway exista, la consola podrá tener un paso «Conectar cuenta»
+  que guarde el token en el servidor, después del código y no en su lugar.
+- No suma capacidades a un agente ni sube sus topes.
+- No genera instrucciones con el modelo: las escribe el operador.
 
-## Decisión 6 — Catálogo de capacidades
+## Más adelante (sin cambio de decisión)
 
-R4 ya registra cada capacidad con sus esquemas de entrada y salida (`CapabilityRegistration`,
-`packages/capability-runtime`). La consola muestra ese registro como un catálogo. Cada capacidad trae:
-- qué hace y quién es su dueño: el paquete o el servicio;
-- si lee o escribe, y su clase de riesgo;
-- qué implementaciones tiene: producción, solo lectura o shadow;
-- qué agentes la usan.
+Quedan como propuesta, para cuando exista su código. Se detallan en la revisión 1 de este ADR (PR #111):
+- plantilla «Don Pesín en un canal nuevo», cuando exista el gateway del canal;
+- catálogo de capacidades en la consola;
+- «Agente en blanco», con perfil compuesto desde la definición y disparador por lote u horario;
+- conectores de lectura declarativos, con autorización aparte;
+- el curador del grafo como primer agente en blanco.
 
-El catálogo es la única lista de la que un borrador puede elegir. Una capacidad que no está en el catálogo no existe
-para el botón.
-
-## Decisión 7 — «Agente en blanco»: el perfil se compone desde la definición
-
-Hoy cada agente tiene un perfil de composición escrito a mano: qué implementación va detrás de cada capacidad, sus
-políticas y su canal. Para crear un agente desde cero, R4 arma el perfil a partir de la definición:
-- cada capacidad elegida trae su implementación desde el catálogo;
-- las políticas parten **conservadoras**: toda escritura pide firma hasta que la autonomía suba (ADR-052);
-- el disparador se elige entre tres: **conversación** (un canal), **horario** o **lote** (una lista de entradas, por
-  ejemplo productos de Catalog).
-
-**Horario necesita una primitiva nueva.** Hoy los horarios de R4 solo despiertan tareas que ya existen (`wake`,
-`reconciliation`, `human_expiry`, `action_retry`). Abrir una tarea nueva por horario es una extensión genérica de
-`Schedule`.
-
-La plantilla «Agente en blanco» usa el mismo flujo: borrador, probador y lanzamiento. El probador por horario o por
-lote corre una pasada sobre unas pocas entradas y muestra qué habría hecho con cada una.
-
-## Decisión 8 — Cómo entra una capacidad nueva
-
-Una capacidad tiene cinco piezas: contrato, adaptador al servicio dueño, política, garantías (en escrituras) y
-evaluación. El camino depende del efecto:
-
-| Efecto | Camino | Desde la consola |
-|---|---|---|
-| **Escribe** en un sistema real | Código: ADR, contrato con el servicio dueño, adaptador con idempotencia, recibo y reconciliación (ADR-018, ADR-019), política, evaluación y PR | Nunca. Aparece en el catálogo cuando se despliega |
-| **Lee** de un servicio interno | **Conector de lectura declarativo** (propuesta, ver abajo) | Sí, con revisión y prueba |
-| **Herramienta externa** (MCP u otra) | Envuelta como capacidad. Si lee, es un conector de lectura; si escribe, sigue el camino de las escrituras | Solo las de lectura |
-
-**Conector de lectura declarativo (propuesta, decisión aparte del owner).** Desde la consola se registra una lectura:
-- un host de una lista permitida;
-- solo `GET`, con una ruta con parámetros tipados;
-- el esquema de la respuesta;
-- timeout, tamaño máximo y una credencial guardada en el servidor, nunca en la consola.
-
-R4 la ejecuta con un adaptador genérico de solo lectura, fuera de Core:
-- valida cada respuesta contra el esquema;
-- rechaza lo que no calce y nunca escribe;
-- la trata como dato no confiable, igual que la salida del modelo.
-
-Un conector nuevo pasa por el probador antes de que un agente lanzado lo use, y queda en el catálogo con su autor y su
-historial. Abre una puerta nueva hacia otros servicios, por eso necesita una autorización aparte del owner.
-
-## Decisión 9 — El curador del grafo como primer «agente en blanco»
-
-Con las decisiones 6 a 8, el curador necesita menos de lo previsto:
-- **Lectura del grafo de Catalog:** un conector de lectura, si Catalog expone el grafo por `GET`. Si no lo expone, es
-  un pedido a Catalog.
-- **Sus propuestas quedan en R4 como artefactos**, no escritas en Catalog. `Artifact` es una primitiva permitida en Core
-  que todavía no está implementada; esta sería su primera versión, mínima. Las propuestas se revisan y se aprueban en
-  la consola.
-- **Disparador:** por lote (productos de una categoría) o por horario (Decisión 7).
-
-Que el curador escriba directo en Catalog sigue el camino de las escrituras (Decisión 8), más adelante.
+Una capacidad nueva entra siempre por el camino de siempre (PRD, ADR, contrato con el servicio dueño, adaptador,
+evaluación y PR). La consola la muestra cuando está desplegada.
 
 ## Core
 
-Borrador, revisión, prueba, manifiesto, catálogo de capacidades, horario que abre tareas y artefacto son primitivas
-genéricas. Las plantillas, el corpus y los bindings shadow de Ventas viven en el paquete de Ventas. El adaptador de
-lectura declarativo vive en `adapters/`. Core no gana conceptos de Ventas ni de Catalog.
+Borrador, revisión, prueba, manifiesto y experimento son primitivas genéricas sobre `Agent`. El perfil derivado, las
+implementaciones de prueba de Ventas y el corpus viven en el paquete de Ventas. Core no gana conceptos de Ventas.
 
 ## Fases
 
-| Fase | Contenido |
-|---|---|
-| W1 | Borradores (tabla, revisiones, validación contra la base) y pantalla «Nuevo agente» con la plantilla «Don Pesín en un canal nuevo» |
-| W2 | Probador: `r4-trial` con su base, chat shadow en la consola, tope de gasto |
-| W3 | Evaluación con el corpus y paquete de lanzamiento (PR) |
-| W4 | Catálogo de capacidades en la consola (lectura del registro) |
-| W5 | «Agente en blanco»: perfil compuesto desde la definición, políticas conservadoras, disparador por lote y por horario |
-| W6 | Conectores de lectura declarativos (solo con autorización aparte) y `Artifact` mínimo |
-| W7 | Curador del grafo como primer agente en blanco |
-
-Primer caso propuesto: **«Don Pesín · Instagram»**, sin adaptador, para afinar el tono y las respuestas antes de
-construir el canal.
+| Fase | Contenido | Estado |
+|---|---|---|
+| W1 | Borradores con revisiones, validación contra la base, «Nuevo agente» en la consola | **En producción** (R4 `85ab6dd`, consola `6c4ea76`) |
+| W2 | Plantilla «Variante de un agente» (varias por agente); `r4-trial` con su base y composición de prueba; chat de prueba; repetición de conversaciones reales lado a lado; tope de gasto | Propuesta |
+| W3 | Evaluación con el corpus; perfil derivado; experimento con porcentaje, comparación por versión, decisión firmada y vuelta atrás automática | Propuesta |
 
 ## Decisiones abiertas del owner
 
-1. El tope diario de gasto del probador. Propuesta: US$2 por día.
-2. Si el probador usa la misma cuenta de modelo que producción o una aparte.
-3. Si un borrador puede guardar conversaciones de prueba como casos del corpus sin revisión.
-4. Si se habilitan los conectores de lectura declarativos, y qué hosts entran a la lista permitida.
-5. Si el curador del grafo lee el grafo por un conector (Catalog expone `GET`) o por una capacidad en código.
+1. Si la repetición puede usar conversaciones reales de clientes, anonimizadas, y cuántas (propuesta: las últimas 20).
+2. El tope diario de gasto de las pruebas (propuesta: US$2).
+3. Si las pruebas usan la misma cuenta de modelo que producción o una aparte.
+4. El umbral de la vuelta atrás automática del experimento.
+5. Qué cuenta como «mejor» al comparar. Propuesta: más conversaciones que llegan a cotización, sin más traspasos ni
+   fallas, y el costo como desempate.
 
 ## Fuera de alcance
 
-- Registrar o activar definiciones desde la consola.
-- Generar instrucciones con el modelo.
-- Crear capacidades que escriben, o canales, desde la consola.
-- Que un agente en blanco escriba sin firma: sus escrituras parten pidiendo firma.
+- Registrar una definición fuera de un experimento firmado.
+- Capacidades, canales o agentes en blanco desde la consola (ver «Más adelante»).
+- Cambiar la versión de una conversación ya abierta.
 
 ## Consecuencias
 
-- Probar una idea de agente deja de requerir una sesión de desarrollo. Lanzarla sigue requiriendo revisión,
-  evaluación y firma.
-- Se agrega un proceso (`r4-trial`) y una base (`r4_trial`). Ambos se justifican porque las pruebas no pueden mezclarse
-  con las métricas de producción.
-- El gasto de modelo crece con las pruebas, con un tope propio.
-- Componer el perfil desde la definición reemplaza, con el tiempo, a los perfiles escritos a mano. Los perfiles
-  vigentes (`sales`, `sales-web`) siguen igual hasta que una versión los migre, con su evaluación.
-- Los conectores de lectura amplían lo que R4 puede leer sin código. El riesgo queda acotado: solo lectura, lista
-  permitida, esquema validado y autorización aparte.
+- Iterar un prompt deja de requerir una sesión de desarrollo. Pasa por prueba, evaluación, experimento y firma.
+- Las versiones nuevas de un agente pueden nacer en R4, no solo en el repositorio. Quedan registradas, firmadas y en
+  la Auditoría. El repositorio sigue siendo la fuente de las capacidades, los perfiles base y las políticas.
+- Se agrega un proceso (`r4-trial`) y una base (`r4_trial`). Se justifican porque las pruebas no pueden mezclarse con
+  las métricas de producción.
+- El perfil derivado es la única pieza nueva en el camino de los clientes. Lleva sus propias pruebas de contrato: una
+  variante no puede componer nada que su base no tenga.
