@@ -164,14 +164,25 @@ implementaciones de prueba de Ventas y el corpus viven en el paquete de Ventas. 
 | W2 | Plantilla «Variante de un agente» (varias por agente); `r4-trial` con su base y composición de prueba; chat de prueba; repetición de conversaciones reales lado a lado; tope de gasto | Propuesta |
 | W3 | Evaluación con el corpus; perfil derivado; experimento con porcentaje, comparación por versión, decisión firmada y vuelta atrás automática | Propuesta |
 
+## Decisiones del owner (2026-11-20)
+
+1. **Repetición con conversaciones reales:** sí, anonimizadas, las últimas 20 del agente.
+2. **Tope diario de las pruebas:** US$2.
+3. **Cuenta de modelo:** la misma de producción (OpenRouter), con el tope diario propio de las pruebas. No había
+   propuesta; se toma la opción más simple y el owner puede cambiarla.
+
 ## Decisiones abiertas del owner
 
-1. Si la repetición puede usar conversaciones reales de clientes, anonimizadas, y cuántas (propuesta: las últimas 20).
-2. El tope diario de gasto de las pruebas (propuesta: US$2).
-3. Si las pruebas usan la misma cuenta de modelo que producción o una aparte.
-4. El umbral de la vuelta atrás automática del experimento.
-5. Qué cuenta como «mejor» al comparar. Propuesta: más conversaciones que llegan a cotización, sin más traspasos ni
+1. El umbral de la vuelta atrás automática del experimento.
+2. Qué cuenta como «mejor» al comparar. Propuesta: más conversaciones que llegan a cotización, sin más traspasos ni
    fallas, y el costo como desempate.
+
+## Implementación de W2a (2026-11-20)
+
+- Migración `0020_agent_draft_variants` (aditiva): columna `label` y un borrador abierto por agente **y etiqueta**.
+- Plantilla `variant`: mismo `agentId` que la base y etiqueta obligatoria (`variant_identity` si no).
+- La consola crea variantes desde «Nuevo agente». «En un canal nuevo» y «Agente en blanco» se ven deshabilitadas, con
+  su razón.
 
 ## Fuera de alcance
 

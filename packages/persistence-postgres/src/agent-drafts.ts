@@ -13,6 +13,8 @@ import { iso, jsonb, type Row } from './rows.js';
 export const DRAFT_STATES = ['draft', 'ready', 'launched', 'discarded'] as const;
 export type DraftState = (typeof DRAFT_STATES)[number];
 export const MAX_AGENT_DRAFTS = 200;
+/** (W2a) The template whose drafts are variants: same agent id as the base, a version candidate, with a label. */
+export const VARIANT_TEMPLATE = 'variant';
 
 export interface AgentDraft {
   readonly draftId: string;
@@ -20,6 +22,8 @@ export interface AgentDraft {
   readonly base: { readonly agentId: string; readonly version: number };
   readonly template: string;
   readonly channel: string | null;
+  /** (W2a) The variant's name; null for a draft that is not a variant. */
+  readonly label: string | null;
   readonly state: DraftState;
   readonly revision: number;
   readonly createdBy: string;
@@ -41,13 +45,14 @@ export interface NewAgentDraft {
   readonly base: { readonly agentId: string; readonly version: number };
   readonly template: string;
   readonly channel: string | null;
+  readonly label: string | null;
   readonly edits: DraftEditable;
   readonly note: string | null;
 }
 
 const draftOf = (r: Row): AgentDraft => ({
   draftId: r.draft_id as string, agentId: r.agent_id as string, base: { agentId: r.base_agent_id as string, version: Number(r.base_version) },
-  template: r.template as string, channel: (r.channel as string | null) ?? null, state: r.state as DraftState, revision: Number(r.revision),
+  template: r.template as string, channel: (r.channel as string | null) ?? null, label: (r.label as string | null) ?? null, state: r.state as DraftState, revision: Number(r.revision),
   createdBy: r.created_by as string, createdAt: iso(r.created_at), updatedBy: r.updated_by as string, updatedAt: iso(r.updated_at),
 });
 const revisionOf = (r: Row): AgentDraftRevision => ({
@@ -75,18 +80,24 @@ export class PostgresAgentDrafts {
     return { draft: draftOf(row), revisions };
   }
 
-  /** 404 `base_definition_not_found`; 409 `agent_draft_open` when the agent id already has an open draft; 422 the draft rule. */
+  /**
+   * 404 `base_definition_not_found`; 409 `agent_draft_open` when the agent id already has an open draft with that label;
+   * 422 the draft rule, or `variant_identity` (a variant keeps its base's agent id and has a label).
+   */
   async create(input: NewAgentDraft, by: string, correlationId: string): Promise<{ draft: AgentDraft; revision: AgentDraftRevision }> {
+    if (input.template === VARIANT_TEMPLATE && (input.agentId !== input.base.agentId || !input.label)) {
+      throw new PlatformError('validation', 'variant_identity', 'a variant keeps the agent id of its base and needs a label');
+    }
     const base = await this.#definitions.get(input.base.agentId, input.base.version);
     if (!base) throw new PlatformError('not_found', 'base_definition_not_found', `base ${input.base.agentId}@${input.base.version} is not registered`);
     const definition = draftDefinition(base, input.agentId, input.edits);
     return withTransaction(this.#pool, async (c) => {
-      const open = (await c.query<Row>(`select draft_id from agent_drafts where agent_id = $1 and state in ('draft', 'ready') for update`, [input.agentId])).rows[0];
-      if (open) throw new PlatformError('conflict', 'agent_draft_open', `${input.agentId} already has an open draft (${open.draft_id as string})`);
+      const open = (await c.query<Row>(`select draft_id from agent_drafts where agent_id = $1 and coalesce(label, '') = coalesce($2, '') and state in ('draft', 'ready') for update`, [input.agentId, input.label])).rows[0];
+      if (open) throw new PlatformError('conflict', 'agent_draft_open', `${input.agentId}${input.label ? ` «${input.label}»` : ''} already has an open draft (${open.draft_id as string})`);
       const row = (await c.query<Row>(
-        `insert into agent_drafts (draft_id, agent_id, base_agent_id, base_version, template, channel, state, revision, created_by, created_at, updated_by, updated_at)
-         values ($1, $2, $3, $4, $5, $6, 'draft', 1, $7, clock_timestamp(), $7, clock_timestamp()) returning *`,
-        [randomUUID(), input.agentId, base.agentId, base.version, input.template, input.channel, by],
+        `insert into agent_drafts (draft_id, agent_id, base_agent_id, base_version, template, channel, label, state, revision, created_by, created_at, updated_by, updated_at)
+         values ($1, $2, $3, $4, $5, $6, $7, 'draft', 1, $8, clock_timestamp(), $8, clock_timestamp()) returning *`,
+        [randomUUID(), input.agentId, base.agentId, base.version, input.template, input.channel, input.label, by],
       )).rows[0]!;
       const revision = await insertRevision(c, row.draft_id as string, 1, definition, input.note, by, correlationId);
       return { draft: draftOf(row), revision };
