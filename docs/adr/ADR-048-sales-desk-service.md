@@ -190,6 +190,11 @@ caso nuevo que aparezca en una disputa se agrega aquí. Las filas marcadas «abi
 
 - **El humano entra a la misma conversación**, en el mismo canal. No se redirige al cliente a otro número ni a
   otra app. El cliente ve un aviso del tipo «{nombre}, del equipo de ventas, se unió».
+  - **De dónde sale el nombre** (implementado el 2026-11-20). Del registro de operadores de R4 (ADR-050,
+    `displayName`) para el operador que firmó la acción, nunca de un texto del pedido. R4 lo guarda con el mensaje
+    (`outbound_messages.author_name`) y el canal que puede mostrar un autor lo recibe; el chat web lo muestra.
+  - **WhatsApp no puede mostrar un autor:** todo sale desde el número de la empresa. El primer mensaje de cada persona
+    en una conversación viene con «Hola, soy {nombre}, del equipo de ventas.» ya escrito, y la persona puede editarlo.
 - **Chat web.** Un visitante anónimo que cierra la pestaña no se puede volver a ubicar. Por eso, al pedir el
   traspaso, el agente ofrece avisarle por correo o WhatsApp si se va antes de la respuesta. La pregunta es
   opcional y no detiene el traspaso. No se hace si el cliente tiene sesión iniciada en la tienda o si hay una

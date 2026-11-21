@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createGatewayPlatform, type GatewayPlatform } from '@r4/channel-gateway';
@@ -125,6 +126,18 @@ describe('web channel: edge → web gateway → sales-web@1 → edge', () => {
     expect(delivered).toHaveLength(1);
     expect(delivered[0]).toMatchObject({ signedOk: true, body: { accountRef: 'shop-test', conversationRef: 'session-0001', text: 'Hola, te ayudo con esa barra.' } });
     expect((await pool.query<{ status: string }>('select status from outbound_messages')).rows).toEqual([{ status: 'accepted' }]);
+  });
+
+  it('(ADR-048 D5) a person\'s message reaches the chat marked as a person, with the writer\'s name', async () => {
+    const [task] = (await pool.query<{ task_id: string }>('select task_id from agent_tasks')).rows;
+    const store = new PostgresProductionStore(pool);
+    await store.createOperatorOutbound({ outboundId: randomUUID(), taskId: task!.task_id, text: 'Hola, soy del equipo.', humanRef: 'oidc:joaquin', authorName: 'Joaquín', responseKey: 'person-1', correlationId: 'web-person' });
+    await store.createOperatorOutbound({ outboundId: randomUUID(), taskId: task!.task_id, text: 'Sin nombre.', humanRef: 'oidc:otro', authorName: null, responseKey: 'person-2', correlationId: 'web-person' });
+    await gateway.delivery.tick();
+    await gateway.delivery.tick();
+    const people = delivered.filter((d) => d.body.from === 'person').map((d) => [d.body.text, d.body.author ?? null]);
+    expect(people).toEqual([['Hola, soy del equipo.', 'Joaquín'], ['Sin nombre.', null]]);
+    expect(delivered.filter((d) => d.body.from === undefined).map((d) => d.body.author ?? null)).toEqual([null]);
   });
 
   it('a repeated event is a duplicate (no new input); a forged or stale signature is refused before anything is stored', async () => {

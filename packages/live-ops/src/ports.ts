@@ -178,6 +178,8 @@ export interface OutboundRecord {
   readonly noticeKey: string | null;
   /** Operator origin: who wrote it; operator resolution: who settled it. */
   readonly humanRef: string | null;
+  /** (ADR-048 D5) Operator origin: the writer's visible name, from the operator registry, when it has one. */
+  readonly authorName: string | null;
   readonly resolvedBy: string | null;
   readonly profile: string;
   readonly createdAt: string;
@@ -251,6 +253,8 @@ export interface NewOperatorOutbound {
   readonly taskId: string;
   readonly text: string;
   readonly humanRef: string;
+  /** (ADR-048 D5) The writer's visible name from the operator registry; null when the registry has none. */
+  readonly authorName: string | null;
   readonly responseKey: string;
   readonly correlationId: string;
 }
