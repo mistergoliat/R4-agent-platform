@@ -41,7 +41,7 @@ Hechos verificados en `main`:
    pendiente con su pregunta, para que no la conteste por su cuenta ni prometa un dato que no tiene.
 3. **La respuesta despierta al agente.** Cuando una persona responde, R4 la registra como una entrada de la tarea, de
    origen humano y confiable. Esa entrada despierta al agente si está esperando al cliente, o queda en cola si está en
-   un turno. El agente continúa con la respuesta: «Confirmado por Camila, del equipo de ventas: …».
+   un turno. El agente continúa con la respuesta: «Confirmado por {nombre del vendedor}, del equipo de ventas: …».
 4. **Si nadie responde a tiempo,** la consulta vence (`expiresAt`, o el SLA que fije el paquete) y el agente despierta
    con el vencimiento. Le dice al cliente que no pudo confirmarlo y le ofrece una persona (traspaso) o el contacto.
 5. **«Lo tomo yo» no cambia:** tomar la conversación sigue cerrando la consulta (ADR-048, fase 1).
