@@ -74,6 +74,11 @@ describe('catalog.build_step (experiment)', () => {
     expect(out.options.map((o) => o.productKey)).toEqual(['P1']);
   });
 
+  it('a variant key from the cart counts as its product', async () => {
+    const out = await run({ step: 'barra', selected: [{ productKey: 'P1-V7', quantity: 1 }], budgetMaxClp: 1_000_000 });
+    expect(out.options.map((o) => o.productKey)).toEqual(['P10', 'P11', 'P12']);
+  });
+
   it('the bar must rest on the chosen rack; tiers spread by price', async () => {
     const out = await run({ step: 'barra', selected: [{ productKey: 'P1', quantity: 1 }], budgetMaxClp: 1_000_000 });
     expect(out.options.map((o) => [o.tier, o.productKey])).toEqual([['económica', 'P10'], ['equilibrada', 'P11'], ['superior', 'P12']]);

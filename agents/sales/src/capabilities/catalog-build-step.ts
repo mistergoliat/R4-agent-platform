@@ -17,7 +17,7 @@ import { domainRead, readDefinition } from './common.js';
 export const BUILD_STEPS = ['rack', 'smith', 'barra', 'discos', 'banco', 'collarines', 'piso', 'cardio', 'mancuernas', 'kettlebells', 'funcional', 'dominadas', 'colchoneta', 'maquina', 'almacenamiento'] as const;
 type Step = (typeof BUILD_STEPS)[number];
 const KINDS: Record<Step, readonly string[]> = {
-  rack: ['SQUAT_RACK'], smith: ['SMITH'], barra: ['OLY_BAR', 'PRE_BAR'], discos: ['PLATE_OLY'], banco: ['BENCH', 'BENCH_STATION'],
+  rack: ['SQUAT_RACK'], smith: ['SMITH'], barra: ['OLY_BAR', 'PRE_BAR'], discos: ['PLATE_OLY', 'PLATE_PACK', 'PLATE_PRE'], banco: ['BENCH', 'BENCH_STATION'],
   collarines: ['COLLAR'], piso: ['RUBBER_FLOOR', 'PLATFORM'], cardio: ['TREADMILL', 'CARDIO'], mancuernas: ['DB'], kettlebells: ['KB'],
   funcional: ['SLAM', 'SANDBAG', 'MED_BALL', 'PLYO_BOX', 'BATTLE', 'JUMP_ROPE', 'RINGS', 'SUSP', 'AGILITY'], dominadas: ['PULLUP'],
   colchoneta: ['MAT'], maquina: ['SELECTORIZED', 'PLATE_MACHINE', 'CABLE_STATION'], almacenamiento: ['STORE_DB', 'STORE_PLATE', 'STORE_BALL', 'STORE_BAR', 'STORE_KB'],
@@ -49,7 +49,8 @@ const MAX_PLATE_UNITS = 4;
 
 export const buildStepInput = z.strictObject({
   step: z.enum(BUILD_STEPS),
-  selected: z.array(z.strictObject({ productKey: z.string().regex(/^P\d+$/u), quantity: z.int().min(1).max(20) })).max(12).default([]),
+  // A chosen product, or one already in the visitor's cart or Mi gym (a variant key counts as its product).
+  selected: z.array(z.strictObject({ productKey: z.string().regex(/^P\d+(?:-V\d+)?$/u), quantity: z.int().min(1).max(20) })).max(12).default([]),
   budgetMaxClp: z.int().min(10_000).max(100_000_000),
   targetPlateKg: z.int().min(10).max(400).optional(),
 });
@@ -135,13 +136,15 @@ export function catalogBuildStepCapability(catalog: CatalogPort, graphFile: stri
           }
         };
         const short = (k: string) => (graph.products[k]?.n ?? k).split('|')[0]!.trim().slice(0, 40);
-        const anchor = input.selected.map((x) => x.productKey).find((k) => (CONSTRAINED_BY[input.step] ?? []).includes(stepOfKind(graph.products[k]?.kind ?? null) as Step));
+        // A variant key (from the cart or Mi gym) stands for its product: relations are per product.
+        const selected = input.selected.map((s) => ({ productKey: s.productKey.split('-')[0]!, quantity: s.quantity }));
+        const anchor = selected.map((x) => x.productKey).find((k) => (CONSTRAINED_BY[input.step] ?? []).includes(stepOfKind(graph.products[k]?.kind ?? null) as Step));
         say(anchor ? 'Buscando ' + LABEL[input.step] + ' que calcen con ' + short(anchor) + '…' : 'Buscando ' + LABEL[input.step] + ' para tu gimnasio…');
         const read = async (k: string) => live(await catalog.getProductContext(k, options).catch((): CatalogProductContext => ({ status: 'not_found', productKey: k })));
-        const chosen = input.selected.map((s) => s.productKey);
+        const chosen = selected.map((s) => s.productKey);
         const targetKg = input.targetPlateKg ?? DEFAULT_PLATE_KG;
         const chosenLive = await Promise.all(chosen.map(read));
-        const selectedTotal = input.selected.reduce((sum, s, i) => sum + (chosenLive[i]?.price ?? graph.products[s.productKey]?.price ?? 0) * s.quantity, 0);
+        const selectedTotal = selected.reduce((sum, s, i) => sum + (chosenLive[i]?.price ?? graph.products[s.productKey]?.price ?? 0) * s.quantity, 0);
         const remaining = input.budgetMaxClp - selectedTotal;
         const have = new Set<Step>(chosen.map((k) => stepOfKind(graph.products[k]?.kind ?? null)).filter((s): s is Step => s !== null));
         have.add(input.step);

@@ -129,10 +129,24 @@ export const SALES_WEB_PROFILE_V12: ProductionProfile = Object.freeze({
   capabilities: [...SALES_WEB_PROFILE_V11.capabilities, { capabilityId: LANE_CAPABILITY_IDS.catalogReplacements, domain: SALES_DOMAINS.catalog, effect: 'read' }],
 } satisfies ProductionProfile);
 
-export const SALES_WEB_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_WEB_PROFILE_V1, SALES_WEB_PROFILE_V2, SALES_WEB_PROFILE_V3, SALES_WEB_PROFILE_V4, SALES_WEB_PROFILE_V5, SALES_WEB_PROFILE_V6, SALES_WEB_PROFILE_V7, SALES_WEB_PROFILE_V8, SALES_WEB_PROFILE_V9, SALES_WEB_PROFILE_V10, SALES_WEB_PROFILE_V11, SALES_WEB_PROFILE_V12]);
+/** EXPERIMENT ONLY: sales-web@12 whose definition starts the build from the cart or Mi gym, uses large budgets and discloses a replacement's different load. */
+export const SALES_WEB_PROFILE_V13: ProductionProfile = Object.freeze({
+  ...SALES_WEB_PROFILE_V12,
+  version: 13,
+  description: 'sales-web@12 building from what the visitor already has, using large budgets and stating a replacement\'s different load (experiment); no writes.',
+} satisfies ProductionProfile);
+
+/** EXPERIMENT ONLY: sales-web@13 whose definition offers products of the same type when the named one is not in the catalog. */
+export const SALES_WEB_PROFILE_V14: ProductionProfile = Object.freeze({
+  ...SALES_WEB_PROFILE_V13,
+  version: 14,
+  description: 'sales-web@13 offering sellable products of the same type when the product the visitor names is not in the catalog (experiment); no writes.',
+} satisfies ProductionProfile);
+
+export const SALES_WEB_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_WEB_PROFILE_V1, SALES_WEB_PROFILE_V2, SALES_WEB_PROFILE_V3, SALES_WEB_PROFILE_V4, SALES_WEB_PROFILE_V5, SALES_WEB_PROFILE_V6, SALES_WEB_PROFILE_V7, SALES_WEB_PROFILE_V8, SALES_WEB_PROFILE_V9, SALES_WEB_PROFILE_V10, SALES_WEB_PROFILE_V11, SALES_WEB_PROFILE_V12, SALES_WEB_PROFILE_V13, SALES_WEB_PROFILE_V14]);
 
 /** The sales-web definition version each web profile pins. */
-const SALES_WEB_AGENT_VERSIONS: Readonly<Record<string, number>> = Object.freeze({ 'sales-web@1': 1, 'sales-web@2': 2, 'sales-web@3': 3, 'sales-web@4': 4, 'sales-web@5': 5, 'sales-web@6': 6, 'sales-web@7': 7, 'sales-web@8': 8, 'sales-web@9': 9, 'sales-web@10': 10, 'sales-web@11': 11, 'sales-web@12': 12 });
+const SALES_WEB_AGENT_VERSIONS: Readonly<Record<string, number>> = Object.freeze({ 'sales-web@1': 1, 'sales-web@2': 2, 'sales-web@3': 3, 'sales-web@4': 4, 'sales-web@5': 5, 'sales-web@6': 6, 'sales-web@7': 7, 'sales-web@8': 8, 'sales-web@9': 9, 'sales-web@10': 10, 'sales-web@11': 11, 'sales-web@12': 12, 'sales-web@13': 13, 'sales-web@14': 14 });
 
 export function salesWebProfile(label: string): ProductionProfile | null {
   return SALES_WEB_PROFILES.find((p) => profileLabel(p) === label) ?? null;
