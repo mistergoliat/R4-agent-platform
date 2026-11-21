@@ -54,6 +54,16 @@ describe('ADR-050 console operator assertion', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
+  it('(ADR-048 D5) carries the visible name from the operators file, never from the request; refuses a malformed one', () => {
+    const named = operatorsFile([{ issuer: ISS, subject: SUB, operatorRef: 'joaquin', scopes: ['handoff.manage'], displayName: 'Joaquín' }]);
+    const { request } = req(sign({ scopes: ['handoff.manage'] }));
+    expect(createConsoleOperatorContext({ key: KEY, operatorsFile: named, clock })!(request)).toEqual({ humanRef: 'oidc:joaquin', scopes: ['handoff.manage'], correlationId: 'corr-1', displayName: 'Joaquín' });
+    for (const bad of ['', '<b>Joaquín</b>', 'x'.repeat(61), 'Joaquín\nAdmin']) {
+      const file = operatorsFile([{ issuer: ISS, subject: SUB, operatorRef: 'joaquin', scopes: ['handoff.manage'], displayName: bad }]);
+      expect(() => createConsoleOperatorContext({ key: KEY, operatorsFile: file, clock }), bad).toThrow(/schema/);
+    }
+  });
+
   it('binds an empty body to sha256("")', () => {
     const { request } = req(sign({ bodySha256: sha('') }), { body: null });
     expect(adapter()(request)?.humanRef).toBe('oidc:felipe');

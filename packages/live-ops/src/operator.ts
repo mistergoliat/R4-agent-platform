@@ -82,7 +82,7 @@ export class ProductionOperator {
       await this.#temporal.takeOver(taskId, { responseKey: `manual-reply:${body.responseKey}`, note: 'The operator took over the conversation to reply manually.' }, human);
     }
     const superseded = await this.#store.cancelPendingAgentOutbound(taskId, CANCEL_REASONS.supersededByOperator);
-    const { record, replayed } = await this.#store.createOperatorOutbound({ outboundId: this.#ids.next(), taskId, text, humanRef: human.humanRef, responseKey: body.responseKey, correlationId: human.correlationId });
+    const { record, replayed } = await this.#store.createOperatorOutbound({ outboundId: this.#ids.next(), taskId, text, humanRef: human.humanRef, authorName: human.displayName ?? null, responseKey: body.responseKey, correlationId: human.correlationId });
     if (!replayed) emitTelemetry(this.#logger, 'outbound.created', { outboundId: record.outboundId, taskId, channel: record.channel, origin: 'operator', status: record.status, supersededAgentOutbound: superseded, correlationId: human.correlationId });
     return { outbound: record, replayed, supersededAgentOutbound: superseded };
   }
