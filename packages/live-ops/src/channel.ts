@@ -117,6 +117,8 @@ export interface OutboundSubmission {
   readonly attempt: number;
   /** Who wrote it. A channel that can show the author (the web chat) tells a person's message from the agent's. */
   readonly origin?: OutboundOrigin;
+  /** (ADR-048 D5) For a person's message, the name to show as its author (a channel that can show one). */
+  readonly authorName?: string;
   /** Present only for a platform notice that carries a document (sent only by adapters with `supportsDocuments`). */
   readonly document?: OutboundDocument;
 }

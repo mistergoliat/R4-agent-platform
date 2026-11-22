@@ -103,6 +103,13 @@ describe('outbound: one honest submission to the edge', () => {
       return JSON.parse(seen.body!);
     };
     expect((await sent('operator')).from).toBe('person');
+    expect(await sent('operator')).not.toHaveProperty('author');
+    const seen: { body?: string } = {};
+    await new WebOutboundAdapter(config, { fetch: replying(201, { messageId: 'm' }, seen) }).submit({ ...submission, origin: 'operator', authorName: 'Joaquín' }, { timeoutMs: 1000 });
+    expect(JSON.parse(seen.body!)).toMatchObject({ from: 'person', author: 'Joaquín' });
+    const agent: { body?: string } = {};
+    await new WebOutboundAdapter(config, { fetch: replying(201, { messageId: 'm' }, agent) }).submit({ ...submission, origin: 'agent', authorName: 'Joaquín' }, { timeoutMs: 1000 });
+    expect(JSON.parse(agent.body!)).not.toHaveProperty('author');
     for (const origin of ['agent', 'platform', undefined] as const) expect(await sent(origin)).not.toHaveProperty('from');
   });
 

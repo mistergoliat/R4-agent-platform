@@ -33,6 +33,8 @@ const operatorsSchema = z
       subject: z.string().min(1).max(255),
       operatorRef: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/),
       scopes: z.array(z.enum(HUMAN_SCOPES)).min(1),
+      // (ADR-048 D5) What a contact sees when this person writes: letters, spaces and . ' -, at most 60.
+      displayName: z.string().trim().regex(/^[\p{L}\p{M}][\p{L}\p{M} .'-]{0,59}$/u).optional(),
     }),
   )
   .max(200);
@@ -53,6 +55,7 @@ const payloadSchema = z.strictObject({
 interface ConsoleOperator {
   readonly operatorRef: string;
   readonly scopes: readonly HumanScope[];
+  readonly displayName?: string;
 }
 
 const identityKey = (issuer: string, subject: string) => `${issuer}\u0000${subject}`;
@@ -83,7 +86,7 @@ function loadOperators(file: string): ReadonlyMap<string, ConsoleOperator> {
     const key = identityKey(o.issuer, o.subject);
     if (operators.has(key) || refs.has(o.operatorRef)) throw new Error('R4_CONSOLE_OPERATORS_FILE lists an identity or operatorRef twice');
     refs.add(o.operatorRef);
-    operators.set(key, { operatorRef: o.operatorRef, scopes: [...new Set(o.scopes)] });
+    operators.set(key, { operatorRef: o.operatorRef, scopes: [...new Set(o.scopes)], ...(o.displayName ? { displayName: o.displayName } : {}) });
   }
   return operators;
 }
@@ -131,7 +134,7 @@ export function createConsoleOperatorContext(options: { readonly key?: string | 
     for (const [jti, exp] of used) if (exp < now) used.delete(jti);
     if (used.has(p.jti)) return 'replayed';
     used.set(p.jti, p.exp);
-    return { humanRef: `oidc:${operator.operatorRef}`, scopes, correlationId: request.id };
+    return { humanRef: `oidc:${operator.operatorRef}`, scopes, correlationId: request.id, ...(operator.displayName ? { displayName: operator.displayName } : {}) };
   };
 
   return (request) => {

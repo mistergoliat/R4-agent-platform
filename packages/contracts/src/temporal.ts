@@ -82,6 +82,8 @@ export const trustedHumanContextSchema = z.strictObject({
   humanRef: z.string().min(1).max(256).regex(/^[A-Za-z0-9][A-Za-z0-9._:@-]*$/),
   scopes: uniqueArray(z.enum(HUMAN_SCOPES)),
   correlationId: correlationIdSchema,
+  /** (ADR-048 D5) The name a contact sees for this person, from the operator registry; never from a request body. */
+  displayName: z.string().min(1).max(60).optional(),
 });
 export type TrustedHumanContext = z.infer<typeof trustedHumanContextSchema>;
 
