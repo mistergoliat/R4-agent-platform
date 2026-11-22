@@ -29,11 +29,13 @@ const graph = {
     P12: { 'bpc:a': ['P20', 'P21', 'P22'] },
   },
 };
+// Live price that differs from the graph snapshot (a price change or an offer since the graph was built).
+const livePrice: Record<string, number> = {};
 const catalog = {
   getProductContext: (key: string) => {
     const p = products[key];
     if (!p) return Promise.resolve({ status: 'not_found', productKey: key });
-    return Promise.resolve({ status: 'found', productKey: key, facts: { name: p.n }, derived: { priceSummary: { finalGross: { amount: p.price } }, availability: { sellability: p.sellable === false ? 'not_sellable' : 'sellable' } }, freshness: { validUntil: '2026-11-19T20:00:00.000Z' } });
+    return Promise.resolve({ status: 'found', productKey: key, facts: { name: p.n }, derived: { priceSummary: { finalGross: { amount: livePrice[key] ?? p.price } }, availability: { sellability: p.sellable === false ? 'not_sellable' : 'sellable' } }, freshness: { validUntil: '2026-11-19T20:00:00.000Z' } });
   },
 } as unknown as CatalogPort;
 const file = join(mkdtempSync(join(tmpdir(), 'build-step-')), 'graph.json');
@@ -50,7 +52,7 @@ describe('catalog.build_step (experiment)', () => {
       'Buscando barras que calcen con Power Rack…',
       'Guardo $80.000 para discos',
       '3 barras compatibles en tu presupuesto · revisando precio y stock',
-      'Elegí 3 opciones: económica, equilibrada y superior',
+      'Elegí 3 opciones, de menor a mayor precio',
     ]);
     expect(reports.at(-1)?.products).toEqual(['P10', 'P11', 'P12']);
     expect(reports.every((r) => r.taskId === 't' && r.detail.length <= 80)).toBe(true);
@@ -79,16 +81,26 @@ describe('catalog.build_step (experiment)', () => {
     expect(out.options.map((o) => o.productKey)).toEqual(['P10', 'P11', 'P12']);
   });
 
-  it('the bar must rest on the chosen rack; tiers spread by price', async () => {
+  it('the bar must rest on the chosen rack; labels follow the price', async () => {
     const out = await run({ step: 'barra', selected: [{ productKey: 'P1', quantity: 1 }], budgetMaxClp: 1_000_000 });
-    expect(out.options.map((o) => [o.tier, o.productKey])).toEqual([['económica', 'P10'], ['equilibrada', 'P11'], ['superior', 'P12']]);
+    expect(out.options.map((o) => [o.tier, o.productKey])).toEqual([['menor precio', 'P10'], ['precio medio', 'P11'], ['mayor precio', 'P12']]);
     expect(out.remainingBudgetClp).toBe(800_000);
+  });
+
+  it('the labels follow the live price, not the graph snapshot (owner 2026-11-22: price order only)', async () => {
+    livePrice.P10 = 160_000; // was the cheapest in the graph; now the most expensive
+    try {
+      const out = await run({ step: 'barra', selected: [{ productKey: 'P1', quantity: 1 }], budgetMaxClp: 1_000_000 });
+      expect(out.options.map((o) => [o.tier, o.productKey, o.totalClp])).toEqual([['menor precio', 'P11', 100_000], ['precio medio', 'P12', 150_000], ['mayor precio', 'P10', 160_000]]);
+    } finally {
+      delete livePrice.P10;
+    }
   });
 
   it('plates reach the target load, skip unsellable packs and stay within the budget', async () => {
     const out = await run({ step: 'discos', selected: [{ productKey: 'P1', quantity: 1 }, { productKey: 'P11', quantity: 1 }], budgetMaxClp: 500_000, targetPlateKg: 40 });
     expect(out.options.map((o) => [o.productKey, o.quantity, o.totalKg, o.totalClp])).toEqual([['P20', 2, 40, 80_000], ['P21', 1, 40, 90_000]]);
-    expect(out.options.map((o) => o.tier)).toEqual(['económica', 'superior']);
+    expect(out.options.map((o) => o.tier)).toEqual(['menor precio', 'mayor precio']);
   });
 
   it('the bench is constrained by the rack only, not by the bench relations of the bar', async () => {

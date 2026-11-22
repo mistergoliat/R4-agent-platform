@@ -9,7 +9,8 @@ import { domainRead, readDefinition } from './common.js';
 /**
  * EXPERIMENT ONLY (graph A/B, sequential home-gym builder, owner idea 2026-11-19; never merged, never web QA or prod).
  * `catalog.build_step` stands in for a set-builder endpoint Catalog would own: for ONE step of a home-gym build (a
- * rack, its bar, plates, a bench…), up to three options (económica, equilibrada, superior) that are compatible with
+ * rack, its bar, plates, a bench…), up to three options labelled by live price (menor precio, precio medio, mayor
+ * precio; owner 2026-11-22: price only, the label says nothing about quality) that are compatible with
  * everything already chosen (store graph), sellable now (live Catalog) and within what remains of the budget after
  * reserving the cheapest option of each piece the chosen ones still need (a rack needs a bar and plates). Everything
  * here is deterministic: the model chooses the plan and talks; this decides compatibility, quantities and money.
@@ -43,7 +44,7 @@ const LABEL: Record<Step, string> = {
 const clp = (n: number) => '$' + Math.round(n).toLocaleString('es-CL');
 /** Reports what the tool is doing (text ≤ 80 chars, optional catalog keys). Best effort: never awaited, never fails the read. */
 export type BuildProgress = (taskId: string, detail: string, products?: readonly string[]) => void;
-const TIERS = ['económica', 'equilibrada', 'superior'] as const;
+const TIERS = ['menor precio', 'precio medio', 'mayor precio'] as const;
 const DEFAULT_PLATE_KG = 40;
 const MAX_PLATE_UNITS = 4;
 
@@ -166,10 +167,12 @@ export function catalogBuildStepCapability(catalog: CatalogPort, graphFile: stri
         const lives = await Promise.all(probe.map(read));
         const ok = probe
           .map((k, i) => ({ k, l: lives[i], q: quantityFor(input.step, k, targetKg) }))
-          .filter((x) => x.l?.sellable && x.l.price !== null && x.l.price * x.q <= cap);
+          .filter((x) => x.l?.sellable && x.l.price !== null && x.l.price * x.q <= cap)
+          // The labels follow the price the visitor sees: re-sort by live total (the candidates were sorted by snapshot price).
+          .sort((a, b) => a.l!.price! * a.q - b.l!.price! * b.q);
         const picks = spread(ok, 3);
-        if (picks.length) say(picks.length === 3 ? 'Elegí 3 opciones: económica, equilibrada y superior' : 'Elegí ' + (picks.length === 1 ? '1 opción' : '2 opciones') + ' que cumplen todo', picks.map((p) => p.k));
-        const tiers = picks.length === 1 ? ['equilibrada'] : picks.length === 2 ? ['económica', 'superior'] : [...TIERS];
+        if (picks.length) say(picks.length === 3 ? 'Elegí 3 opciones, de menor a mayor precio' : 'Elegí ' + (picks.length === 1 ? '1 opción' : '2 opciones') + ' que cumplen todo', picks.map((p) => p.k));
+        const tiers = picks.length === 1 ? ['menor precio'] : picks.length === 2 ? ['menor precio', 'mayor precio'] : [...TIERS];
         const validUntil = [...chosenLive, ...picks.map((p) => p.l)].map((l) => l?.validUntil ?? null).filter((v): v is string => v !== null);
         return {
           step: input.step,
