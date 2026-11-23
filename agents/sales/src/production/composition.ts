@@ -35,6 +35,7 @@ import { SalesQuoteRecoveryContextSource } from '../workspace/quote-recovery-sou
 import { SALES_QUOTE_LANE_V22_PROFILE_LABEL } from './profile-v22.js';
 import { SALES_QUOTE_LANE_V23_PROFILE_LABEL, SALES_STOCK_COUNT_PROFILES } from './profile-v23.js';
 import { SALES_NON_PAUSING_CONSULTATION_PROFILES, SALES_QUOTE_LANE_V24_PROFILE_LABEL } from './profile-v24.js';
+import { SALES_QUOTE_LANE_V25_PROFILE_LABEL } from './profile-v25.js';
 import { salesConsultationExpiry } from './service-hours.js';
 import { PostgresSalesStore } from '../workspace/store.js';
 import { SALES_DOMAINS } from './profile.js';
@@ -126,7 +127,7 @@ export interface SalesProductionWorkerOptions {
   readonly quoteParity?: QuoteParityGuard | null;
   /** Catalog descriptive freshness (R4_SALES_CATALOG_DESCRIPTIVE_WINDOW_SECONDS): null or absent = off; see workspace/catalog-descriptive.ts. */
   readonly catalogDescriptiveWindowMs?: number | null;
-  /** (F1-COMMERCIAL-POLICY-v3) Promotional prices that outlast the quote may be quoted (@19 to @24 only; default off). */
+  /** (F1-COMMERCIAL-POLICY-v3) Promotional prices that outlast the quote may be quoted (@19 to @25 only; default off). */
   readonly promotionalQuotes?: boolean;
   /** (M3) R4_SALES_QUOTE_RECOVERY=enabled: the conversation's earlier quotes with their current Quote V2 state enter the context (profiles with a REAL Quote; default off). */
   readonly quoteRecovery?: boolean;
@@ -417,7 +418,7 @@ export const SALES_RUN_FAILURE_FALLBACK_TEXT = salesRunFailureNotice(SALES_IN_HO
 export const SALES_HUMAN_REQUEST_NOTICE_TEXT = salesHumanRequestNotice(SALES_IN_HOURS_REFERENCE);
 
 /** The profiles whose conversations get that notice: only the F1 quote lane candidate (@13 and the others unchanged). */
-export const SALES_HUMAN_REQUEST_NOTICE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_QUOTE_LANE_V18_PROFILE_LABEL, 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23', 'sales-production@24']);
+export const SALES_HUMAN_REQUEST_NOTICE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_QUOTE_LANE_V18_PROFILE_LABEL, 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23', 'sales-production@24', 'sales-production@25']);
 
 /**
  * (ADR-046) The web chat's own notices. No person attends it yet: they say so, show the store contact ([[contacto]],
@@ -532,8 +533,9 @@ export function salesGatewayLane(env: Readonly<Record<string, string | undefined
  * declared rollback (owner decision 2026-11-18): switching the lane @22 → @21 never requires dropping the percentage to 0.
  * @23 (owner decision 2026-11-23: @22 plus units in stock on request, capped at 20) succeeds @22, which stays its rollback.
  * @24 (ADR-056 K3: @23 plus consultations without pause) succeeds @23, which stays its rollback.
+ * @25 (owner feedback on the live @24 relay test: follow-up consultations, official contacts) succeeds @24, its rollback.
  */
-export const SALES_COHORT_LANE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V24_PROFILE_LABEL, SALES_QUOTE_LANE_V23_PROFILE_LABEL, SALES_QUOTE_LANE_V22_PROFILE_LABEL, SALES_QUOTE_LANE_V21_PROFILE_LABEL]);
+export const SALES_COHORT_LANE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V25_PROFILE_LABEL, SALES_QUOTE_LANE_V24_PROFILE_LABEL, SALES_QUOTE_LANE_V23_PROFILE_LABEL, SALES_QUOTE_LANE_V22_PROFILE_LABEL, SALES_QUOTE_LANE_V21_PROFILE_LABEL]);
 
 /**
  * (ADR-045 amendment 1) With R4_PROD_ROLLOUT_PERCENT > 0 the WhatsApp gateway serves the cohort only through an
@@ -601,7 +603,7 @@ export function loadQuoteRecovery(env: Readonly<Record<string, string | undefine
 }
 
 /** (M3, owner mandate 2026-11-18) The only profiles on which R4_SALES_QUOTE_RECOVERY takes effect. */
-export const SALES_QUOTE_RECOVERY_PROFILES: ReadonlySet<string> = new Set([SALES_QUOTE_LANE_V22_PROFILE_LABEL, SALES_QUOTE_LANE_V23_PROFILE_LABEL, SALES_QUOTE_LANE_V24_PROFILE_LABEL]);
+export const SALES_QUOTE_RECOVERY_PROFILES: ReadonlySet<string> = new Set([SALES_QUOTE_LANE_V22_PROFILE_LABEL, SALES_QUOTE_LANE_V23_PROFILE_LABEL, SALES_QUOTE_LANE_V24_PROFILE_LABEL, SALES_QUOTE_LANE_V25_PROFILE_LABEL]);
 
 /**
  * (M3) Whether the quote-recovery source is composed: enabled, an allowed profile, and a REAL Quote V2 binding. On any

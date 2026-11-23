@@ -155,6 +155,8 @@ export const SALES_PRODUCTION_AGENT_VERSIONS: Readonly<Record<string, SalesAgent
   'sales-production@23': 23,
   // (ADR-056 K3) @24 = @23 pinned to definition v24 (consultations without pause); @23 stays the rollback.
   'sales-production@24': 24,
+  // (owner feedback on the live @24 relay test) @25 = @24 pinned to definition v25; @24 stays the rollback.
+  'sales-production@25': 25,
   // (R4 Checkout integration) The E3 checkout sandbox lane profile: a lane profile only.
   'sales-production@15': 15,
 });
