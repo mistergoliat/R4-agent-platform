@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { parseArgs } from 'node:util';
 import { createLogger } from '@r4/observability';
 import { PostgresArtifacts, createPool } from '@r4/persistence-postgres';
@@ -16,7 +15,7 @@ if (!url || !values['created-by']) {
 }
 const pool = createPool({ connectionString: url, logger: createLogger({ service: 'graph-compose', level: 'warn' }), applicationName: 'graph-compose', max: 1 });
 try {
-  const result = await composeNextVersion(new PostgresArtifacts(pool), { createdBy: values['created-by'], correlationId: `graph-compose-${randomUUID()}` });
+  const result = await composeNextVersion(new PostgresArtifacts(pool), { createdBy: values['created-by'] });
   process.stdout.write(`${JSON.stringify(result ?? { version: null, reason: 'no approved changes' })}\n`);
 } catch (error) {
   process.stderr.write(`graph:compose failed: ${error instanceof Error ? error.message.slice(0, 500) : 'unexpected_failure'}\n`);
