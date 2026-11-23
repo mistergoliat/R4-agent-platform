@@ -45,6 +45,11 @@ export const consultationDecisionSchema = z.strictObject({
    * write their own; a suggestion authorizes nothing and reaches the agent as information, like any answer.
    */
   options: uniqueArray(z.string().trim().min(1).max(60)).min(2).max(4).optional(),
+  /**
+   * (ADR-056 D1) `false`: ask without pausing. The run goes on (the agent tells the participant and keeps helping) and
+   * the human's answer, or its expiry, wakes the task later like an input. Absent: the classic pausing consultation.
+   */
+  blocking: z.literal(false).optional(),
 });
 export const handoffDecisionSchema = z.strictObject({
   type: z.literal('request_handoff'),
@@ -186,7 +191,7 @@ const humanBase = {
   correlationId: correlationIdSchema,
 };
 export const humanRequestSchema = z.discriminatedUnion('kind', [
-  z.strictObject({ ...humanBase, kind: z.literal('consultation'), payload: z.strictObject({ question: z.string(), contextRefs: z.array(uuidSchema), options: z.array(z.string()).optional() }) }),
+  z.strictObject({ ...humanBase, kind: z.literal('consultation'), payload: z.strictObject({ question: z.string(), contextRefs: z.array(uuidSchema), options: z.array(z.string()).optional(), blocking: z.literal(false).optional() }) }),
   z.strictObject({
     ...humanBase,
     kind: z.literal('handoff'),

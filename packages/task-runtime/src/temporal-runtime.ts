@@ -345,6 +345,21 @@ export class TemporalRuntime implements RunFailureHandoff, TurnCompletionGuard {
         return { kind: 'continued' };
       }
 
+      // (ADR-056 D1) A consultation without pause: recorded with its step, and the run goes on — the agent still has to
+      // answer the participant this turn. The human's answer (or its expiry) wakes the task later, like an input.
+      if (decision.type === 'request_consultation' && decision.blocking === false) {
+        await this.#options.execution.appendStepWithin(uow, owned, token, command, now, events);
+        const requestId = this.#options.ids.next();
+        await p.insertHuman({
+          requestId, taskId: owned.task.taskId, runId: owned.run.runId, status: 'requested', humanRef: null, createdAt: now, updatedAt: now, correlationId: owned.task.correlationId,
+          kind: 'consultation', expiresAt: decision.expiresAt ?? null,
+          payload: { question: decision.question, contextRefs: decision.contextRefs, ...(decision.options ? { options: decision.options } : {}), blocking: false },
+        });
+        await this.event(uow, owned.task, requestId, 'consultation.requested', now, events, { blocking: false });
+        if (decision.expiresAt) await this.scheduleWithin(uow, owned.task, 'human_expiry', requestId, decision.expiresAt, now, events);
+        return { kind: 'continued' };
+      }
+
       // R4-J4-R7-2 (Turn Completion Guard): an agent WAIT_FOR_INPUT that leaves the latest conversational input without
       // a reply is refused once for reconsideration; repeated with the episode in context, it is ratified and recorded.
       // WAIT_UNTIL is not a closing: its timer is a verifiable resumption and the input stays pending for the next one.
@@ -390,9 +405,24 @@ export class TemporalRuntime implements RunFailureHandoff, TurnCompletionGuard {
       if ((kind === 'WAIT_FOR_INPUT' || kind === 'WAIT_UNTIL') && (await p.hasUnseenInput(task.taskId, horizon))) {
         const woken = await this.wakeWithin(uow, task, wait, 'input', now, events);
         if (woken.status === 'running') await this.cancelSchedulesWithin(uow, woken, now, events, wait.waitId);
+      } else if ((kind === 'WAIT_FOR_INPUT' || kind === 'WAIT_UNTIL') && (await p.hasUnseenConsultationOutcome(task.taskId, horizon))) {
+        // (ADR-056 D1) The team answered (or the consultation expired) while this run was deciding: never strand it.
+        const woken = await this.wakeWithin(uow, task, wait, 'human', now, events);
+        if (woken.status === 'running') await this.cancelSchedulesWithin(uow, woken, now, events, wait.waitId);
       }
       return { kind: 'suspended', termination: run.termination! };
     });
+  }
+
+  /**
+   * (ADR-056 D1) The answer to (or the expiry of) a non-pausing consultation wakes a task that waits for its
+   * participant, like an input. A running task sees it in its next context; a human owner keeps the task (wakeWithin).
+   */
+  async #wakeForConsultation(uow: ExecutionUnitOfWork, task: AgentTask, request: HumanRequest, wait: TaskWait | null | undefined, now: string, events: PendingEvent[]): Promise<void> {
+    if (request.kind !== 'consultation' || request.payload.blocking !== false) return;
+    if (wait?.kind !== 'WAIT_FOR_INPUT' && wait?.kind !== 'WAIT_UNTIL') return;
+    const woken = await this.wakeWithin(uow, task, wait, 'human', now, events);
+    if (woken.status === 'running') await this.cancelSchedulesWithin(uow, woken, now, events, wait.waitId);
   }
 
   /** (R4-J4-R7-1) Model-supplied values of a consultation or handoff request the platform refuses, recoverably. */
@@ -746,6 +776,7 @@ export class TemporalRuntime implements RunFailureHandoff, TurnCompletionGuard {
       await this.cancelSchedulesWithin(uow, task, now, events, requestId);
       const wait = await p.activeWait(task.taskId);
       if (wait?.referenceId === requestId) await this.wakeWithin(uow, task, wait, 'human', now, events);
+      else await this.#wakeForConsultation(uow, task, request, wait, now, events);
       return updated;
     });
   }
@@ -1004,6 +1035,7 @@ export class TemporalRuntime implements RunFailureHandoff, TurnCompletionGuard {
           await p.updateHuman({ ...human, status: 'expired', updatedAt: now });
           await this.event(uow, task, human.requestId, human.kind === 'approval' ? 'approval.expired' : 'consultation.expired', now, events);
           if (wait?.referenceId === human.requestId) await this.wakeWithin(uow, task, wait, 'timer', now, events);
+          else await this.#wakeForConsultation(uow, task, human, wait, now, events);
         }
       } else if (s.kind === 'wake' && wait?.waitId === s.referenceId) {
         await this.wakeWithin(uow, task, wait, 'timer', now, events);
