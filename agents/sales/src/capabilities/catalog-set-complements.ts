@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { loadGraphFile } from './catalog-build-step.js';
 import { z } from 'zod';
 import type { CatalogPort, CatalogProductContext } from '@r4-adapters/domains';
 import type { CapabilityRegistration } from '@r4/capability-runtime';
@@ -28,11 +28,6 @@ export const setComplementsOutput = z.strictObject({
 });
 export type SetComplementsView = z.infer<typeof setComplementsOutput>;
 
-interface GraphFile {
-  readonly labels: Record<string, string>;
-  readonly products: Record<string, { n: string | null; act: boolean | null; price: number | null }>;
-  readonly view: Record<string, Record<string, string[]>>;
-}
 
 const MEANING =
   'Store-curated relations: what goes with each anchor (the bar for a rack, plates for a bar, collars, a bench that fits inside the rack, the floor under it). Physical fit was checked from the products\' declared data where a relation says so; it is a proposal of the store, not a guarantee beyond the relation stated. Candidates are sellable now, cheapest first.';
@@ -57,7 +52,7 @@ function liveOf(context: CatalogProductContext): { name: string; finalGrossClp: 
 }
 
 export function catalogSetComplementsCapability(catalog: CatalogPort, graphFile: string): CapabilityRegistration<z.infer<typeof setComplementsInput>, SetComplementsView> {
-  const graph = JSON.parse(readFileSync(graphFile, 'utf8')) as GraphFile;
+  const graph = loadGraphFile(graphFile);
   return {
     definition: readDefinition({
       capabilityId: LANE_CAPABILITY_IDS.catalogSetComplements,

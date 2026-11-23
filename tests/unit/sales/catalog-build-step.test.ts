@@ -44,7 +44,13 @@ const reports: { taskId: string; detail: string; products?: readonly string[] }[
 const cap = catalogBuildStepCapability(catalog, file, (taskId, detail, products) => reports.push({ taskId, detail, ...(products ? { products } : {}) }));
 const run = (input: Record<string, unknown>) => cap.handler(cap.input.parse(input), { signal: new AbortController().signal, execution: { correlationId: 'c', taskId: 't' } } as never);
 
-describe('catalog.build_step (experiment)', () => {
+describe('catalog.build_step', () => {
+  it('a malformed store graph stops the composition instead of failing every call', () => {
+    const bad = join(mkdtempSync(join(tmpdir(), 'build-step-bad-')), 'graph.json');
+    writeFileSync(bad, JSON.stringify({ products: { P1: { n: 'Rack' } }, view: {} }));
+    expect(() => catalogBuildStepCapability(catalog, bad)).toThrow(/store graph .* is malformed/u);
+  });
+
   it('tells the store chat what it is doing: search, reserve, count, the picks', async () => {
     reports.length = 0;
     await run({ step: 'barra', selected: [{ productKey: 'P1', quantity: 1 }], budgetMaxClp: 1_000_000 });

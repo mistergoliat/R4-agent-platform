@@ -74,9 +74,19 @@ export const buildStepOutput = z.strictObject({
 });
 export type BuildStepView = z.infer<typeof buildStepOutput>;
 
-interface GraphFile {
-  readonly products: Record<string, { n: string | null; act: boolean | null; price: number | null; kind: string | null }>;
-  readonly view: Record<string, Record<string, string[]>>;
+const graphFileSchema = z.object({
+  products: z.record(z.string(), z.object({ n: z.string().nullable(), act: z.boolean().nullable(), price: z.number().nullable(), kind: z.string().nullable().default(null) })),
+  view: z.record(z.string(), z.record(z.string(), z.array(z.string()))),
+  /** Display name of each relation area (used by catalog.set_complements). */
+  labels: z.record(z.string(), z.string()).default({}),
+});
+export type GraphFile = z.infer<typeof graphFileSchema>;
+
+/** Reads and checks the store graph once, at composition: a malformed file stops the start instead of failing every call. */
+export function loadGraphFile(graphFile: string): GraphFile {
+  const parsed = graphFileSchema.safeParse(JSON.parse(readFileSync(graphFile, 'utf8')));
+  if (!parsed.success) throw new Error(`store graph ${graphFile} is malformed: ${parsed.error.issues[0]?.path.join('.') ?? ''} ${parsed.error.issues[0]?.message ?? ''}`.trim());
+  return parsed.data;
 }
 
 /** Plate weight of one sellable unit, from the product name (a "Par" counts twice; lb → kg). */
@@ -125,7 +135,7 @@ function live(context: CatalogProductContext): { name: string; price: number | n
 }
 
 export function catalogBuildStepCapability(catalog: CatalogPort, graphFile: string, progress?: BuildProgress): CapabilityRegistration<z.infer<typeof buildStepInput>, BuildStepView> {
-  const graph = JSON.parse(readFileSync(graphFile, 'utf8')) as GraphFile;
+  const graph = loadGraphFile(graphFile);
   const ofStep = (k: string, s: Step) => KINDS[s].includes(graph.products[k]?.kind ?? '') && graph.products[k]?.act !== false;
   const neighbours = (k: string) => new Set(Object.entries(graph.view[k] ?? {}).filter(([a]) => !a.startsWith('vr:')).flatMap(([, l]) => l));
   /** Products of a step compatible with every chosen piece that constrains that step (CONSTRAINED_BY). */
@@ -252,7 +262,7 @@ export const replacementsOutput = z.strictObject({
 export type ReplacementsView = z.infer<typeof replacementsOutput>;
 
 export function catalogReplacementsCapability(catalog: CatalogPort, graphFile: string, progress?: BuildProgress): CapabilityRegistration<z.infer<typeof replacementsInput>, ReplacementsView> {
-  const graph = JSON.parse(readFileSync(graphFile, 'utf8')) as GraphFile;
+  const graph = loadGraphFile(graphFile);
   const side = (k: string, ...areas: string[]) => [...new Set(areas.flatMap((a) => graph.view[k]?.[a] ?? []))].filter((x) => graph.products[x]?.act !== false);
   return {
     definition: readDefinition({

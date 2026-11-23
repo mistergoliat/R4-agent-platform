@@ -100,7 +100,7 @@ describe('outbound: one honest submission to the edge', () => {
     const sent = async (origin?: 'agent' | 'operator' | 'platform') => {
       const seen: { body?: string } = {};
       await new WebOutboundAdapter(config, { fetch: replying(201, { messageId: 'm' }, seen) }).submit({ ...submission, ...(origin ? { origin } : {}) }, { timeoutMs: 1000 });
-      return JSON.parse(seen.body!);
+      return JSON.parse(seen.body!) as { from?: string };
     };
     expect((await sent('operator')).from).toBe('person');
     expect(await sent('operator')).not.toHaveProperty('author');
