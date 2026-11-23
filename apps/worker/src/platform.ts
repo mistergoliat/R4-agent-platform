@@ -4,7 +4,7 @@ import { AgentKernel } from '@r4/agent-kernel';
 import { AgentRegistry } from '@r4/agent-registry';
 import { ActionExecutor, type CapabilityRegistry } from '@r4/capability-runtime';
 import { ContextCompiler, MemoryContextSource, platformContextSources, type ContextCompactor, type ContextSource } from '@r4/context-compiler';
-import { DefaultModelGateway, type ModelProvider } from '@r4/model-gateway';
+import { DefaultModelGateway, RequestRateLimiter, type ModelProvider } from '@r4/model-gateway';
 import { createLogger } from '@r4/observability';
 import {
   PostgresAgentDefinitionStore,
@@ -117,7 +117,9 @@ export async function createWorkerPlatform(config: WorkerConfig, bindings: Worke
     const temporal = new TemporalRuntime({ store, execution, ids, logger, ...(config.turnGuard ? { turnGuard: config.turnGuard } : {}) });
     // The only authority over effects: policy is evaluated inside the runtime's fenced transactions.
     const actions = new ActionRuntime({ store, authorizer: new ActionPolicyEngine(bindings.actionPolicy ?? DEFAULT_ACTION_POLICY), temporal, ids, clock, logger });
-    const kernel = new AgentKernel({ gateway: new DefaultModelGateway({ provider: bindings.modelProvider, logger }), logger });
+    const rateLimiter = config.modelMaxRequestsPerMinute === undefined ? {} : { rateLimiter: new RequestRateLimiter(config.modelMaxRequestsPerMinute) };
+    logger.info({ event: 'model.rate_guard', maxRequestsPerMinute: config.modelMaxRequestsPerMinute ?? 'unlimited' }, 'model request-rate budget');
+    const kernel = new AgentKernel({ gateway: new DefaultModelGateway({ provider: bindings.modelProvider, logger, ...rateLimiter }), logger });
     const context = new ContextCompiler({
       sources: [...platformContextSources(), new MemoryContextSource(new PostgresMemoryStore(pool)), ...(bindings.contextSources ?? [])],
       policy: config.context,

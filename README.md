@@ -117,6 +117,7 @@ ejecutan con `FakeModelProvider` y la capability sintética
 | `R4_EXEC_MAX_READ_CALLS` | `50` | 〃 |
 | `R4_EXEC_MAX_RUN_DURATION_MS` | `900000` | 〃 (incluye tiempo huérfano tras un crash) |
 | `R4_EXEC_MODEL_CALL_TIMEOUT_MS` | `60000` | Por llamada; acotado por la duración restante |
+| `R4_MODEL_MAX_REQUESTS_PER_MINUTE` | — (sin límite) | Cuota de este proceso en la cuenta del proveedor de modelo: como máximo N llamadas inician en cualquier ventana móvil de 61 s; una ráfaga espera (hasta el timeout de la llamada o una ventana, lo mayor) en vez de recibir 429; un 429 del proveedor llena la ventana local. Nunca en `production.env` (lo carga también el lane). La suma entre procesos que comparten la key debe quedar bajo el límite de la cuenta (docs/architecture/R4_MODEL_RATE_GUARD_AND_CAPACITY.md) |
 | `R4_EXEC_MAX_RUN_RECOVERIES` | `3` | Takeovers antes de abandonar un run (`lease_lost`) |
 | `R4_EXEC_MAX_RUN_FAILURE_RECOVERIES` | `1` | (ADR-028) Runs nuevas tras fallos recuperables consecutivos (`invalid_decision`, `model_failure` reintentable) antes de pasar la task a un humano; `0` = handoff al primer fallo |
 | `R4_EXEC_MAX_WRITE_ACTIONS` | `0` | (D) Acciones de escritura por task (el `maxWrites` de la task puede reducirlo). `0` = el worker no escribe; con `0` las capabilities de escritura ni se ofrecen al modelo |

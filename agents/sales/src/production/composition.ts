@@ -31,6 +31,8 @@ import { workspaceCapability } from '../capabilities/workspace.js';
 import { SALES_AGENT_ID, SALES_TASK_TYPE, AUTONOMOUS_QUOTE_CAPABILITY_IDS, CAPABILITY_IDS } from '../ids.js';
 import { SALES_ROOT_GOAL } from '../goal.js';
 import { SalesWorkspaceContextSource } from '../workspace/context-source.js';
+import { SalesQuoteRecoveryContextSource } from '../workspace/quote-recovery-source.js';
+import { SALES_QUOTE_LANE_V22_PROFILE_LABEL } from './profile-v22.js';
 import { PostgresSalesStore } from '../workspace/store.js';
 import { SALES_DOMAINS } from './profile.js';
 import { isAutonomousQuoteProfile } from './profile-v5.js';
@@ -60,6 +62,7 @@ import { SALES_LANE_PROFILES, isCheckoutLaneProfile, isQuoteLaneProfile, isSales
 import { SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_VARIANT_AVAILABILITY_PROFILES } from './profile-v17.js';
 import { SALES_QUOTE_DOCUMENT_PROFILES, SALES_QUOTE_LANE_V18_PROFILE_LABEL } from './profile-v18.js';
 import { SALES_F1_SHIPPING_PROFILES, SALES_INTENT_ACCEPTANCE_PROFILES } from './profile-v19.js';
+import { SALES_QUOTE_LANE_V21_PROFILE_LABEL } from './profile-v21.js';
 import { quoteDocumentDelivery } from '../capabilities/quote-document.js';
 import { catalogDiscoverCapability } from '../capabilities/catalog-discover.js';
 import type { CatalogDiscoverPort } from '@r4-adapters/catalog-http';
@@ -120,6 +123,8 @@ export interface SalesProductionWorkerOptions {
   readonly catalogDescriptiveWindowMs?: number | null;
   /** (F1-COMMERCIAL-POLICY-v3) Promotional prices that outlast the quote may be quoted (@19, @20, @21 and @22 only; default off). */
   readonly promotionalQuotes?: boolean;
+  /** (M3) R4_SALES_QUOTE_RECOVERY=enabled: the conversation's earlier quotes with their current Quote V2 state enter the context (profiles with a REAL Quote; default off). */
+  readonly quoteRecovery?: boolean;
   /** (R4-J5 F1) Set only by the isolated canary runtime: it may also compose canary-only profiles (@12). A production worker never sets it. */
   readonly canary?: boolean;
   /** (R4 Checkout, R-1) The Checkout sandbox-purchase binding (CheckoutHttpClient); required when the selected profile composes Checkout (@15). */
@@ -289,7 +294,13 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
     bindings: {
       modelProvider: options.modelProvider,
       capabilities,
-      contextSources: [new SalesWorkspaceContextSource(sales, { catalogDescriptiveWindowMs: options.catalogDescriptiveWindowMs ?? null }), new DeliveryStateContextSource(options.store), new PriorConversationContextSource(options.store, { windowDays: config.priorConversationDays })],
+      contextSources: [
+        new SalesWorkspaceContextSource(sales, { catalogDescriptiveWindowMs: options.catalogDescriptiveWindowMs ?? null }),
+        new DeliveryStateContextSource(options.store),
+        new PriorConversationContextSource(options.store, { windowDays: config.priorConversationDays }),
+        // (M3) Read-only; only when enabled AND the profile is one the owner allowed (@22; Quote V2 REAL there).
+        ...(quoteRecoveryComposed(profile, options) ? [new SalesQuoteRecoveryContextSource({ conversation: options.store, sales, quotes: options.quotes!, windowDays: config.priorConversationDays })] : []),
+      ],
       actionPolicy: salesActionPolicyFor(profile),
       admission: controls,
       presence: { executionMode: 'production', runtimeProfile: profileLabel(profile) },
@@ -397,6 +408,8 @@ export const SALES_WEB_HUMAN_REQUEST_NOTICE_TEXT =
 export function composeSalesGateway(options: SalesGatewayOptions): { bindings: GatewayBindings; whatsapp: WhatsAppCloudConfig; describe: Record<string, string | boolean> } {
   const config = assertProductionMode(options.production.config);
   const profile = selectedSalesProductionProfile(config);
+  const lane = salesGatewayLane(options.env, options.pool);
+  assertSalesGatewayCohort(config.rollout.percent, lane);
   const whatsapp = loadWhatsAppCloudConfig(options.env, { allowNetwork: config.allowNetwork });
   const now = options.now ?? (() => new Date());
   const media = salesMediaPerception(options.env, whatsapp, config.allowNetwork, isCustomerIdentityProfile(profile), now);
@@ -412,7 +425,7 @@ export function composeSalesGateway(options: SalesGatewayOptions): { bindings: G
       // (Owner decision 2026-11-12) Worded by the team's service hours at the moment each notice is created.
       runFailureFallback: { text: () => salesRunFailureNotice(now()) },
       humanRequestNotice: { text: () => salesHumanRequestNotice(now()), profiles: SALES_HUMAN_REQUEST_NOTICE_PROFILES },
-      ...laneOf(salesGatewayLane(options.env, options.pool)),
+      ...laneOf(lane),
       ...(media.perception ? { media: media.perception } : {}),
       // (R4-J4-R4) v8 never runs without the inbound inspector, requested in full (ADR-040).
       ...(isCustomerIdentityProfile(profile) ? { inspection: salesGatewayInspection(profile, options.env, { transport: options.identityFetch, allowedHosts: options.allowedHosts }) } : {}),
@@ -473,7 +486,8 @@ export const SALES_LANE_ENV = ['R4_PROD_LANE_PROFILE', 'R4_PROD_LANE_ALLOWLIST']
 
 /**
  * (ADR-045) The gateway's lane: a lane profile (sales-production@13) for an explicit list of conversation keys, each
- * of which ChannelIngress also requires to be allowlisted in the rollout. Refuses partial or malformed configuration.
+ * of which ChannelIngress also requires to be allowlisted in the rollout, and for the rollout cohort
+ * (R4_PROD_ROLLOUT_PERCENT; `laneRoute`). Refuses partial or malformed configuration.
  */
 export function salesGatewayLane(env: Readonly<Record<string, string | undefined>>, pool: pg.Pool): ConversationLane | undefined {
   const label = env.R4_PROD_LANE_PROFILE?.trim() ?? '';
@@ -485,6 +499,26 @@ export function salesGatewayLane(env: Readonly<Record<string, string | undefined
   const keys = [...new Set(raw.split(/[\s,]+/).map((k) => k.trim().toLowerCase()).filter(Boolean))];
   if (keys.some((k) => !/^[0-9a-f]{64}$/.test(k))) throw new Error('refusing the gateway lane: R4_PROD_LANE_ALLOWLIST must list 64-hex conversation keys (--identity-key)');
   return { conversationKeys: keys, profile, taskFactory: salesConversationTaskFactory(pool, salesProductionAgentVersion(profile)) };
+}
+
+/**
+ * (ADR-045 amendment 1) The lane profiles the owner approved to serve the rollout cohort, i.e. real customers. A code
+ * constant on purpose: adding a profile is a reviewed change, never a variable. @22 is the live lane profile and @21 its
+ * declared rollback (owner decision 2026-11-18): switching the lane @22 → @21 never requires dropping the percentage to 0.
+ */
+export const SALES_COHORT_LANE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V22_PROFILE_LABEL, SALES_QUOTE_LANE_V21_PROFILE_LABEL]);
+
+/**
+ * (ADR-045 amendment 1) With R4_PROD_ROLLOUT_PERCENT > 0 the WhatsApp gateway serves the cohort only through an
+ * owner-approved lane profile: without a lane the cohort would open, autonomous, on the main profile; with another lane
+ * profile (@13–@20, superseded or never approved) real customers would get a profile not approved for them. At 0 %
+ * nothing is required (as before).
+ */
+export function assertSalesGatewayCohort(percent: number, lane: ConversationLane | undefined): void {
+  if (percent <= 0) return;
+  if (!lane) throw new Error(`refusing the gateway: R4_PROD_ROLLOUT_PERCENT=${percent} without a lane would serve the cohort with the main profile; compose ${SALES_LANE_ENV.join(' and ')} with ${SALES_COHORT_LANE_PROFILES.join(', ')}, or keep the percentage at 0`);
+  const label = profileLabel(lane.profile);
+  if (!SALES_COHORT_LANE_PROFILES.includes(label)) throw new Error(`refusing the gateway: R4_PROD_ROLLOUT_PERCENT=${percent} with the lane profile ${label}, which is not approved for the rollout cohort (${SALES_COHORT_LANE_PROFILES.join(', ')})`);
 }
 
 function laneOf(lane: ConversationLane | undefined): { lane?: ConversationLane } {
@@ -530,6 +564,32 @@ export function loadPromotionalQuotes(env: Readonly<Record<string, string | unde
   const value = (env.R4_F1_PROMOTIONAL_QUOTES ?? 'disabled').trim();
   if (value !== 'enabled' && value !== 'disabled') throw new Error('R4_F1_PROMOTIONAL_QUOTES must be enabled or disabled');
   return value === 'enabled';
+}
+
+/** (M3) R4_SALES_QUOTE_RECOVERY: `enabled` | `disabled` (default). Anything else refuses (fail closed). */
+export function loadQuoteRecovery(env: Readonly<Record<string, string | undefined>>): boolean {
+  const value = (env.R4_SALES_QUOTE_RECOVERY ?? 'disabled').trim();
+  if (value !== 'enabled' && value !== 'disabled') throw new Error('R4_SALES_QUOTE_RECOVERY must be enabled or disabled');
+  return value === 'enabled';
+}
+
+/** (M3, owner mandate 2026-11-18) The only profiles on which R4_SALES_QUOTE_RECOVERY takes effect. */
+export const SALES_QUOTE_RECOVERY_PROFILES: ReadonlySet<string> = new Set([SALES_QUOTE_LANE_V22_PROFILE_LABEL]);
+
+/**
+ * (M3) Whether the quote-recovery source is composed: enabled, an allowed profile, and a REAL Quote V2 binding. On any
+ * other profile the flag is IGNORED with a warning (not refused): the lane's rollback to @21 must stay a one-variable
+ * change (R4_PROD_POLICY_PROFILE), and a worker that refused to start over a leftover flag would turn a rollback into an
+ * outage. The `service.composed` log states the outcome (`features.quoteRecovery`).
+ */
+export function quoteRecoveryComposed(profile: ProductionProfile, options: Pick<SalesProductionWorkerOptions, 'quoteRecovery' | 'quotes' | 'logger'>): boolean {
+  if (options.quoteRecovery !== true) return false;
+  const label = profileLabel(profile);
+  if (!SALES_QUOTE_RECOVERY_PROFILES.has(label) || profile.domains[SALES_DOMAINS.quote]?.status !== 'REAL' || !options.quotes) {
+    options.logger.warn({ event: 'sales.quote_recovery.ignored', profile: label, allowed: [...SALES_QUOTE_RECOVERY_PROFILES] }, 'R4_SALES_QUOTE_RECOVERY=enabled is ignored: this profile does not compose quote recovery');
+    return false;
+  }
+  return true;
 }
 
 /** The Quote V2 port quote.create@5 uses: behind the kill switch; for the F1 profiles also single-flight (see below). */

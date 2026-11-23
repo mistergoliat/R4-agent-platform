@@ -23,9 +23,10 @@ import { CheckoutHttpClient, SandboxConsentDirectory, loadCheckoutHttpConfig, sa
 import { describeWhatsAppConfig, loadWhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
 import { adminDatabaseUrl } from '../harness/database.js';
 import { configuredModelProvider } from '../model.js';
-import { assertSalesProductionPrerequisites, composeSalesGateway, composeSalesProductionWorker, composeSalesWebGateway, loadPromotionalQuotes, salesAgentOf, selectedSalesProductionProfile } from '../production/composition.js';
+import { assertSalesProductionPrerequisites, composeSalesGateway, composeSalesProductionWorker, composeSalesWebGateway, loadPromotionalQuotes, loadQuoteRecovery, salesAgentOf, selectedSalesProductionProfile } from '../production/composition.js';
 import { loadCatalogDescriptiveWindowMs } from '../workspace/catalog-descriptive.js';
 import { isSalesWebProfile } from '../production/profile-web.js';
+import { QUOTE_RECOVERY_SOURCE_ID } from '../ids.js';
 import { webProgressReporter } from '../production/web-progress.js';
 import { WebOutboundAdapter, loadWebChannelConfig } from '@r4-adapters/web';
 import { isAutonomousQuoteProfile } from '../production/profile-v5.js';
@@ -287,7 +288,9 @@ async function gateway(production: ReturnType<typeof loadProductionConfig>): Pro
   const logger = createLogger({ service: 'r4-channel-gateway', level: config.logLevel });
   const pool = createPool({ connectionString: config.databaseUrl, logger, applicationName: 'r4-gateway-bindings', max: 2 });
   await assertSalesProductionPrerequisites(selectedSalesProductionProfile(production.config), pool);
-  const { bindings } = composeSalesGateway({ pool, production, env: process.env });
+  const { bindings, describe } = composeSalesGateway({ pool, production, env: process.env });
+  // The vision model's request-rate share of this process (R4_PERCEPTION_VISION_MAX_REQUESTS_PER_MINUTE), for the operator.
+  logger.info({ event: 'model.rate_guard', perceptionVisionMaxRequestsPerMinute: describe.perceptionVisionMaxRequestsPerMinute ?? 'unlimited' }, 'perception request-rate budget');
   await runGatewayProcess(config, bindings, { logger });
 }
 
@@ -313,9 +316,11 @@ async function worker(production: ReturnType<typeof loadProductionConfig>): Prom
   const catalog = productionCatalog(production, logger);
   const shipping = productionShipping(production, logger);
   const quotes = productionQuotes(production, logger);
-  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...webProgressOf(production, pool), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), catalogDescriptiveWindowMs: loadCatalogDescriptiveWindowMs(process.env), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production, logger) });
+  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...webProgressOf(production, pool), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production, logger), quoteRecovery: loadQuoteRecovery(process.env) , catalogDescriptiveWindowMs: loadCatalogDescriptiveWindowMs(process.env) });
   await assertSalesProductionPrerequisites(workerProfile(production), pool);
-  logger.info({ event: 'service.composed', profile: composed.report.profile, profileFingerprint: composed.report.profileFingerprint }, 'production worker composed');
+  // (M3) What the operator needs to see from the logs: whether the quote-recovery source was composed, and the promotional-quotes switch.
+  const features = { quoteRecovery: composed.bindings.contextSources?.some((s) => s.id === QUOTE_RECOVERY_SOURCE_ID) === true, promotionalQuotes: loadPromotionalQuotes(process.env) };
+  logger.info({ event: 'service.composed', profile: composed.report.profile, profileFingerprint: composed.report.profileFingerprint, features }, 'production worker composed');
   await runWorkerProcess(config, composed.bindings, { logger });
 }
 

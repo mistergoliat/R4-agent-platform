@@ -178,6 +178,8 @@ export interface OutboundRecord {
   readonly noticeKey: string | null;
   /** Operator origin: who wrote it; operator resolution: who settled it. */
   readonly humanRef: string | null;
+  /** (ADR-048 D5) Operator origin: the writer's visible name, from the operator registry, when it has one. */
+  readonly authorName: string | null;
   readonly resolvedBy: string | null;
   readonly profile: string;
   readonly createdAt: string;
@@ -251,6 +253,8 @@ export interface NewOperatorOutbound {
   readonly taskId: string;
   readonly text: string;
   readonly humanRef: string;
+  /** (ADR-048 D5) The writer's visible name from the operator registry; null when the registry has none. */
+  readonly authorName: string | null;
   readonly responseKey: string;
   readonly correlationId: string;
 }
@@ -447,6 +451,8 @@ export interface ProductionStore {
    * after `since`. The window applies to each turn's own time, never to when a task or binding ended.
    */
   earlierConversationTurns(taskId: string, options: { readonly since: string; readonly limit: number; readonly maxTasks: number }): Promise<{ readonly turns: ThreadEntry[]; readonly earlierTasks: number }>;
+  /** (M3) The earlier tasks of `taskId`'s channel conversation (same lineage as `earlierConversationTurns`), newest first, at most `maxTasks`. */
+  earlierConversationTasks(taskId: string, maxTasks: number): Promise<string[]>;
   conversations(limit: number): Promise<ConversationSummary[]>;
   attention(): Promise<ProductionAttention>;
   metrics(): Promise<ProductionMetrics>;

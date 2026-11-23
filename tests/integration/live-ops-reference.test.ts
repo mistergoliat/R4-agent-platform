@@ -210,6 +210,11 @@ describe('handoff + inbound: human ownership persists input and blocks autonomy 
     await bed.api.production.manualReply(taskId, { responseKey: 'reply-1', text: 'Perfecto.' }, OPERATOR);
     await bed.deliver();
     expect(bed.provider.sends.map((s) => s.text)).toEqual(['Perfecto.', 'Perfecto.']);
+    // (ADR-048 D5) The writer's visible name, when the operator registry has one, is kept with the message.
+    await bed.api.production.manualReply(taskId, { responseKey: 'reply-2', text: 'Soy yo de nuevo.' }, { ...OPERATOR, displayName: 'Joaquín' });
+    const authors = await bed.rows<{ response_key: string; author_name: string | null }>(`select response_key, author_name from outbound_messages where origin = 'operator' order by created_at`);
+    expect(authors.map((a) => [a.response_key, a.author_name])).toEqual([['reply-1', null], ['reply-2', 'Joaquín']]);
+    await bed.deliver();
 
     await bed.api.temporal.respondHuman(handoff.requestId, { responseKey: 'release-1', outcome: 'release', content: 'Devuelvo la conversación al agente.' }, OPERATOR);
     bed.next(say('Retomo yo. ¿Seguimos con la bicicleta?'));

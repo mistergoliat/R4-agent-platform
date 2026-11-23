@@ -152,7 +152,7 @@ export class OutboundDeliveryRuntime {
     } else {
       try {
         result = await adapter.submit(
-          { outboundId: claim.outbound.outboundId, idempotencyKey: claim.outbound.idempotencyKey, accountRef: claim.accountRef, recipientRef: claim.recipientRef, text: claim.text, attempt: claim.token.attempt, ...(document ? { document } : {}) },
+          { outboundId: claim.outbound.outboundId, idempotencyKey: claim.outbound.idempotencyKey, accountRef: claim.accountRef, recipientRef: claim.recipientRef, text: claim.text, attempt: claim.token.attempt, origin: claim.outbound.origin, ...(claim.outbound.authorName ? { authorName: claim.outbound.authorName } : {}), ...(document ? { document } : {}) },
           { timeoutMs: config.outbound.providerTimeoutMs },
         );
       } catch {

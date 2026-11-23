@@ -10,14 +10,23 @@ import {
   inputSubmissionSchema,
   humanResponseSchema,
   trustedHumanContextSchema,
+  type Principal,
   type TrustedHumanContext,
 } from '@r4/contracts';
 import type { AgentRegistry } from '@r4/agent-registry';
 import type { TaskRuntime, TemporalRuntime } from '@r4/task-runtime';
 import type { ProductionOperator } from '@r4/live-ops';
+import { INCIDENT_SIGNATURE, type PostgresAgentDrafts, type PostgresConsoleReads, type PostgresIncidents, type PostgresInsights, type PostgresKnowledge } from '@r4/persistence-postgres';
 import { resolveCorrelationId, runWithCorrelation } from '@r4/observability';
 import { toErrorResponse } from './errors.js';
 import { unauthenticatedPrincipalResolver, type PrincipalResolver } from './principal.js';
+
+declare module 'fastify' {
+  interface FastifyRequest {
+    /** ADR-050: the exact bytes of a JSON body (the console assertion binds their SHA-256). */
+    rawBody?: Buffer;
+  }
+}
 
 export interface ReadinessReport {
   readonly ready: boolean;
@@ -33,9 +42,26 @@ export interface AppDependencies {
   readonly temporal?: TemporalRuntime;
   /** Auth adapter seam: absent by default; no header/body impersonation fallback. */
   readonly humanContext?: (request: FastifyRequest) => TrustedHumanContext | null;
+  /** ADR-049: read-only service credential for operator-plane GETs. Never authorizes a write. */
+  readonly serviceReader?: (request: FastifyRequest) => boolean;
   /** (R4-I) Operator plane of production conversations (thread, delivery, manual reply, autonomy controls). */
   readonly production?: ProductionOperator;
+  /** (ADR-049 Phase 2) Console reads: run step trace, activity per day and agent, event feed. */
+  readonly consoleReads?: PostgresConsoleReads;
+  /** (ADR-051) Incident groups (read) and their human triage (write). */
+  readonly incidents?: PostgresIncidents;
+  /** (ADR-052) Releases, quality funnel, learning gaps and autonomy reads. */
+  readonly insights?: PostgresInsights;
+  /** (ADR-052) Curated knowledge entries (read; signed operator writes). */
+  readonly knowledge?: PostgresKnowledge;
+  /** (ADR-054) Agent drafts (read; signed operator writes with agent.draft). A draft never runs in production. */
+  readonly drafts?: PostgresAgentDrafts;
+  /** ADR-050: 'disabled' refuses unauthenticated callers on POST /v1/tasks and /v1/tasks/:id/inputs. Default 'enabled'. */
+  readonly anonymousWrites?: 'enabled' | 'disabled';
 }
+
+/** (ADR-049 Phase 2) Local days of the activity read. */
+export const CONSOLE_TIME_ZONE = 'America/Santiago';
 
 export const CORRELATION_HEADER = 'x-correlation-id';
 const MAX_BODY_BYTES = 256 * 1024;
@@ -62,6 +88,13 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
 
   // The API speaks JSON only; other media types are refused with 415.
   app.removeContentTypeParser('text/plain');
+  // ADR-050: keep the exact JSON body bytes next to the parsed value; parsing stays Fastify's default.
+  const parseJson = app.getDefaultJsonParser('error', 'error');
+  app.removeContentTypeParser('application/json');
+  app.addContentTypeParser('application/json', { parseAs: 'buffer' }, (request, body, done) => {
+    request.rawBody = body as Buffer;
+    void parseJson(request, request.rawBody.toString('utf8'), done);
+  });
 
   app.addHook('onRequest', async (request, reply) => {
     reply.header(CORRELATION_HEADER, request.id);
@@ -96,6 +129,15 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     });
   });
 
+  // ADR-050: with anonymous writes disabled, the R4-B open writes refuse an unauthenticated caller.
+  const writer = (request: FastifyRequest): Principal => {
+    const principal = resolvePrincipal(request);
+    if (deps.anonymousWrites === 'disabled' && principal.kind === 'unauthenticated') {
+      throw new PlatformError('precondition', 'anonymous_writes_disabled', 'this API does not accept unauthenticated writes');
+    }
+    return principal;
+  };
+
   // Liveness: the process is up and serving. Deliberately no dependency checks.
   app.get('/health', (_request, reply) => reply.send({ status: 'ok' }));
 
@@ -107,12 +149,13 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
 
   app.post('/v1/tasks', (request, reply) =>
     inContext(request, async () => {
+      const requestedBy = writer(request);
       const body = parse(createTaskRequestSchema, request.body ?? undefined, 'body');
       const rawKey = request.headers['idempotency-key'];
       const idempotencyKey = rawKey === undefined ? undefined : parse(idempotencyKeySchema, rawKey, 'Idempotency-Key header');
       const { view, replayed } = await deps.tasks.createTask({
         request: body,
-        requestedBy: resolvePrincipal(request),
+        requestedBy,
         correlationId: request.id,
         idempotencyKey,
       });
@@ -161,14 +204,20 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       if (!context) throw new PlatformError('precondition', 'trusted_human_required', 'an authenticated human context adapter is required');
       return parse(trustedHumanContextSchema, { ...context, correlationId: request.id }, 'trusted human context');
     };
+    // ADR-049: operator-plane READS also accept the read-only service credential. Writes keep `human`.
+    const reader = (request: FastifyRequest): void => {
+      if (deps.serviceReader?.(request)) return;
+      human(request);
+    };
     const executionParams = z.strictObject({ id: uuidSchema });
     const responseKeyBody = z.strictObject({ responseKey: z.string().min(1).max(256) });
 
     // Canonical inbound input (any channel adapter): the caller is the resolved principal.
     app.post('/v1/tasks/:id/inputs', (request, reply) =>
       inContext(request, async () => {
+        const submittedBy = writer(request);
         const { id } = parse(taskParams, request.params, 'path');
-        const result = await temporal.submitInput(id, parse(inputSubmissionSchema, request.body ?? undefined, 'body'), resolvePrincipal(request), request.id);
+        const result = await temporal.submitInput(id, parse(inputSubmissionSchema, request.body ?? undefined, 'body'), submittedBy, request.id);
         return reply.status(result.replayed ? 200 : 201).header('idempotency-replayed', String(result.replayed)).send(result);
       }),
     );
@@ -187,13 +236,13 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     );
     app.get('/v1/tasks/:id/temporal', (request) =>
       inContext(request, async () => {
-        human(request);
+        reader(request);
         return temporal.inspect(parse(taskParams, request.params, 'path').id);
       }),
     );
     app.get('/v1/attention', (request) =>
       inContext(request, async () => {
-        human(request);
+        reader(request);
         return temporal.attention();
       }),
     );
@@ -212,6 +261,202 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       }),
     );
 
+    if (deps.consoleReads) {
+      // ADR-049 Phase 2: console reads (no message text, no reasoning, no contact addresses).
+      const reads = deps.consoleReads;
+      const activityQuery = z.strictObject({ days: z.coerce.number().int().min(1).max(31).default(7) });
+      const eventsQuery = z.strictObject({
+        before: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\|[0-9a-f-]{36}$/, 'expected <iso>|<id>').refine((v) => !Number.isNaN(Date.parse(v.slice(0, 24))), 'invalid timestamp').optional(),
+        limit: z.coerce.number().int().min(1).max(200).default(50),
+      });
+      app.get('/v1/runs/:id/steps', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          return reads.runSteps(parse(runParams, request.params, 'path').id);
+        }),
+      );
+      app.get('/v1/production/activity', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          return reads.activity(parse(activityQuery, request.query, 'query').days, CONSOLE_TIME_ZONE);
+        }),
+      );
+      app.get('/v1/events', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          const { before, limit } = parse(eventsQuery, request.query, 'query');
+          const [at, id] = before?.split('|') ?? [];
+          return reads.events(limit, at && id ? { at, id } : undefined);
+        }),
+      );
+    }
+
+    if (deps.incidents) {
+      // ADR-051: incident groups (service reader or operator) and their triage (signed operator with incident.triage).
+      const incidents = deps.incidents;
+      const incidentsQuery = z.strictObject({ days: z.coerce.number().int().min(1).max(31).default(7) });
+      const triageBody = z
+        .strictObject({
+          signature: z.string().max(300).regex(INCIDENT_SIGNATURE, 'not an incident signature'),
+          state: z.enum(['ignored', 'requested']),
+          note: z.string().trim().min(1).max(1000),
+          requestUrl: z.url({ protocol: /^https$/ }).max(2000).optional(),
+        })
+        .refine((b) => b.state !== 'requested' || b.requestUrl !== undefined, { message: 'requestUrl is required when state is requested', path: ['requestUrl'] });
+      app.get('/v1/incidents', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          return incidents.list(parse(incidentsQuery, request.query, 'query').days);
+        }),
+      );
+      app.post('/v1/incidents/triage', (request) =>
+        inContext(request, async () => {
+          const operator = human(request);
+          if (!operator.scopes.includes('incident.triage')) throw new PlatformError('precondition', 'human_scope_denied', 'operator lacks the incident.triage scope');
+          const { signature, state, note, requestUrl } = parse(triageBody, request.body ?? undefined, 'body');
+          return { signature, triage: await incidents.triage(signature, { state, note, requestUrl: requestUrl ?? null }, operator.humanRef, request.id) };
+        }),
+      );
+    }
+
+    if (deps.insights) {
+      // ADR-052: deterministic reads (service reader or operator). Only the learning gaps carry text (masked).
+      const insights = deps.insights;
+      const windowQuery = (fallback: number) => z.strictObject({ days: z.coerce.number().int().min(1).max(31).default(fallback) });
+      const stage = z.string().regex(/^[a-z][a-z0-9_.-]{0,63}$/, 'expected a capability id prefix');
+      const funnelQuery = z.strictObject({
+        days: z.coerce.number().int().min(1).max(31).default(14),
+        // One `stage` arrives as a string, several as an array.
+        stage: z.union([stage.transform((s) => [s]), z.array(stage)]).pipe(z.array(z.string()).min(1).max(6)),
+      });
+      app.get('/v1/production/versions', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          return insights.versions(parse(windowQuery(14), request.query, 'query').days);
+        }),
+      );
+      app.get('/v1/quality/funnel', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          const { days, stage: stages } = parse(funnelQuery, request.query, 'query');
+          return insights.funnel(days, stages);
+        }),
+      );
+      app.get('/v1/learning/gaps', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          return insights.gaps(parse(windowQuery(14), request.query, 'query').days);
+        }),
+      );
+      app.get('/v1/autonomy', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          return insights.autonomy(parse(windowQuery(30), request.query, 'query').days);
+        }),
+      );
+    }
+
+    if (deps.knowledge) {
+      // ADR-052: curated knowledge (no agent reads it). Writes: signed operator with knowledge.curate / knowledge.sign.
+      const knowledge = deps.knowledge;
+      const entryBody = z.strictObject({
+        topic: z.string().trim().min(1).max(120),
+        statement: z.string().trim().min(1).max(2000),
+        source: z.string().trim().min(1).max(300),
+        sourceRef: z.string().trim().min(1).max(300).optional(),
+        expiresAt: z.iso.date().optional(),
+      });
+      const transitionBody = z.strictObject({ entryId: uuidSchema, to: z.enum(['verified', 'signed', 'retired']), note: z.string().trim().min(1).max(500) });
+      app.get('/v1/learning/knowledge', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          parse(z.strictObject({}), request.query, 'query');
+          return { entries: await knowledge.list() };
+        }),
+      );
+      app.post('/v1/learning/knowledge', (request, reply) =>
+        inContext(request, async () => {
+          const operator = human(request);
+          if (!operator.scopes.includes('knowledge.curate')) throw new PlatformError('precondition', 'human_scope_denied', 'operator lacks the knowledge.curate scope');
+          const body = parse(entryBody, request.body ?? undefined, 'body');
+          const entry = await knowledge.propose({ ...body, sourceRef: body.sourceRef ?? null, expiresAt: body.expiresAt ?? null }, operator.humanRef, request.id);
+          return reply.status(201).send({ entry });
+        }),
+      );
+      // The required scope depends on the entry's current state (proposed→verified and →retired: curate; verified→signed: sign).
+      app.post('/v1/learning/knowledge/transition', (request) =>
+        inContext(request, async () => {
+          const operator = human(request);
+          const { entryId, to, note } = parse(transitionBody, request.body ?? undefined, 'body');
+          return { entry: await knowledge.transition(entryId, to, note, operator, request.id) };
+        }),
+      );
+    }
+
+    if (deps.drafts) {
+      // ADR-054 (W1): agent drafts. Reads: service reader or person; writes: signed operator with agent.draft.
+      const drafts = deps.drafts;
+      const slug = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/);
+      const edits = {
+        displayName: z.string().trim().min(1).max(120),
+        description: z.string().trim().min(1).max(2000),
+        instructions: z.string().trim().min(1).max(50_000),
+        capabilityScopes: z.array(z.string().min(1).max(128)).max(64),
+        budgets: z.record(z.string().min(1).max(64), z.number().int().nonnegative()),
+        note: z.string().trim().min(1).max(500).optional(),
+      };
+      const createBody = z.strictObject({
+        agentId: z.string().regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/).max(64),
+        base: z.strictObject({ agentId: z.string().min(1).max(64), version: z.number().int().positive() }),
+        template: slug,
+        channel: slug.optional(),
+        label: z.string().trim().min(1).max(60).optional(),
+        ...edits,
+      });
+      const draftParams = z.strictObject({ id: uuidSchema });
+      const operatorWith = (request: FastifyRequest) => {
+        const operator = human(request);
+        if (!operator.scopes.includes('agent.draft')) throw new PlatformError('precondition', 'human_scope_denied', 'operator lacks the agent.draft scope');
+        return operator;
+      };
+      app.get('/v1/agent-drafts', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          parse(z.strictObject({}), request.query, 'query');
+          return { drafts: await drafts.list() };
+        }),
+      );
+      app.get('/v1/agent-drafts/:id', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          return drafts.get(parse(draftParams, request.params, 'path').id);
+        }),
+      );
+      app.post('/v1/agent-drafts', (request, reply) =>
+        inContext(request, async () => {
+          const operator = operatorWith(request);
+          const { agentId, base, template, channel, label, note, ...rest } = parse(createBody, request.body ?? undefined, 'body');
+          const created = await drafts.create({ agentId, base, template, channel: channel ?? null, label: label ?? null, edits: rest, note: note ?? null }, operator.humanRef, request.id);
+          return reply.status(201).send(created);
+        }),
+      );
+      app.post('/v1/agent-drafts/:id/revisions', (request, reply) =>
+        inContext(request, async () => {
+          const operator = operatorWith(request);
+          const { id } = parse(draftParams, request.params, 'path');
+          const { note, ...rest } = parse(z.strictObject(edits), request.body ?? undefined, 'body');
+          return reply.status(201).send(await drafts.revise(id, rest, note ?? null, operator.humanRef, request.id));
+        }),
+      );
+      app.post('/v1/agent-drafts/:id/discard', (request) =>
+        inContext(request, async () => {
+          const operator = operatorWith(request);
+          parse(z.strictObject({}), request.body ?? {}, 'body');
+          return { draft: await drafts.discard(parse(draftParams, request.params, 'path').id, operator.humanRef) };
+        }),
+      );
+    }
+
     if (deps.production) {
       // R4-I operator plane (API-only): the proven operator semantics of the channel operation, on R4's owners.
       const production = deps.production;
@@ -220,25 +465,25 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       const listQuery = z.strictObject({ limit: z.coerce.number().int().min(1).max(500).optional() });
       app.get('/v1/production/conversations', (request) =>
         inContext(request, async () => {
-          human(request);
+          reader(request);
           return { conversations: await production.conversations(parse(listQuery, request.query, 'query').limit) };
         }),
       );
       app.get('/v1/production/attention', (request) =>
         inContext(request, async () => {
-          human(request);
+          reader(request);
           return production.attention();
         }),
       );
       app.get('/v1/production/metrics', (request) =>
         inContext(request, async () => {
-          human(request);
+          reader(request);
           return { metrics: await production.metrics() };
         }),
       );
       app.get('/v1/production/controls', (request) =>
         inContext(request, async () => {
-          human(request);
+          reader(request);
           return production.controls();
         }),
       );
@@ -251,20 +496,20 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
       // Thread with an incremental cursor: operators poll for new entries (the channel operation's "live" thread).
       app.get('/v1/tasks/:id/thread', (request) =>
         inContext(request, async () => {
-          human(request);
+          reader(request);
           const { id } = parse(taskParams, request.params, 'path');
           return production.thread(id, parse(threadQuery, request.query, 'query').after);
         }),
       );
       app.get('/v1/tasks/:id/outbound', (request) =>
         inContext(request, async () => {
-          human(request);
+          reader(request);
           return { outbound: await production.outboundForTask(parse(taskParams, request.params, 'path').id) };
         }),
       );
       app.get('/v1/outbound/:id', (request) =>
         inContext(request, async () => {
-          human(request);
+          reader(request);
           return production.outbound(parse(outboundParams, request.params, 'path').id);
         }),
       );

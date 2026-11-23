@@ -73,7 +73,7 @@ function outboundFromRow(r: Row): OutboundRecord {
     duplicateOf: (r.duplicate_of as string | null) ?? null, providerMessageId: (r.provider_message_id as string | null) ?? null, attempts: r.attempts as number,
     nextAttemptAt: isoOrNull(r.next_attempt_at), leaseOwner: (r.lease_owner as string | null) ?? null, leaseGeneration: r.lease_generation as number, leaseExpiresAt: isoOrNull(r.lease_expires_at),
     errorClass: (r.error_class as string | null) ?? null, errorCode: (r.error_code as string | null) ?? null, humanRequestId: (r.human_request_id as string | null) ?? null, noticeKey: (r.notice_key as string | null) ?? null,
-    humanRef: (r.human_ref as string | null) ?? null, resolvedBy: (r.resolved_by as string | null) ?? null,
+    humanRef: (r.human_ref as string | null) ?? null, authorName: (r.author_name as string | null) ?? null, resolvedBy: (r.resolved_by as string | null) ?? null,
     profile: r.profile as string, createdAt: iso(r.created_at), updatedAt: iso(r.updated_at), dispatchedAt: isoOrNull(r.dispatched_at), acceptedAt: isoOrNull(r.accepted_at),
     deliveredAt: isoOrNull(r.delivered_at), readAt: isoOrNull(r.read_at), failedAt: isoOrNull(r.failed_at), correlationId: r.correlation_id as string,
   };
@@ -492,10 +492,10 @@ export class PostgresProductionStore implements ProductionStore {
       if (!binding) throw new PlatformError('precondition', 'task_not_channel_bound', 'the task is not bound to a channel conversation');
       const sha = sha256Hex(command.text);
       const inserted = (await c.query<Row>(
-        `insert into outbound_messages (outbound_id, origin, task_id, binding_id, channel, idempotency_key, content_sha256, body, status, human_ref, response_key, profile, correlation_id)
-         values ($1, 'operator', $2, $3, $4, $5, $6, $7, 'pending', $8, $9, $10, $11)
+        `insert into outbound_messages (outbound_id, origin, task_id, binding_id, channel, idempotency_key, content_sha256, body, status, human_ref, author_name, response_key, profile, correlation_id)
+         values ($1, 'operator', $2, $3, $4, $5, $6, $7, 'pending', $8, $12, $9, $10, $11)
          on conflict (task_id, response_key) where origin = 'operator' do nothing returning *`,
-        [command.outboundId, command.taskId, binding.binding_id, binding.channel, `r4-op:${command.outboundId}`, sha, command.text, command.humanRef, command.responseKey, binding.profile, command.correlationId],
+        [command.outboundId, command.taskId, binding.binding_id, binding.channel, `r4-op:${command.outboundId}`, sha, command.text, command.humanRef, command.responseKey, binding.profile, command.correlationId, command.authorName],
       )).rows[0];
       if (inserted) return { record: outboundFromRow(inserted), replayed: false };
       const existing = (await c.query<Row>(`select * from outbound_messages where task_id = $1 and response_key = $2 and origin = 'operator'`, [command.taskId, command.responseKey])).rows[0]!;
@@ -841,6 +841,19 @@ export class PostgresProductionStore implements ProductionStore {
     );
     const turns = r.rows.map((row) => entry(iso(row.at), row.id as string, row.kind as ThreadEntry['kind'], row.text as string, {}, row.outbound_id ? delivery(row) : null)).reverse();
     return { turns, earlierTasks: (r.rows[0]?.earlier_tasks as number | undefined) ?? 0 };
+  }
+
+  async earlierConversationTasks(taskId: string, maxTasks: number): Promise<string[]> {
+    // The `earlier` lineage of `earlierConversationTurns` (index 0013_conversation_binding_history).
+    const r = await query<Row>(
+      this.#pool,
+      `with cur as (select channel, conversation_key, created_at from channel_conversation_bindings where task_id = $1)
+       select e.task_id from cur join channel_conversation_bindings e
+           on e.channel = cur.channel and e.conversation_key = cur.conversation_key and e.created_at < cur.created_at and e.task_id is not null
+        order by e.created_at desc, e.binding_id desc limit $2`,
+      [taskId, maxTasks],
+    );
+    return r.rows.map((row) => row.task_id as string);
   }
 
   async conversations(limit: number): Promise<ConversationSummary[]> {

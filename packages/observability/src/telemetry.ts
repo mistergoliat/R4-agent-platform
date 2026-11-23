@@ -19,6 +19,8 @@ export const TELEMETRY_EVENTS = [
   'run.finished',
   'model.call.completed',
   'model.call.failed',
+  // A model call waited for (or was refused) the process's provider request-rate budget.
+  'model.call.throttled',
   'capability.registered',
   'capability.invocation.completed',
   // R4-C1 execution kernel

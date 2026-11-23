@@ -72,6 +72,12 @@ grep -oE '"applied":\[[^]]*\]' /tmp/r4-deploy-coremigrate.log | head -1
 
 step "5. start in order (lane still $LANE)"
 for p in $WORKERS $GATEWAY; do pm2 start "$p" >/dev/null; sleep 3; done
+# ADR-049: the console's read-only r4-api, if installed. Never blocks the deploy: the console is not on the customer path.
+if pm2 describe r4-api >/dev/null 2>&1; then
+  pm2 restart r4-api >/dev/null; sleep 3
+  API_PORT=$(grep -oE '^R4_HTTP_PORT=[0-9]+' "$C/r4-api.env" | cut -d= -f2)
+  curl -sf -m 5 "127.0.0.1:${API_PORT:-8088}/ready" >/dev/null && echo "r4-api /ready 200" || echo "WARNING: r4-api not ready (console only; production unaffected)"
+fi
 sleep 15
 
 step "6. verify"

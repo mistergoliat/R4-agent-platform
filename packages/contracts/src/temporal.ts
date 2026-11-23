@@ -67,7 +67,10 @@ export type GoalRejectionCode = (typeof GOAL_REJECTION_CODES)[number];
 // ---------------------------------------------------------------------------
 
 // (R4-I) `autonomy.control`: change the operational autonomy controls (kill switch).
-export const HUMAN_SCOPES = ['consultation.answer', 'approval.decide', 'handoff.manage', 'task.cancel', 'reconciliation.manage', 'autonomy.control'] as const;
+// (ADR-051) `incident.triage`: record the human decision (ignored / requested) on an incident group.
+// (ADR-052) `knowledge.curate`: propose, verify and retire knowledge entries; `knowledge.sign`: sign a verified entry.
+// (ADR-054) `agent.draft`: create, revise and discard agent drafts (a draft never runs in production).
+export const HUMAN_SCOPES = ['consultation.answer', 'approval.decide', 'handoff.manage', 'task.cancel', 'reconciliation.manage', 'autonomy.control', 'incident.triage', 'knowledge.curate', 'knowledge.sign', 'agent.draft'] as const;
 export type HumanScope = (typeof HUMAN_SCOPES)[number];
 
 /**
@@ -79,6 +82,8 @@ export const trustedHumanContextSchema = z.strictObject({
   humanRef: z.string().min(1).max(256).regex(/^[A-Za-z0-9][A-Za-z0-9._:@-]*$/),
   scopes: uniqueArray(z.enum(HUMAN_SCOPES)),
   correlationId: correlationIdSchema,
+  /** (ADR-048 D5) The name a contact sees for this person, from the operator registry; never from a request body. */
+  displayName: z.string().min(1).max(60).optional(),
 });
 export type TrustedHumanContext = z.infer<typeof trustedHumanContextSchema>;
 

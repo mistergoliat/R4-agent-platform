@@ -114,7 +114,7 @@ export class CheckoutHttpClient implements CheckoutService {
   async createSession(request: CheckoutCreateSessionRequest, idempotencyKey: string, options?: CallOptions): Promise<CheckoutCommandResult<CheckoutSessionView>> {
     // The body is exactly the allowlist {quoteId, quoteVersion, consent}; R4 never sends a buyer identity (§3).
     const body = JSON.stringify({ quoteId: request.quoteId, quoteVersion: request.quoteVersion, consent: { format: request.consent.format, token: request.consent.token } });
-    return this.#command('createSession', '/v1/checkout/sessions', idempotencyKey, body, [200, 201], sessionSchema, options);
+    return this.#command('createSession', '/v1/checkout/sessions', idempotencyKey, body, [200, 201], sessionSchema, options, grantHeader(request.customerAccessGrant));
   }
 
   async getSession(sessionId: string, options?: CallOptions): Promise<CheckoutSessionView> {
@@ -138,11 +138,11 @@ export class CheckoutHttpClient implements CheckoutService {
     return this.#read('getOrders', `/v1/checkout/sessions/${idPath(sessionId)}/orders`, ordersSchema, options);
   }
 
-  async #command<S extends z.ZodType>(operation: CheckoutOperationName, path: string, key: string, body: string | undefined, accepted: readonly number[], schema: S, options: CallOptions | undefined): Promise<CheckoutCommandResult<z.output<S>>> {
+  async #command<S extends z.ZodType>(operation: CheckoutOperationName, path: string, key: string, body: string | undefined, accepted: readonly number[], schema: S, options: CallOptions | undefined, extraHeaders: Record<string, string> = {}): Promise<CheckoutCommandResult<z.output<S>>> {
     const started = performance.now();
     if (!KEY.test(key)) throw new DomainError('validation', 'invalid_idempotency_key', 'a Checkout Idempotency-Key is 8–128 characters of [A-Za-z0-9._:-]');
     await this.#assertSandboxIsolation(options);
-    const response = await this.#call(started, operation, 'POST', path, options, { 'idempotency-key': key, ...(body !== undefined ? { 'content-type': 'application/json' } : {}) }, body);
+    const response = await this.#call(started, operation, 'POST', path, options, { ...extraHeaders, 'idempotency-key': key, ...(body !== undefined ? { 'content-type': 'application/json' } : {}) }, body);
     if (!accepted.includes(response.status)) throw this.#violation(started, operation, `Checkout answered HTTP ${response.status}, outside its contract`, response.status, options);
     const replayed = response.headers.get('idempotent-replay') === 'true';
     const view = this.#parse(started, operation, schema, await this.#json(started, operation, response, true, options), response.status, options);
@@ -298,4 +298,15 @@ function transportCode(error: unknown): string {
 
 function elapsed(started: number): number {
   return Math.round(performance.now() - started);
+}
+
+/** (F2-R03) The header of the CIA purchase grant (Checkout /v1 1.0.4-proposed). */
+export const CHECKOUT_GRANT_HEADER = 'x-customer-access-grant';
+const COMPACT_JWS = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+
+/** The grant header, or none. A grant that is not a compact JWS of at most 4 KiB is refused before anything is sent. */
+function grantHeader(grant: string | undefined): Record<string, string> {
+  if (grant === undefined) return {};
+  if (grant.length > 4096 || !COMPACT_JWS.test(grant)) throw new DomainError('validation', 'invalid_customer_access_grant', 'the customer access grant is not a compact JWS');
+  return { [CHECKOUT_GRANT_HEADER]: grant };
 }

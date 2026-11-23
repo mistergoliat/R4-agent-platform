@@ -210,7 +210,7 @@ export class WebOutboundAdapter implements OutboundChannelAdapter {
     const started = Date.now();
     const result = (r: Omit<SubmissionResult, 'latencyMs'>): SubmissionResult => ({ ...r, latencyMs: Date.now() - started });
     if (submission.accountRef !== this.#config.accountRef) return result({ outcome: 'rejected', providerMessageId: null, httpStatus: null, errorClass: 'foreign_account', errorCode: null, retryAfterMs: null });
-    const body = { outboundId: submission.outboundId, idempotencyKey: submission.idempotencyKey, accountRef: submission.accountRef, conversationRef: submission.recipientRef, text: submission.text };
+    const body = { outboundId: submission.outboundId, idempotencyKey: submission.idempotencyKey, accountRef: submission.accountRef, conversationRef: submission.recipientRef, text: submission.text, ...(submission.origin === 'operator' ? { from: 'person', ...(submission.authorName ? { author: submission.authorName } : {}) } : {}) };
     const sent = await this.#post('/r4/v1/outbound', body, options.timeoutMs);
     if ('error' in sent) return result(sent.error);
     const { status, json } = sent;

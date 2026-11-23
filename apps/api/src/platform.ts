@@ -8,6 +8,11 @@ import {
   PostgresTaskRuntimeStore,
   PostgresExecutionStore,
   PostgresProductionStore,
+  PostgresConsoleReads,
+  PostgresIncidents,
+  PostgresInsights,
+  PostgresAgentDrafts,
+  PostgresKnowledge,
   checkDatabaseReadiness,
   createPool,
   migrationStatus,
@@ -18,6 +23,8 @@ import { AutonomyControls, ProductionOperator } from '@r4/live-ops';
 import { buildApp, type ReadinessReport, type AppDependencies } from './app.js';
 import type { ApiConfig } from './config.js';
 import type { PrincipalResolver } from './principal.js';
+import { createServiceReader } from './service-reader.js';
+import { createConsoleOperatorContext } from './console-operator.js';
 
 export interface Platform {
   readonly app: FastifyInstance;
@@ -37,6 +44,7 @@ export interface PlatformOverrides {
   readonly ids?: IdGenerator;
   readonly principal?: PrincipalResolver;
   readonly humanContext?: AppDependencies['humanContext'];
+  readonly serviceReader?: AppDependencies['serviceReader'];
 }
 
 /**
@@ -48,6 +56,8 @@ export async function createPlatform(config: ApiConfig, overrides: PlatformOverr
   const logger = overrides.logger ?? createLogger({ service: 'r4-api', level: config.logLevel });
   const clock = overrides.clock ?? systemClock;
   const ids = overrides.ids ?? uuidV7Generator(clock);
+  // ADR-050: built before connecting, so a malformed key or operators file fails the boot.
+  const humanContext = overrides.humanContext ?? createConsoleOperatorContext({ key: config.consoleOperatorKey, operatorsFile: config.consoleOperatorsFile, clock });
   const pool = createPool({ connectionString: config.databaseUrl, logger, applicationName: 'r4-api', max: config.dbPoolMax });
 
   try {
@@ -79,8 +89,13 @@ export async function createPlatform(config: ApiConfig, overrides: PlatformOverr
       };
     };
 
-    const app = buildApp({ logger, tasks, agents, readiness, temporal, production,
-      ...(overrides.humanContext ? { humanContext: overrides.humanContext } : {}),
+    const serviceReader = overrides.serviceReader ?? createServiceReader(config.serviceReaderTokenSha256);
+    const incidents = new PostgresIncidents(pool, clock);
+    const app = buildApp({ logger, tasks, agents, readiness, temporal, production, consoleReads: new PostgresConsoleReads(pool, clock), incidents,
+      insights: new PostgresInsights(pool, clock, incidents), knowledge: new PostgresKnowledge(pool), drafts: new PostgresAgentDrafts(pool),
+      ...(serviceReader ? { serviceReader } : {}),
+      ...(humanContext ? { humanContext } : {}),
+      ...(config.anonymousWrites ? { anonymousWrites: config.anonymousWrites } : {}),
       ...(overrides.principal ? { principal: overrides.principal } : {}) });
     await app.ready();
 

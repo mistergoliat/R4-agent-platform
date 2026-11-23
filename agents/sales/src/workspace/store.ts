@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import type { QuoteV2CreateRequest } from '@r4-adapters/domains';
+import type { PurchaseActEvidence } from '../capabilities/purchase-act.js';
 import { applyOperations, emptyWorkspace, type Workspace, type WorkspaceApplication, type WorkspaceChange, type WorkspaceState, type WorkspaceUpdateInput, type WorkspaceUpdateV2Input } from './model.js';
 
 /** Who a conversation acts for, as the Sales ingress established it. */
@@ -67,6 +68,12 @@ export interface CheckoutPurchaseRequestRecord {
   readonly recordedAt: string;
 }
 
+/** (0012, F2-R02) The customer's purchase act recorded for one checkout.start_purchase execution: ids, times and a hash only. */
+export interface PurchaseActRecord extends PurchaseActEvidence {
+  readonly executionKey: string;
+  readonly taskId: string;
+}
+
 /** (0010) A Checkout session of the conversation, with the quote it buys. */
 export interface CheckoutSessionRecord {
   readonly executionKey: string;
@@ -89,6 +96,19 @@ export interface QuoteV2IssuedRecord {
   readonly byteLength: number;
   readonly documentVerification: 'verified' | 'unavailable' | 'mismatch';
   readonly recordedAt: string;
+}
+
+/** (M3) An issued quote of a conversation with what R4 asked for (0007 frozen body; 0008 snapshot lines when autonomous). No prices. */
+export interface ConversationQuoteRecord {
+  readonly taskId: string;
+  readonly quoteId: string;
+  readonly quoteNumber: string;
+  readonly issuedAt: string;
+  readonly validThroughLocalDate: string;
+  readonly validUntilExclusive: string;
+  readonly request: QuoteV2CreateRequest;
+  /** The authorized commercial snapshot's lines (they carry the workspace item key), or null for a non-autonomous issuance. */
+  readonly snapshotLines: readonly { readonly itemKey: string; readonly description: string; readonly quantity: number }[] | null;
 }
 
 /** (R4-J3E) One autonomous decision of quote.create@3 (0008), as recorded. */
@@ -367,6 +387,61 @@ export class PostgresSalesStore {
     return stored;
   }
 
+  /**
+   * (0010 + 0012, F2-R02) Freezes the create-session body AND records the customer's purchase act, in one transaction,
+   * once per execution key. `input_already_used` (nothing written) when that customer message is already the act of
+   * ANOTHER quote or quote version; starts of the same quote may share it. A replay of the same key returns the stored
+   * body; if the stored act names another input, quote or version, it throws (a key never changes what it recorded).
+   */
+  async recordCheckoutPurchaseRequestWithAct(request: Omit<CheckoutPurchaseRequestRecord, 'recordedAt'>, act: PurchaseActEvidence): Promise<CheckoutPurchaseRequestRecord | 'input_already_used'> {
+    if (act.quoteId !== request.quoteId || act.quoteVersion !== request.quoteVersion) throw new Error('the purchase act names another quote than the request');
+    const client = await this.#pool.connect();
+    try {
+      await client.query('begin');
+      await client.query('select pg_advisory_xact_lock(hashtextextended($1, 12))', [act.requestInputId]);
+      const stored = await this.purchaseAct(request.executionKey, client);
+      if (stored) {
+        if (stored.requestInputId !== act.requestInputId || stored.quoteId !== act.quoteId || stored.quoteVersion !== act.quoteVersion) throw new Error(`execution ${request.executionKey} already recorded another purchase act`);
+      } else {
+        const other = await client.query('select 1 from sales.purchase_act_evidence where request_input_id = $1 and (quote_id <> $2 or quote_version <> $3) limit 1', [act.requestInputId, act.quoteId, act.quoteVersion]);
+        if (other.rowCount) {
+          await client.query('rollback');
+          return 'input_already_used';
+        }
+        await client.query(
+          `insert into sales.checkout_purchase_requests (execution_key, task_id, quote_id, quote_version, consent_format, consent_token) values ($1, $2, $3, $4, $5, $6)
+           on conflict (execution_key) do nothing`,
+          [request.executionKey, request.taskId, request.quoteId, request.quoteVersion, request.consent.format, request.consent.token],
+        );
+        await client.query(
+          `insert into sales.purchase_act_evidence (execution_key, task_id, quote_id, quote_version, quote_recorded_at, request_input_id, request_at, request_text_sha256, grammar_version)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [request.executionKey, request.taskId, act.quoteId, act.quoteVersion, act.quoteRecordedAt, act.requestInputId, act.requestAt, act.requestTextSha256, act.grammarVersion],
+        );
+      }
+      await client.query('commit');
+    } catch (error) {
+      await client.query('rollback').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+    const body = await this.checkoutPurchaseRequest(request.executionKey);
+    if (!body) throw new Error(`checkout purchase request ${request.executionKey} was not recorded`);
+    return body;
+  }
+
+  async purchaseAct(executionKey: string, client: pg.Pool | pg.PoolClient = this.#pool): Promise<PurchaseActRecord | null> {
+    const r = await client.query<{ execution_key: string; task_id: string; quote_id: string; quote_version: number; quote_recorded_at: Date; request_input_id: string; request_at: Date; request_text_sha256: string; grammar_version: string }>(
+      'select * from sales.purchase_act_evidence where execution_key = $1',
+      [executionKey],
+    );
+    const row = r.rows[0];
+    return row
+      ? { executionKey: row.execution_key, taskId: row.task_id, quoteId: row.quote_id, quoteVersion: row.quote_version, quoteRecordedAt: row.quote_recorded_at.toISOString(), requestInputId: row.request_input_id, requestAt: row.request_at.toISOString(), requestTextSha256: row.request_text_sha256, grammarVersion: row.grammar_version }
+      : null;
+  }
+
   async checkoutPurchaseRequest(executionKey: string): Promise<CheckoutPurchaseRequestRecord | null> {
     const r = await this.#pool.query<{ execution_key: string; task_id: string; quote_id: string; quote_version: number; consent_format: string; consent_token: string; recorded_at: Date }>('select * from sales.checkout_purchase_requests where execution_key = $1', [executionKey]);
     const row = r.rows[0];
@@ -440,6 +515,29 @@ export class PostgresSalesStore {
       byteLength: row.byte_length,
       documentVerification: row.document_verification,
       recordedAt: row.recorded_at.toISOString(),
+    }));
+  }
+
+  /** (M3) The issued quotes of these tasks at or after `since`, newest first, at most `limit`. */
+  async conversationQuotes(taskIds: readonly string[], options: { readonly since: string; readonly limit: number }): Promise<ConversationQuoteRecord[]> {
+    const r = await this.#pool.query<{ task_id: string; quote_id: string; quote_number: string; issued_at: Date; valid_through_local_date: string; valid_until_exclusive: Date; request: QuoteV2CreateRequest; snapshot_lines: ConversationQuoteRecord['snapshotLines'] }>(
+      `select i.task_id, i.quote_id, i.quote_number, i.issued_at, to_char(i.valid_through_local_date, 'YYYY-MM-DD') as valid_through_local_date, i.valid_until_exclusive,
+              q.request, d.snapshot->'lines' as snapshot_lines
+         from sales.quote_v2_issued i join sales.quote_v2_requests q using (execution_key)
+         left join sales.quote_autonomous_decisions d on d.execution_key = i.execution_key and d.outcome = 'authorized'
+        where i.task_id = any($1::uuid[]) and i.issued_at >= $2
+        order by i.issued_at desc, i.execution_key desc limit $3`,
+      [taskIds, options.since, options.limit],
+    );
+    return r.rows.map((row) => ({
+      taskId: row.task_id,
+      quoteId: row.quote_id,
+      quoteNumber: row.quote_number,
+      issuedAt: row.issued_at.toISOString(),
+      validThroughLocalDate: row.valid_through_local_date,
+      validUntilExclusive: row.valid_until_exclusive.toISOString(),
+      request: row.request,
+      snapshotLines: row.snapshot_lines?.map((l) => ({ itemKey: l.itemKey, description: l.description, quantity: l.quantity })) ?? null,
     }));
   }
 

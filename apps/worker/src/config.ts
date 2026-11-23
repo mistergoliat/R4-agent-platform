@@ -41,6 +41,8 @@ const configSchema = z.object({
   R4_CONTEXT_EXPIRED_EVIDENCE: z.enum(['include', 'exclude']).default('include'),
   // R4-I: immutable deployment reference (e.g. the deployed Git SHA), supplied by the deployment — never derived here.
   R4_BUILD_REF: z.string().optional(),
+  // This process's share of the model provider account's requests per minute (rolling window). Unset or blank = unlimited.
+  R4_MODEL_MAX_REQUESTS_PER_MINUTE: z.preprocess((v) => (v === '' ? undefined : v), int(1).max(100_000).optional()),
 });
 
 export interface WorkerConfig {
@@ -65,6 +67,8 @@ export interface WorkerConfig {
    * compatibility, readiness, leases or fencing. Absent ⇒ null.
    */
   readonly buildRef?: string | null;
+  /** Requests per minute this process may start against the model provider (`R4_MODEL_MAX_REQUESTS_PER_MINUTE`). Absent ⇒ unlimited. */
+  readonly modelMaxRequestsPerMinute?: number;
 }
 
 /**
@@ -110,6 +114,7 @@ export function loadWorkerConfig(env: NodeJS.ProcessEnv): WorkerConfig {
     },
     // Unset or blank ⇒ null (no build identity); anything else must be a bounded, log-safe reference.
     buildRef: c.R4_BUILD_REF?.trim() || null,
+    ...(c.R4_MODEL_MAX_REQUESTS_PER_MINUTE === undefined ? {} : { modelMaxRequestsPerMinute: c.R4_MODEL_MAX_REQUESTS_PER_MINUTE }),
   };
   validateWorkerConfig(config);
   return config;

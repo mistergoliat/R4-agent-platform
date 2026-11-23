@@ -96,6 +96,23 @@ describe('outbound: one honest submission to the edge', () => {
     expect(await outcome(503)).toBe('unknown');
   });
 
+  it('marks a message written by a person (operator origin) so the chat does not show it as the assistant', async () => {
+    const sent = async (origin?: 'agent' | 'operator' | 'platform') => {
+      const seen: { body?: string } = {};
+      await new WebOutboundAdapter(config, { fetch: replying(201, { messageId: 'm' }, seen) }).submit({ ...submission, ...(origin ? { origin } : {}) }, { timeoutMs: 1000 });
+      return JSON.parse(seen.body!);
+    };
+    expect((await sent('operator')).from).toBe('person');
+    expect(await sent('operator')).not.toHaveProperty('author');
+    const seen: { body?: string } = {};
+    await new WebOutboundAdapter(config, { fetch: replying(201, { messageId: 'm' }, seen) }).submit({ ...submission, origin: 'operator', authorName: 'Joaquín' }, { timeoutMs: 1000 });
+    expect(JSON.parse(seen.body!)).toMatchObject({ from: 'person', author: 'Joaquín' });
+    const agent: { body?: string } = {};
+    await new WebOutboundAdapter(config, { fetch: replying(201, { messageId: 'm' }, agent) }).submit({ ...submission, origin: 'agent', authorName: 'Joaquín' }, { timeoutMs: 1000 });
+    expect(JSON.parse(agent.body!)).not.toHaveProperty('author');
+    for (const origin of ['agent', 'platform', undefined] as const) expect(await sent(origin)).not.toHaveProperty('from');
+  });
+
   it('never leaves the account, and tells a connection refusal (not sent) from a timeout (unknown)', async () => {
     expect((await new WebOutboundAdapter(config, { fetch: replying(201, { messageId: 'm' }) }).submit({ ...submission, accountRef: 'other' }, { timeoutMs: 1000 })).outcome).toBe('rejected');
     const refused: WebFetch = () => Promise.reject(Object.assign(new Error('fetch failed'), { cause: { code: 'ECONNREFUSED' } }));
