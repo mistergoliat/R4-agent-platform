@@ -173,9 +173,19 @@ describe('outbound identity, dispatch and unknown outcomes', () => {
     expect(statuses).toEqual([['accepted', null], ['unknown', 'provider_5xx'], ['unknown', 'network_after_send']]);
   });
 
+  it('a gateway of another channel sharing the database never claims (or rejects) this channel\'s outbound', async () => {
+    await withPendingResponse('solo para WhatsApp');
+    const other = await bed!.store.claimNextOutbound({ owner: 'web-gateway', channels: ['web'], leaseMs: 1500, holdRecheckMs: 10, customerWindowMs: () => null, deniedNow: () => false, decide: () => ({ kind: 'dispatch' }) });
+    expect(other).toBeNull();
+    const taskId = await bed!.taskOf(CUSTOMER);
+    expect((await bed!.store.outboundForTask(taskId))[0]).toMatchObject({ status: 'pending' });
+    await bed!.deliver();
+    expect((await bed!.store.outboundForTask(taskId))[0]).toMatchObject({ status: 'accepted' });
+  });
+
   it('a dispatcher that dies mid-call leaves no assumption: the lease expires into UNKNOWN, never re-sent', async () => {
     await withPendingResponse('mensaje en vuelo', { leaseMs: 1500, providerTimeoutMs: 1000 });
-    const claim = await bed!.store.claimNextOutbound({ owner: 'dead-dispatcher', leaseMs: 1500, holdRecheckMs: 10, customerWindowMs: () => null, deniedNow: () => false, decide: () => ({ kind: 'dispatch' }) });
+    const claim = await bed!.store.claimNextOutbound({ owner: 'dead-dispatcher', channels: ['whatsapp'], leaseMs: 1500, holdRecheckMs: 10, customerWindowMs: () => null, deniedNow: () => false, decide: () => ({ kind: 'dispatch' }) });
     expect(claim?.kind).toBe('dispatch');
     await bed!.deliver();
     expect(bed!.provider.sends).toHaveLength(0);

@@ -239,6 +239,11 @@ export type DispatchClaim =
 
 export interface ClaimOutboundCommand {
   readonly owner: string;
+  /**
+   * Only outbounds of these channels are claimed: the ones this dispatcher has an adapter for. Several gateways (one
+   * per channel) can share one database; an outbound of another channel is left for its own gateway, never rejected.
+   */
+  readonly channels: readonly string[];
   readonly leaseMs: number;
   /** A held outbound is re-evaluated no earlier than this. */
   readonly holdRecheckMs: number;

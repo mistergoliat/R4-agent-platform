@@ -119,6 +119,7 @@ export class OutboundDeliveryRuntime {
     const { store, config, logger } = this.#o;
     const claim: DispatchClaim | null = await store.claimNextOutbound({
       owner: this.#o.owner,
+      channels: [...this.#adapters.keys()],
       leaseMs: config.outbound.leaseMs,
       holdRecheckMs: config.outbound.holdRecheckMs,
       customerWindowMs: (channel) => this.#adapters.get(channel)?.customerWindowMs ?? null,
