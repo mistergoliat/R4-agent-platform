@@ -111,10 +111,22 @@ describe('(ADR-056 D1) consultation without pause', () => {
   it('(K3) a worker composed with consultationsWithoutPause never pauses, even when the model omits blocking; without it, the same decision pauses', async () => {
     const omitted = { type: 'structured' as const, data: { type: 'request_consultation', question: '¿Se puede anclar a madera?', contextRefs: [] } };
     const enforced = await createActionTask(platform);
-    const w1 = await worker({ consultationsWithoutPause: true, script: sequence([omitted, respond('Lo confirmo con el equipo. ¿Qué medidas tiene tu espacio?'), waitInput()]) });
+    const before = Date.now();
+    const w1 = await worker({ consultationsWithoutPause: { defaultExpiryMs: 30 * 60_000 }, script: sequence([omitted, respond('Lo confirmo con el equipo. ¿Qué medidas tiene tu espacio?'), waitInput()]) });
     await w1.platform.worker.runOnce();
-    expect((await platform.temporal.inspect(enforced)).humans).toEqual([expect.objectContaining({ kind: 'consultation', status: 'requested', payload: { question: '¿Se puede anclar a madera?', contextRefs: [], blocking: false } })]);
+    const [forced] = (await platform.temporal.inspect(enforced)).humans;
+    expect(forced).toEqual(expect.objectContaining({ kind: 'consultation', status: 'requested', payload: { question: '¿Se puede anclar a madera?', contextRefs: [], blocking: false } }));
     expect(await kinds(enforced)).toEqual(['WAIT_FOR_INPUT:waiting:-']);
+    // No expiry from the model: the pack's SLA applies, so the agent always wakes to tell the participant.
+    const expiresIn = Date.parse(forced!.expiresAt!) - before;
+    expect(expiresIn).toBeGreaterThan(29 * 60_000);
+    expect(expiresIn).toBeLessThan(31 * 60_000);
+    // The model's own expiry wins when it gives one.
+    const own = await createActionTask(platform);
+    const at = new Date(Date.now() + 5 * 60_000).toISOString();
+    const w3 = await worker({ consultationsWithoutPause: { defaultExpiryMs: 30 * 60_000 }, script: sequence([{ type: 'structured' as const, data: { ...omitted.data, expiresAt: at } }, respond('Lo confirmo.'), waitInput()]) });
+    await w3.platform.worker.runOnce();
+    expect(Date.parse((await platform.temporal.inspect(own)).humans[0]!.expiresAt!)).toBe(Date.parse(at));
 
     const classic = await createActionTask(platform);
     const w2 = await worker({ script: sequence([omitted]) });

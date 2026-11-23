@@ -16,7 +16,7 @@ export { TEST_POLICY };
 
 export interface TestWorkerOptions {
   /** (ADR-056 K3) The worker makes every consultation non-pausing. */
-  consultationsWithoutPause?: boolean;
+  consultationsWithoutPause?: { readonly defaultExpiryMs: number };
   readonly workerId: string;
   readonly script: FakeModelScript;
   readonly capabilities?: CapabilityRegistry;
@@ -97,7 +97,7 @@ export async function startTestWorker(databaseUrl: string, options: TestWorkerOp
       ...(options.contextSources ? { contextSources: options.contextSources } : {}),
       ...(options.actionPolicy ? { actionPolicy: options.actionPolicy } : {}),
       ...(options.servedAgents ? { servedAgents: options.servedAgents } : {}),
-      ...(options.consultationsWithoutPause ? { consultationsWithoutPause: true } : {}),
+      ...(options.consultationsWithoutPause ? { consultationsWithoutPause: options.consultationsWithoutPause } : {}),
     },
     { logger: options.logger ?? createSilentLogger(), ...(options.clock ? { clock: options.clock } : {}) },
   );

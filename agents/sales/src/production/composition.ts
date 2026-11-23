@@ -34,7 +34,7 @@ import { SalesWorkspaceContextSource } from '../workspace/context-source.js';
 import { SalesQuoteRecoveryContextSource } from '../workspace/quote-recovery-source.js';
 import { SALES_QUOTE_LANE_V22_PROFILE_LABEL } from './profile-v22.js';
 import { SALES_QUOTE_LANE_V23_PROFILE_LABEL, SALES_STOCK_COUNT_PROFILES } from './profile-v23.js';
-import { SALES_NON_PAUSING_CONSULTATION_PROFILES, SALES_QUOTE_LANE_V24_PROFILE_LABEL } from './profile-v24.js';
+import { SALES_CONSULTATION_EXPIRY_MS, SALES_NON_PAUSING_CONSULTATION_PROFILES, SALES_QUOTE_LANE_V24_PROFILE_LABEL } from './profile-v24.js';
 import { PostgresSalesStore } from '../workspace/store.js';
 import { SALES_DOMAINS } from './profile.js';
 import { isAutonomousQuoteProfile } from './profile-v5.js';
@@ -330,7 +330,7 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
       // definition wait (durable, visible) instead of running with this profile's capabilities.
       servedAgents: [salesAgentOf(profile)],
       // (ADR-056 K3) The platform, not the model, makes these profiles' consultations non-pausing.
-      ...(SALES_NON_PAUSING_CONSULTATION_PROFILES.has(profileLabel(profile)) ? { consultationsWithoutPause: true } : {}),
+      ...(SALES_NON_PAUSING_CONSULTATION_PROFILES.has(profileLabel(profile)) ? { consultationsWithoutPause: { defaultExpiryMs: SALES_CONSULTATION_EXPIRY_MS } } : {}),
     },
   };
 }
