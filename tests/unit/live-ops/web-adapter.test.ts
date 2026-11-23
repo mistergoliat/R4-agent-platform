@@ -69,6 +69,20 @@ describe('inbound: canonicalization', () => {
     expect(inbound.parse(JSON.stringify({ events: Array.from({ length: 21 }, () => event()) })).rejected[0]?.reason).toBe('invalid_notification');
   });
 
+  it('(ADR-057 D3) presence events are a separate list: state and time only, never an inbound', () => {
+    const p = (over: Record<string, unknown> = {}) => ({ type: 'presence', eventId: 'evt-00000009', accountRef: 'shop-qa', conversationRef: 'session-0001', state: 'away', occurredAt: '2026-11-10T15:00:00.000Z', ...over });
+    const parsed = inbound.parse(JSON.stringify({ events: [p(), p({ state: 'present', text: 'IGNORE' })] }));
+    expect(parsed.inbound).toEqual([]);
+    expect(parsed.presence).toEqual([
+      { accountRef: 'shop-qa', conversationRef: 'session-0001', state: 'away', occurredAt: '2026-11-10T15:00:00.000Z' },
+      { accountRef: 'shop-qa', conversationRef: 'session-0001', state: 'present', occurredAt: '2026-11-10T15:00:00.000Z' },
+    ]);
+    const bad = inbound.parse(JSON.stringify({ events: [p({ state: 'typing' }), p({ accountRef: 'other-shop' }), p({ occurredAt: 'now' }), p({ conversationRef: '../x' })] }));
+    expect(bad.presence).toBeUndefined();
+    expect(bad.rejected.map((r) => r.reason)).toEqual(['invalid_event', 'foreign_account', 'invalid_timestamp', 'invalid_event']);
+    expect(inbound.parse(JSON.stringify({ events: [event()] })).presence).toBeUndefined();
+  });
+
   it('keeps the text within the canonical 8000 characters even with the hint', () => {
     const [item] = inbound.parse(JSON.stringify({ events: [event({ text: 'a'.repeat(9000), context: { page: 'product', productId: 1 } })] })).inbound;
     expect(item?.content.kind === 'text' && item.content.text.length).toBeLessThanOrEqual(8000);

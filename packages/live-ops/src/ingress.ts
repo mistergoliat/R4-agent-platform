@@ -199,7 +199,12 @@ export class ChannelIngress {
       await this.#o.delivery.applyProviderStatus(status);
       results.statuses += 1;
     }
-    return { status: 200, body: { ok: true, ...results } };
+    // (ADR-057 D3) Presence is a hint for the people on the desk, never an input: nothing wakes, nothing is recorded as inbound.
+    let presence = 0;
+    for (const p of parsed.presence ?? []) {
+      presence += await this.#o.store.recordPresence(conversationKey(this.#o.secrets.identityHashKey, channel, p.accountRef, p.conversationRef), p.state, p.occurredAt);
+    }
+    return { status: 200, body: { ok: true, ...results, ...(parsed.presence ? { presence } : {}) } };
   }
 
   /** Canonical inbound → durable input. Idempotent by the provider event identity. */
