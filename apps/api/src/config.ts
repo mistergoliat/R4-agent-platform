@@ -10,6 +10,8 @@ const configSchema = z.object({
   R4_SERVICE_READER_TOKEN_SHA256: z.string().optional(),
   R4_CONSOLE_OPERATOR_KEY: z.string().optional(),
   R4_CONSOLE_OPERATORS_FILE: z.string().optional(),
+  R4_DESK_OPERATOR_KEY: z.string().optional(),
+  R4_DESK_OPERATORS_FILE: z.string().optional(),
   R4_API_ANONYMOUS_WRITES: z.enum(['enabled', 'disabled']).default('enabled'),
 });
 
@@ -26,6 +28,9 @@ export interface ApiConfig {
   readonly consoleOperatorKey?: string;
   /** ADR-050: JSON array of console operators by (issuer, subject); mode 0600 on POSIX. */
   readonly consoleOperatorsFile?: string;
+  /** (ADR-048 phase 2) The desk's own signer (people attending conversations): its HMAC key and operators file, scopes capped at DESK_SIGNER_SCOPES. */
+  readonly deskOperatorKey?: string;
+  readonly deskOperatorsFile?: string;
   /** ADR-050: 'disabled' closes the R4-B anonymous writes. Absent = 'enabled'. */
   readonly anonymousWrites?: 'enabled' | 'disabled';
 }
@@ -47,6 +52,8 @@ export function loadConfig(env: NodeJS.ProcessEnv): ApiConfig {
     ...(c.R4_SERVICE_READER_TOKEN_SHA256 ? { serviceReaderTokenSha256: c.R4_SERVICE_READER_TOKEN_SHA256 } : {}),
     ...(c.R4_CONSOLE_OPERATOR_KEY !== undefined ? { consoleOperatorKey: c.R4_CONSOLE_OPERATOR_KEY } : {}),
     ...(c.R4_CONSOLE_OPERATORS_FILE !== undefined ? { consoleOperatorsFile: c.R4_CONSOLE_OPERATORS_FILE } : {}),
+    ...(c.R4_DESK_OPERATOR_KEY !== undefined ? { deskOperatorKey: c.R4_DESK_OPERATOR_KEY } : {}),
+    ...(c.R4_DESK_OPERATORS_FILE !== undefined ? { deskOperatorsFile: c.R4_DESK_OPERATORS_FILE } : {}),
     anonymousWrites: c.R4_API_ANONYMOUS_WRITES,
   };
 }

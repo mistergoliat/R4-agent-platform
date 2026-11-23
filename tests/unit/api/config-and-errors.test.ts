@@ -18,8 +18,8 @@ describe('loadConfig', () => {
   });
 
   it('reads the ADR-050 console operator settings', () => {
-    const config = loadConfig({ R4_DATABASE_URL: 'postgres://x', R4_CONSOLE_OPERATOR_KEY: 'k', R4_CONSOLE_OPERATORS_FILE: '/etc/r4/ops.json', R4_API_ANONYMOUS_WRITES: 'disabled' });
-    expect(config).toMatchObject({ consoleOperatorKey: 'k', consoleOperatorsFile: '/etc/r4/ops.json', anonymousWrites: 'disabled' });
+    const config = loadConfig({ R4_DATABASE_URL: 'postgres://x', R4_CONSOLE_OPERATOR_KEY: 'k', R4_CONSOLE_OPERATORS_FILE: '/etc/r4/ops.json', R4_DESK_OPERATOR_KEY: 'd', R4_DESK_OPERATORS_FILE: '/etc/r4/desk.json', R4_API_ANONYMOUS_WRITES: 'disabled' });
+    expect(config).toMatchObject({ consoleOperatorKey: 'k', consoleOperatorsFile: '/etc/r4/ops.json', deskOperatorKey: 'd', deskOperatorsFile: '/etc/r4/desk.json', anonymousWrites: 'disabled' });
     expect(() => loadConfig({ R4_DATABASE_URL: 'postgres://x', R4_API_ANONYMOUS_WRITES: 'off' })).toThrow(/R4_API_ANONYMOUS_WRITES/);
   });
 

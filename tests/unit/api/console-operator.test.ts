@@ -124,6 +124,44 @@ describe('ADR-050 console operator assertion', () => {
     expect(() => createConsoleOperatorContext({ key: KEY, operatorsFile: operatorsFile([twice, { ...twice, operatorRef: 'b' }]), clock })).toThrow(/twice/);
   });
 
+  describe('(ADR-048 phase 2) a second signer: the sales desk, with its own key and operators file', () => {
+    const DESK_KEY = randomBytes(32).toString('base64url');
+    const DESK_FILE = operatorsFile([{ issuer: ISS, subject: SUB, operatorRef: 'felipe', scopes: ['handoff.manage', 'consultation.answer'], displayName: 'Felipe' }]);
+    const both = () => createConsoleOperatorContext({ key: KEY, operatorsFile: FILE, deskKey: DESK_KEY, deskOperatorsFile: DESK_FILE, clock })!;
+
+    it('each signer answers with its own file: the same person, the scopes each one grants', () => {
+      const a = both();
+      expect(a(req(sign({ scopes: ['handoff.manage'] }, DESK_KEY)).request)).toEqual({ humanRef: 'oidc:felipe', scopes: ['handoff.manage'], correlationId: 'corr-1', displayName: 'Felipe' });
+      expect(a(req(sign({ scopes: ['autonomy.control'] })).request)).toEqual({ humanRef: 'oidc:felipe', scopes: ['autonomy.control'], correlationId: 'corr-1' });
+    });
+
+    it('the desk key never reaches what only the console grants', () => {
+      const { request, warn } = req(sign({ scopes: ['autonomy.control'] }, DESK_KEY));
+      expect(both()(request)).toBeNull();
+      expect(reason(warn)).toBe('scope_not_granted');
+    });
+
+    it('the desk alone works without the console; a jti is single use across both signers', () => {
+      const desk = createConsoleOperatorContext({ deskKey: DESK_KEY, deskOperatorsFile: DESK_FILE, clock })!;
+      expect(desk(req(sign({ scopes: ['consultation.answer'] }, DESK_KEY)).request)?.scopes).toEqual(['consultation.answer']);
+      expect(desk(req(sign({ scopes: ['handoff.manage'] })).request)).toBeNull(); // the console key is not configured here
+      const a = both();
+      const jti = randomUUID();
+      expect(a(req(sign({ jti, scopes: ['handoff.manage'] }, DESK_KEY)).request)).not.toBeNull();
+      const replay = req(sign({ jti, scopes: ['handoff.manage'] }));
+      expect(a(replay.request)).toBeNull();
+      expect(reason(replay.warn)).toBe('replayed');
+    });
+
+    it('fails the boot when the desk file grants beyond take / give back / answer, the key is shared, or half configured', () => {
+      const tooMuch = operatorsFile([{ issuer: ISS, subject: SUB, operatorRef: 'felipe', scopes: ['handoff.manage', 'autonomy.control'] }]);
+      expect(() => createConsoleOperatorContext({ deskKey: DESK_KEY, deskOperatorsFile: tooMuch, clock })).toThrow(/R4_DESK_OPERATORS_FILE grants a scope beyond handoff.manage, consultation.answer/);
+      expect(() => createConsoleOperatorContext({ key: KEY, operatorsFile: FILE, deskKey: KEY, deskOperatorsFile: DESK_FILE, clock })).toThrow(/must differ/);
+      expect(() => createConsoleOperatorContext({ deskKey: DESK_KEY, clock })).toThrow(/R4_DESK_OPERATOR_KEY and R4_DESK_OPERATORS_FILE must be set together/);
+      expect(() => createConsoleOperatorContext({ deskKey: DESK_KEY, deskOperatorsFile: operatorsFile('nope'), clock })).toThrow(/R4_DESK_OPERATORS_FILE is not JSON/);
+    });
+  });
+
   it.skipIf(process.platform === 'win32')('refuses an operators file readable by group or others', () => {
     const file = operatorsFile([]);
     chmodSync(file, 0o644);
