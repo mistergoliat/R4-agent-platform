@@ -239,8 +239,8 @@ export class PostgresProductionStore implements ProductionStore {
     await query(this.#pool, `update inbound_events set content = $2, content_sha256 = $3 where inbound_id = $1 and status = 'received' and content_kind in ('media', 'unsupported')`, [inboundId, text, sha256Hex(text)]);
   }
 
-  async unsettledInbound(olderThanMs: number, limit: number): Promise<InboundEventRecord[]> {
-    const r = await query<Row>(this.#pool, `select * from inbound_events where status = 'received' and received_at <= clock_timestamp() - $1::int * interval '1 millisecond' order by received_at limit $2`, [olderThanMs, limit]);
+  async unsettledInbound(olderThanMs: number, limit: number, channels: readonly string[]): Promise<InboundEventRecord[]> {
+    const r = await query<Row>(this.#pool, `select * from inbound_events where status = 'received' and channel = any($3::text[]) and received_at <= clock_timestamp() - $1::int * interval '1 millisecond' order by received_at limit $2`, [olderThanMs, limit, [...channels]]);
     return r.rows.map(inboundFromRow);
   }
 
@@ -405,7 +405,7 @@ export class PostgresProductionStore implements ProductionStore {
     return created;
   }
 
-  async materializeRunFailureFallbacks(command: { text: string; limit: number }): Promise<OutboundRecord[]> {
+  async materializeRunFailureFallbacks(command: { text: string; channels: readonly string[]; limit: number }): Promise<OutboundRecord[]> {
     const handoffs = (await query<Row>(
       this.#pool,
       `select h.request_id, h.task_id, h.run_id, b.binding_id, b.channel, b.profile, t.correlation_id
@@ -414,9 +414,10 @@ export class PostgresProductionStore implements ProductionStore {
          join agent_tasks t on t.task_id = h.task_id
         where h.kind = 'handoff' and h.status = 'requested'
           and h.payload->>'initiatedBy' = 'platform' and h.payload->>'reason' = any($1::text[])
+          and b.channel = any($3::text[]) -- each gateway words only the fallback of its own channels (the text is per channel)
           and not exists (select 1 from outbound_messages o where o.human_request_id = h.request_id)
         order by h.created_at, h.request_id limit $2`,
-      [[...RUN_FAILURE_HANDOFF_REASONS], command.limit],
+      [[...RUN_FAILURE_HANDOFF_REASONS], command.limit, [...command.channels]],
     )).rows;
     return this.#humanRequestOutbounds(handoffs, 'r4-fallback', command.text);
   }

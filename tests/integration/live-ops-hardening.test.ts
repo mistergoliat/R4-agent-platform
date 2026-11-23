@@ -183,6 +183,14 @@ describe('outbound identity, dispatch and unknown outcomes', () => {
     expect((await bed!.store.outboundForTask(taskId))[0]).toMatchObject({ status: 'accepted' });
   });
 
+  it('a gateway of another channel sharing the database never resumes this channel\'s unsettled inbound', async () => {
+    bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER], autonomy: true });
+    await bed.customer(CUSTOMER, 'wamid.in.1', 'Hola');
+    await bed.rows(`update inbound_events set status = 'received', settled_at = null`); // as if the gateway died before settling it
+    expect(await bed.store.unsettledInbound(0, 10, ['web'])).toEqual([]);
+    expect(await bed.store.unsettledInbound(0, 10, ['whatsapp'])).toHaveLength(1);
+  });
+
   it('a dispatcher that dies mid-call leaves no assumption: the lease expires into UNKNOWN, never re-sent', async () => {
     await withPendingResponse('mensaje en vuelo', { leaseMs: 1500, providerTimeoutMs: 1000 });
     const claim = await bed!.store.claimNextOutbound({ owner: 'dead-dispatcher', channels: ['whatsapp'], leaseMs: 1500, holdRecheckMs: 10, customerWindowMs: () => null, deniedNow: () => false, decide: () => ({ kind: 'dispatch' }) });

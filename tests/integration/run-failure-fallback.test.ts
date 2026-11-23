@@ -71,6 +71,15 @@ describe('a malformed model answer never leaves the contact without a reply', { 
     expect(b.pendingSteps).toBe(0);
   });
 
+  it('a gateway of another channel sharing the database never words this channel\'s fallback', async () => {
+    const b = await start();
+    b.next({ type: 'provider_error', retryable: false, message: 'credentials rejected' });
+    await b.customer(CUSTOMER, 'wamid.1', 'Hola');
+    await b.runAgent();
+    expect(await b.store.materializeRunFailureFallbacks({ text: 'texto del chat web', channels: ['web'], limit: 10 })).toEqual([]);
+    expect(await b.store.materializeRunFailureFallbacks({ text: SALES_RUN_FAILURE_FALLBACK_TEXT, channels: ['whatsapp'], limit: 10 })).toHaveLength(1);
+  });
+
   it('a non-retryable model failure hands off at once and still sends the fallback', async () => {
     const b = await start();
     b.next({ type: 'provider_error', retryable: false, message: 'credentials rejected' });

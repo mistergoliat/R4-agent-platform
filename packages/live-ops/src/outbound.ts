@@ -103,7 +103,7 @@ export class OutboundDeliveryRuntime {
       }
     };
     const fallbackText = fallback ? safe(fallback.text, 'runFailureFallback.text') : null;
-    if (fallbackText !== null) created.push(...(await this.#o.store.materializeRunFailureFallbacks({ text: fallbackText, limit })));
+    if (fallbackText !== null) created.push(...(await this.#o.store.materializeRunFailureFallbacks({ text: fallbackText, channels: [...this.#adapters.keys()], limit })));
     const notice = this.#o.humanRequestNotice;
     const noticeValue = notice ? safe(notice.text, 'humanRequestNotice.text') : null;
     if (notice && noticeValue !== null) created.push(...(await this.#o.store.materializeHumanRequestNotices({ text: noticeValue, profiles: notice.profiles, limit })));
