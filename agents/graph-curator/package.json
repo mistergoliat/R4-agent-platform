@@ -1,0 +1,23 @@
+{
+  "name": "@r4-graph/curator",
+  "version": "0.0.0",
+  "private": true,
+  "description": "ADR-058: the store's product graph as a signed R4 Artifact (schema, reading the signed version, baseline import) and, from G2 on, the graph-curator agent that proposes its changes. Outside R4 Core.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@r4/observability": "*",
+    "@r4/persistence-postgres": "*",
+    "zod": "^4.6.0"
+  }
+}

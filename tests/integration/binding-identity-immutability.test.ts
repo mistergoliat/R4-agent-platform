@@ -259,7 +259,7 @@ describe('R4-T06: migration over a 0010 database that already holds bindings', (
       const before = (await pool.query(all)).rows;
       expect(before.map((r: Record<string, unknown>) => r.status)).toEqual(['open', 'closed']);
 
-      expect(await migrate(pool)).toEqual({ applied: ['0011_binding_identity_immutability', '0012_platform_fallback_outbound', '0013_conversation_binding_history', '0014_platform_notice_outbound', '0015_platform_notice_document', '0016_inbound_media', '0017_incident_triage', '0018_knowledge_entries', '0019_agent_drafts', '0020_agent_draft_variants', '0021_outbound_author_name', '0022_binding_presence'] });
+      expect(await migrate(pool)).toEqual({ applied: ['0011_binding_identity_immutability', '0012_platform_fallback_outbound', '0013_conversation_binding_history', '0014_platform_notice_outbound', '0015_platform_notice_document', '0016_inbound_media', '0017_incident_triage', '0018_knowledge_entries', '0019_agent_drafts', '0020_agent_draft_variants', '0021_outbound_author_name', '0022_binding_presence', '0023_artifacts'] });
       // Later migrations only add columns (0022: presence, null until a channel reports it).
       expect((await pool.query(all)).rows).toEqual(before.map((r: Record<string, unknown>) => ({ ...r, presence: null, presence_at: null })));
 

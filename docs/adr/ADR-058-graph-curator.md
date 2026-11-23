@@ -1,7 +1,8 @@
 # ADR-058 — Curador del grafo de productos: el grafo vive en R4 como versión firmada y un agente propone sus cambios
 
 - **Identificador:** `R4-GRAPH-CURATOR-01`
-- **Estado:** **Propuesto.** Sin implementación. Cada fase necesita autorización explícita del owner.
+- **Estado:** **Aceptado** (G0, PR #125). **G1 implementado**, autorizado por el owner el 2026-11-23; la línea base
+  todavía no está importada en producción. Cada fase necesita autorización explícita del owner.
 - **Fecha:** 2026-11-23
 - **Mandato:** decisiones del owner del 2026-11-23:
   - «empecemos con el agente curador del grafo»;
@@ -35,7 +36,7 @@ Hechos verificados al 2026-11-23:
   - actualizarlo es correr el proceso a mano y copiar el archivo a los servidores;
   - no queda registro de qué cambió ni quién lo aprobó.
 - **Pendientes medidos:**
-  - unas **10.400 relaciones publicadas son propuestas que el owner no revisó**;
+  - unas **10.400 relaciones publicadas son propuestas que el owner no revisó** (al importar en G1: 10.649 de 23.494);
   - unos **4.531 pares están bloqueados por datos que faltan en las fichas** (perforaciones de rack, diámetros,
     composición de packs);
   - unos 130 productos sin vender no tienen un reemplazo vendible;
@@ -152,6 +153,28 @@ pregunta al responsable. Por ejemplo: si una barra calza en un rack, cuando falt
 | **G4** | Revisión por lotes de las propuestas sin firmar. El modelo clasifica lo que ninguna regla clasifica, siempre con evidencia | Sí, con tope |
 | **G5** | Las herramientas del chat web leen la versión firmada (junto con su paso a `main`) | No |
 | **G6** | Consulta al responsable (Decisión 7): las dudas que el grafo no responde van al vendedor o al product manager, y su respuesta vuelve como propuesta. Depende de ADR-056 y del alta de los operadores | No |
+
+## G1 — implementación (2026-11-23)
+
+- **Core, migración `0023_artifacts`:**
+  - `artifact_versions`: versiones inmutables por tipo, con contenido JSON opaco y su hash (lo calcula la base);
+  - `artifact_signatures`: registro append-only de firmas, con la versión que cada firma reemplaza.
+  - La versión vigente de un tipo es la firmada al último. Volver atrás es firmar de nuevo una versión anterior.
+  - `PostgresArtifacts` (`createVersion`, `sign`, `current`) no interpreta el contenido ni revisa ámbitos: eso lo
+    hace quien llama (la consola, desde G3).
+- **Paquete `agents/graph-curator`** (`@r4-graph/curator`), fuera de Core:
+  - el esquema del grafo: el formato que ya leen las herramientas del chat web, más `unreviewed` (las relaciones
+    publicadas sin revisar, como `[área, a, b]`);
+  - el esquema valida que cada vecino sea un producto, que cada área tenga etiqueta y que cada marca sea una relación
+    publicada en ambas direcciones;
+  - `readSignedGraph`: lee y valida la versión firmada vigente;
+  - `importSignedGraph`: guarda y firma; es idempotente.
+- **Importar la línea base:** `R4_DATABASE_URL=… npm run graph:import -- --graph <grafo.json> --unreviewed
+  <marcas.json> --signed-by <operador> --note <texto>`. Imprime conteos y hash, nunca el contenido.
+  - Prueba sobre una base local con el grafo real: 1.093 productos, 23.494 relaciones, 10.649 sin revisar, 173 kB;
+    la segunda corrida no crea ni firma nada.
+  - En producción corre solo con un OK aparte del owner.
+- **Sin cambios para Pesín:** las herramientas siguen leyendo `R4_EXP_GRAPH_FILE` hasta G5.
 
 ## Fuera de alcance
 

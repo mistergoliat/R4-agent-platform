@@ -20,7 +20,8 @@
     "adapters/domains/identity/verification",
     "adapters/models/*",
     "adapters/channels/*",
-    "agents/sales"
+    "agents/sales",
+    "agents/graph-curator"
   ],
   "scripts": {
     "build": "tsc -b tsconfig.build.json",
@@ -85,6 +86,7 @@
     "production:sales:web-gateway": "node agents/sales/dist/cli/production.js --web-gateway",
     "production:sales:control": "node agents/sales/dist/cli/production-control.js",
     "production:sales:bootstrap": "node agents/sales/dist/cli/production-bootstrap.js",
+    "graph:import": "node agents/graph-curator/dist/cli/import.js",
     "production:sales:operator": "node agents/sales/dist/cli/operator.js",
     "sales:canary": "node agents/sales/dist/cli/canary.js",
     "test:production": "vitest run --project unit tests/unit/live-ops && vitest run --project contract tests/contract/live-ops-boundaries.test.ts && vitest run --project integration tests/integration/live-ops-reference.test.ts tests/integration/live-ops-hardening.test.ts"
