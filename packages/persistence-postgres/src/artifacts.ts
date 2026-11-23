@@ -31,7 +31,7 @@ export interface ArtifactSignature {
   readonly signedAt: string;
 }
 
-export const ARTIFACT_PROPOSAL_STATES = ['proposed', 'approved', 'rejected', 'applied'] as const;
+export const ARTIFACT_PROPOSAL_STATES = ['proposed', 'approved', 'rejected', 'applied', 'resolved'] as const;
 export type ArtifactProposalState = (typeof ARTIFACT_PROPOSAL_STATES)[number];
 export const MAX_ARTIFACT_PROPOSALS = 5000;
 
@@ -128,22 +128,62 @@ export class PostgresArtifacts {
   }
 
   /**
-   * Stores proposals from `source` (a pack's run) against `baseVersion`. One already proposed, approved or rejected for
-   * the same kind and fingerprint is skipped: a finding is proposed once, and a rejected one does not come back.
+   * Stores what `source` (a pack's run) found against `baseVersion`, by fingerprint:
+   * - new: proposed;
+   * - still proposed: refreshed (summary, evidence, base version and source of the latest run);
+   * - informational (no change) marked seen or rejected: reopened, the problem is still there;
+   * - a proposal with a change already decided: skipped (the person's decision stands; a rejected one never returns).
    */
-  async propose(input: { kind: string; baseVersion: number; source: string; correlationId: string; proposals: readonly NewArtifactProposal[] }): Promise<{ created: number; skipped: number }> {
-    if (!input.proposals.length) return { created: 0, skipped: 0 };
+  async propose(input: { kind: string; baseVersion: number; source: string; correlationId: string; proposals: readonly NewArtifactProposal[] }): Promise<{ created: number; refreshed: number; reopened: number; skipped: number }> {
+    if (!input.proposals.length) return { created: 0, refreshed: 0, reopened: 0, skipped: 0 };
+    const incoming = JSON.stringify(input.proposals.map((p) => ({ ...p, change: p.change ?? null })));
+    const INCOMING = `jsonb_to_recordset($4::jsonb) as i(fingerprint text, summary text, evidence jsonb, change jsonb)`;
     return withTransaction(this.#pool, async (c) => {
-      const ids = (await c.query<Row>(
+      const reopened = (await c.query<Row>(
+        `update artifact_proposals p set state = 'proposed', decided_by = null, decided_at = null, decision_note = null,
+                summary = i.summary, evidence = i.evidence, base_version = $2, source = $3
+           from ${INCOMING}, (select proposal_id, state as old_state from artifact_proposals where kind = $1 and change is null and state in ('approved', 'rejected') for update) o
+          where p.kind = $1 and p.fingerprint = i.fingerprint and i.change is null and o.proposal_id = p.proposal_id
+         returning p.proposal_id, o.old_state`,
+        [input.kind, input.baseVersion, input.source, incoming],
+      )).rows;
+      for (const state of ['approved', 'rejected']) await this.#events(c, reopened.filter((r) => r.old_state === state).map((r) => r.proposal_id as string), state, 'proposed', input.source, null, input.correlationId);
+      const reopenedIds = reopened.map((r) => r.proposal_id as string);
+      const refreshed = (await c.query(
+        `update artifact_proposals p set summary = i.summary, evidence = i.evidence, base_version = $2, source = $3
+           from ${INCOMING}
+          where p.kind = $1 and p.fingerprint = i.fingerprint and p.state = 'proposed' and not (p.proposal_id = any($5::uuid[]))`,
+        [input.kind, input.baseVersion, input.source, incoming, reopenedIds],
+      )).rowCount ?? 0;
+      const created = (await c.query<Row>(
         `insert into artifact_proposals (kind, base_version, source, fingerprint, summary, evidence, change, state)
-         select $1, $2, $3, p.fingerprint, p.summary, p.evidence, p.change, 'proposed'
-           from jsonb_to_recordset($4::jsonb) as p(fingerprint text, summary text, evidence jsonb, change jsonb)
+         select $1, $2, $3, i.fingerprint, i.summary, i.evidence, i.change, 'proposed' from ${INCOMING}
          on conflict (kind, fingerprint) where state in ('proposed', 'approved', 'rejected') do nothing
          returning proposal_id`,
-        [input.kind, input.baseVersion, input.source, JSON.stringify(input.proposals.map((p) => ({ ...p, change: p.change ?? null })))],
+        [input.kind, input.baseVersion, input.source, incoming],
       )).rows.map((r) => r.proposal_id as string);
-      await this.#events(c, ids, null, 'proposed', input.source, null, input.correlationId);
-      return { created: ids.length, skipped: input.proposals.length - ids.length };
+      await this.#events(c, created, null, 'proposed', input.source, null, input.correlationId);
+      return { created: created.length, refreshed, reopened: reopenedIds.length, skipped: input.proposals.length - created.length - refreshed - reopenedIds.length };
+    });
+  }
+
+  /**
+   * Closes as `resolved` what the sources whose name starts with `sourcePrefix` proposed and their latest run no longer
+   * finds: open proposals, and informational ones marked seen or rejected. Approved changes still wait to be applied.
+   */
+  async resolveUnseen(input: { kind: string; sourcePrefix: string; seenFingerprints: readonly string[]; resolvedBy: string; correlationId: string }): Promise<{ resolved: number }> {
+    return withTransaction(this.#pool, async (c) => {
+      const rows = (await c.query<Row>(
+        `update artifact_proposals p set state = 'resolved', decided_by = $4, decided_at = clock_timestamp()
+           from (select proposal_id, state as old_state from artifact_proposals
+                  where kind = $1 and starts_with(source, $2) and not (fingerprint = any($3::text[]))
+                    and (state = 'proposed' or (change is null and state in ('approved', 'rejected'))) for update) o
+          where p.proposal_id = o.proposal_id
+         returning p.proposal_id, o.old_state`,
+        [input.kind, input.sourcePrefix, [...input.seenFingerprints], input.resolvedBy],
+      )).rows;
+      for (const state of ['proposed', 'approved', 'rejected']) await this.#events(c, rows.filter((r) => r.old_state === state).map((r) => r.proposal_id as string), state, 'resolved', input.resolvedBy, null, input.correlationId);
+      return { resolved: rows.length };
     });
   }
 

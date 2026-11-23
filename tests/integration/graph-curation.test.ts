@@ -45,10 +45,10 @@ describe('graph curation runs (ADR-058 G2)', () => {
     const result = await runCuration({ pool, artifacts, catalog: sheets({ P2: 'missing' }) }, { startedBy: 'oidc:owner', concurrency: 1, tailMisses: 3 });
     expect(result).toMatchObject({ status: 'completed', graphVersion: 1, catalog: { scanned: 6, found: 2, notFound: 4, failed: 0 } });
     // P1 renamed and lacks its bar data; P2 left the catalog; P3 is new.
-    expect(result.counts).toEqual({ new_or_changed: { DISCONTINUED: 1, NOT_IN_GRAPH: 1, RENAMED: 1 }, missing_data: { SPEC_MISSING: 1 } });
+    expect(result.counts).toEqual({ new_or_changed: { DISCONTINUED: 1, NOT_IN_GRAPH: 1, RENAMED: 1 }, missing_data: { SET_MUSCLES: 1, SPEC_MISSING: 1 } });
     const rows = (await pool.query(`select rule, product_key, fingerprint, evidence from graph.curation_findings where run_id = $1 order by rule, product_key`, [result.runId])).rows;
-    expect(rows.map((r) => `${r.rule} ${r.product_key}`)).toEqual(['DISCONTINUED P2', 'NOT_IN_GRAPH P3', 'RENAMED P1', 'SPEC_MISSING P1']);
-    expect(rows[3]).toMatchObject({ fingerprint: 'missing_data|SPEC_MISSING|P1|', evidence: { missing: ['Diámetro de manga', 'Largo de agarre'] } });
+    expect(rows.map((r) => `${r.rule} ${r.product_key}`)).toEqual(['DISCONTINUED P2', 'NOT_IN_GRAPH P3', 'RENAMED P1', 'SET_MUSCLES P1', 'SPEC_MISSING P1']);
+    expect(rows[4]).toMatchObject({ fingerprint: 'missing_data|SPEC_MISSING|P1|', evidence: { missing: ['Diámetro de manga', 'Largo de agarre'] } });
     await expect(pool.query(`delete from graph.curation_findings where run_id = $1`, [result.runId])).rejects.toThrow();
     expect((await artifacts.current('product-graph'))!.version).toBe(1);
   });

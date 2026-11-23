@@ -5,7 +5,8 @@
   - **G1 en producción** (PR #132): la versión 1 está firmada por el owner desde el 2026-11-23.
   - La consola lee el grafo (PR #133).
   - **G2 en producción** (PR #134). Primera corrida el 2026-11-23: 2.550 fichas, 588 hallazgos.
-  - **G3 implementado**, autorizado por el owner el 2026-11-23.
+  - **G3 en producción** (PR #136): 589 propuestas abiertas el 2026-11-23.
+  - **G2b-1 implementado** (altas por analogía, reemplazos, grupos musculares) junto con el cierre automático de avisos.
   - Cada fase necesita autorización explícita del owner.
 - **Fecha:** 2026-11-23
 - **Mandato:** decisiones del owner del 2026-11-23:
@@ -276,6 +277,50 @@ Decisión del owner del 2026-11-23: el grafo suma qué parte del cuerpo trabaja 
   - botón «Armar versión», que corre `graph:compose` como trabajo del host;
   - versiones sin firmar, con botón de firma;
   - el operador necesita `artifact.curate` y `artifact.sign` en su registro.
+
+## G3, corrección: los avisos siguen lo que el curador encuentra (2026-11-23)
+
+Observación del owner: un aviso marcado «visto» no volvía nunca, aunque el problema siguiera. Por ejemplo, una ficha
+sin perfiles quedaba olvidada.
+
+- **Migración `0026_artifact_proposal_resolution`:** agrega el estado `resolved`.
+- **Al guardar una corrida:**
+  - lo nuevo queda propuesto;
+  - lo que sigue propuesto se actualiza con los datos de la última corrida;
+  - **un aviso marcado visto o rechazado se reabre** si se vuelve a encontrar;
+  - un cambio ya decidido no cambia: el rechazo del owner se mantiene.
+- **Lo que la corrida ya no encuentra se cierra solo (`resolved`):** lo propuesto, y los avisos vistos o rechazados.
+  Si reaparece más adelante, se abre una propuesta nueva.
+- Así un aviso no necesita «visto»: sigue abierto mientras el problema exista.
+
+## G2b-1 — implementación (2026-11-23)
+
+- **Altas por analogía, no copiando las reglas una a una.**
+  - Casi todas las reglas de la revisión clasifican por el «species» PRG y por la ruta completa de categorías, y
+    Catalog V2 no entrega ninguno de los dos para un producto nuevo. Copiarlas habría dejado sin clasificar justo a
+    los productos nuevos.
+  - **Tipo:** las reglas por nombre y categoría que no necesitan «species» (`classify.ts`). Si ninguna aplica, el tipo
+    que tienen al menos 3 hermanos de su categoría en el grafo, con un 60 % o más.
+  - **Relaciones de uso, complemento y orden** (`nu`, `ec`, `st`): las que ya tiene al menos la mitad de sus pares, es
+    decir, los productos del mismo tipo y, si alcanzan, de la misma categoría. Cada relación cita «N de M productos
+    parecidos ya lo tienen».
+  - Así se reproduce lo que el owner ya aprobó, sin inventar reglas: rodilleras → racks de sentadilla, Bosu →
+    colchonetas.
+  - **El calce físico nunca se infiere por analogía** (barra–disco, racks, collarines, accesorios): queda para G2b-2.
+  - **Reemplazos:** los grupos de `propose-substitutes`, que solo necesitan tipo y nombre. Hasta 3 vendibles, de
+    precio más cercano.
+  - Una propuesta `ADD_PRODUCT` agrega el producto con sus relaciones.
+  - Servicios, vestuario y cámara hiperbárica, o un alta sin nada que agregar, siguen como aviso `NOT_IN_GRAPH`.
+- **Grupos musculares** (Decisión 8):
+  - por nombre en máquinas, con la tabla de músculos de `propose-substitutes`; un grupo específico reemplaza a
+    «cuerpo completo»;
+  - por tipo en el resto;
+  - los accesorios no llevan grupo;
+  - la propuesta `SET_MUSCLES` va por producto, para aprobarla por lote.
+- **«Lo reemplaza» entre tipos distintos** se marca solo si no comparten un grupo **específico**. «Cuerpo completo»
+  es demasiado amplio. En el grafo actual, de 139 pares: 112 comparten un grupo específico, por ejemplo jalón ↔ remo,
+  ambos espalda, y ya no se marcan; 27 comparten solo «cuerpo completo» y siguen marcados.
+- **Queda para G2b-2:** las reglas de calce físico y cuántas relaciones desbloquea cada dato faltante.
 
 ## Fuera de alcance
 
