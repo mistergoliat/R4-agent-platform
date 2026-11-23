@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { loadAgentDefinitionsFromDirectory } from '@r4/agent-registry';
 import { createSilentLogger } from '@r4/observability';
@@ -18,6 +19,7 @@ import {
   SALES_WEB_PROFILE_V7,
   SALES_WEB_PROFILE_V16,
   SALES_WEB_PROFILE_V17,
+  SALES_WEB_PROFILE_V18,
   SALES_NON_PAUSING_CONSULTATION_PROFILES,
   SALES_WEB_RUN_FAILURE_FALLBACK_TEXT,
   SALES_WEB_HUMAN_REQUEST_NOTICE_TEXT,
@@ -293,8 +295,42 @@ describe('sales-web@17 (ADR-056 K4): the web Don Pesín consults the team withou
 
 function loadSalesAgentDefinitionLine(): string {
   // The WhatsApp v25 consultation rule the web line is built from (one source of the wording).
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { readFileSync } = require('node:fs') as typeof import('node:fs');
   const v25 = JSON.parse(readFileSync(`${SALES_AGENT_DIR}/candidates/sales.v25.candidate.json`, 'utf8')) as { instructions: string };
   return v25.instructions.split('\n').find((l) => l.startsWith('- request_consultation:'))!;
+}
+
+describe('sales-web@18 (owner 2026-11-23): brief general help, consistent declines, and the v26 consultation rule', () => {
+  const v17 = loadSalesWebAgentDefinition(17);
+  const v18 = loadSalesWebAgentDefinition(18);
+
+  it('is sales-web@17 pinned to v18: same reads and channel; consultations stay non-pausing', () => {
+    expect(profileLabel(assertProductionProfile(SALES_WEB_PROFILE_V18))).toBe('sales-web@18');
+    expect(salesAgentOf(SALES_WEB_PROFILE_V18)).toEqual({ agentId: 'sales-web', version: 18 });
+    expect(SALES_NON_PAUSING_CONSULTATION_PROFILES.has('sales-web@18')).toBe(true);
+    expect(SALES_WEB_PROFILE_V18.capabilities).toEqual(SALES_WEB_PROFILE_V17.capabilities);
+    expect(SALES_WEB_PROFILE_V18.channel).toEqual(SALES_WEB_PROFILE_V17.channel);
+    expect(SALES_WEB_PROFILE_V18.domains).toEqual(SALES_WEB_PROFILE_V17.domains);
+    expect({ ...v18, version: 17, description: '', instructions: '' }).toEqual({ ...v17, description: '', instructions: '' });
+  });
+
+  it('exactly two lines change: the scope rule (brief general help, consistent declines) and the consultation rule from WhatsApp v26 on [[contacto]]', () => {
+    const l17 = v17.instructions.split('\n');
+    const l18 = v18.instructions.split('\n');
+    expect(l18).toHaveLength(l17.length);
+    const changed = l18.map((l, i) => (l === l17[i] ? null : i)).filter((i) => i !== null);
+    expect(changed).toHaveLength(2);
+    const scope = l18.find((l) => l.startsWith("- Scope: you are the store's sales assistant."))!;
+    expect(l17.find((l) => l.startsWith('- Scope:'))).toMatch(/math, code, translations or general knowledge/);
+    expect(scope).not.toMatch(/not even partly/);
+    for (const must of ['Help briefly with small, harmless general requests', 'Decline in one short, friendly sentence only long or unrelated tasks', 'do not do it because it is asked again in another way', '"answer only yes"', 'Never write math notation or code']) expect(scope).toContain(must);
+    const rule = l18.find((l) => l.startsWith('- request_consultation:'))!;
+    const whatsapp = whatsappConsultationLine(26);
+    expect(rule).toBe(whatsapp.split('give the store contacts below').join("add [[contacto]] on its own line (the chat shows the store's real contact details there)"));
+    for (const must of ['you may warn of a risk from widely known general knowledge', 'Every consultation carries options', 'never draw the conclusion yourself']) expect(rule).toContain(must);
+  });
+});
+
+function whatsappConsultationLine(version: number): string {
+  const def = JSON.parse(readFileSync(`${SALES_AGENT_DIR}/candidates/sales.v${version}.candidate.json`, 'utf8')) as { instructions: string };
+  return def.instructions.split('\n').find((l) => l.startsWith('- request_consultation:'))!;
 }
