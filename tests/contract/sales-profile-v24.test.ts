@@ -18,6 +18,7 @@ import {
   SALES_INTENT_ACCEPTANCE_PROFILES,
   SALES_LANE_PROFILES,
   SALES_NON_PAUSING_CONSULTATION_PROFILES,
+  salesConsultationExpiry,
   SALES_PRODUCTION_PROFILES,
   SALES_PRODUCTION_PROFILE_V23,
   SALES_PRODUCTION_PROFILE_V23_GATE,
@@ -85,7 +86,7 @@ describe('A. @24 is @23 pinned to v24; a lane profile; @23 stays the rollback', 
 
   it('(K3) the platform makes @24 consultations non-pausing, whatever the model writes; @23 keeps the model\'s choice', () => {
     expect([...SALES_NON_PAUSING_CONSULTATION_PROFILES]).toEqual(['sales-production@24']);
-    expect(composed('sales-production@24').bindings.consultationsWithoutPause).toEqual({ defaultExpiryMs: 30 * 60_000 });
+    expect(composed('sales-production@24').bindings.consultationsWithoutPause).toEqual({ expiry: salesConsultationExpiry });
     expect(composed('sales-production@23').bindings.consultationsWithoutPause).toBeUndefined();
   });
 
@@ -121,6 +122,7 @@ describe('B. definition v24 = v23 with exactly the consultation rule changed', (
     expect(rule).toContain('give them as options (2 to 4)');
     expect(rule).toContain('faithfully and without adding anything it does not say');
     expect(rule).toContain('If the consultation expired without an answer');
+    expect(rule).toContain('the team attends Monday to Friday from 10:00 to 17:00');
   });
 
   it('every other field equals v23; v24 is a candidate the plain bootstrap never registers', async () => {

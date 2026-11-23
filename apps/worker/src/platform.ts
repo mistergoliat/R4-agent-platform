@@ -61,8 +61,8 @@ export interface WorkerBindings {
    * operator. Absent ⇒ every definition (unprofiled).
    */
   readonly servedAgents?: ServedAgents;
-  /** (ADR-056 K3) Every consultation of the served agents is without pause, whatever the model wrote, and expires after defaultExpiryMs unless the model set expiresAt. */
-  readonly consultationsWithoutPause?: { readonly defaultExpiryMs: number };
+  /** (ADR-056 K3) Every consultation of the served agents is without pause, whatever the model wrote, and expires at `expiry` at the latest. */
+  readonly consultationsWithoutPause?: { readonly expiry: (at: { readonly now: string; readonly latestInputAt: string | null }) => string };
 }
 
 export interface WorkerPresenceBinding {

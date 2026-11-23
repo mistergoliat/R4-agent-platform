@@ -105,6 +105,7 @@ describe('consultation', () => {
 });
 
 describe('(ADR-056 D1) consultation without pause', () => {
+  const THIRTY_MINUTES = { expiry: ({ now }: { now: string }) => new Date(Date.parse(now) + 30 * 60_000).toISOString() };
   const ask = (question: string, extra: Record<string, unknown> = {}) => ({ type: 'structured' as const, data: { type: 'request_consultation', question, contextRefs: [], blocking: false, ...extra } });
   const kinds = async (taskId: string) => (await waitRows(platform.pool, taskId)).map((w) => `${w.kind}:${w.status}:${w.resolution ?? '-'}`);
 
@@ -112,7 +113,7 @@ describe('(ADR-056 D1) consultation without pause', () => {
     const omitted = { type: 'structured' as const, data: { type: 'request_consultation', question: '¿Se puede anclar a madera?', contextRefs: [] } };
     const enforced = await createActionTask(platform);
     const before = Date.now();
-    const w1 = await worker({ consultationsWithoutPause: { defaultExpiryMs: 30 * 60_000 }, script: sequence([omitted, respond('Lo confirmo con el equipo. ¿Qué medidas tiene tu espacio?'), waitInput()]) });
+    const w1 = await worker({ consultationsWithoutPause: THIRTY_MINUTES, script: sequence([omitted, respond('Lo confirmo con el equipo. ¿Qué medidas tiene tu espacio?'), waitInput()]) });
     await w1.platform.worker.runOnce();
     const [forced] = (await platform.temporal.inspect(enforced)).humans;
     expect(forced).toEqual(expect.objectContaining({ kind: 'consultation', status: 'requested', payload: { question: '¿Se puede anclar a madera?', contextRefs: [], blocking: false } }));
@@ -124,12 +125,12 @@ describe('(ADR-056 D1) consultation without pause', () => {
     // The model's own expiry applies only when sooner: 5 min stays, 3 days is capped at the SLA.
     const own = await createActionTask(platform);
     const at = new Date(Date.now() + 5 * 60_000).toISOString();
-    const w3 = await worker({ consultationsWithoutPause: { defaultExpiryMs: 30 * 60_000 }, script: sequence([{ type: 'structured' as const, data: { ...omitted.data, expiresAt: at } }, respond('Lo confirmo.'), waitInput()]) });
+    const w3 = await worker({ consultationsWithoutPause: THIRTY_MINUTES, script: sequence([{ type: 'structured' as const, data: { ...omitted.data, expiresAt: at } }, respond('Lo confirmo.'), waitInput()]) });
     await w3.platform.worker.runOnce();
     expect(Date.parse((await platform.temporal.inspect(own)).humans[0]!.expiresAt!)).toBe(Date.parse(at));
     const far = await createActionTask(platform);
     const days = new Date(Date.now() + 3 * 86_400_000).toISOString();
-    const w4 = await worker({ consultationsWithoutPause: { defaultExpiryMs: 30 * 60_000 }, script: sequence([{ type: 'structured' as const, data: { ...omitted.data, expiresAt: days } }, respond('Lo confirmo.'), waitInput()]) });
+    const w4 = await worker({ consultationsWithoutPause: THIRTY_MINUTES, script: sequence([{ type: 'structured' as const, data: { ...omitted.data, expiresAt: days } }, respond('Lo confirmo.'), waitInput()]) });
     await w4.platform.worker.runOnce();
     expect(Date.parse((await platform.temporal.inspect(far)).humans[0]!.expiresAt!) - Date.now()).toBeLessThan(31 * 60_000);
 

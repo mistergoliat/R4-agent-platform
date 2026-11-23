@@ -23,14 +23,6 @@ export const SALES_QUOTE_LANE_V24_PROFILE_LABEL = 'sales-production@24';
  */
 export const SALES_NON_PAUSING_CONSULTATION_PROFILES: ReadonlySet<string> = new Set([SALES_QUOTE_LANE_V24_PROFILE_LABEL]);
 
-/**
- * A consultation of those profiles expires after this at the latest (ADR-056: the pack's SLA; a sooner model expiry
- * applies), so the
- * customer told «lo confirmo con el equipo» always hears back. 30 minutes = proposed, pending the owner's decision;
- * the desk marks it overdue at 10 and the console alert fires at 10 too.
- */
-export const SALES_CONSULTATION_EXPIRY_MS = 30 * 60_000;
-
 /** What must be true before @24 is activated on the lane: what @23 requires, plus the consultation cases with the real model. */
 export const SALES_PRODUCTION_PROFILE_V24_GATE = Object.freeze([
   ...SALES_PRODUCTION_PROFILE_V23_GATE.filter((g) => g.id !== 'profile-23-registered' && g.id !== 'explicit-authorization'),

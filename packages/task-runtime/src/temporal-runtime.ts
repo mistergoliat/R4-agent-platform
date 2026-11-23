@@ -78,11 +78,12 @@ export interface TemporalRuntimeOptions {
   turnGuard?: TurnGuardMode;
   /**
    * (ADR-056 K3) Worker composition: every consultation of the agents this worker runs is without pause, whatever the
-   * model wrote in `blocking` (model output is untrusted; L3 showed it omitted), and expires after `defaultExpiryMs`
-   * at the latest (ADR-056: «expiresAt, o el SLA que fije el paquete»): the model's `expiresAt` applies only when it is
-   * sooner, so the agent always wakes to tell the participant. Absent: the model's `blocking` and `expiresAt` decide.
+   * model wrote in `blocking` (model output is untrusted; L3 showed it omitted), and expires at the pack's `expiry` at
+   * the latest (ADR-056: «expiresAt, o el SLA que fije el paquete»; given the decision instant and the task's latest
+   * input): the model's `expiresAt` applies only when it is sooner, so the agent always wakes to tell the participant.
+   * Absent: the model's `blocking` and `expiresAt` decide.
    */
-  consultationsWithoutPause?: { readonly defaultExpiryMs: number };
+  consultationsWithoutPause?: { readonly expiry: (at: { readonly now: string; readonly latestInputAt: string | null }) => string };
 }
 
 export const TURN_GUARD_MODES = ['enforce', 'observe'] as const;
@@ -355,9 +356,9 @@ export class TemporalRuntime implements RunFailureHandoff, TurnCompletionGuard {
       // (ADR-056 D1) A consultation without pause: recorded with its step, and the run goes on — the agent still has to
       // answer the participant this turn. The human's answer (or its expiry) wakes the task later, like an input.
       if (decision.type === 'request_consultation' && (decision.blocking === false || this.#options.consultationsWithoutPause !== undefined)) {
-        const sla = this.#options.consultationsWithoutPause?.defaultExpiryMs;
+        const sla = this.#options.consultationsWithoutPause;
         // The pack's SLA is also a ceiling: a far-future expiry from the model (untrusted) never defeats it.
-        const ceiling = sla === undefined ? null : new Date(Date.parse(now) + sla).toISOString();
+        const ceiling = sla === undefined ? null : sla.expiry({ now, latestInputAt: (await p.idleActivity(owned.task.taskId)).latestInputAt });
         const expiresAt = ceiling === null ? decision.expiresAt ?? null : decision.expiresAt && Date.parse(decision.expiresAt) < Date.parse(ceiling) ? decision.expiresAt : ceiling;
         await this.#options.execution.appendStepWithin(uow, owned, token, command, now, events);
         const requestId = this.#options.ids.next();

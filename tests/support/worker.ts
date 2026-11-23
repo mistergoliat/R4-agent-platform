@@ -16,7 +16,7 @@ export { TEST_POLICY };
 
 export interface TestWorkerOptions {
   /** (ADR-056 K3) The worker makes every consultation non-pausing. */
-  consultationsWithoutPause?: { readonly defaultExpiryMs: number };
+  consultationsWithoutPause?: { readonly expiry: (at: { readonly now: string; readonly latestInputAt: string | null }) => string };
   readonly workerId: string;
   readonly script: FakeModelScript;
   readonly capabilities?: CapabilityRegistry;
