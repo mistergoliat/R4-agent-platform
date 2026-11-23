@@ -40,6 +40,10 @@ describe('curator rules (ADR-058 G2)', () => {
       'REACTIVATED P5',
       'RENAMED P3',
       'SELLABLE_UNRELATED P5',
+      // G2b: the bars (cuerpo completo) and the dumbbell get their muscle groups; plates have none (they inherit).
+      'SET_MUSCLES P1',
+      'SET_MUSCLES P4',
+      'SET_MUSCLES P6',
       'SPEC_MISSING P2',
       'SUBSTITUTE_AND_COMPLEMENT P2-P6',
       'SUBSTITUTE_KIND_MISMATCH P2-P6',

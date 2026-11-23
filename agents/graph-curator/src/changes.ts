@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MUSCLE_GROUPS } from './classify.js';
 import { productGraphSchema, type ProductGraph } from './graph.js';
 import type { Finding } from './rules.js';
 
@@ -13,8 +14,16 @@ export const graphChangeSchema = z.discriminatedUnion('op', [
   z.strictObject({ op: z.literal('activate'), key }),
   z.strictObject({ op: z.literal('rename'), key, name: z.string().min(1).max(300) }),
   z.strictObject({ op: z.literal('remove_relation'), area: z.string().regex(/^[a-z]{1,8}$/u), a: key, b: key }),
+  // G2b: a product the graph did not have, with its relations ([area, a, b]: view[a]['area:a'] ∋ b).
+  z.strictObject({
+    op: z.literal('add_product'), key,
+    product: z.strictObject({ n: z.string().min(1).max(300), price: z.number().nonnegative().nullable(), kind: z.string().max(60), muscles: z.array(z.enum(MUSCLE_GROUPS)).max(MUSCLE_GROUPS.length) }),
+    relations: z.array(z.tuple([z.string().regex(/^[a-z]{1,8}$/u), key, key])).max(60),
+  }),
+  z.strictObject({ op: z.literal('set_muscles'), key, muscles: z.array(z.enum(MUSCLE_GROUPS)).min(1).max(MUSCLE_GROUPS.length) }),
 ]);
 export type GraphChange = z.infer<typeof graphChangeSchema>;
+type GraphMuscles = (typeof MUSCLE_GROUPS)[number][];
 
 const shortName = (name: string): string => name.split('|')[0]!.replace(/\s+/gu, ' ').trim();
 
@@ -32,6 +41,12 @@ export function changeOf(f: Finding): { change: GraphChange | null; effect: stri
     case 'SUBSTITUTE_KIND_MISMATCH':
     case 'SUBSTITUTE_AND_COMPLEMENT':
       return { change: { op: 'remove_relation', area: 'sub', a: f.productKey, b: f.relatedKey! }, effect: 'Al aprobar: se quita «Lo reemplaza» entre los dos.' };
+    case 'ADD_PRODUCT': {
+      const e = f.evidence as { name: string; price: number | null; kind: string; muscles: string[]; relations: [string, string, string][] };
+      return { change: { op: 'add_product', key: f.productKey, product: { n: shortName(e.name), price: e.price, kind: e.kind, muscles: e.muscles as GraphMuscles }, relations: e.relations }, effect: `Al aprobar: entra al grafo con ${e.relations.length} relaciones.` };
+    }
+    case 'SET_MUSCLES':
+      return { change: { op: 'set_muscles', key: f.productKey, muscles: f.evidence.muscles as GraphMuscles }, effect: 'Al aprobar: el grafo registra qué grupos trabaja.' };
     default:
       return { change: null, effect: 'Informativo: aprobarlo lo marca como visto; no cambia el grafo.' };
   }
@@ -50,7 +65,24 @@ export function applyChanges(graph: ProductGraph, changes: readonly GraphChange[
     }
     if (!Object.keys(groups).length) delete g.view[a];
   };
+  const link = (area: string, a: string, b: string) => {
+    if (!g.products[a] || !g.products[b] || a === b) return;
+    for (const [from, to, side] of [[a, b, 'a'], [b, a, 'b']] as const) {
+      const list = ((g.view[from] ??= {})[`${area}:${side}`] ??= []);
+      if (!list.includes(to)) list.push(to);
+    }
+  };
   for (const c of changes) {
+    if (c.op === 'add_product') {
+      g.products[c.key] ??= { n: c.product.n, act: true, price: c.product.price, kind: c.product.kind, ...(c.product.muscles.length ? { muscles: c.product.muscles } : {}) };
+      for (const [area, a, b] of c.relations) link(area, a, b);
+      continue;
+    }
+    if (c.op === 'set_muscles') {
+      const target = g.products[c.key];
+      if (target) target.muscles = c.muscles;
+      continue;
+    }
     const p = g.products[c.op === 'remove_relation' ? c.a : c.key];
     if (c.op === 'deactivate') {
       if (p) p.act = false;

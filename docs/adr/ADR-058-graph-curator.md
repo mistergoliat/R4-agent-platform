@@ -5,7 +5,8 @@
   - **G1 en producción** (PR #132): la versión 1 está firmada por el owner desde el 2026-11-23.
   - La consola lee el grafo (PR #133).
   - **G2 en producción** (PR #134). Primera corrida el 2026-11-23: 2.550 fichas, 588 hallazgos.
-  - **G3 implementado**, autorizado por el owner el 2026-11-23.
+  - **G3 en producción** (PR #136): 589 propuestas abiertas el 2026-11-23.
+  - **G2b-1 implementado** (altas por analogía, reemplazos, grupos musculares) junto con el cierre automático de avisos.
   - Cada fase necesita autorización explícita del owner.
 - **Fecha:** 2026-11-23
 - **Mandato:** decisiones del owner del 2026-11-23:
@@ -143,6 +144,32 @@ pregunta al responsable. Por ejemplo: si una barra calza en un rack, cuando falt
    - el vendedor y el product manager dados de alta como operadores en la consola;
    - un área técnica o de producto, con el product manager como responsable.
 
+## Decisión 8 — Grupos musculares de cada producto
+
+Decisión del owner del 2026-11-23: el grafo suma qué parte del cuerpo trabaja cada producto, junto con G2b.
+
+1. **Es un atributo del producto, no una relación.** Cada producto tiene cero o más grupos de una lista cerrada:
+   - piernas, glúteos, espalda, pecho, hombros, brazos y core;
+   - cuerpo completo y cardio.
+
+   Un accesorio o un producto de orden (collarines, racks de discos, pisos) no tiene grupo: lo hereda de lo que
+   acompaña.
+2. **Por qué:**
+   - **Armar un gimnasio por objetivo.** Pesín puede responder «quiero entrenar piernas y espalda en casa» y revisar
+     que un armado cubra el cuerpo completo.
+   - **«Lo reemplaza» con sentido.** Un reemplazo de otro tipo que trabaja los mismos grupos es razonable: por
+     ejemplo, un banco de hip thrust y una máquina de extensión de cadera. El curador deja de marcarlo como
+     inconsistente y marca solo los reemplazos que no comparten ningún grupo.
+3. **De dónde sale:** hoy no está en el catálogo. Ninguna ficha declara «músculos trabajados», y solo hay unas pocas
+   categorías: «Bancos Abdominales», «Abdominales» y «Glute Bands».
+   - **Primero las reglas**, por tipo de producto y nombre. Por ejemplo, «Bíceps / Tríceps» → brazos, «Hip Thrust» →
+     glúteos y piernas, una cinta de correr → cardio.
+   - **El modelo** clasifica lo que ninguna regla resuelve, desde G4 y siempre citando el dato de la ficha o el nombre.
+   - Cada asignación es una **propuesta** que el owner aprueba y firma en la consola, como el resto del grafo
+     (Decisión 4).
+4. **Esquema:** `products[P].muscles`, opcional, con valores de la lista cerrada; el esquema valida la lista. Las
+   versiones sin el campo siguen siendo válidas.
+
 ## Privacidad y repositorio público
 
 - El grafo no tiene datos personales: son productos, fichas y relaciones públicas de la tienda.
@@ -156,6 +183,7 @@ pregunta al responsable. Por ejemplo: si una barra calza en un rack, cuando falt
 | **G0** | Este ADR | No |
 | **G1** | `Artifact` mínimo en Core. Paquete `graph-curator` con el esquema y la lectura de la versión firmada. Importar el grafo actual como **versión 1, firmada por el owner como línea base** y marcando las relaciones aún sin revisar | No |
 | **G2** | El curador con reglas: productos nuevos o cambiados, datos faltantes e inconsistencias. Corre a pedido | No |
+| **G2b** | Pasar al paquete las reglas de compatibilidad de la revisión del grafo: propone las relaciones y los reemplazos de un producto nuevo, y cuenta cuántas relaciones desbloquea cada dato faltante. **Grupos musculares** (Decisión 8): el campo en el esquema, las reglas que los asignan y la regla de reemplazo que compara grupos | No |
 | **G3** | Consola: propuestas, aprobación por lote y firma de versiones. Horario semanal | No |
 | **G4** | Revisión por lotes de las propuestas sin firmar. El modelo clasifica lo que ninguna regla clasifica, siempre con evidencia | Sí, con tope |
 | **G5** | Las herramientas del chat web leen la versión firmada (junto con su paso a `main`) | No |
@@ -250,6 +278,50 @@ pregunta al responsable. Por ejemplo: si una barra calza en un rack, cuando falt
   - versiones sin firmar, con botón de firma;
   - el operador necesita `artifact.curate` y `artifact.sign` en su registro.
 
+## G3, corrección: los avisos siguen lo que el curador encuentra (2026-11-23)
+
+Observación del owner: un aviso marcado «visto» no volvía nunca, aunque el problema siguiera. Por ejemplo, una ficha
+sin perfiles quedaba olvidada.
+
+- **Migración `0026_artifact_proposal_resolution`:** agrega el estado `resolved`.
+- **Al guardar una corrida:**
+  - lo nuevo queda propuesto;
+  - lo que sigue propuesto se actualiza con los datos de la última corrida;
+  - **un aviso marcado visto o rechazado se reabre** si se vuelve a encontrar;
+  - un cambio ya decidido no cambia: el rechazo del owner se mantiene.
+- **Lo que la corrida ya no encuentra se cierra solo (`resolved`):** lo propuesto, y los avisos vistos o rechazados.
+  Si reaparece más adelante, se abre una propuesta nueva.
+- Así un aviso no necesita «visto»: sigue abierto mientras el problema exista.
+
+## G2b-1 — implementación (2026-11-23)
+
+- **Altas por analogía, no copiando las reglas una a una.**
+  - Casi todas las reglas de la revisión clasifican por el «species» PRG y por la ruta completa de categorías, y
+    Catalog V2 no entrega ninguno de los dos para un producto nuevo. Copiarlas habría dejado sin clasificar justo a
+    los productos nuevos.
+  - **Tipo:** las reglas por nombre y categoría que no necesitan «species» (`classify.ts`). Si ninguna aplica, el tipo
+    que tienen al menos 3 hermanos de su categoría en el grafo, con un 60 % o más.
+  - **Relaciones de uso, complemento y orden** (`nu`, `ec`, `st`): las que ya tiene al menos la mitad de sus pares, es
+    decir, los productos del mismo tipo y, si alcanzan, de la misma categoría. Cada relación cita «N de M productos
+    parecidos ya lo tienen».
+  - Así se reproduce lo que el owner ya aprobó, sin inventar reglas: rodilleras → racks de sentadilla, Bosu →
+    colchonetas.
+  - **El calce físico nunca se infiere por analogía** (barra–disco, racks, collarines, accesorios): queda para G2b-2.
+  - **Reemplazos:** los grupos de `propose-substitutes`, que solo necesitan tipo y nombre. Hasta 3 vendibles, de
+    precio más cercano.
+  - Una propuesta `ADD_PRODUCT` agrega el producto con sus relaciones.
+  - Servicios, vestuario y cámara hiperbárica, o un alta sin nada que agregar, siguen como aviso `NOT_IN_GRAPH`.
+- **Grupos musculares** (Decisión 8):
+  - por nombre en máquinas, con la tabla de músculos de `propose-substitutes`; un grupo específico reemplaza a
+    «cuerpo completo»;
+  - por tipo en el resto;
+  - los accesorios no llevan grupo;
+  - la propuesta `SET_MUSCLES` va por producto, para aprobarla por lote.
+- **«Lo reemplaza» entre tipos distintos** se marca solo si no comparten un grupo **específico**. «Cuerpo completo»
+  es demasiado amplio. En el grafo actual, de 139 pares: 112 comparten un grupo específico, por ejemplo jalón ↔ remo,
+  ambos espalda, y ya no se marcan; 27 comparten solo «cuerpo completo» y siguen marcados.
+- **Queda para G2b-2:** las reglas de calce físico y cuántas relaciones desbloquea cada dato faltante.
+
 ## Fuera de alcance
 
 - Escribir en Catalog o en PrestaShop, o corregir fichas.
@@ -284,6 +356,8 @@ pregunta al responsable. Por ejemplo: si una barra calza en un rack, cuando falt
 4. **Datos faltantes y dudas:** Pesín pregunta al responsable cuando el grafo no responde (Decisión 7). Una duda
    comercial va a un vendedor y una técnica al product manager.
 5. **Orden de revisión de lo sin firmar:** por ventas, primero los productos más vendidos.
+6. **Corrida semanal:** domingo a las 22:00, hora de Santiago (G3).
+7. **Grupos musculares:** se suman al grafo junto con G2b (Decisión 8).
 
 ## Decisiones abiertas (owner)
 
@@ -293,4 +367,4 @@ pregunta al responsable. Por ejemplo: si una barra calza en un rack, cuando falt
    - La alternativa es que el PM responda en ClickUp y R4 lea la respuesta con un webhook. Esto exige una integración
      de ida y vuelta.
 2. **Quiénes son el vendedor y el product manager** que se dan de alta como operadores.
-3. **Día y hora de la corrida semanal.**
+3. ~~Día y hora de la corrida semanal~~: cerrada, domingo 22:00 (decisión 6).

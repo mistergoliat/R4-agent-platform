@@ -41,8 +41,8 @@ afterAll(async () => {
 
 describe('graph proposals (ADR-058 G3)', () => {
   it('a run proposes each finding once, with its change and effect', async () => {
-    expect((await run()).proposals).toEqual({ created: 2, skipped: 0 });
-    expect((await run()).proposals).toEqual({ created: 0, skipped: 2 });
+    expect((await run()).proposals).toEqual({ created: 2, refreshed: 0, reopened: 0, skipped: 0, resolved: 0 });
+    expect((await run()).proposals).toEqual({ created: 0, refreshed: 2, reopened: 0, skipped: 0, resolved: 0 });
     const proposed = await artifacts.proposals(PRODUCT_GRAPH_KIND, 'proposed');
     expect(proposed.map((p) => [(p.evidence as { rule: string }).rule, p.change]).sort()).toEqual([
       ['DISCONTINUED', { op: 'deactivate', key: 'P2' }],
@@ -69,9 +69,25 @@ describe('graph proposals (ADR-058 G3)', () => {
   });
 
   it('after signing, a new run does not bring back the rejected finding nor the applied one', async () => {
-    expect((await run()).proposals).toEqual({ created: 0, skipped: 1 });
+    expect((await run()).proposals).toEqual({ created: 0, refreshed: 0, reopened: 0, skipped: 1, resolved: 0 });
     expect(await artifacts.proposals(PRODUCT_GRAPH_KIND, 'proposed')).toEqual([]);
     const events = (await pool.query(`select to_state, count(*)::int as n from artifact_proposal_events group by to_state order by to_state`)).rows;
     expect(events).toEqual([{ to_state: 'applied', n: 1 }, { to_state: 'approved', n: 1 }, { to_state: 'proposed', n: 2 }, { to_state: 'rejected', n: 1 }]);
+  });
+
+  it('a notice still found reopens after «visto»; what a run no longer finds closes by itself and can come back', async () => {
+    const kind = PRODUCT_GRAPH_KIND;
+    const notice = { fingerprint: 'missing_data|SPEC_MISSING|P1|', summary: 'falta Perfiles', evidence: {}, change: null };
+    const change = { fingerprint: 'inconsistency|X|P1|P2', summary: 'quitar', evidence: {}, change: { op: 'remove_relation', area: 'ld', a: 'P1', b: 'P2' } };
+    const propose = (items: (typeof notice | typeof change)[]) => artifacts.propose({ kind, baseVersion: 2, source: 'graph-curator:t', correlationId: 't', proposals: items });
+    expect(await propose([notice, change])).toMatchObject({ created: 2 });
+    const ids = (await artifacts.proposals(kind, 'proposed')).filter((p) => p.source === 'graph-curator:t').map((p) => p.proposalId);
+    await artifacts.decide({ kind, proposalIds: ids, decision: 'rejected', decidedBy: 'oidc:owner', note: null, correlationId: 'r' });
+    // Found again: the notice reopens, the rejected change does not.
+    expect(await propose([notice, change])).toEqual({ created: 0, refreshed: 0, reopened: 1, skipped: 1 });
+    // A run that no longer finds the notice closes it; the next one that finds it opens a new one.
+    expect(await artifacts.resolveUnseen({ kind, sourcePrefix: 'graph-curator:t', seenFingerprints: [], resolvedBy: 'graph-curator:t2', correlationId: 'u' })).toEqual({ resolved: 1 });
+    expect((await artifacts.proposals(kind, 'resolved')).map((p) => p.fingerprint)).toEqual([notice.fingerprint]);
+    expect(await propose([notice])).toMatchObject({ created: 1 });
   });
 });
