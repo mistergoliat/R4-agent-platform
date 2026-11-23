@@ -13,6 +13,7 @@
 - **Autoridad superior:**
   - Constitución y PRD;
   - ADR-049 (consola) y ADR-050 (identidad de operador);
+  - ADR-048 (mesa de ventas) y ADR-056 (consultas al equipo sin pausar la conversación), para la Decisión 7;
   - ADR-052 (aprendizaje: base de conocimiento con propuesta, verificación y firma);
   - ADR-054 (taller de agentes; Decisión 9 de su revisión 1: el curador como primer «agente en blanco»).
 
@@ -100,16 +101,39 @@ Hechos verificados al 2026-11-23:
 
 ## Decisión 5 — Cuándo corre
 
-- **Todos los días, a una hora fija**, para detectar cambios del catálogo. Necesita un horario que abra tareas: es una
-  primitiva genérica (Schedule) que ADR-054 ya anticipa.
+- **Una vez por semana, a una hora fija** (decisión del owner, 2026-11-23), para detectar cambios del catálogo y
+  revisar las relaciones. Necesita un horario que abra tareas: es una primitiva genérica (Schedule) que ADR-054 ya
+  anticipa.
 - **A pedido desde la consola,** por categoría o por lote de productos.
-- **Tope de gasto de modelo por corrida y por día.** Sin presupuesto, corre solo con reglas.
+- **Tope de gasto de modelo: US$1 por corrida.** Sin presupuesto, corre solo con reglas.
 
 ## Decisión 6 — Las herramientas del chat web leen la versión firmada
 
 - `catalog.build_step` y `catalog.replacements` dejan de leer el archivo de `R4_EXP_GRAPH_FILE`. Leen la versión
   firmada mediante el puerto del paquete `graph-curator`.
 - Este es el puente con el segundo paso del orden acordado: llevar esas herramientas a `main` con su propio PR.
+
+## Decisión 7 — Lo que el grafo no responde se pregunta al responsable
+
+Decisión del owner del 2026-11-23: cuando Pesín tiene una duda que el grafo no logra responder, en cualquier canal, le
+pregunta al responsable. Por ejemplo: si una barra calza en un rack, cuando falta un dato de la ficha.
+
+1. **Usa la consulta sin pausa de ADR-056.**
+   - Pesín le dice al cliente que lo confirma con el equipo y sigue conversando.
+   - Retoma con la respuesta cuando llega.
+   - Si nadie responde a tiempo, la consulta vence según ADR-056.
+2. **A quién va:**
+   - **una duda comercial**, a un **vendedor**, en la mesa de ventas (ADR-048), con su aviso al celular;
+   - **una duda técnica** del producto, al **product manager**.
+3. **La respuesta vuelve al grafo.**
+   - Lo que responde la persona llega al curador como una propuesta, con la respuesta como evidencia y su autor.
+   - Se firma como cualquier otra propuesta (Decisión 4).
+   - Así la misma duda no se pregunta dos veces.
+   - Lo que falta en la ficha también queda en la lista de datos faltantes (Decisión 3), para completarlo en la
+     tienda.
+4. **Requisitos:**
+   - el vendedor y el product manager dados de alta como operadores en la consola;
+   - un área técnica o de producto, con el product manager como responsable.
 
 ## Privacidad y repositorio público
 
@@ -124,9 +148,10 @@ Hechos verificados al 2026-11-23:
 | **G0** | Este ADR | No |
 | **G1** | `Artifact` mínimo en Core. Paquete `graph-curator` con el esquema y la lectura de la versión firmada. Importar el grafo actual como **versión 1, firmada por el owner como línea base** y marcando las relaciones aún sin revisar | No |
 | **G2** | El curador con reglas: productos nuevos o cambiados, datos faltantes e inconsistencias. Corre a pedido | No |
-| **G3** | Consola: propuestas, aprobación por lote y firma de versiones. Horario diario | No |
+| **G3** | Consola: propuestas, aprobación por lote y firma de versiones. Horario semanal | No |
 | **G4** | Revisión por lotes de las propuestas sin firmar. El modelo clasifica lo que ninguna regla clasifica, siempre con evidencia | Sí, con tope |
 | **G5** | Las herramientas del chat web leen la versión firmada (junto con su paso a `main`) | No |
+| **G6** | Consulta al responsable (Decisión 7): las dudas que el grafo no responde van al vendedor o al product manager, y su respuesta vuelve como propuesta. Depende de ADR-056 y del alta de los operadores | No |
 
 ## Fuera de alcance
 
@@ -149,12 +174,26 @@ Hechos verificados al 2026-11-23:
   - **Firmar por lotes sin mirar.** Se mitiga mostrando el efecto de cada lote y empezando por lo que más se vende.
   - **Reglas que se quedan atrás.** Se mitiga con las inconsistencias y la tasa de rechazo por regla.
 
+## Decisiones del owner (2026-11-23)
+
+1. **Línea base:** se firma el grafo actual completo como versión 1. Las ~10.400 relaciones sin revisar quedan
+   marcadas «sin revisar» y siguen en uso.
+2. **Lectura del catálogo:** una capacidad en código recorre las fichas de Catalog V2. No se le pide una lectura en lote
+   a Catalog. Esto cierra, para este agente, la decisión abierta 5 de ADR-054.
+3. **Frecuencia y tope:**
+   - una vez por semana, más las corridas a pedido;
+   - tope de US$1 de modelo por corrida, desde G4.
+   - El día y la hora quedan para G3.
+4. **Datos faltantes y dudas:** Pesín pregunta al responsable cuando el grafo no responde (Decisión 7). Una duda
+   comercial va a un vendedor y una técnica al product manager.
+5. **Orden de revisión de lo sin firmar:** por ventas, primero los productos más vendidos.
+
 ## Decisiones abiertas (owner)
 
-1. **Línea base:** ¿se firma el grafo actual como versión 1, con las ~10.400 relaciones marcadas «sin revisar» y aún
-   en uso, o solo con las ya revisadas?
-2. **Lectura del catálogo:** ¿por una capacidad en código que recorre las fichas de Catalog V2, o se le pide a Catalog
-   una lectura en lote? Es la decisión abierta 5 de ADR-054.
-3. **Hora diaria y tope de gasto de modelo** (se propone 07:00 Chile y US$1 por día, desde G4).
-4. **Quién completa los datos faltantes en las fichas** y cómo se le avisa.
-5. **Orden de revisión de lo sin firmar:** ¿por ventas, por consultas en los chats o por categoría?
+1. **Cómo le llega la consulta al product manager**, que trabaja en ClickUp.
+   - Se propone que la pregunta y la respuesta vivan en R4: R4 crea una tarea en ClickUp como aviso, con un link para
+     responder en la mesa.
+   - La alternativa es que el PM responda en ClickUp y R4 lea la respuesta con un webhook. Esto exige una integración
+     de ida y vuelta.
+2. **Quiénes son el vendedor y el product manager** que se dan de alta como operadores.
+3. **Día y hora de la corrida semanal.**
