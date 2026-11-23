@@ -79,8 +79,8 @@ export interface TemporalRuntimeOptions {
   /**
    * (ADR-056 K3) Worker composition: every consultation of the agents this worker runs is without pause, whatever the
    * model wrote in `blocking` (model output is untrusted; L3 showed it omitted), and expires after `defaultExpiryMs`
-   * when the model gave no `expiresAt` (ADR-056: «expiresAt, o el SLA que fije el paquete»), so the agent always wakes
-   * to tell the participant. Absent: the model's `blocking` and `expiresAt` decide.
+   * at the latest (ADR-056: «expiresAt, o el SLA que fije el paquete»): the model's `expiresAt` applies only when it is
+   * sooner, so the agent always wakes to tell the participant. Absent: the model's `blocking` and `expiresAt` decide.
    */
   consultationsWithoutPause?: { readonly defaultExpiryMs: number };
 }
@@ -356,7 +356,9 @@ export class TemporalRuntime implements RunFailureHandoff, TurnCompletionGuard {
       // answer the participant this turn. The human's answer (or its expiry) wakes the task later, like an input.
       if (decision.type === 'request_consultation' && (decision.blocking === false || this.#options.consultationsWithoutPause !== undefined)) {
         const sla = this.#options.consultationsWithoutPause?.defaultExpiryMs;
-        const expiresAt = decision.expiresAt ?? (sla === undefined ? null : new Date(Date.parse(now) + sla).toISOString());
+        // The pack's SLA is also a ceiling: a far-future expiry from the model (untrusted) never defeats it.
+        const ceiling = sla === undefined ? null : new Date(Date.parse(now) + sla).toISOString();
+        const expiresAt = ceiling === null ? decision.expiresAt ?? null : decision.expiresAt && Date.parse(decision.expiresAt) < Date.parse(ceiling) ? decision.expiresAt : ceiling;
         await this.#options.execution.appendStepWithin(uow, owned, token, command, now, events);
         const requestId = this.#options.ids.next();
         await p.insertHuman({

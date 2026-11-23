@@ -24,7 +24,8 @@ export const SALES_QUOTE_LANE_V24_PROFILE_LABEL = 'sales-production@24';
 export const SALES_NON_PAUSING_CONSULTATION_PROFILES: ReadonlySet<string> = new Set([SALES_QUOTE_LANE_V24_PROFILE_LABEL]);
 
 /**
- * When the model gives no expiry, a consultation of those profiles expires after this (ADR-056: the pack's SLA), so the
+ * A consultation of those profiles expires after this at the latest (ADR-056: the pack's SLA; a sooner model expiry
+ * applies), so the
  * customer told «lo confirmo con el equipo» always hears back. 30 minutes = proposed, pending the owner's decision;
  * the desk marks it overdue at 10 and the console alert fires at 10 too.
  */

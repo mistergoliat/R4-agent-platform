@@ -121,12 +121,17 @@ describe('(ADR-056 D1) consultation without pause', () => {
     const expiresIn = Date.parse(forced!.expiresAt!) - before;
     expect(expiresIn).toBeGreaterThan(29 * 60_000);
     expect(expiresIn).toBeLessThan(31 * 60_000);
-    // The model's own expiry wins when it gives one.
+    // The model's own expiry applies only when sooner: 5 min stays, 3 days is capped at the SLA.
     const own = await createActionTask(platform);
     const at = new Date(Date.now() + 5 * 60_000).toISOString();
     const w3 = await worker({ consultationsWithoutPause: { defaultExpiryMs: 30 * 60_000 }, script: sequence([{ type: 'structured' as const, data: { ...omitted.data, expiresAt: at } }, respond('Lo confirmo.'), waitInput()]) });
     await w3.platform.worker.runOnce();
     expect(Date.parse((await platform.temporal.inspect(own)).humans[0]!.expiresAt!)).toBe(Date.parse(at));
+    const far = await createActionTask(platform);
+    const days = new Date(Date.now() + 3 * 86_400_000).toISOString();
+    const w4 = await worker({ consultationsWithoutPause: { defaultExpiryMs: 30 * 60_000 }, script: sequence([{ type: 'structured' as const, data: { ...omitted.data, expiresAt: days } }, respond('Lo confirmo.'), waitInput()]) });
+    await w4.platform.worker.runOnce();
+    expect(Date.parse((await platform.temporal.inspect(far)).humans[0]!.expiresAt!) - Date.now()).toBeLessThan(31 * 60_000);
 
     const classic = await createActionTask(platform);
     const w2 = await worker({ script: sequence([omitted]) });
