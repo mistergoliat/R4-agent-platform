@@ -24,6 +24,7 @@ import { describeWhatsAppConfig, loadWhatsAppCloudConfig } from '@r4-adapters/wh
 import { adminDatabaseUrl } from '../harness/database.js';
 import { configuredModelProvider } from '../model.js';
 import { assertSalesProductionPrerequisites, composeSalesGateway, composeSalesProductionWorker, composeSalesWebGateway, loadPromotionalQuotes, loadQuoteRecovery, salesAgentOf, selectedSalesProductionProfile } from '../production/composition.js';
+import { loadCatalogDescriptiveWindowMs } from '../workspace/catalog-descriptive.js';
 import { isSalesWebProfile } from '../production/profile-web.js';
 import { QUOTE_RECOVERY_SOURCE_ID } from '../ids.js';
 import { webProgressReporter } from '../production/web-progress.js';
@@ -179,7 +180,7 @@ function composition() {
   const catalog = productionCatalog(production);
   const shipping = productionShipping(production);
   const quotes = productionQuotes(production);
-  return composeSalesProductionWorker({ pool: { query: () => Promise.reject(new Error('plan only')) } as never, store: noStore, production, modelProvider: { providerId: 'plan', invoke: () => Promise.reject(new Error('plan only')) }, logger: createLogger({ service: 'plan', level: 'silent' }), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production) });
+  return composeSalesProductionWorker({ pool: { query: () => Promise.reject(new Error('plan only')) } as never, store: noStore, production, modelProvider: { providerId: 'plan', invoke: () => Promise.reject(new Error('plan only')) }, logger: createLogger({ service: 'plan', level: 'silent' }), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), catalogDescriptiveWindowMs: loadCatalogDescriptiveWindowMs(process.env), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production) });
 }
 
 /** (ADR-046) A web worker reports what it reads to the store chat, through the same signed edge as its replies. */
@@ -315,7 +316,7 @@ async function worker(production: ReturnType<typeof loadProductionConfig>): Prom
   const catalog = productionCatalog(production, logger);
   const shipping = productionShipping(production, logger);
   const quotes = productionQuotes(production, logger);
-  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...webProgressOf(production, pool), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production, logger), quoteRecovery: loadQuoteRecovery(process.env) });
+  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...webProgressOf(production, pool), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production, logger), quoteRecovery: loadQuoteRecovery(process.env) , catalogDescriptiveWindowMs: loadCatalogDescriptiveWindowMs(process.env) });
   await assertSalesProductionPrerequisites(workerProfile(production), pool);
   // (M3) What the operator needs to see from the logs: whether the quote-recovery source was composed, and the promotional-quotes switch.
   const features = { quoteRecovery: composed.bindings.contextSources?.some((s) => s.id === QUOTE_RECOVERY_SOURCE_ID) === true, promotionalQuotes: loadPromotionalQuotes(process.env) };

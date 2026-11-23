@@ -9,6 +9,7 @@ export * from './workspace/model.js';
 export * from './workspace/store.js';
 export * from './workspace/context-source.js';
 export * from './workspace/quote-recovery-source.js';
+export * from './workspace/catalog-descriptive.js';
 export * from './capabilities/catalog.js';
 export * from './capabilities/customer.js';
 export * from './capabilities/shipping.js';
