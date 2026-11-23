@@ -16,6 +16,12 @@ import { HUMAN_SCOPES, type Clock, type HumanScope, type TrustedHumanContext } f
  *
  * Any failure yields null (the route answers `trusted_human_required`) and
  * logs only a reason code. Without both env vars there is no adapter.
+ *
+ * (ADR-048 phase 2) A second signer, the desk (people attending conversations), signs the same assertion
+ * with its own key against its own operators file (R4_DESK_OPERATOR_KEY,
+ * R4_DESK_OPERATORS_FILE). Its scopes are capped here (DESK_SIGNER_SCOPES): a
+ * desk file that grants more refuses the boot, so a leaked desk key can only
+ * take, give back and answer, whatever its file says.
  */
 export type HumanContextAdapter = (request: FastifyRequest) => TrustedHumanContext | null;
 
@@ -60,44 +66,68 @@ interface ConsoleOperator {
 
 const identityKey = (issuer: string, subject: string) => `${issuer}\u0000${subject}`;
 
+/** What the desk signer may ever grant: take or give back a conversation, write to the contact, answer a consultation. */
+export const DESK_SIGNER_SCOPES: readonly HumanScope[] = Object.freeze(['handoff.manage', 'consultation.answer']);
+
+interface Signer {
+  readonly secret: Buffer;
+  readonly operators: ReadonlyMap<string, ConsoleOperator>;
+}
+
+function signerOf(key: string | undefined, operatorsFile: string | undefined, names: { key: string; file: string }, ceiling?: readonly HumanScope[]): Signer | undefined {
+  if (key === undefined && operatorsFile === undefined) return undefined;
+  if (key === undefined || operatorsFile === undefined) throw new Error(`${names.key} and ${names.file} must be set together`);
+  const secret = BASE64URL.test(key) ? Buffer.from(key, 'base64url') : EMPTY_BODY;
+  if (secret.length < 32) throw new Error(`${names.key} must be base64url of at least 32 bytes`);
+  const operators = loadOperators(operatorsFile, names.file);
+  if (ceiling && [...operators.values()].some((o) => o.scopes.some((s) => !ceiling.includes(s)))) throw new Error(`${names.file} grants a scope beyond ${ceiling.join(', ')}`);
+  return { secret, operators };
+}
+
 /** Loads the operators file; refuses one that group or others can access (POSIX) or that lists an identity twice. */
-function loadOperators(file: string): ReadonlyMap<string, ConsoleOperator> {
+function loadOperators(file: string, name: string): ReadonlyMap<string, ConsoleOperator> {
   let raw: string;
   let mode: number;
   try {
     mode = statSync(file).mode;
     raw = readFileSync(file, 'utf8');
   } catch {
-    throw new Error('R4_CONSOLE_OPERATORS_FILE cannot be read');
+    throw new Error(`${name} cannot be read`);
   }
   // Same rule as ADR-033's operator registry; POSIX modes do not apply on win32 (tests only).
-  if (process.platform !== 'win32' && (mode & 0o077) !== 0) throw new Error('R4_CONSOLE_OPERATORS_FILE must not be accessible to group or others (chmod 600)');
+  if (process.platform !== 'win32' && (mode & 0o077) !== 0) throw new Error(`${name} must not be accessible to group or others (chmod 600)`);
   let document: unknown;
   try {
     document = JSON.parse(raw);
   } catch {
-    throw new Error('R4_CONSOLE_OPERATORS_FILE is not JSON');
+    throw new Error(`${name} is not JSON`);
   }
   const parsed = operatorsSchema.safeParse(document);
-  if (!parsed.success) throw new Error('R4_CONSOLE_OPERATORS_FILE does not match its schema');
+  if (!parsed.success) throw new Error(`${name} does not match its schema`);
   const operators = new Map<string, ConsoleOperator>();
   const refs = new Set<string>();
   for (const o of parsed.data) {
     const key = identityKey(o.issuer, o.subject);
-    if (operators.has(key) || refs.has(o.operatorRef)) throw new Error('R4_CONSOLE_OPERATORS_FILE lists an identity or operatorRef twice');
+    if (operators.has(key) || refs.has(o.operatorRef)) throw new Error(`${name} lists an identity or operatorRef twice`);
     refs.add(o.operatorRef);
     operators.set(key, { operatorRef: o.operatorRef, scopes: [...new Set(o.scopes)], ...(o.displayName ? { displayName: o.displayName } : {}) });
   }
   return operators;
 }
 
-export function createConsoleOperatorContext(options: { readonly key?: string | undefined; readonly operatorsFile?: string | undefined; readonly clock: Clock }): HumanContextAdapter | undefined {
-  const { key, operatorsFile, clock } = options;
-  if (key === undefined && operatorsFile === undefined) return undefined;
-  if (key === undefined || operatorsFile === undefined) throw new Error('R4_CONSOLE_OPERATOR_KEY and R4_CONSOLE_OPERATORS_FILE must be set together');
-  const secret = BASE64URL.test(key) ? Buffer.from(key, 'base64url') : EMPTY_BODY;
-  if (secret.length < 32) throw new Error('R4_CONSOLE_OPERATOR_KEY must be base64url of at least 32 bytes');
-  const operators = loadOperators(operatorsFile);
+export function createConsoleOperatorContext(options: {
+  readonly key?: string | undefined;
+  readonly operatorsFile?: string | undefined;
+  readonly deskKey?: string | undefined;
+  readonly deskOperatorsFile?: string | undefined;
+  readonly clock: Clock;
+}): HumanContextAdapter | undefined {
+  const { clock } = options;
+  const consoleSigner = signerOf(options.key, options.operatorsFile, { key: 'R4_CONSOLE_OPERATOR_KEY', file: 'R4_CONSOLE_OPERATORS_FILE' });
+  const deskSigner = signerOf(options.deskKey, options.deskOperatorsFile, { key: 'R4_DESK_OPERATOR_KEY', file: 'R4_DESK_OPERATORS_FILE' }, DESK_SIGNER_SCOPES);
+  if (consoleSigner && deskSigner && consoleSigner.secret.equals(deskSigner.secret)) throw new Error('R4_DESK_OPERATOR_KEY must differ from R4_CONSOLE_OPERATOR_KEY');
+  const signers = [consoleSigner, deskSigner].filter((x): x is Signer => x !== undefined);
+  if (signers.length === 0) return undefined;
   // ponytail: in-memory jti ledger (r4-api is one process); a restart can only reopen a ≤ 60 s window. Durable ledger if r4-api ever scales out.
   const used = new Map<string, number>();
 
@@ -106,8 +136,11 @@ export function createConsoleOperatorContext(options: { readonly key?: string | 
     if (!match) return 'header_malformed';
     const encoded = match[1]!;
     const given = Buffer.from(match[2]!, 'base64url');
-    const expected = createHmac('sha256', secret).update(`v1.${encoded}`).digest();
-    if (given.length !== expected.length || !timingSafeEqual(given, expected)) return 'signature_invalid';
+    const signer = signers.find(({ secret }) => {
+      const expected = createHmac('sha256', secret).update(`v1.${encoded}`).digest();
+      return given.length === expected.length && timingSafeEqual(given, expected);
+    });
+    if (!signer) return 'signature_invalid';
 
     let json: unknown;
     try {
@@ -125,7 +158,7 @@ export function createConsoleOperatorContext(options: { readonly key?: string | 
     if (p.method !== request.method || p.path !== request.url) return 'request_mismatch';
     if (p.bodySha256 !== createHash('sha256').update(request.rawBody ?? EMPTY_BODY).digest('hex')) return 'body_mismatch';
 
-    const operator = operators.get(identityKey(p.iss, p.sub));
+    const operator = signer.operators.get(identityKey(p.iss, p.sub));
     if (!operator) return 'operator_not_registered';
     const scopes = operator.scopes.filter((s) => p.scopes.includes(s));
     if (scopes.length === 0) return 'scope_not_granted';

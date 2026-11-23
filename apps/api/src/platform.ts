@@ -58,7 +58,7 @@ export async function createPlatform(config: ApiConfig, overrides: PlatformOverr
   const clock = overrides.clock ?? systemClock;
   const ids = overrides.ids ?? uuidV7Generator(clock);
   // ADR-050: built before connecting, so a malformed key or operators file fails the boot.
-  const humanContext = overrides.humanContext ?? createConsoleOperatorContext({ key: config.consoleOperatorKey, operatorsFile: config.consoleOperatorsFile, clock });
+  const humanContext = overrides.humanContext ?? createConsoleOperatorContext({ key: config.consoleOperatorKey, operatorsFile: config.consoleOperatorsFile, deskKey: config.deskOperatorKey, deskOperatorsFile: config.deskOperatorsFile, clock });
   const pool = createPool({ connectionString: config.databaseUrl, logger, applicationName: 'r4-api', max: config.dbPoolMax });
 
   try {

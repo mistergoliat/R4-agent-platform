@@ -27,4 +27,15 @@ describe('ADR-049 service reader', () => {
     expect(reader(req('Bearer short'))).toBe(false);
     expect(reader(req())).toBe(false);
   });
+
+  it('(ADR-048 phase 2) several readers, one hash each (comma-separated): each token works, each can be dropped alone', () => {
+    const DESK = 'desk-reader-token-0123456789abcdef0123456789abc';
+    const both = createServiceReader(`${HASH},${createHash('sha256').update(DESK).digest('hex')}`)!;
+    expect(both(req(`Bearer ${TOKEN}`))).toBe(true);
+    expect(both(req(`Bearer ${DESK}`))).toBe(true);
+    expect(both(req(`Bearer ${DESK}x`))).toBe(false);
+    expect(createServiceReader(HASH)!(req(`Bearer ${DESK}`))).toBe(false);
+    expect(() => createServiceReader(`${HASH},`)).toThrow(/64 lowercase hex/);
+    expect(() => createServiceReader(`${HASH},abc`)).toThrow(/64 lowercase hex/);
+  });
 });
