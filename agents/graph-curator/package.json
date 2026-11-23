@@ -13,9 +13,11 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "migrations"
   ],
   "dependencies": {
+    "@r4-adapters/catalog-http": "*",
     "@r4/observability": "*",
     "@r4/persistence-postgres": "*",
     "zod": "^4.6.0"

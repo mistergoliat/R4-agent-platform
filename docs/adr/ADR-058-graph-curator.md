@@ -1,8 +1,11 @@
 # ADR-058 — Curador del grafo de productos: el grafo vive en R4 como versión firmada y un agente propone sus cambios
 
 - **Identificador:** `R4-GRAPH-CURATOR-01`
-- **Estado:** **Aceptado** (G0, PR #125). **G1 implementado**, autorizado por el owner el 2026-11-23; la línea base
-  todavía no está importada en producción. Cada fase necesita autorización explícita del owner.
+- **Estado:** **Aceptado** (G0, PR #125).
+  - **G1 en producción** (PR #132): la versión 1 está firmada por el owner desde el 2026-11-23.
+  - La consola lee el grafo (PR #133).
+  - **G2 implementado**, autorizado por el owner el 2026-11-23.
+  - Cada fase necesita autorización explícita del owner.
 - **Fecha:** 2026-11-23
 - **Mandato:** decisiones del owner del 2026-11-23:
   - «empecemos con el agente curador del grafo»;
@@ -175,6 +178,40 @@ pregunta al responsable. Por ejemplo: si una barra calza en un rack, cuando falt
     la segunda corrida no crea ni firma nada.
   - En producción corre solo con un OK aparte del owner.
 - **Sin cambios para Pesín:** las herramientas siguen leyendo `R4_EXP_GRAPH_FILE` hasta G5.
+
+## G2 — implementación (2026-11-23)
+
+- **Una corrida a pedido, sin modelo:** `npm run graph:curate -- --started-by <operador>`.
+  1. Lee la versión firmada.
+  2. Recorre las fichas de Catalog V2. Lee cada producto del grafo y sigue por las claves más altas hasta 150 seguidas
+     que no son productos. Hace 2 lecturas a la vez.
+  3. Aplica las reglas y guarda la corrida con lo que encontró.
+
+  No cambia el grafo.
+  - Una lectura que falla no concluye nada.
+  - Si fallan más del 5 % de las lecturas, la corrida queda como fallida y sin hallazgos.
+- **Esquema `graph` del paquete** (migración `0024_graph_curation`, que se aplica con `npm run graph:migrate`):
+  - `curation_runs` guarda las corridas;
+  - `curation_findings` guarda los hallazgos, inmutables, cada uno con una huella (tarea, regla, producto,
+    relacionado) para reconocerlo en otra corrida.
+- **Reglas:**
+
+  | Tarea | Reglas |
+  |---|---|
+  | Productos nuevos o cambiados | `NOT_IN_GRAPH`: activo y fuera del grafo, nuevo o sin relaciones. `DISCONTINUED`: activo en el grafo, pero inactivo o fuera del catálogo. `REACTIVATED`. `RENAMED` |
+  | Datos faltantes | `SPEC_MISSING`: la ficha no declara el dato que su tipo necesita; primero los vendibles. Discos y collarines: diámetro interno. Barras: diámetro de manga y largo de agarre. Racks y sus accesorios: perfiles. Bancos: peso máximo |
+  | Inconsistencias | `INACTIVE_WITH_RELATIONS`, `SELLABLE_UNRELATED`, `NO_SELLABLE_SUBSTITUTE`, `SUBSTITUTE_KIND_MISMATCH` (reemplazo de otro tipo), `SUBSTITUTE_AND_COMPLEMENT` (un par que es reemplazo y complemento a la vez) |
+
+- **Lo que G2 todavía no hace, y dónde queda:**
+  - **Proponer las relaciones de un producto nuevo.** Exige pasar al paquete las reglas de compatibilidad de la
+    revisión del grafo (`propose-relations` y `propose-substitutes`, unas 50 reglas). Queda como G2b.
+  - **Cuántas relaciones desbloquearía cada dato faltante.** Depende de esas mismas reglas; también va en G2b.
+  - **Agente con worker y definición propios** (Decisión 2). Hoy no hace falta, porque no hay modelo. Llega con G4,
+    cuando entra el modelo. El horario semanal llega con G3.
+- **Prueba en seco** con el grafo real y una copia local de fichas, que no sabe bien qué productos están activos:
+  - salió `PLATE_MACHINE`, porque son máquinas que se cargan con discos, no discos;
+  - la regla de producto nuevo pasó a `NOT_IN_GRAPH`, porque el grafo solo incluye productos con relaciones.
+  - Los conteos reales salen de la primera corrida en producción.
 
 ## Fuera de alcance
 
