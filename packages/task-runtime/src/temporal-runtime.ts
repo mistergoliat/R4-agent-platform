@@ -76,6 +76,14 @@ export interface TemporalRuntimeOptions {
    * that of R7-1. It is the first canary gate and the rollback.
    */
   turnGuard?: TurnGuardMode;
+  /**
+   * (ADR-056 K3) Worker composition: every consultation of the agents this worker runs is without pause, whatever the
+   * model wrote in `blocking` (model output is untrusted; L3 showed it omitted), and expires at the pack's `expiry` at
+   * the latest (ADR-056: «expiresAt, o el SLA que fije el paquete»; given the decision instant and the task's latest
+   * input): the model's `expiresAt` applies only when it is sooner, so the agent always wakes to tell the participant.
+   * Absent: the model's `blocking` and `expiresAt` decide.
+   */
+  consultationsWithoutPause?: { readonly expiry: (at: { readonly now: string; readonly latestInputAt: string | null }) => string };
 }
 
 export const TURN_GUARD_MODES = ['enforce', 'observe'] as const;
@@ -347,16 +355,20 @@ export class TemporalRuntime implements RunFailureHandoff, TurnCompletionGuard {
 
       // (ADR-056 D1) A consultation without pause: recorded with its step, and the run goes on — the agent still has to
       // answer the participant this turn. The human's answer (or its expiry) wakes the task later, like an input.
-      if (decision.type === 'request_consultation' && decision.blocking === false) {
+      if (decision.type === 'request_consultation' && (decision.blocking === false || this.#options.consultationsWithoutPause !== undefined)) {
+        const sla = this.#options.consultationsWithoutPause;
+        // The pack's SLA is also a ceiling: a far-future expiry from the model (untrusted) never defeats it.
+        const ceiling = sla === undefined ? null : sla.expiry({ now, latestInputAt: (await p.idleActivity(owned.task.taskId)).latestInputAt });
+        const expiresAt = ceiling === null ? decision.expiresAt ?? null : decision.expiresAt && Date.parse(decision.expiresAt) < Date.parse(ceiling) ? decision.expiresAt : ceiling;
         await this.#options.execution.appendStepWithin(uow, owned, token, command, now, events);
         const requestId = this.#options.ids.next();
         await p.insertHuman({
           requestId, taskId: owned.task.taskId, runId: owned.run.runId, status: 'requested', humanRef: null, createdAt: now, updatedAt: now, correlationId: owned.task.correlationId,
-          kind: 'consultation', expiresAt: decision.expiresAt ?? null,
+          kind: 'consultation', expiresAt,
           payload: { question: decision.question, contextRefs: decision.contextRefs, ...(decision.options ? { options: decision.options } : {}), blocking: false },
         });
         await this.event(uow, owned.task, requestId, 'consultation.requested', now, events, { blocking: false });
-        if (decision.expiresAt) await this.scheduleWithin(uow, owned.task, 'human_expiry', requestId, decision.expiresAt, now, events);
+        if (expiresAt) await this.scheduleWithin(uow, owned.task, 'human_expiry', requestId, expiresAt, now, events);
         return { kind: 'continued' };
       }
 

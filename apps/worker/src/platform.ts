@@ -61,6 +61,8 @@ export interface WorkerBindings {
    * operator. Absent ⇒ every definition (unprofiled).
    */
   readonly servedAgents?: ServedAgents;
+  /** (ADR-056 K3) Every consultation of the served agents is without pause, whatever the model wrote, and expires at `expiry` at the latest. */
+  readonly consultationsWithoutPause?: { readonly expiry: (at: { readonly now: string; readonly latestInputAt: string | null }) => string };
 }
 
 export interface WorkerPresenceBinding {
@@ -114,7 +116,7 @@ export async function createWorkerPlatform(config: WorkerConfig, bindings: Worke
     const observations = new PostgresObservationStore(pool);
     const store = new PostgresExecutionStore(pool);
     const execution = new ExecutionRuntime({ store, ids, clock, logger, maxRunRecoveries: config.maxRunRecoveries, ...(config.maxRunFailureRecoveries === undefined ? {} : { maxRunFailureRecoveries: config.maxRunFailureRecoveries }) });
-    const temporal = new TemporalRuntime({ store, execution, ids, logger, ...(config.turnGuard ? { turnGuard: config.turnGuard } : {}) });
+    const temporal = new TemporalRuntime({ store, execution, ids, logger, ...(config.turnGuard ? { turnGuard: config.turnGuard } : {}), ...(bindings.consultationsWithoutPause ? { consultationsWithoutPause: bindings.consultationsWithoutPause } : {}) });
     // The only authority over effects: policy is evaluated inside the runtime's fenced transactions.
     const actions = new ActionRuntime({ store, authorizer: new ActionPolicyEngine(bindings.actionPolicy ?? DEFAULT_ACTION_POLICY), temporal, ids, clock, logger });
     const rateLimiter = config.modelMaxRequestsPerMinute === undefined ? {} : { rateLimiter: new RequestRateLimiter(config.modelMaxRequestsPerMinute) };

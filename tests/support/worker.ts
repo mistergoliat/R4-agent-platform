@@ -15,6 +15,8 @@ import { TEST_POLICY } from './kernel-fixtures.js';
 export { TEST_POLICY };
 
 export interface TestWorkerOptions {
+  /** (ADR-056 K3) The worker makes every consultation non-pausing. */
+  consultationsWithoutPause?: { readonly expiry: (at: { readonly now: string; readonly latestInputAt: string | null }) => string };
   readonly workerId: string;
   readonly script: FakeModelScript;
   readonly capabilities?: CapabilityRegistry;
@@ -95,6 +97,7 @@ export async function startTestWorker(databaseUrl: string, options: TestWorkerOp
       ...(options.contextSources ? { contextSources: options.contextSources } : {}),
       ...(options.actionPolicy ? { actionPolicy: options.actionPolicy } : {}),
       ...(options.servedAgents ? { servedAgents: options.servedAgents } : {}),
+      ...(options.consultationsWithoutPause ? { consultationsWithoutPause: options.consultationsWithoutPause } : {}),
     },
     { logger: options.logger ?? createSilentLogger(), ...(options.clock ? { clock: options.clock } : {}) },
   );

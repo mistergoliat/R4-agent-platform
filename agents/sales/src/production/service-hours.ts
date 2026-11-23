@@ -28,6 +28,34 @@ export function salesServiceWindow(at: Date): ServiceWindow {
   return { open: false, reopens: businessDay && hour < SALES_SERVICE_HOURS.opens ? 'today' : 'next_business_day' };
 }
 
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+/** How long the team has to answer a consultation, inside service hours. */
+export const SALES_CONSULTATION_ANSWER_MS = 30 * MINUTE;
+/** WhatsApp lets the agent write freely for 24 h after the customer's last message; it wakes this much before that. */
+export const SALES_CUSTOMER_WINDOW_MARGIN_MS = 30 * MINUTE;
+
+/** The next instant service opens, strictly after `at` (Chile changes offset by whole hours, so whole UTC hours align). */
+function nextOpening(at: Date): Date {
+  let t = Math.ceil((at.getTime() + 1) / HOUR) * HOUR;
+  for (let i = 0; i < 24 * 10; i++, t += HOUR) if (salesServiceWindow(new Date(t)).open) return new Date(t);
+  return new Date(at.getTime() + 24 * HOUR); // unreachable with business days in every week
+}
+
+/**
+ * (Owner decision 2026-11-23) When a consultation of the team expires: 30 min if the team can answer within service
+ * hours; otherwise the next opening + 30 min; never later than the customer's 24 h window (latest input + 24 h, minus a
+ * margin), so the agent can still write when it wakes; never earlier than a minute from now.
+ */
+export function salesConsultationExpiry({ now, latestInputAt }: { readonly now: string; readonly latestInputAt: string | null }): string {
+  const at = new Date(now);
+  const soon = new Date(at.getTime() + SALES_CONSULTATION_ANSWER_MS);
+  const inHours = salesServiceWindow(at).open && salesServiceWindow(new Date(soon.getTime() - 1)).open;
+  const rule = inHours ? soon : new Date(nextOpening(at).getTime() + SALES_CONSULTATION_ANSWER_MS);
+  const window = Date.parse(latestInputAt ?? now) + 24 * HOUR - SALES_CUSTOMER_WINDOW_MARGIN_MS;
+  return new Date(Math.max(at.getTime() + MINUTE, Math.min(rule.getTime(), window))).toISOString();
+}
+
 /** "Nuestro equipo está entrenando…" with when they answer; only meaningful when the window is closed. */
 export function salesTeamTrainingSentence(w: ServiceWindow): string {
   return `Nuestro equipo está entrenando 💪 y te responderá ${w.reopens === 'today' ? 'hoy' : 'el siguiente día hábil'}, entre las 10:00 y las 17:00.`;

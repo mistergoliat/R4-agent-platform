@@ -19,6 +19,7 @@ afterEach(async () => {
 
 const HANDOFF: FakeModelStep = { type: 'structured', data: { type: 'request_handoff', summary: 'El cliente pide emitir con stock por confirmar.', contextRefs: [] } };
 const CONSULT: FakeModelStep = { type: 'structured', data: { type: 'request_consultation', question: '¿Se puede despachar a Isla de Pascua?', contextRefs: [] } };
+const CONSULT_WITHOUT_PAUSE: FakeModelStep = { type: 'structured', data: { type: 'request_consultation', question: '¿Se puede despachar a Isla de Pascua?', contextRefs: [], blocking: false } };
 const TWO_DOCUMENTS: FakeModelStep = { type: 'text', content: '{"type":"respond","content":"a"}{"type":"respond","content":"b"}' };
 
 const start = async (profiles: readonly string[] | undefined) => (bed = await LiveOpsTestbed.start({ allowlist: [CUSTOMER], autonomy: true, ...(profiles ? { humanRequestNoticeProfiles: profiles } : {}) }));
@@ -30,8 +31,8 @@ const sentTexts = (b: LiveOpsTestbed) => b.provider.sends.filter((s) => s.to ===
 const requests = (b: LiveOpsTestbed) => b.rows<{ kind: string; status: string }>(`select kind, status from human_requests order by created_at`);
 
 describe('an agent-opened human request never leaves the contact in silence (F-ADV-2)', { timeout: 90_000 }, () => {
-  it('the composition scopes the notice to the F1 quote lane candidates only (@17 and its successors @18, @19, @20, @21, @22)', () => {
-    expect(SALES_HUMAN_REQUEST_NOTICE_PROFILES).toEqual(['sales-production@17', 'sales-production@18', 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22']);
+  it('the composition scopes the notice to the F1 quote lane candidates only (@17 and its successors @18 to @24)', () => {
+    expect(SALES_HUMAN_REQUEST_NOTICE_PROFILES).toEqual(['sales-production@17', 'sales-production@18', 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23', 'sales-production@24']);
     // Fixed text: a pending person, no commercial effect or promise.
     expect(SALES_HUMAN_REQUEST_NOTICE_TEXT).not.toMatch(/cotizaci[oó]n|emit|confirm|pedido|pago|reserv|stock|disponib|precio|descuento/i);
   });
@@ -52,6 +53,17 @@ describe('an agent-opened human request never leaves the contact in silence (F-A
     await settle(b);
     await b.deliver();
     expect(sentTexts(b)).toEqual([SALES_HUMAN_REQUEST_NOTICE_TEXT]);
+  });
+
+  it('(ADR-056 D1) a consultation without pause: the agent replies in the same run, so no notice; the request stays open', async () => {
+    const b = await start([BED_PROFILE]);
+    b.next(CONSULT_WITHOUT_PAUSE, say('Lo confirmo con el equipo y te aviso. Mientras, ¿a qué comuna sería el despacho?'));
+    await b.customer(CUSTOMER, 'wamid.1', '¿Despachan a Isla de Pascua?');
+    await settle(b);
+    expect(sentTexts(b)).toEqual(['Lo confirmo con el equipo y te aviso. Mientras, ¿a qué comuna sería el despacho?']);
+    expect(await requests(b)).toEqual([{ kind: 'consultation', status: 'requested' }]);
+    await b.deliver();
+    expect(await b.rows(`select origin from outbound_messages`)).toEqual([{ origin: 'agent' }]);
   });
 
   it('a profile outside the scope keeps the previous behaviour: the request, and no notice', async () => {

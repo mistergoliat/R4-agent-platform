@@ -428,7 +428,8 @@ export interface ProductionStore {
   /**
    * (ADR-041 extension, F-ADV-2) Creates the one platform notice outbound (`text`) of every still-requested human
    * request the AGENT opened (a consultation, or a handoff with initiatedBy=agent) in a conversation bound to one of
-   * `profiles` (a run that replies ends its turn, so such a request never had a reply in its run). The request itself is
+   * `profiles` (a run that replies ends its turn, so such a request never had a reply in its run; a consultation without
+   * pause, ADR-056 D1, is the exception: its run goes on to the reply, so it gets no notice). The request itself is
    * untouched. At most one per request, by the same unique constraint as the run-failure fallback.
    */
   materializeHumanRequestNotices(command: { readonly text: string; readonly profiles: readonly string[]; readonly limit: number }): Promise<OutboundRecord[]>;
