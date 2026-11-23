@@ -239,8 +239,8 @@ export class PostgresProductionStore implements ProductionStore {
     await query(this.#pool, `update inbound_events set content = $2, content_sha256 = $3 where inbound_id = $1 and status = 'received' and content_kind in ('media', 'unsupported')`, [inboundId, text, sha256Hex(text)]);
   }
 
-  async unsettledInbound(olderThanMs: number, limit: number): Promise<InboundEventRecord[]> {
-    const r = await query<Row>(this.#pool, `select * from inbound_events where status = 'received' and received_at <= clock_timestamp() - $1::int * interval '1 millisecond' order by received_at limit $2`, [olderThanMs, limit]);
+  async unsettledInbound(olderThanMs: number, limit: number, channels: readonly string[]): Promise<InboundEventRecord[]> {
+    const r = await query<Row>(this.#pool, `select * from inbound_events where status = 'received' and channel = any($3::text[]) and received_at <= clock_timestamp() - $1::int * interval '1 millisecond' order by received_at limit $2`, [olderThanMs, limit, [...channels]]);
     return r.rows.map(inboundFromRow);
   }
 

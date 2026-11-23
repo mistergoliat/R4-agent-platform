@@ -268,7 +268,7 @@ export class ChannelIngress {
 
   /** Crash recovery: inbound persisted but never settled (the process died between persistence and ingestion). */
   async resumeUnsettled(olderThanMs = 30_000, limit = 50): Promise<IngestOutcome[]> {
-    const pending = await this.#o.store.unsettledInbound(olderThanMs, limit);
+    const pending = await this.#o.store.unsettledInbound(olderThanMs, limit, this.channels());
     const out: IngestOutcome[] = [];
     for (const record of pending) {
       if (this.#inFlight.has(record.inboundId)) continue;

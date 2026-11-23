@@ -382,8 +382,11 @@ export interface ProductionStore {
   reactionTarget(channel: string, providerMessageId: string): Promise<{ readonly taskId: string; readonly text: string | null; readonly latest: boolean; readonly stepId: string } | null>;
   /** One inbound event as it is now (null: unknown). */
   inboundEvent(inboundId: string): Promise<InboundEventRecord | null>;
-  /** Received but never settled (a crash between persistence and ingestion). */
-  unsettledInbound(olderThanMs: number, limit: number): Promise<InboundEventRecord[]>;
+  /**
+   * Received but never settled (a crash between persistence and ingestion), of these channels only: gateways of
+   * different channels may share one database, and another channel's row is not this gateway's to ingest.
+   */
+  unsettledInbound(olderThanMs: number, limit: number, channels: readonly string[]): Promise<InboundEventRecord[]>;
 
   // Conversation binding (at most one open binding per conversation, by unique constraint).
   findOpenBinding(channel: string, conversationKey: string): Promise<ConversationBindingRecord | null>;
