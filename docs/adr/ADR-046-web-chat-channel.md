@@ -139,6 +139,26 @@ faltaba era que el chat web distinguiera quién escribe:
 **Sigue igual:** `sales-web@6` no deriva, y el botón «Hablar con una persona» muestra el contacto. Que el visitante pida
 una persona y alguien lo atienda dentro de un plazo es parte de la mesa (ADR-048).
 
+## Armado con el grafo de la tienda (`sales-web@7` a `@16`, en `main` desde 2026-11-23)
+
+Las versiones 7 a 16 se probaron en ramas experimentales (instancia aislada F2 y QA). El owner decidió llevarlas a `main`
+(2026-11-23) como paso previo a pasar el chat web a la base de producción:
+
+1. **`catalog.build_step`:** arma el gimnasio pieza por pieza. La compatibilidad sale del grafo de la tienda y el precio
+   y el stock, de Catalog en vivo. Las opciones van de menor a mayor precio, con etiquetas de precio y no de calidad.
+   En una pieza o un departamento pregunta la altura del techo solo si alguna opción mide 210 cm o más, y deja fuera lo
+   que no cabe. El set final tiene solo lo que el visitante eligió.
+2. **`catalog.replacements`:** para un producto agotado, devuelve su segunda selección y hasta tres reemplazos
+   vendibles.
+3. **`catalog.set_complements`** queda solo para las definiciones 8 y 9, que la componen.
+4. **El adapter web** pasa al edge las claves de los productos del paso `build` como miniaturas (máximo 6, filtradas
+   como claves de catálogo).
+5. **Una sola fuente del grafo en la composición.** Hoy es el archivo exportado de `R4_EXP_GRAPH_FILE`; sin él, una
+   versión que usa estas herramientas no compone. ADR-058 (fase G5) lo reemplaza por la versión del grafo firmada por el
+   owner en R4.
+
+Siguen sin escrituras: ninguna de estas versiones cotiza, ni crea carritos o pedidos.
+
 ## Fuera de alcance
 
 - **Excluido:** Quote V2, Checkout, CIA, Customer Profile, escrituras, el botón «Continuar por WhatsApp» y cambios en

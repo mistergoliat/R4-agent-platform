@@ -12,7 +12,7 @@ import { CAPABILITY_IDS, LANE_CAPABILITY_IDS } from '../ids.js';
  * search words. Nothing it sends is read back by R4.
  */
 export interface WebProgressReporter {
-  report(taskId: string, step: WebProgressStep, detail: string | null): void;
+  report(taskId: string, step: WebProgressStep, detail: string | null, products?: readonly string[]): void;
 }
 
 const REPORT_TIMEOUT_MS = 1_500;
@@ -20,14 +20,14 @@ const REPORT_TIMEOUT_MS = 1_500;
 /** Sends the report for the task's latest web message (the edge knows the visitor's conversation by that event). */
 export function webProgressReporter(pool: Pick<pg.Pool, 'query'>, adapter: Pick<WebOutboundAdapter, 'reportProgress'>, accountRef: string): WebProgressReporter {
   return {
-    report(taskId, step, detail) {
+    report(taskId, step, detail, products) {
       void (async () => {
         const latest = await pool.query<{ provider_event_id: string }>(
           "select provider_event_id from inbound_events where task_id = $1 and channel = 'web' order by received_at desc limit 1",
           [taskId],
         );
         const providerEventId = latest.rows[0]?.provider_event_id;
-        if (providerEventId) await adapter.reportProgress({ accountRef, providerEventId, step, detail }, { timeoutMs: REPORT_TIMEOUT_MS });
+        if (providerEventId) await adapter.reportProgress({ accountRef, providerEventId, step, detail, ...(products?.length ? { products } : {}) }, { timeoutMs: REPORT_TIMEOUT_MS });
       })().catch(() => undefined);
     },
   };
