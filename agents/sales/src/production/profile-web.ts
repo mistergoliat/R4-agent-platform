@@ -150,11 +150,11 @@ export const SALES_WEB_PROFILE_V15: ProductionProfile = Object.freeze({
   description: 'sales-web@14 that names products in the text and keeps catalog keys inside card markers only (experiment); no writes.',
 } satisfies ProductionProfile);
 
-/** EXPERIMENT ONLY (owner 2026-11-22): sales-web@15 whose build options are labelled and ordered by live price only (no quality claims). */
+/** EXPERIMENT ONLY (owner 2026-11-22/23): sales-web@15 whose build options are labelled and ordered by live price only (no quality claims) and filtered by the ceiling height in a room or an apartment. */
 export const SALES_WEB_PROFILE_V16: ProductionProfile = Object.freeze({
   ...SALES_WEB_PROFILE_V15,
   version: 16,
-  description: 'sales-web@15 that presents build options from the lowest to the highest price, labelled by price only (experiment); no writes.',
+  description: 'sales-web@15 that presents build options from the lowest to the highest price, labelled by price only, and asks the ceiling height for a room or an apartment (experiment); no writes.',
 } satisfies ProductionProfile);
 
 export const SALES_WEB_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_WEB_PROFILE_V1, SALES_WEB_PROFILE_V2, SALES_WEB_PROFILE_V3, SALES_WEB_PROFILE_V4, SALES_WEB_PROFILE_V5, SALES_WEB_PROFILE_V6, SALES_WEB_PROFILE_V7, SALES_WEB_PROFILE_V8, SALES_WEB_PROFILE_V9, SALES_WEB_PROFILE_V10, SALES_WEB_PROFILE_V11, SALES_WEB_PROFILE_V12, SALES_WEB_PROFILE_V13, SALES_WEB_PROFILE_V14, SALES_WEB_PROFILE_V15, SALES_WEB_PROFILE_V16]);

@@ -3,12 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { CatalogPort } from '@r4-adapters/domains';
-import { catalogBuildStepCapability, unitKg } from '../../../agents/sales/src/capabilities/catalog-build-step.js';
+import { catalogBuildStepCapability, heightCm, unitKg } from '../../../agents/sales/src/capabilities/catalog-build-step.js';
 
 // EXPERIMENT ONLY (sequential builder): compatibility from the graph file, prices and sellability from Catalog.
-const products: Record<string, { n: string; kind: string; price: number; sellable?: boolean }> = {
-  P1: { n: 'Power Rack', kind: 'SQUAT_RACK', price: 200_000 },
-  P2: { n: 'Rack caro', kind: 'SQUAT_RACK', price: 900_000 },
+const products: Record<string, { n: string; kind: string; price: number; sellable?: boolean; h?: number }> = {
+  P1: { n: 'Power Rack', kind: 'SQUAT_RACK', price: 200_000, h: 188 },
+  P2: { n: 'Rack caro', kind: 'SQUAT_RACK', price: 900_000, h: 241 },
   P10: { n: 'Barra Olímpica 15kg', kind: 'OLY_BAR', price: 50_000 },
   P11: { n: 'Barra Olímpica 20kg', kind: 'OLY_BAR', price: 100_000 },
   P12: { n: 'Barra Olímpica 20kg Pro', kind: 'OLY_BAR', price: 150_000 },
@@ -35,7 +35,7 @@ const catalog = {
   getProductContext: (key: string) => {
     const p = products[key];
     if (!p) return Promise.resolve({ status: 'not_found', productKey: key });
-    return Promise.resolve({ status: 'found', productKey: key, facts: { name: p.n }, derived: { priceSummary: { finalGross: { amount: livePrice[key] ?? p.price } }, availability: { sellability: p.sellable === false ? 'not_sellable' : 'sellable' } }, freshness: { validUntil: '2026-11-19T20:00:00.000Z' } });
+    return Promise.resolve({ status: 'found', productKey: key, facts: { name: p.n, specifications: p.h ? [{ name: 'Dimensiones del producto', value: `Largo: 120 cm Ancho: 120 cm Alto: ${p.h} cm` }] : [] }, derived: { priceSummary: { finalGross: { amount: livePrice[key] ?? p.price } }, availability: { sellability: p.sellable === false ? 'not_sellable' : 'sellable' } }, freshness: { validUntil: '2026-11-19T20:00:00.000Z' } });
   },
 } as unknown as CatalogPort;
 const file = join(mkdtempSync(join(tmpdir(), 'build-step-')), 'graph.json');
@@ -95,6 +95,26 @@ describe('catalog.build_step (experiment)', () => {
     } finally {
       delete livePrice.P10;
     }
+  });
+
+  it('reads the height from the shop dimensions (tallest part; units; metres without a unit)', () => {
+    expect(heightCm([{ name: 'Dimensiones del producto', value: 'Largo: 126 cm Ancho: 106 cm Alto: 241 cm' }])).toBe(241);
+    expect(heightCm([{ name: 'Dimensiones del producto armado', value: 'Polea Largo: 160 cm Alto: 237 cm || Banco Largo: 141 cm Alto: 45 cm' }])).toBe(237);
+    expect(heightCm([{ name: 'Dimensiones del producto', value: 'Largo: 15 cm. Ancho: 16 cm. Alto: 2.5 cm.' }])).toBe(3);
+    expect(heightCm([{ name: 'Dimensiones del producto', value: 'Alto: 2,41' }])).toBe(241);
+    expect(heightCm([{ name: 'Dimensiones del Empaque', value: 'Alto: 250 cm' }, { name: 'Peso máximo de carga', value: '500 kg' }])).toBeNull();
+  });
+
+  it('under a ceiling, a rack taller than the ceiling minus the clearance is left out and counted (owner 2026-11-23)', async () => {
+    const open = await run({ step: 'rack', budgetMaxClp: 5_000_000 });
+    expect(open.options.map((o) => [o.productKey, o.heightCm])).toEqual([['P1', 188], ['P2', 241]]);
+    expect(open.tooTallForCeiling).toBe(0);
+    const room = await run({ step: 'rack', budgetMaxClp: 5_000_000, ceilingCm: 240 });
+    expect(room.options.map((o) => [o.tier, o.productKey])).toEqual([['menor precio', 'P1']]);
+    expect(room.tooTallForCeiling).toBe(1);
+    const tiny = await run({ step: 'rack', budgetMaxClp: 5_000_000, ceilingCm: 180 });
+    expect(tiny.options).toEqual([]);
+    expect(tiny.reason).toBe('the compatible options within the budget are taller than the ceiling allows');
   });
 
   it('plates reach the target load, skip unsellable packs and stay within the budget', async () => {

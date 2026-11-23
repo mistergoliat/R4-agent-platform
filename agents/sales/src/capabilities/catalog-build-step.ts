@@ -54,8 +54,10 @@ export const buildStepInput = z.strictObject({
   selected: z.array(z.strictObject({ productKey: z.string().regex(/^P\d+(?:-V\d+)?$/u), quantity: z.int().min(1).max(20) })).max(12).default([]),
   budgetMaxClp: z.int().min(10_000).max(100_000_000),
   targetPlateKg: z.int().min(10).max(400).optional(),
+  // Ceiling height in cm (owner 2026-11-23: asked when the visitor trains in a room or an apartment).
+  ceilingCm: z.int().min(150).max(600).optional(),
 });
-const option = z.strictObject({ tier: z.enum(TIERS), productKey: z.string(), name: z.string(), quantity: z.int(), unitPriceClp: z.int(), totalClp: z.int(), totalKg: z.number().nullable() });
+const option = z.strictObject({ tier: z.enum(TIERS), productKey: z.string(), name: z.string(), quantity: z.int(), unitPriceClp: z.int(), totalClp: z.int(), totalKg: z.number().nullable(), heightCm: z.int().nullable() });
 export const buildStepOutput = z.strictObject({
   step: z.string(),
   options: z.array(option),
@@ -63,6 +65,8 @@ export const buildStepOutput = z.strictObject({
   remainingBudgetClp: z.int(),
   reservedForNeededClp: z.int(),
   stillNeeded: z.array(z.string()),
+  /** Sellable options left out because they do not fit under ceilingCm (with the clearance). */
+  tooTallForCeiling: z.int(),
   reason: z.string().nullable(),
   validUntil: z.string().nullable(),
 });
@@ -88,9 +92,32 @@ export function spread<T>(items: readonly T[], n: number): T[] {
 
 const stepOfKind = (kind: string | null): Step | null => (kind ? (BUILD_STEPS.find((s) => KINDS[s].includes(kind)) ?? null) : null);
 
-function live(context: CatalogProductContext): { name: string; price: number | null; sellable: boolean; validUntil: string | null } | null {
+/** Space a product needs above it, beyond its own height, to fit under a ceiling. */
+const CEILING_CLEARANCE_CM = 5; // ponytail: fixed margin; loading the bar or pull-ups need more, Pesín says the height
+
+/**
+ * Height in cm from the owner's dimension features («Dimensiones del producto», «… armado»: «Alto: 241 cm»); the
+ * tallest when several parts are listed. A number without a unit below 4 is metres. Null when the shop has none.
+ */
+export function heightCm(specifications: readonly { readonly name: string; readonly value: string }[]): number | null {
+  const heights: number[] = [];
+  for (const spec of specifications) {
+    if (!/^dimensiones del producto( armado)?$/iu.test(spec.name.trim())) continue;
+    for (const m of spec.value.matchAll(/alt(?:o|ura)[^0-9]{0,20}?(\d+(?:[.,]\d+)?)\s*(mm|cm|mts?|m)?\b/giu)) {
+      let v = Number(m[1]!.replace(',', '.'));
+      const unit = m[2]?.toLowerCase();
+      if (unit === 'mm') v /= 10;
+      else if (unit && unit !== 'cm') v *= 100;
+      else if (!unit && v < 4) v *= 100;
+      heights.push(Math.round(v));
+    }
+  }
+  return heights.length ? Math.max(...heights) : null;
+}
+
+function live(context: CatalogProductContext): { name: string; price: number | null; sellable: boolean; validUntil: string | null; heightCm: number | null } | null {
   if (context.status !== 'found') return null;
-  return { name: context.facts.name, price: context.derived.priceSummary?.finalGross.amount ?? null, sellable: context.derived.availability.sellability === 'sellable', validUntil: context.freshness.validUntil ?? null };
+  return { name: context.facts.name, price: context.derived.priceSummary?.finalGross.amount ?? null, sellable: context.derived.availability.sellability === 'sellable', validUntil: context.freshness.validUntil ?? null, heightCm: heightCm(context.facts.specifications ?? []) };
 }
 
 export function catalogBuildStepCapability(catalog: CatalogPort, graphFile: string, progress?: BuildProgress): CapabilityRegistration<z.infer<typeof buildStepInput>, BuildStepView> {
@@ -117,7 +144,7 @@ export function catalogBuildStepCapability(catalog: CatalogPort, graphFile: stri
     definition: readDefinition({
       capabilityId: LANE_CAPABILITY_IDS.catalogBuildStep,
       description:
-        `One step of a home-gym build. step = the piece to choose now (${BUILD_STEPS.join(', ')}); selected = the products already chosen with their quantities; budgetMaxClp = the visitor's budget ceiling (CLP, tax included); targetPlateKg = total plate load for step discos (default ${DEFAULT_PLATE_KG}). Returns up to three options (económica, equilibrada, superior) compatible with everything already chosen per the store's product relations, sellable now with current prices, with the quantity to buy (plates: enough units to reach the load) and totals, within what remains of the budget after reserving the cheapest option of each piece still needed (stillNeeded). Empty options come with a reason.`,
+        `One step of a home-gym build. step = the piece to choose now (${BUILD_STEPS.join(', ')}); selected = the products already chosen with their quantities; budgetMaxClp = the visitor's budget ceiling (CLP, tax included); targetPlateKg = total plate load for step discos (default ${DEFAULT_PLATE_KG}); ceilingCm = the ceiling height when the visitor gave it (options taller than ceilingCm − ${CEILING_CLEARANCE_CM} are left out and counted in tooTallForCeiling). Returns up to three options labelled by live price from lowest to highest (menor precio, precio medio, mayor precio; the label says nothing about quality) compatible with everything already chosen per the store's product relations, sellable now with current prices, with the quantity to buy (plates: enough units to reach the load), totals and heightCm (from the shop's dimensions; null when unknown), within what remains of the budget after reserving the cheapest option of each piece still needed (stillNeeded). Empty options come with a reason.`,
       owner: 'catalog',
       requiredScopes: [SCOPES.catalogRead],
       freshnessTtlMs: CATALOG_FRESHNESS_TTL_MS,
@@ -165,9 +192,14 @@ export function catalogBuildStepCapability(catalog: CatalogPort, graphFile: stri
         // ponytail: hydrate at most 9 spread candidates in parallel, then keep 3 sellable ones within the cap at live prices.
         const probe = spread(candidates, 9);
         const lives = await Promise.all(probe.map(read));
-        const ok = probe
+        const sellable = probe
           .map((k, i) => ({ k, l: lives[i], q: quantityFor(input.step, k, targetKg) }))
-          .filter((x) => x.l?.sellable && x.l.price !== null && x.l.price * x.q <= cap)
+          .filter((x) => x.l?.sellable && x.l.price !== null && x.l.price * x.q <= cap);
+        // Under a known ceiling, a product of known height must leave the clearance (unknown height stays: Pesín says so).
+        const fits = (x: (typeof sellable)[number]) => input.ceilingCm === undefined || x.l!.heightCm === null || x.l!.heightCm <= input.ceilingCm - CEILING_CLEARANCE_CM;
+        const tooTall = sellable.filter((x) => !fits(x)).length;
+        const ok = sellable
+          .filter(fits)
           // The labels follow the price the visitor sees: re-sort by live total (the candidates were sorted by snapshot price).
           .sort((a, b) => a.l!.price! * a.q - b.l!.price! * b.q);
         const picks = spread(ok, 3);
@@ -178,13 +210,14 @@ export function catalogBuildStepCapability(catalog: CatalogPort, graphFile: stri
           step: input.step,
           options: picks.map((p, i) => {
             const kg = input.step === 'discos' ? unitKg(p.l!.name) : null;
-            return { tier: tiers[i] as (typeof TIERS)[number], productKey: p.k, name: p.l!.name, quantity: p.q, unitPriceClp: p.l!.price!, totalClp: p.l!.price! * p.q, totalKg: kg === null ? null : Math.round(kg * p.q * 10) / 10 };
+            return { tier: tiers[i] as (typeof TIERS)[number], productKey: p.k, name: p.l!.name, quantity: p.q, unitPriceClp: p.l!.price!, totalClp: p.l!.price! * p.q, totalKg: kg === null ? null : Math.round(kg * p.q * 10) / 10, heightCm: p.l!.heightCm };
           }),
           selectedTotalClp: selectedTotal,
           remainingBudgetClp: remaining,
           reservedForNeededClp: reserved,
           stillNeeded: needed,
-          reason: picks.length ? null : candidates.length ? 'no compatible option is sellable now within the budget' : cap <= 0 ? 'the budget is used up by what was already chosen and the pieces it still needs' : 'no product of this step is related to what was already chosen',
+          tooTallForCeiling: tooTall,
+          reason: picks.length ? null : tooTall ? 'the compatible options within the budget are taller than the ceiling allows' : candidates.length ? 'no compatible option is sellable now within the budget' : cap <= 0 ? 'the budget is used up by what was already chosen and the pieces it still needs' : 'no product of this step is related to what was already chosen',
           validUntil: validUntil.length ? validUntil.reduce((a, b) => (Date.parse(a) <= Date.parse(b) ? a : b)) : null,
         };
       }),
