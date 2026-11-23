@@ -27,4 +27,6 @@ try {
   process.exitCode = 1;
 } finally {
   await pool.end();
+  // The catalog client can keep sockets or timers alive (the first prod run stayed up 20 min after finishing).
+  process.exit(process.exitCode ?? 0);
 }
