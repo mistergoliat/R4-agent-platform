@@ -6,7 +6,9 @@
   - La consola lee el grafo (PR #133).
   - **G2 en producción** (PR #134). Primera corrida el 2026-11-23: 2.550 fichas, 588 hallazgos.
   - **G3 en producción** (PR #136): 589 propuestas abiertas el 2026-11-23.
-  - **G2b-1 implementado** (altas por analogía, reemplazos, grupos musculares) junto con el cierre automático de avisos.
+  - **G2b-1 en producción** (PR #138): altas por analogía, reemplazos, grupos musculares y cierre automático de avisos.
+  - **Decisión 9 implementada** (cambios automáticos); la Decisión 10 (datos que se responden en R4) va en una fase
+    aparte.
   - Cada fase necesita autorización explícita del owner.
 - **Fecha:** 2026-11-23
 - **Mandato:** decisiones del owner del 2026-11-23:
@@ -170,6 +172,47 @@ Decisión del owner del 2026-11-23: el grafo suma qué parte del cuerpo trabaja 
 4. **Esquema:** `products[P].muscles`, opcional, con valores de la lista cerrada; el esquema valida la lista. Las
    versiones sin el campo siguen siendo válidas.
 
+## Decisión 9 — Los cambios mecánicos se aplican solos (enmienda del 2026-11-23)
+
+Decisión del owner del 2026-11-23: un product manager no va a revisar cientos de cambios mecánicos uno por uno. La
+Decisión 4 cambia solo para estas reglas.
+
+1. **Reglas automáticas:** `INACTIVE_WITH_RELATIONS`, `DISCONTINUED`, `RENAMED` y `REACTIVATED`.
+   - Son mecánicas: el catálogo ya dice lo que pasó, y el cambio solo lo refleja.
+   - Todas las demás, incluidas las nuevas, siguen esperando a una persona. Por ejemplo: reemplazos entre tipos
+     distintos, altas de productos y grupos musculares.
+2. **Se aprueban, se arman y se firman solas.** En cada corrida, el curador aprueba sus propuestas automáticas y arma
+   una versión que solo las contiene. La firma como `graph-curator:auto`.
+   - Decisión del owner: esa versión se publica sola, sin esperar su firma.
+   - Lo que una persona aprobó y todavía no firmó no entra en esa versión.
+3. **Resumen semanal y deshacer.**
+   - La consola muestra lo que se aplicó solo.
+   - **Deshacer** un cambio arma y firma una versión nueva que lo revierte. El producto vuelve a quedar como estaba en
+     la versión anterior al cambio: su nombre, su estado y sus relaciones.
+   - El cambio queda `undone` y el curador no lo vuelve a aplicar, aunque lo siga encontrando.
+4. **Firmar no puede borrar lo publicado.**
+   - Cada versión recuerda sobre qué versión se armó.
+   - Una versión que nunca se firmó, y que se armó sobre una versión que ya no es la vigente, no se puede firmar: hay
+     que volver a armarla.
+   - Los cambios cuentan como aplicados recién al firmar. Así, una versión armada que nadie firma no se lleva sus
+     cambios.
+   - Volver a firmar una versión anterior, para ir atrás, sigue permitido.
+
+## Decisión 10 — Los datos que faltan se responden una vez en R4 (enmienda del 2026-11-23)
+
+Decisión del owner del 2026-11-23: el product manager no va a ir al administrador de la tienda a corregir la ficha y
+volver a aprobar. Esto amplía «Fuera de alcance»: R4 guarda datos de producto que aprendió.
+
+1. **Una pregunta, una respuesta.** El responsable responde el dato que falta una sola vez dentro de R4, por ejemplo
+   «Perfiles: 50×50». La pregunta llega como aviso del curador o como consulta de Pesín (Decisión 7).
+2. **R4 lo guarda como un hecho con evidencia:** producto, dato, valor, quién lo respondió, cuándo y de dónde vino.
+   Es append-only: un valor nuevo reemplaza al anterior sin borrarlo.
+3. **Se usa de inmediato.** El curador y Pesín leen el hecho como si fuera parte de la ficha. El aviso de dato
+   faltante se cierra solo.
+4. **La ficha se corrige después, en lote.** La consola exporta la lista de hechos que la tienda todavía no tiene,
+   para quien carga productos. Cuando la ficha ya trae el dato, el hecho queda como respaldo.
+5. **Implementación en una fase aparte**, después de la Decisión 9.
+
 ## Privacidad y repositorio público
 
 - El grafo no tiene datos personales: son productos, fichas y relaciones públicas de la tienda.
@@ -322,10 +365,37 @@ sin perfiles quedaba olvidada.
   ambos espalda, y ya no se marcan; 27 comparten solo «cuerpo completo» y siguen marcados.
 - **Queda para G2b-2:** las reglas de calce físico y cuántas relaciones desbloquea cada dato faltante.
 
+## Decisión 9 — implementación (2026-11-23)
+
+- **Core, migración `0027_artifact_version_base`:**
+  - `artifact_versions.base_version` es la versión sobre la que se armó cada versión, e `includes` son las propuestas
+    aprobadas que contiene.
+  - `sign` marca esas propuestas como `applied` al firmar, no al armar.
+  - `sign` rechaza con `stale_base` una versión que nunca se firmó y se armó sobre otra versión que la vigente.
+    Volver a firmar una versión ya firmada sigue permitido, para ir atrás.
+  - `versions` marca `stale` las versiones en esa situación.
+  - Estado nuevo `undone`: conserva la huella, así que el curador no vuelve a proponer ni a aplicar el cambio.
+  - `markUndone` y `version(kind, n)`.
+- **Paquete:**
+  - `applyAutomatic` corre al final de cada corrida. Aprueba las propuestas de `AUTO_RULES` como `graph-curator:auto`,
+    arma una versión **solo con lo que aprobó el curador** y la firma.
+  - `composeNextVersion` registra la versión base y lo que incluye.
+  - `undoChange` y `npm run graph:undo -- --proposal <id> --by <operador>`:
+    - devuelven los productos que tocó el cambio a como estaban en la versión base, con su ficha, sus relaciones y sus
+      marcas;
+    - firman como la persona;
+    - marcan el cambio `undone`.
+- **Consola:**
+  - el resumen semanal son las propuestas `applied` o `undone` decididas por `graph-curator:auto`;
+  - «Deshacer» corre `graph:undo` como trabajo del host;
+  - una versión `stale` muestra «volver a armar» en vez de «firmar».
+
 ## Fuera de alcance
 
-- Escribir en Catalog o en PrestaShop, o corregir fichas.
-- Publicar una versión sin firma.
+- Escribir en Catalog o en PrestaShop, o corregir fichas. R4 sí guarda los datos que el responsable le responde
+  (Decisión 10), y la ficha se corrige fuera de R4.
+- Publicar una versión sin firma de una persona, salvo la de los cambios automáticos (Decisión 9), firmada por el
+  curador.
 - Que otros agentes consuman propuestas no firmadas.
 - Mover el grafo a Catalog. Queda para después; el esquema del paquete facilita esa migración.
 
