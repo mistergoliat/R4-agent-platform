@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MUSCLE_GROUPS } from './classify.js';
 
 /**
  * ADR-058: the store's product graph, as a signed Artifact of kind `product-graph`. Core stores it opaque; this is its
@@ -22,6 +23,8 @@ export const productGraphSchema = z.object({
     act: z.boolean().nullable(),
     price: z.number().nonnegative().nullable(),
     kind: z.string().max(60).nullable().default(null),
+    // ADR-058 Decision 8: the muscle groups it trains (optional; absent in versions before G2b).
+    muscles: z.array(z.enum(MUSCLE_GROUPS)).max(MUSCLE_GROUPS.length).optional(),
   })),
   view: z.record(productKey, z.record(directedArea, z.array(productKey))),
   unreviewed: z.array(z.tuple([area, productKey, productKey])).default([]),

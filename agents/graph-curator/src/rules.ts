@@ -1,3 +1,4 @@
+import { additionFor, missingMuscles, musclesOf } from './additions.js';
 import type { ProductGraph } from './graph.js';
 
 /**
@@ -67,6 +68,13 @@ export function curate(g: ProductGraph, catalog: CatalogView): Finding[] {
   // 1. New or changed products.
   for (const [key, f] of catalog) {
     if (f === 'not_found' || f === 'failed' || !f.active || g.products[key]) continue;
+    // G2b: classified products get a proposal to add them with their relations; the rest stays a notice.
+    const addition = additionFor(g, catalog, key, f);
+    if (addition) {
+      const subs = addition.relations.filter(([area]) => area === 'sub').length;
+      add('new_or_changed', 'ADD_PRODUCT', key, null, `Agregar ${shortName(f.name)} (${addition.kind}) con ${addition.relations.length - subs} relaciones y ${subs} reemplazos`, { name: f.name, category: f.category, sellable: f.sellable, price: f.price, kind: addition.kind, kindBy: addition.kindBy, peers: addition.peers, relations: addition.relations, reasons: addition.reasons, muscles: addition.muscles });
+      continue;
+    }
     add('new_or_changed', 'NOT_IN_GRAPH', key, null, `Producto activo que no está en el grafo (nuevo, o sin ninguna relación todavía): ${shortName(f.name)}`, { name: f.name, category: f.category, sellable: f.sellable, price: f.price });
   }
   for (const [key, p] of Object.entries(g.products)) {
@@ -93,6 +101,7 @@ export function curate(g: ProductGraph, catalog: CatalogView): Finding[] {
     if (lacks.length) missing.push({ task: 'missing_data', rule: 'SPEC_MISSING', productKey: key, relatedKey: null, summary: `${shortName(f.name)}: falta ${lacks.join(', ')} en la ficha`, evidence: { kind: p.kind, missing: lacks, sellable: f.sellable } });
   }
   out.push(...missing.sort((a, b) => Number(b.evidence.sellable) - Number(a.evidence.sellable)));
+  out.push(...missingMuscles(g, catalog));
 
   // 3. Inconsistencies.
   const sellable = (k: string) => fact(k)?.sellable === true;
@@ -111,7 +120,9 @@ export function curate(g: ProductGraph, catalog: CatalogView): Finding[] {
     for (const s of subs) {
       if (key >= s.key) continue; // each pair once
       const other = g.products[s.key];
-      if (p.kind && other?.kind && p.kind !== other.kind) add('inconsistency', 'SUBSTITUTE_KIND_MISMATCH', key, s.key, `«Lo reemplaza» entre tipos distintos: ${name} (${p.kind}) y ${other.n ?? s.key} (${other.kind})`, { kinds: [p.kind, other.kind] });
+      // Decision 8: different kinds that train a shared specific muscle group are a reasonable substitute.
+      const shared = musclesOf(g, catalog, key).some((m) => m !== 'cuerpo_completo' && musclesOf(g, catalog, s.key).includes(m));
+      if (p.kind && other?.kind && p.kind !== other.kind && !shared) add('inconsistency', 'SUBSTITUTE_KIND_MISMATCH', key, s.key, `«Lo reemplaza» entre tipos distintos: ${name} (${p.kind}) y ${other.n ?? s.key} (${other.kind})`, { kinds: [p.kind, other.kind] });
       const alsoComplement = rel.find((r) => r.key === s.key && COMPLEMENT_AREAS.has(r.area));
       if (alsoComplement) add('inconsistency', 'SUBSTITUTE_AND_COMPLEMENT', key, s.key, `${name} y ${other?.n ?? s.key} son a la vez reemplazo y complemento («${alsoComplement.area}»)`, { area: alsoComplement.area });
     }
