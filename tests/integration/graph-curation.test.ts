@@ -50,7 +50,8 @@ describe('graph curation runs (ADR-058 G2)', () => {
     expect(rows.map((r) => `${r.rule} ${r.product_key}`)).toEqual(['DISCONTINUED P2', 'NOT_IN_GRAPH P3', 'RENAMED P1', 'SET_MUSCLES P1', 'SPEC_MISSING P1']);
     expect(rows[4]).toMatchObject({ fingerprint: 'missing_data|SPEC_MISSING|P1|', evidence: { missing: ['Diámetro de manga', 'Largo de agarre'] } });
     await expect(pool.query(`delete from graph.curation_findings where run_id = $1`, [result.runId])).rejects.toThrow();
-    expect((await artifacts.current('product-graph'))!.version).toBe(1);
+    // Decision 9: the rename and the discontinued product were applied and published by the curator itself.
+    expect(await artifacts.current('product-graph')).toMatchObject({ version: 2, signedBy: 'graph-curator:auto' });
   });
 
   it('a run whose catalog reads mostly fail is stored as failed, without findings', async () => {
