@@ -431,6 +431,8 @@ export class PostgresProductionStore implements ProductionStore {
          join agent_tasks t on t.task_id = h.task_id
         where h.status = 'requested'
           and (h.kind = 'consultation' or (h.kind = 'handoff' and h.payload->>'initiatedBy' = 'agent'))
+          -- (ADR-056 D1) A consultation without pause shares its run with the agent's reply: no notice.
+          and (h.payload->>'blocking') is distinct from 'false'
           and b.profile = any($1::text[])
           and not exists (select 1 from outbound_messages o where o.human_request_id = h.request_id)
         order by h.created_at, h.request_id limit $2`,
