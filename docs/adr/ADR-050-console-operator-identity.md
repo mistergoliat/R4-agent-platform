@@ -134,6 +134,25 @@ Desplegar, revertir, cambiar de lane y cambiar el porcentaje de rollout no son r
 las ofrece, las ejecuta su backend **en el host**, con los scripts que ya existen (`ops/`, `production:sales:control`).
 Es responsabilidad de la consola: R4 no expone esas acciones ni las registra como acciones de un humano verificado.
 
+## Enmienda 1 (2026-11-23) — Un segundo firmante: la mesa de ventas (ADR-048, fase 2)
+
+La mesa de ventas firma la misma aserción (mismo formato, misma cabecera, mismo registro de `jti`) con **su propia
+clave** contra **su propio archivo de operadores**:
+
+- Variables nuevas: `R4_DESK_OPERATOR_KEY` y `R4_DESK_OPERATORS_FILE`. Van juntas, como las de la consola, y cada
+  par funciona sin el otro.
+- Las reglas del archivo son las de la Decisión 2. El archivo lo escribe la mesa (`sync-operators`), y la consola
+  sigue escribiendo solo el suyo, así que ninguna pisa el archivo de la otra.
+- **Tope de la mesa en R4:** su archivo solo puede otorgar `handoff.manage` y `consultation.answer`, es decir tomar,
+  devolver, escribir al contacto y responder consultas. Si otorga otra cosa, `r4-api` no arranca. Una clave de la mesa
+  filtrada no llega más allá, diga lo que diga su archivo.
+- Las dos claves tienen que ser distintas, o `r4-api` no arranca.
+- La identidad es la misma en los dos firmantes (`oidc:<operatorRef>`): una persona que usa la consola y la mesa es un
+  solo humano para R4.
+- **Lectura:** `R4_SERVICE_READER_TOKEN_SHA256` acepta varios hashes separados por coma, uno por lector (la consola y
+  la mesa), para revocar cada uno por separado.
+- **Revocación de la mesa:** quitar sus dos variables (o su hash de lector) y reiniciar `r4-api`.
+
 ## Consecuencias
 
 - La consola puede hacer toda escritura de operador que R4 ya expone, con atribución `oidc:<operatorRef>`.
