@@ -1,7 +1,7 @@
 # ADR-057 — Chat web: la conversación no se pierde, y la propuesta va al carrito
 
 - **Identificador:** `R4-WEB-CONT-01`
-- **Estado:** **Propuesto. No implementado.** Cada fase necesita autorización explícita del owner.
+- **Estado:** **Aceptado** por el owner el 2026-11-23 («Dejemos cerrado el ADR056 y 057»). Fases C1 a C4 autorizadas ese día; C5 (aviso por correo) espera su autorización.
 - **Fecha:** 2026-11-23
 - **Mandato:** owner, 2026-11-23. Al probar la mesa, vio que al cerrar la ventana del chat web el cliente pierde la
   conversación, aunque la mesa la sigue mostrando. Pidió ver cómo se resolvería («dibújalo en el lienzo») y definió:
@@ -132,12 +132,14 @@ Hechos verificados:
 C1 y C2 no necesitan infraestructura nueva. C4 usa el envío que ya trae el servicio de Cotizaciones. C5 es el único que
 suma un envío de correo en R4.
 
-## Decisiones abiertas del owner
+## Decisiones del owner (2026-11-23)
 
-1. Cuánto se recuerda la conversación: 7 días propuestos, alineados con la ventana de venta asistida de ADR-048.
-2. La cuenta remitente de los correos (la del servicio de Cotizaciones) y si se enciende su envío.
-3. Si el aviso también puede ir por WhatsApp a un número dejado en el chat web, con plantilla de Meta.
-4. Si «Terminar conversación» se muestra siempre o solo cuando una persona se unió al chat.
+Al cerrar el ADR, el owner aceptó las recomendaciones:
+
+1. **La conversación se recuerda 7 días** desde la última actividad.
+2. **La cuenta remitente es la del servicio de Cotizaciones.** Encender su envío (Gmail) necesita las credenciales de esa cuenta, que configura el owner en ese servicio. Hasta entonces, C4 se prueba con un remitente de pruebas en QA.
+3. **El aviso por WhatsApp a un número dejado en el chat web queda para después.**
+4. **«Terminar conversación» se muestra siempre**, no solo cuando una persona se unió.
 
 ## Fuera de alcance
 
