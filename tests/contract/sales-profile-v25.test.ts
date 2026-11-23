@@ -123,6 +123,7 @@ describe('B. definition v25 = v24 with the consultation rule sharpened and the s
     expect(rule).toContain('open a new consultation with the team\'s earlier answer and the customer\'s new facts; never draw the conclusion yourself');
     expect(rule).toContain('Never give your own technical, safety or installation judgment');
     expect(rule).toContain('Never offer or mention a service');
+    expect(rule).toContain('A new question gets its own consultation even while another one is open');
     expect(rule).toContain('The customer is already talking to PesasChile: never tell them to contact, ask or check with PesasChile');
   });
 
