@@ -869,7 +869,18 @@ export class PostgresProductionStore implements ProductionStore {
       bindingId: row.binding_id as string, channel: row.channel as string, taskId: (row.task_id as string | null) ?? null, taskStatus: (row.task_status as string | null) ?? null,
       bindingStatus: row.status as 'open' | 'closed', autonomy: row.autonomy as 'autonomous' | 'excluded', humanOwned: row.human_owned === true,
       lastInboundAt: isoOrNull(row.last_inbound_at), createdAt: iso(row.created_at),
+      presence: row.presence ? { state: row.presence as 'present' | 'away', since: iso(row.presence_at) } : null,
     }));
+  }
+
+  async recordPresence(conversationKey: string, state: 'present' | 'away', at: string): Promise<number> {
+    const r = await query(
+      this.#pool,
+      `update channel_conversation_bindings set presence = $2, presence_at = $3::timestamptz
+        where conversation_key = $1 and status = 'open' and (presence_at is null or presence_at < $3::timestamptz)`,
+      [conversationKey, state, at],
+    );
+    return r.rowCount ?? 0;
   }
 
   async attention(): Promise<ProductionAttention> {

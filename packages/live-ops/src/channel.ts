@@ -70,10 +70,22 @@ export interface RejectedInbound {
   readonly reason: string;
 }
 
+/**
+ * (ADR-057 D3) The contact opened or left the conversation (for example, the web chat window). Only a channel that can
+ * tell reports it; it never carries content. Applied only if newer than what is stored.
+ */
+export interface ContactPresenceEvent {
+  readonly accountRef: string;
+  readonly conversationRef: string;
+  readonly state: 'present' | 'away';
+  readonly occurredAt: string;
+}
+
 export interface ParsedNotification {
   readonly inbound: readonly CanonicalInbound[];
   readonly statuses: readonly ProviderStatusEvent[];
   readonly rejected: readonly RejectedInbound[];
+  readonly presence?: readonly ContactPresenceEvent[];
 }
 
 export type HeaderBag = Readonly<Record<string, string | undefined>>;

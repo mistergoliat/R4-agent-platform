@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type {
   CanonicalInbound,
+  ContactPresenceEvent,
   HeaderBag,
   InboundChannelAdapter,
   OutboundChannelAdapter,
@@ -150,6 +151,7 @@ export class WebInboundAdapter implements InboundChannelAdapter {
   parse(rawBody: string): ParsedNotification {
     const inbound: CanonicalInbound[] = [];
     const rejected: RejectedInbound[] = [];
+    const presence: ContactPresenceEvent[] = [];
     let payload: unknown;
     try {
       payload = JSON.parse(rawBody);
@@ -168,6 +170,13 @@ export class WebInboundAdapter implements InboundChannelAdapter {
         continue;
       }
       const occurred = typeof e.occurredAt === 'string' ? new Date(e.occurredAt) : null;
+      // (ADR-057 D3) The visitor opened the chat or left it: a hint for the desk, never an input of the conversation.
+      if (e.type === 'presence') {
+        if (typeof e.conversationRef !== 'string' || !REF.test(e.conversationRef) || (e.state !== 'present' && e.state !== 'away')) rejected.push({ providerEventId: id, reason: 'invalid_event' });
+        else if (!occurred || Number.isNaN(occurred.getTime())) rejected.push({ providerEventId: id, reason: 'invalid_timestamp' });
+        else presence.push({ accountRef: this.#config.accountRef, conversationRef: e.conversationRef, state: e.state, occurredAt: occurred.toISOString() });
+        continue;
+      }
       const text = typeof e.text === 'string' ? e.text.trim() : '';
       if (e.type !== 'message' || typeof e.conversationRef !== 'string' || !REF.test(e.conversationRef)) rejected.push({ providerEventId: id, reason: 'invalid_event' });
       else if (!occurred || Number.isNaN(occurred.getTime())) rejected.push({ providerEventId: id, reason: 'invalid_timestamp' });
@@ -181,7 +190,7 @@ export class WebInboundAdapter implements InboundChannelAdapter {
         });
       }
     }
-    return { inbound, statuses: [], rejected };
+    return { inbound, statuses: [], rejected, ...(presence.length ? { presence } : {}) };
   }
 }
 

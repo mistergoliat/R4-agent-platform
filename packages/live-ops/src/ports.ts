@@ -298,6 +298,8 @@ export interface ConversationSummary {
   readonly humanOwned: boolean;
   readonly lastInboundAt: string | null;
   readonly createdAt: string;
+  /** (ADR-057 D3) Whether the contact is in the conversation now, as the channel last reported; null: the channel never said. */
+  readonly presence: { readonly state: 'present' | 'away'; readonly since: string } | null;
 }
 
 export interface ProductionAttention {
@@ -454,6 +456,8 @@ export interface ProductionStore {
   /** (M3) The earlier tasks of `taskId`'s channel conversation (same lineage as `earlierConversationTurns`), newest first, at most `maxTasks`. */
   earlierConversationTasks(taskId: string, maxTasks: number): Promise<string[]>;
   conversations(limit: number): Promise<ConversationSummary[]>;
+  /** (ADR-057 D3) Records the contact's presence on the open binding(s) of a conversation, only if newer. Returns rows changed. */
+  recordPresence(conversationKey: string, state: 'present' | 'away', at: string): Promise<number>;
   attention(): Promise<ProductionAttention>;
   metrics(): Promise<ProductionMetrics>;
 }

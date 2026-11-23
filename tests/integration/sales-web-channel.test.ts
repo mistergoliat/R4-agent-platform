@@ -140,6 +140,28 @@ describe('web channel: edge → web gateway → sales-web@1 → edge', () => {
     expect(delivered.filter((d) => d.body.from === undefined).map((d) => d.body.author ?? null)).toEqual([null]);
   });
 
+  it('(ADR-057 D3) presence: the chat says the visitor left or came back; the conversation shows it, an older report never wins, nothing becomes an input', async () => {
+    const store = new PostgresProductionStore(pool);
+    const inputsBefore = (await pool.query('select 1 from task_inputs')).rowCount;
+    const presence = (eventId: string, state: string, occurredAt: string) => ({ type: 'presence', eventId, accountRef: 'shop-test', conversationRef: 'session-0001', state, occurredAt });
+    const t0 = Date.now();
+    const at = (ms: number) => new Date(t0 + ms).toISOString();
+    expect(await inbound([presence('evt-pres-0001', 'away', at(0))])).toMatchObject({ status: 200, body: { presence: 1, ingested: 0 } });
+    const summary = async () => (await store.conversations(10)).find((c) => c.channel === 'web')!.presence;
+    expect(await summary()).toEqual({ state: 'away', since: at(0) });
+    // An older report (out of order) is ignored; a newer one wins.
+    expect(await inbound([presence('evt-pres-0002', 'present', at(-5000))])).toMatchObject({ body: { presence: 0 } });
+    expect(await summary()).toEqual({ state: 'away', since: at(0) });
+    await inbound([presence('evt-pres-0003', 'present', at(1000))]);
+    expect(await summary()).toEqual({ state: 'present', since: at(1000) });
+    // Bad state, foreign account: rejected, never silently dropped; no input, no run.
+    const bad = await inbound([presence('evt-pres-0004', 'typing', at(2000)), { ...presence('evt-pres-0005', 'away', at(2000)), accountRef: 'other' }]);
+    expect(bad).toMatchObject({ status: 200, body: { rejected: 2 } });
+    expect((await pool.query('select 1 from task_inputs')).rowCount).toBe(inputsBefore);
+    // An unknown conversation changes nothing.
+    expect(await inbound([{ ...presence('evt-pres-0006', 'away', at(3000)), conversationRef: 'session-9999' }])).toMatchObject({ body: { presence: 0 } });
+  });
+
   it('a repeated event is a duplicate (no new input); a forged or stale signature is refused before anything is stored', async () => {
     const inputsBefore = (await pool.query('select 1 from task_inputs')).rowCount;
     expect(await inbound([message('evt-web-0001', '¿tiene stock esta barra?')])).toMatchObject({ status: 200, body: { duplicates: 1, ingested: 0 } });
