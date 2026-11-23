@@ -171,7 +171,8 @@ también sirve para Instagram o Facebook (ADR-053).
 
 La misma regla vale para la recuperación de entrantes. Un entrante que quedó `received` (el gateway cayó antes de
 asentarlo, o falló la percepción de una imagen) lo retoma solo un gateway de su canal (`unsettledInbound(..., channels)`).
-Si lo retomara otro, lo ingeriría con el perfil de su propio agente.
+Si lo retomara otro, lo ingeriría con el perfil de su propio agente. Lo mismo pasa con el aviso de falla de un run
+(`materializeRunFailureFallbacks(..., channels)`): cada canal tiene su propio texto, y solo lo escribe el gateway de ese canal.
 
 ## Fuera de alcance
 

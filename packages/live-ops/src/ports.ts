@@ -424,7 +424,7 @@ export interface ProductionStore {
    * non-retryable model failure, or an R4-J4-R7-1 contingency).
    * At most one per handoff, by unique constraint.
    */
-  materializeRunFailureFallbacks(command: { readonly text: string; readonly limit: number }): Promise<OutboundRecord[]>;
+  materializeRunFailureFallbacks(command: { readonly text: string; readonly channels: readonly string[]; readonly limit: number }): Promise<OutboundRecord[]>;
   /**
    * (ADR-041 extension, F-ADV-2) Creates the one platform notice outbound (`text`) of every still-requested human
    * request the AGENT opened (a consultation, or a handoff with initiatedBy=agent) in a conversation bound to one of
