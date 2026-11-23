@@ -510,9 +510,12 @@ export class PostgresProductionStore implements ProductionStore {
 
   claimNextOutbound(command: ClaimOutboundCommand): Promise<DispatchClaim | null> {
     return withTransaction(this.#pool, async (c) => {
+      // Only this dispatcher's channels: another gateway sharing the database sends the rest (never rejected here).
       const row = (await c.query<Row>(
-        `select * from outbound_messages where status = 'pending' and (next_attempt_at is null or next_attempt_at <= clock_timestamp())
+        `select * from outbound_messages where status = 'pending' and channel = any($1::text[])
+          and (next_attempt_at is null or next_attempt_at <= clock_timestamp())
           order by created_at, outbound_id limit 1 for update skip locked`,
+        [command.channels],
       )).rows[0];
       if (!row) return null;
       const outbound = outboundFromRow(row);

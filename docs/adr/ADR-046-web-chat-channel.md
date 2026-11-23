@@ -159,6 +159,16 @@ Las versiones 7 a 16 se probaron en ramas experimentales (instancia aislada F2 y
 
 Siguen sin escrituras: ninguna de estas versiones cotiza, ni crea carritos o pedidos.
 
+## Un gateway por canal sobre la misma base (2026-11-23)
+
+El owner decidió pasar el chat web a la base de producción, junto a WhatsApp, con su propio gateway y worker. Antes de
+hacerlo hubo que corregir un error: el despachador tomaba cualquier outbound pendiente, sin mirar el canal. Si le tocaba
+uno de otro canal, lo rechazaba (`no_channel_adapter`) y ese mensaje no se enviaba nunca.
+
+Ahora cada despachador toma solo los outbounds de los canales para los que tiene un adapter
+(`ClaimOutboundCommand.channels`). Los demás quedan pendientes para el gateway de su canal. Es una regla genérica:
+también sirve para Instagram o Facebook (ADR-053).
+
 ## Fuera de alcance
 
 - **Excluido:** Quote V2, Checkout, CIA, Customer Profile, escrituras, el botón «Continuar por WhatsApp» y cambios en
