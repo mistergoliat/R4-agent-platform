@@ -36,6 +36,18 @@ const items = (r: ModelRequest, section: keyof ReturnType<typeof compiledOf>['se
 const irreversible = (calls = handlerCalls()) => ({ calls, capabilities: actionCapabilities(platform.pool, { riskClass: 'IRREVERSIBLE_WRITE', calls }) });
 
 describe('consultation', () => {
+  it('(ADR-056 D2) carries the suggested answers to the human request; a request without them has none', async () => {
+    const withOptions = await createActionTask(platform);
+    const w = await worker({ script: sequence([() => ({ type: 'structured', data: { type: 'request_consultation', question: '¿Factura a 30 días?', contextRefs: [], options: ['Sí, con RUT y giro', 'Solo pago contado'] } })]) });
+    await w.platform.worker.runOnce();
+    expect((await platform.temporal.inspect(withOptions)).humans[0]).toMatchObject({ kind: 'consultation', payload: { question: '¿Factura a 30 días?', options: ['Sí, con RUT y giro', 'Solo pago contado'] } });
+
+    const plain = await createActionTask(platform);
+    const w2 = await worker({ script: sequence([consult('Which option?')]) });
+    await w2.platform.worker.runOnce();
+    expect((await platform.temporal.inspect(plain)).humans[0]!.payload).not.toHaveProperty('options');
+  });
+
   it('asks a human while keeping agent ownership; the answer is durable, idempotent and reaches the next run with the question', async () => {
     const taskId = await createActionTask(platform);
     const w = await worker({ script: sequence([consult('Which option should we use?')]) });

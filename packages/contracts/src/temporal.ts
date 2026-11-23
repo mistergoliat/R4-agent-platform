@@ -40,6 +40,11 @@ export const consultationDecisionSchema = z.strictObject({
   contextRefs: uniqueArray(uuidSchema).max(100),
   /** Requested deadline; the platform schedules its expiry on the temporal clock. */
   expiresAt: timestampSchema.optional(),
+  /**
+   * (ADR-056 D2) 2 to 4 short suggested answers, only when the question has closed answers. A human may pick one or
+   * write their own; a suggestion authorizes nothing and reaches the agent as information, like any answer.
+   */
+  options: uniqueArray(z.string().trim().min(1).max(60)).min(2).max(4).optional(),
 });
 export const handoffDecisionSchema = z.strictObject({
   type: z.literal('request_handoff'),
@@ -181,7 +186,7 @@ const humanBase = {
   correlationId: correlationIdSchema,
 };
 export const humanRequestSchema = z.discriminatedUnion('kind', [
-  z.strictObject({ ...humanBase, kind: z.literal('consultation'), payload: z.strictObject({ question: z.string(), contextRefs: z.array(uuidSchema) }) }),
+  z.strictObject({ ...humanBase, kind: z.literal('consultation'), payload: z.strictObject({ question: z.string(), contextRefs: z.array(uuidSchema), options: z.array(z.string()).optional() }) }),
   z.strictObject({
     ...humanBase,
     kind: z.literal('handoff'),

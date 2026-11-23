@@ -137,6 +137,18 @@ describe('the model can only ask', () => {
     expect(agentDecisionSchema.safeParse({ type: 'manage_goal', change: { operation: 'reopen', goalId: '0190a0a0-0000-7000-8000-000000000000' } }).success).toBe(false);
   });
 
+  it('(ADR-056 D2) suggested answers: 2 to 4 distinct short strings, nothing else', () => {
+    const ask = (options: unknown) => agentDecisionSchema.safeParse({ type: 'request_consultation', question: 'q', contextRefs: [], options }).success;
+    expect(ask(['Sí, con RUT y giro', 'Solo pago contado'])).toBe(true);
+    expect(ask(['a', 'b', 'c', 'd'])).toBe(true);
+    expect(ask(['solo una'])).toBe(false);
+    expect(ask(['a', 'b', 'c', 'd', 'e'])).toBe(false);
+    expect(ask(['a', 'a'])).toBe(false);
+    expect(ask(['a', 'x'.repeat(61)])).toBe(false);
+    expect(ask(['a', ' '])).toBe(false);
+    expect(ask([{ label: 'a', approve: true }, 'b'])).toBe(false);
+  });
+
   it('goal changes are validated against the task that owns the lease, and are not side effects', () => {
     expect(temporalRuntime).toMatch(/target\.taskId !== task\.taskId/);
     expect(temporalRuntime).toMatch(/lockOwnedExecution\(uow, token\)/);

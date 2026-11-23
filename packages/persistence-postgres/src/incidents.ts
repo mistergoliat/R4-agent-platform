@@ -15,7 +15,7 @@ export const UNANSWERED_AFTER_MS = 10 * 60_000;
 export const SLOW_REPLY_MS = 60_000;
 export const MAX_EXAMPLE_TASKS = 5;
 
-export const INCIDENT_DETECTORS = ['customer_unanswered', 'run_failed', 'platform_handoff', 'step_error', 'outbound_problem', 'inbound_problem', 'slow_reply'] as const;
+export const INCIDENT_DETECTORS = ['customer_unanswered', 'run_failed', 'platform_handoff', 'step_error', 'outbound_problem', 'inbound_problem', 'slow_reply', 'consultation_waiting'] as const;
 export type IncidentDetector = (typeof INCIDENT_DETECTORS)[number];
 export const INCIDENT_SEVERITIES = ['critical', 'high', 'medium', 'low', 'info'] as const;
 export type IncidentSeverity = (typeof INCIDENT_SEVERITIES)[number];
@@ -80,6 +80,8 @@ export function incidentSeverity(detector: IncidentDetector, code: string): Inci
       return code.startsWith('failed/') ? 'high' : 'info';
     case 'slow_reply':
       return 'medium';
+    case 'consultation_waiting':
+      return 'high';
   }
 }
 
@@ -151,6 +153,11 @@ export class PostgresIncidents {
                 case i.status when 'failed' then 'failed/' else '' end || coalesce(i.failure_code, 'unspecified'), i.task_id, i.received_at
            from inbound_events i left join agent_tasks t on t.task_id = i.task_id
           where i.status in ('failed', 'rejected') and i.received_at >= ${since}
+         union all
+         -- (ADR-056 D5) A consultation the agent asked that no human answered within the SLA (same 10 minutes).
+         select 'consultation_waiting', t.agent_id, t.agent_version, 'unanswered_over_${UNANSWERED_AFTER_MS / 60_000}_min', h.task_id, h.created_at
+           from human_requests h join agent_tasks t on t.task_id = h.task_id
+          where h.kind = 'consultation' and h.status = 'requested' and h.created_at >= ${since} and h.created_at <= $2::timestamptz
          union all
          select 'slow_reply', r.agent_id, r.agent_version, 'customer_turn_over_${SLOW_REPLY_MS / 1000}s', turns.task_id, turns.at
            from (${customerTurns(since)}) turns join agent_runs r on r.run_id = turns.run_id
