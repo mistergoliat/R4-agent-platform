@@ -16,7 +16,7 @@ import {
 import type { AgentRegistry } from '@r4/agent-registry';
 import type { TaskRuntime, TemporalRuntime } from '@r4/task-runtime';
 import type { ProductionOperator } from '@r4/live-ops';
-import { INCIDENT_SIGNATURE, type PostgresAgentDrafts, type PostgresConsoleReads, type PostgresIncidents, type PostgresInsights, type PostgresKnowledge } from '@r4/persistence-postgres';
+import { INCIDENT_SIGNATURE, type PostgresAgentDrafts, type PostgresArtifacts, type PostgresConsoleReads, type PostgresIncidents, type PostgresInsights, type PostgresKnowledge } from '@r4/persistence-postgres';
 import { resolveCorrelationId, runWithCorrelation } from '@r4/observability';
 import { toErrorResponse } from './errors.js';
 import { unauthenticatedPrincipalResolver, type PrincipalResolver } from './principal.js';
@@ -56,6 +56,8 @@ export interface AppDependencies {
   readonly knowledge?: PostgresKnowledge;
   /** (ADR-054) Agent drafts (read; signed operator writes with agent.draft). A draft never runs in production. */
   readonly drafts?: PostgresAgentDrafts;
+  /** (ADR-058) Signed artifacts, opaque content (read: the current version and its signatures). */
+  readonly artifacts?: PostgresArtifacts;
   /** ADR-050: 'disabled' refuses unauthenticated callers on POST /v1/tasks and /v1/tasks/:id/inputs. Default 'enabled'. */
   readonly anonymousWrites?: 'enabled' | 'disabled';
 }
@@ -389,6 +391,26 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
           const operator = human(request);
           const { entryId, to, note } = parse(transitionBody, request.body ?? undefined, 'body');
           return { entry: await knowledge.transition(entryId, to, note, operator, request.id) };
+        }),
+      );
+    }
+
+    if (deps.artifacts) {
+      // ADR-058: signed artifacts (opaque content: Core never interprets it). Reads only; signing is a console action (G3).
+      const artifacts = deps.artifacts;
+      const kindParams = z.strictObject({ kind: z.string().regex(/^[a-z][a-z0-9_.-]{0,63}$/) });
+      app.get('/v1/artifacts/:kind/current', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          parse(z.strictObject({}), request.query, 'query');
+          return { artifact: await artifacts.current(parse(kindParams, request.params, 'path').kind) };
+        }),
+      );
+      app.get('/v1/artifacts/:kind/signatures', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          parse(z.strictObject({}), request.query, 'query');
+          return { signatures: await artifacts.signatures(parse(kindParams, request.params, 'path').kind) };
         }),
       );
     }

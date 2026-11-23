@@ -82,6 +82,18 @@ export class PostgresArtifacts {
     });
   }
 
+  /** Every signature of a kind, newest first (the first one is the current version), with its version, never the content. */
+  async signatures(kind: string): Promise<(ArtifactSignature & ArtifactVersion)[]> {
+    const r = await query<Row>(
+      this.#pool,
+      `select v.kind, v.version, v.content_sha256, v.note, v.created_by, v.created_at, s.replaces_version, s.signed_by, s.signed_at, s.note as signature_note
+         from artifact_signatures s join artifact_versions v on v.kind = s.kind and v.version = s.version
+        where s.kind = $1 order by s.signed_at desc, s.signature_id desc limit 200`,
+      [kind],
+    );
+    return r.rows.map((row) => ({ ...versionOf(row), note: (row.signature_note as string | null) ?? (row.note as string | null) ?? null, replacesVersion: (row.replaces_version as number | null) ?? null, signedBy: row.signed_by as string, signedAt: iso(row.signed_at) }));
+  }
+
   /** The version signed last, with its content; null: nothing signed for this kind. */
   async current(kind: string): Promise<SignedArtifact | null> {
     const r = (await query<Row>(
