@@ -71,7 +71,7 @@ describe('AgentDecision protocol', () => {
     // observation references, and goal changes by goal id. `until`/`expiresAt` are
     // requested deadlines the platform validates, never trusted timestamps.
     expect([...names].sort()).toEqual([
-      'arguments', 'capabilityId', 'change', 'condition', 'content', 'contextRefs', 'data', 'description', 'evidence', 'evidenceRefs', 'expiresAt',
+      'arguments', 'blocking', 'capabilityId', 'change', 'condition', 'content', 'contextRefs', 'data', 'description', 'evidence', 'evidenceRefs', 'expiresAt',
       'goalId', 'kind', 'makeCurrent', 'operation', 'options', 'parentGoalId', 'question', 'reason', 'result', 'successCriteria', 'summary', 'type', 'until',
     ]);
     // No identity, ownership, scheduling or record-keeping field is model-writable.

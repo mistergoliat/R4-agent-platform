@@ -209,6 +209,20 @@ export class PostgresTemporalPersistence implements TemporalPersistence {
     return r.rowCount !== 0;
   }
 
+  async hasUnseenConsultationOutcome(taskId: string, snapshotId: string | null): Promise<boolean> {
+    const r = await this.client.query(
+      `select 1 from temporal_events e join human_requests h on h.request_id = e.entity_id
+        where e.task_id = $1 and h.kind = 'consultation' and h.payload->>'blocking' = 'false'
+          and ((e.event_type = 'consultation.answered' and not exists (
+                 select 1 from context_snapshot_items c where c.snapshot_id = $2 and c.item_id = 'human_response:' || e.event_id::text))
+            or (e.event_type = 'consultation.expired'
+                and e.occurred_at > coalesce((select s.created_at from context_snapshots s where s.snapshot_id = $2), '-infinity'::timestamptz)))
+        limit 1`,
+      [taskId, snapshotId],
+    );
+    return r.rowCount !== 0;
+  }
+
   async turnObligation(taskId: string, snapshotId: string | null): Promise<TurnObligation> {
     // `seen` is the hasUnseenInput rule (evaluated). Only `included` is delivery: a reply covers what its snapshot
     // carried unless its outbound was discarded, and an input counts as received once a decision came from a snapshot carrying it.

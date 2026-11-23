@@ -120,6 +120,11 @@ export interface TemporalPersistence {
    * evaluated is the right question: a wake for an excluded input would recompile, exclude it and wake again.
    */
   hasUnseenInput(taskId: string, snapshotId: string | null): Promise<boolean>;
+  /**
+   * (ADR-056 D1) Whether a non-pausing consultation of the task was answered after what the given snapshot evaluated
+   * (its answer is not in it), or expired after the snapshot was taken.
+   */
+  hasUnseenConsultationOutcome(taskId: string, snapshotId: string | null): Promise<boolean>;
   /** (R4-J4-R7-2) The task's conversational obligation against the snapshot of a closing decision. */
   turnObligation(taskId: string, snapshotId: string | null): Promise<TurnObligation>;
 

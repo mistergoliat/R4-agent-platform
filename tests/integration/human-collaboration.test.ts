@@ -104,6 +104,78 @@ describe('consultation', () => {
   });
 });
 
+describe('(ADR-056 D1) consultation without pause', () => {
+  const ask = (question: string, extra: Record<string, unknown> = {}) => ({ type: 'structured' as const, data: { type: 'request_consultation', question, contextRefs: [], blocking: false, ...extra } });
+  const kinds = async (taskId: string) => (await waitRows(platform.pool, taskId)).map((w) => `${w.kind}:${w.status}:${w.resolution ?? '-'}`);
+
+  it('the run goes on: the agent answers the participant and waits for input; the team answer wakes it, and the next run sees question and answer', async () => {
+    const taskId = await createActionTask(platform);
+    const first = await worker({ script: sequence([ask('¿Emitimos factura a 30 días?'), respond('Lo confirmo con el equipo y te respondo aquí. Mientras tanto, ¿a qué comuna va el despacho?'), waitInput()]) });
+    await first.platform.worker.runOnce();
+    const { humans } = await platform.temporal.inspect(taskId);
+    expect(humans).toEqual([expect.objectContaining({ kind: 'consultation', status: 'requested', payload: { question: '¿Emitimos factura a 30 días?', contextRefs: [], blocking: false } })]);
+    expect((await platform.tasks.getTask(taskId)).task.status).toBe('waiting');
+    expect(await kinds(taskId)).toEqual(['WAIT_FOR_INPUT:waiting:-']); // no WAIT_FOR_HUMAN: the conversation is not paused
+
+    // The participant writes meanwhile: an input wakes it as always, and the question is still pending in its context.
+    await platform.temporal.submitInput(taskId, input('comuna', 'Va a Ñuñoa'), PARTICIPANT, 'nb-1');
+    const seen: ModelRequest[] = [];
+    const second = await worker({ script: sequence([(r) => (seen.push(r), respond('Perfecto, despacho a Ñuñoa.')), waitInput()]) });
+    await second.platform.worker.runOnce();
+    const pending = items(seen[0]!, 'conversation').find((i) => JSON.stringify(i.content).includes('¿Emitimos factura a 30 días?'))!;
+    expect(pending.content).toMatchObject({ interaction: { kind: 'consultation', status: 'requested' } });
+
+    // The team answers: the waiting task wakes ('human'), and the next run carries the answer.
+    await platform.temporal.respondHuman(humans[0]!.requestId, { responseKey: 'nb-answer', outcome: 'answer', content: 'Sí, con RUT y giro.' }, HUMAN);
+    expect((await platform.tasks.getTask(taskId)).task.status).toBe('running');
+    expect((await kinds(taskId)).at(-1)).toBe('WAIT_FOR_INPUT:completed:human');
+    const after: ModelRequest[] = [];
+    const third = await worker({ script: sequence([(r) => (after.push(r), respond('Confirmado por el equipo: emitimos factura a 30 días con RUT y giro.')), waitInput()]) });
+    await third.platform.worker.runOnce();
+    const conversation = JSON.stringify(items(after[0]!, 'conversation').map((i) => i.content));
+    expect(conversation).toContain('Sí, con RUT y giro.');
+    // Seen once: the wait after it is not woken again by the same answer.
+    expect((await platform.tasks.getTask(taskId)).task.status).toBe('waiting');
+  });
+
+  it('an answer that lands while a run is deciding is never stranded: the run\'s wait is woken', async () => {
+    const taskId = await createActionTask(platform);
+    await (await worker({ script: sequence([ask('¿Hay stock en bodega?'), respond('Lo consulto y te aviso.'), waitInput()]) })).platform.worker.runOnce();
+    const requestId = (await platform.temporal.inspect(taskId)).humans[0]!.requestId;
+    await platform.temporal.submitInput(taskId, input('again', '¿y el despacho?'), PARTICIPANT, 'nb-2');
+    let answering: Promise<unknown> | null = null;
+    const run = await worker({ script: sequence([
+      // The team answers while this run is between its context and its wait (the answer is not in its snapshot).
+      (r) => ((answering = platform.temporal.respondHuman(requestId, { responseKey: 'mid-run', outcome: 'answer', content: 'Sí, quedan 4.' }, HUMAN)), respond('El despacho sale mañana.')),
+      waitInput(),
+    ]) });
+    await run.platform.worker.runOnce();
+    await answering;
+    expect((await platform.tasks.getTask(taskId)).task.status).toBe('running');
+    expect((await kinds(taskId)).at(-1)).toMatch(/^WAIT_FOR_INPUT:completed:human$/);
+  });
+
+  it('expiry wakes the waiting task', async () => {
+    const taskId = await createActionTask(platform);
+    const expiresAt = new Date(Date.now() + 3_600_000).toISOString();
+    await (await worker({ script: sequence([ask('¿Instalan en regiones?', { expiresAt }), respond('Lo confirmo con el equipo.'), waitInput()]) })).platform.worker.runOnce();
+    await setTemporalOffset(platform.pool, 2 * 3_600_000);
+    expect(await drain(testScheduler(platform.pool).scheduler)).toBeGreaterThanOrEqual(1);
+    expect((await platform.temporal.inspect(taskId)).humans[0]!.status).toBe('expired');
+    expect((await platform.tasks.getTask(taskId)).task.status).toBe('running');
+    expect((await kinds(taskId)).at(-1)).toBe('WAIT_FOR_INPUT:completed:human');
+  });
+
+  it('a human who took the conversation keeps it: the answer to a non-pausing consultation does not wake it', async () => {
+    const held = await createActionTask(platform);
+    await (await worker({ script: sequence([ask('¿Color negro?'), respond('Lo reviso.'), waitInput()]) })).platform.worker.runOnce();
+    const consultation = (await platform.temporal.inspect(held)).humans.find((h) => h.kind === 'consultation')!;
+    await platform.temporal.takeOver(held, { responseKey: 'take', note: 'Lo atiendo yo.' }, HUMAN);
+    await platform.temporal.respondHuman(consultation.requestId, { responseKey: 'late', outcome: 'answer', content: 'Sí.' }, HUMAN);
+    expect((await platform.tasks.getTask(held)).task.status).toBe('blocked');
+  });
+});
+
 function decideConsultation(expiresAt: string) {
   return { type: 'structured' as const, data: { type: 'request_consultation', question: 'Can you confirm by the deadline?', contextRefs: [], expiresAt } };
 }

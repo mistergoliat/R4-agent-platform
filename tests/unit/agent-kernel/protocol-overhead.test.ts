@@ -19,7 +19,8 @@ import { AGENT_DECISION_JSON_SCHEMA, DECISION_PROTOCOL, PROTOCOL_INSTRUCTIONS } 
  * line — sent to the requester, ends the turn, work before it, no wait after
  * it (+149 chars: 3 363); the schema is unchanged (6 216).
  * ADR-056 D2 adds the optional `options` of request_consultation (2-4 strings of
- * at most 60 chars): schema +37 chars; the instructions are unchanged.
+ * at most 60 chars): schema +37 chars; ADR-056 D1 adds `blocking: false` (+44 chars).
+ * The instructions are unchanged.
  */
 describe('decision protocol overhead', () => {
   const instructions = PROTOCOL_INSTRUCTIONS;
@@ -33,7 +34,7 @@ describe('decision protocol overhead', () => {
   it('stays within its accounted size', () => {
     expect(instructions.length).toBeLessThanOrEqual(3_400);
     expect(schema.length).toBeLessThanOrEqual(6_400);
-    expect(instructions.length + schema.length).toBeLessThanOrEqual(9_700);
+    expect(instructions.length + schema.length).toBeLessThanOrEqual(9_750);
   });
 
   it('attributes the R4-E share explicitly', () => {
