@@ -143,6 +143,32 @@ pregunta al responsable. Por ejemplo: si una barra calza en un rack, cuando falt
    - el vendedor y el product manager dados de alta como operadores en la consola;
    - un área técnica o de producto, con el product manager como responsable.
 
+## Decisión 8 — Grupos musculares de cada producto
+
+Decisión del owner del 2026-11-23: el grafo suma qué parte del cuerpo trabaja cada producto, junto con G2b.
+
+1. **Es un atributo del producto, no una relación.** Cada producto tiene cero o más grupos de una lista cerrada:
+   - piernas, glúteos, espalda, pecho, hombros, brazos y core;
+   - cuerpo completo y cardio.
+
+   Un accesorio o un producto de orden (collarines, racks de discos, pisos) no tiene grupo: lo hereda de lo que
+   acompaña.
+2. **Por qué:**
+   - **Armar un gimnasio por objetivo.** Pesín puede responder «quiero entrenar piernas y espalda en casa» y revisar
+     que un armado cubra el cuerpo completo.
+   - **«Lo reemplaza» con sentido.** Un reemplazo de otro tipo que trabaja los mismos grupos es razonable: por
+     ejemplo, un banco de hip thrust y una máquina de extensión de cadera. El curador deja de marcarlo como
+     inconsistente y marca solo los reemplazos que no comparten ningún grupo.
+3. **De dónde sale:** hoy no está en el catálogo. Ninguna ficha declara «músculos trabajados», y solo hay unas pocas
+   categorías: «Bancos Abdominales», «Abdominales» y «Glute Bands».
+   - **Primero las reglas**, por tipo de producto y nombre. Por ejemplo, «Bíceps / Tríceps» → brazos, «Hip Thrust» →
+     glúteos y piernas, una cinta de correr → cardio.
+   - **El modelo** clasifica lo que ninguna regla resuelve, desde G4 y siempre citando el dato de la ficha o el nombre.
+   - Cada asignación es una **propuesta** que el owner aprueba y firma en la consola, como el resto del grafo
+     (Decisión 4).
+4. **Esquema:** `products[P].muscles`, opcional, con valores de la lista cerrada; el esquema valida la lista. Las
+   versiones sin el campo siguen siendo válidas.
+
 ## Privacidad y repositorio público
 
 - El grafo no tiene datos personales: son productos, fichas y relaciones públicas de la tienda.
@@ -156,6 +182,7 @@ pregunta al responsable. Por ejemplo: si una barra calza en un rack, cuando falt
 | **G0** | Este ADR | No |
 | **G1** | `Artifact` mínimo en Core. Paquete `graph-curator` con el esquema y la lectura de la versión firmada. Importar el grafo actual como **versión 1, firmada por el owner como línea base** y marcando las relaciones aún sin revisar | No |
 | **G2** | El curador con reglas: productos nuevos o cambiados, datos faltantes e inconsistencias. Corre a pedido | No |
+| **G2b** | Pasar al paquete las reglas de compatibilidad de la revisión del grafo: propone las relaciones y los reemplazos de un producto nuevo, y cuenta cuántas relaciones desbloquea cada dato faltante. **Grupos musculares** (Decisión 8): el campo en el esquema, las reglas que los asignan y la regla de reemplazo que compara grupos | No |
 | **G3** | Consola: propuestas, aprobación por lote y firma de versiones. Horario semanal | No |
 | **G4** | Revisión por lotes de las propuestas sin firmar. El modelo clasifica lo que ninguna regla clasifica, siempre con evidencia | Sí, con tope |
 | **G5** | Las herramientas del chat web leen la versión firmada (junto con su paso a `main`) | No |
@@ -284,6 +311,8 @@ pregunta al responsable. Por ejemplo: si una barra calza en un rack, cuando falt
 4. **Datos faltantes y dudas:** Pesín pregunta al responsable cuando el grafo no responde (Decisión 7). Una duda
    comercial va a un vendedor y una técnica al product manager.
 5. **Orden de revisión de lo sin firmar:** por ventas, primero los productos más vendidos.
+6. **Corrida semanal:** domingo a las 22:00, hora de Santiago (G3).
+7. **Grupos musculares:** se suman al grafo junto con G2b (Decisión 8).
 
 ## Decisiones abiertas (owner)
 
@@ -293,4 +322,4 @@ pregunta al responsable. Por ejemplo: si una barra calza en un rack, cuando falt
    - La alternativa es que el PM responda en ClickUp y R4 lea la respuesta con un webhook. Esto exige una integración
      de ida y vuelta.
 2. **Quiénes son el vendedor y el product manager** que se dan de alta como operadores.
-3. **Día y hora de la corrida semanal.**
+3. ~~Día y hora de la corrida semanal~~: cerrada, domingo 22:00 (decisión 6).
