@@ -4,7 +4,8 @@
 - **Estado:** **Aceptado** (G0, PR #125).
   - **G1 en producción** (PR #132): la versión 1 está firmada por el owner desde el 2026-11-23.
   - La consola lee el grafo (PR #133).
-  - **G2 implementado**, autorizado por el owner el 2026-11-23.
+  - **G2 en producción** (PR #134). Primera corrida el 2026-11-23: 2.550 fichas, 588 hallazgos.
+  - **G3 implementado**, autorizado por el owner el 2026-11-23.
   - Cada fase necesita autorización explícita del owner.
 - **Fecha:** 2026-11-23
 - **Mandato:** decisiones del owner del 2026-11-23:
@@ -95,8 +96,11 @@ Hechos verificados al 2026-11-23:
    - el efecto: qué relaciones agrega o quita.
 2. **Se aprueban o rechazan una por una o por lote.** Aprobar no publica: junta cambios para la próxima versión.
 3. **Firmar publica.** Firmar crea la versión nueva del grafo, y las herramientas la usan desde ese momento.
-4. **Ámbitos de operador:** `graph.curate` para aprobar o rechazar y `graph.sign` para firmar, como en ADR-052. Hoy los
-   dos los tiene el owner; si se suma un operador, quien aprueba y quien firma pueden ser personas distintas.
+4. **Ámbitos de operador:** `artifact.curate` para aprobar o rechazar y `artifact.sign` para firmar, como en ADR-052.
+   - En G3 se llamaron así, y no `graph.*`, porque Core no puede nombrar el grafo: los ámbitos valen para cualquier
+     artefacto.
+   - Hoy los dos los tiene el owner. Si se suma un operador, quien aprueba y quien firma pueden ser personas
+     distintas.
 5. **El curador también se evalúa.**
    - Sus propuestas se comparan con lo que el owner aprueba y rechaza, y la tasa de rechazo por regla se muestra en la
      consola.
@@ -212,6 +216,39 @@ pregunta al responsable. Por ejemplo: si una barra calza en un rack, cuando falt
   - salió `PLATE_MACHINE`, porque son máquinas que se cargan con discos, no discos;
   - la regla de producto nuevo pasó a `NOT_IN_GRAPH`, porque el grafo solo incluye productos con relaciones.
   - Los conteos reales salen de la primera corrida en producción.
+
+## G3 — implementación (2026-11-23)
+
+- **Core, migración `0025_artifact_proposals`:** propuestas de cambio a un artefacto, genéricas.
+  - Cada una guarda su resumen, su evidencia y un cambio opaco que Core no interpreta. Un cambio nulo es informativo.
+  - Estados: `proposed` → `approved` | `rejected`, por una persona → `applied`, cuando entra en una versión.
+  - Puede haber una sola propuesta viva o rechazada por huella: un hallazgo se propone una vez, y uno rechazado no
+    vuelve.
+  - `artifact_proposal_events` guarda la historia, append-only.
+- **API para la consola:**
+  - Lecturas: `GET /v1/artifacts/:kind/versions` (incluye las no firmadas) y `GET /v1/artifacts/:kind/proposals?state=`.
+  - Escrituras de operador firmado: `POST /v1/artifacts/:kind/proposals/decide` (`artifact.curate`, por lote de hasta
+    1.000) y `POST /v1/artifacts/:kind/sign` (`artifact.sign`).
+- **Paquete:**
+  - `graph:curate` propone cada hallazgo con su cambio y su efecto:
+    - descontinuado o inactivo con relaciones → desactivar y quitar sus relaciones;
+    - reactivado → activar;
+    - renombrado → nombre nuevo;
+    - «Lo reemplaza» entre tipos distintos, o que también es complemento → quitar ese reemplazo;
+    - el resto es informativo.
+  - `graph:compose` arma la versión siguiente: la firmada más los cambios aprobados. La deja **sin firmar** y marca
+    esos cambios como aplicados.
+  - **Firmar en la consola publica.** Las herramientas de Pesín la leerán desde G5.
+- **Corrida semanal:** domingo a las 22:00, hora de Santiago (decisión del owner).
+  - pm2 lanza `ops/graph-curator/weekly-curate.sh` cada hora, y el script solo corre el curador en esa hora. Así el
+    cambio de horario de Chile no exige editar nada.
+  - Corre como `schedule:weekly` y solo propone.
+  - Por ahora no es la primitiva Schedule de Core: no abre tareas, porque el curador todavía no es un agente (G4).
+- **Consola** (repositorio de la consola):
+  - lista de propuestas por tarea y regla, con aprobación o rechazo por lote;
+  - botón «Armar versión», que corre `graph:compose` como trabajo del host;
+  - versiones sin firmar, con botón de firma;
+  - el operador necesita `artifact.curate` y `artifact.sign` en su registro.
 
 ## Fuera de alcance
 

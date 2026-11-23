@@ -16,7 +16,7 @@ import {
 import type { AgentRegistry } from '@r4/agent-registry';
 import type { TaskRuntime, TemporalRuntime } from '@r4/task-runtime';
 import type { ProductionOperator } from '@r4/live-ops';
-import { INCIDENT_SIGNATURE, type PostgresAgentDrafts, type PostgresArtifacts, type PostgresConsoleReads, type PostgresIncidents, type PostgresInsights, type PostgresKnowledge } from '@r4/persistence-postgres';
+import { ARTIFACT_PROPOSAL_STATES, INCIDENT_SIGNATURE, type PostgresAgentDrafts, type PostgresArtifacts, type PostgresConsoleReads, type PostgresIncidents, type PostgresInsights, type PostgresKnowledge } from '@r4/persistence-postgres';
 import { resolveCorrelationId, runWithCorrelation } from '@r4/observability';
 import { toErrorResponse } from './errors.js';
 import { unauthenticatedPrincipalResolver, type PrincipalResolver } from './principal.js';
@@ -396,9 +396,47 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
     }
 
     if (deps.artifacts) {
-      // ADR-058: signed artifacts (opaque content: Core never interprets it). Reads only; signing is a console action (G3).
+      // ADR-058: signed artifacts (opaque content and changes: Core never interprets them). Reads: service reader or person.
+      // Writes: signed operator with artifact.curate (decide proposals) or artifact.sign (sign a version).
       const artifacts = deps.artifacts;
       const kindParams = z.strictObject({ kind: z.string().regex(/^[a-z][a-z0-9_.-]{0,63}$/) });
+      const operatorWith = (request: FastifyRequest, scope: 'artifact.curate' | 'artifact.sign') => {
+        const operator = human(request);
+        if (!operator.scopes.includes(scope)) throw new PlatformError('precondition', 'human_scope_denied', `operator lacks the ${scope} scope`);
+        return operator;
+      };
+      app.get('/v1/artifacts/:kind/versions', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          parse(z.strictObject({}), request.query, 'query');
+          return { versions: await artifacts.versions(parse(kindParams, request.params, 'path').kind) };
+        }),
+      );
+      app.get('/v1/artifacts/:kind/proposals', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          const { state } = parse(z.strictObject({ state: z.enum(ARTIFACT_PROPOSAL_STATES).optional() }), request.query, 'query');
+          return { proposals: await artifacts.proposals(parse(kindParams, request.params, 'path').kind, state) };
+        }),
+      );
+      const decideBody = z.strictObject({ proposalIds: z.array(uuidSchema).min(1).max(1000), decision: z.enum(['approved', 'rejected']), note: z.string().trim().min(1).max(500).optional() });
+      app.post('/v1/artifacts/:kind/proposals/decide', (request) =>
+        inContext(request, async () => {
+          const operator = operatorWith(request, 'artifact.curate');
+          const { kind } = parse(kindParams, request.params, 'path');
+          const body = parse(decideBody, request.body ?? undefined, 'body');
+          return artifacts.decide({ kind, proposalIds: body.proposalIds, decision: body.decision, decidedBy: operator.humanRef, note: body.note ?? null, correlationId: request.id });
+        }),
+      );
+      const signBody = z.strictObject({ version: z.number().int().positive(), note: z.string().trim().min(1).max(500).optional() });
+      app.post('/v1/artifacts/:kind/sign', (request) =>
+        inContext(request, async () => {
+          const operator = operatorWith(request, 'artifact.sign');
+          const { kind } = parse(kindParams, request.params, 'path');
+          const body = parse(signBody, request.body ?? undefined, 'body');
+          return { signature: await artifacts.sign({ kind, version: body.version, signedBy: operator.humanRef, note: body.note ?? null, correlationId: request.id }) };
+        }),
+      );
       app.get('/v1/artifacts/:kind/current', (request) =>
         inContext(request, async () => {
           reader(request);

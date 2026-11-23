@@ -1,5 +1,5 @@
 import { PlatformError } from '@r4/contracts';
-import { query, withTransaction, type Pool } from './pool.js';
+import { query, withTransaction, type Pool, type PoolClient } from './pool.js';
 import { iso, type Row } from './rows.js';
 
 /**
@@ -31,6 +31,44 @@ export interface ArtifactSignature {
   readonly signedAt: string;
 }
 
+export const ARTIFACT_PROPOSAL_STATES = ['proposed', 'approved', 'rejected', 'applied'] as const;
+export type ArtifactProposalState = (typeof ARTIFACT_PROPOSAL_STATES)[number];
+export const MAX_ARTIFACT_PROPOSALS = 5000;
+
+export interface NewArtifactProposal {
+  /** Same fingerprint, same proposal (a later run does not propose it again). */
+  readonly fingerprint: string;
+  readonly summary: string;
+  readonly evidence: Readonly<Record<string, unknown>>;
+  /** Opaque to Core; the owning pack applies it. null: informational (approving acknowledges it). */
+  readonly change: unknown;
+}
+
+export interface ArtifactProposal {
+  readonly proposalId: string;
+  readonly kind: string;
+  readonly baseVersion: number;
+  readonly source: string;
+  readonly fingerprint: string;
+  readonly summary: string;
+  readonly evidence: unknown;
+  readonly change: unknown;
+  readonly state: ArtifactProposalState;
+  readonly createdAt: string;
+  readonly decidedBy: string | null;
+  readonly decidedAt: string | null;
+  readonly decisionNote: string | null;
+  readonly appliedVersion: number | null;
+}
+
+const proposalOf = (r: Row): ArtifactProposal => ({
+  proposalId: r.proposal_id as string, kind: r.kind as string, baseVersion: r.base_version as number, source: r.source as string,
+  fingerprint: r.fingerprint as string, summary: r.summary as string, evidence: r.evidence, change: r.change ?? null,
+  state: r.state as ArtifactProposalState, createdAt: iso(r.created_at), decidedBy: (r.decided_by as string | null) ?? null,
+  decidedAt: r.decided_at == null ? null : iso(r.decided_at), decisionNote: (r.decision_note as string | null) ?? null,
+  appliedVersion: (r.applied_version as number | null) ?? null,
+});
+
 const versionOf = (r: Row): ArtifactVersion => ({
   kind: r.kind as string, version: r.version as number, contentSha256: r.content_sha256 as string,
   note: (r.note as string | null) ?? null, createdBy: r.created_by as string, createdAt: iso(r.created_at),
@@ -45,8 +83,11 @@ export class PostgresArtifacts {
     this.#pool = pool;
   }
 
-  /** A new version of `kind`, or the latest one when its content is the same (`created: false`). */
-  async createVersion(input: { kind: string; content: unknown; createdBy: string; note: string | null }): Promise<{ version: ArtifactVersion; created: boolean }> {
+  /**
+   * A new version of `kind`, or the latest one when its content is the same (`created: false`). `applies`: approved
+   * proposals this content contains; they become `applied` to the returned version in the same transaction.
+   */
+  async createVersion(input: { kind: string; content: unknown; createdBy: string; note: string | null; applies?: readonly string[]; correlationId?: string }): Promise<{ version: ArtifactVersion; created: boolean; applied: number }> {
     const content = JSON.stringify(input.content);
     return withTransaction(this.#pool, async (c) => {
       await c.query('select pg_advisory_xact_lock(hashtext($1))', [`artifact:${input.kind}`]);
@@ -54,14 +95,87 @@ export class PostgresArtifacts {
         `select ${VERSION_COLUMNS}, content_sha256 = ${SHA('$2')} as same from artifact_versions where kind = $1 order by version desc limit 1`,
         [input.kind, content],
       )).rows[0];
-      if (latest?.same) return { version: versionOf(latest), created: false };
-      const row = (await c.query<Row>(
+      const row = latest?.same ? latest : (await c.query<Row>(
         `insert into artifact_versions (kind, version, content, content_sha256, note, created_by)
          values ($1, $2, $3::jsonb, ${SHA('$3')}, $4, $5) returning ${VERSION_COLUMNS}`,
         [input.kind, ((latest?.version as number | undefined) ?? 0) + 1, content, input.note, input.createdBy],
       )).rows[0]!;
-      return { version: versionOf(row), created: true };
+      let applied = 0;
+      if (input.applies?.length) {
+        const ids = (await c.query<Row>(
+          `update artifact_proposals set state = 'applied', applied_version = $3
+            where kind = $1 and proposal_id = any($2::uuid[]) and state = 'approved' and change is not null returning proposal_id`,
+          [input.kind, [...input.applies], row.version],
+        )).rows.map((r) => r.proposal_id as string);
+        await this.#events(c, ids, 'approved', 'applied', input.createdBy, null, input.correlationId ?? `artifact-${input.kind}-v${String(row.version)}`);
+        applied = ids.length;
+      }
+      return { version: versionOf(row), created: !latest?.same, applied };
     });
+  }
+
+  /** Every version of a kind, newest first, without content; `current` marks the one signed last. */
+  async versions(kind: string): Promise<(ArtifactVersion & { readonly signatures: number; readonly current: boolean })[]> {
+    const r = await query<Row>(
+      this.#pool,
+      `with cur as (select version from artifact_signatures where kind = $1 order by signed_at desc, signature_id desc limit 1)
+       select ${VERSION_COLUMNS}, (select count(*)::int from artifact_signatures s where s.kind = v.kind and s.version = v.version) as signatures,
+              coalesce(v.version = (select version from cur), false) as current
+         from artifact_versions v where kind = $1 order by version desc limit 200`,
+      [kind],
+    );
+    return r.rows.map((row) => ({ ...versionOf(row), signatures: row.signatures as number, current: row.current as boolean }));
+  }
+
+  /**
+   * Stores proposals from `source` (a pack's run) against `baseVersion`. One already proposed, approved or rejected for
+   * the same kind and fingerprint is skipped: a finding is proposed once, and a rejected one does not come back.
+   */
+  async propose(input: { kind: string; baseVersion: number; source: string; correlationId: string; proposals: readonly NewArtifactProposal[] }): Promise<{ created: number; skipped: number }> {
+    if (!input.proposals.length) return { created: 0, skipped: 0 };
+    return withTransaction(this.#pool, async (c) => {
+      const ids = (await c.query<Row>(
+        `insert into artifact_proposals (kind, base_version, source, fingerprint, summary, evidence, change, state)
+         select $1, $2, $3, p.fingerprint, p.summary, p.evidence, p.change, 'proposed'
+           from jsonb_to_recordset($4::jsonb) as p(fingerprint text, summary text, evidence jsonb, change jsonb)
+         on conflict (kind, fingerprint) where state in ('proposed', 'approved', 'rejected') do nothing
+         returning proposal_id`,
+        [input.kind, input.baseVersion, input.source, JSON.stringify(input.proposals.map((p) => ({ ...p, change: p.change ?? null })))],
+      )).rows.map((r) => r.proposal_id as string);
+      await this.#events(c, ids, null, 'proposed', input.source, null, input.correlationId);
+      return { created: ids.length, skipped: input.proposals.length - ids.length };
+    });
+  }
+
+  /** A kind's proposals, oldest first; optionally of one state. */
+  async proposals(kind: string, state?: ArtifactProposalState): Promise<ArtifactProposal[]> {
+    const r = await query<Row>(
+      this.#pool,
+      `select * from artifact_proposals where kind = $1 and ($2::text is null or state = $2) order by created_at, proposal_id limit ${MAX_ARTIFACT_PROPOSALS}`,
+      [kind, state ?? null],
+    );
+    return r.rows.map(proposalOf);
+  }
+
+  /** A person approves or rejects proposals still `proposed` (others are skipped). Scopes are checked by the caller. */
+  async decide(input: { kind: string; proposalIds: readonly string[]; decision: 'approved' | 'rejected'; decidedBy: string; note: string | null; correlationId: string }): Promise<{ decided: number; skipped: number }> {
+    return withTransaction(this.#pool, async (c) => {
+      const ids = (await c.query<Row>(
+        `update artifact_proposals set state = $3, decided_by = $4, decided_at = clock_timestamp(), decision_note = $5
+          where kind = $1 and proposal_id = any($2::uuid[]) and state = 'proposed' returning proposal_id`,
+        [input.kind, [...input.proposalIds], input.decision, input.decidedBy, input.note],
+      )).rows.map((r) => r.proposal_id as string);
+      await this.#events(c, ids, 'proposed', input.decision, input.decidedBy, input.note, input.correlationId);
+      return { decided: ids.length, skipped: new Set(input.proposalIds).size - ids.length };
+    });
+  }
+
+  async #events(c: PoolClient, ids: readonly string[], from: string | null, to: string, by: string, note: string | null, correlationId: string): Promise<void> {
+    if (!ids.length) return;
+    await c.query(
+      `insert into artifact_proposal_events (proposal_id, from_state, to_state, decided_by, note, correlation_id) select unnest($1::uuid[]), $2, $3, $4, $5, $6`,
+      [[...ids], from, to, by, note, correlationId],
+    );
   }
 
   /** Makes `version` the current one. 404 unknown version; 409 `already_current`. */

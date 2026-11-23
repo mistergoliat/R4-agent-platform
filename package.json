@@ -89,6 +89,7 @@
     "graph:import": "node agents/graph-curator/dist/cli/import.js",
     "graph:migrate": "node agents/graph-curator/dist/cli/migrate.js",
     "graph:curate": "node agents/graph-curator/dist/cli/curate.js",
+    "graph:compose": "node agents/graph-curator/dist/cli/compose.js",
     "production:sales:operator": "node agents/sales/dist/cli/operator.js",
     "sales:canary": "node agents/sales/dist/cli/canary.js",
     "test:production": "vitest run --project unit tests/unit/live-ops && vitest run --project contract tests/contract/live-ops-boundaries.test.ts && vitest run --project integration tests/integration/live-ops-reference.test.ts tests/integration/live-ops-hardening.test.ts"
