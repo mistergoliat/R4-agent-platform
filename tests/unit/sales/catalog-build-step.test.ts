@@ -117,6 +117,13 @@ describe('catalog.build_step (experiment)', () => {
     expect(tiny.reason).toBe('the compatible options within the budget are taller than the ceiling allows');
   });
 
+  it('asks for the ceiling only when a piece of this step is 210 cm or taller and no ceiling is known', async () => {
+    expect((await run({ step: 'rack', budgetMaxClp: 5_000_000 })).needsCeiling).toBe(true); // P2 is 241 cm
+    expect((await run({ step: 'rack', budgetMaxClp: 400_000 })).needsCeiling).toBe(false); // only P1 (188 cm) fits the budget
+    expect((await run({ step: 'rack', budgetMaxClp: 5_000_000, ceilingCm: 240 })).needsCeiling).toBe(false); // already known
+    expect((await run({ step: 'barra', selected: [{ productKey: 'P1', quantity: 1 }], budgetMaxClp: 1_000_000 })).needsCeiling).toBe(false); // bars have no height
+  });
+
   it('plates reach the target load, skip unsellable packs and stay within the budget', async () => {
     const out = await run({ step: 'discos', selected: [{ productKey: 'P1', quantity: 1 }, { productKey: 'P11', quantity: 1 }], budgetMaxClp: 500_000, targetPlateKg: 40 });
     expect(out.options.map((o) => [o.productKey, o.quantity, o.totalKg, o.totalClp])).toEqual([['P20', 2, 40, 80_000], ['P21', 1, 40, 90_000]]);

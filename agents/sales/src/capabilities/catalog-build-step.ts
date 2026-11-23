@@ -67,6 +67,8 @@ export const buildStepOutput = z.strictObject({
   stillNeeded: z.array(z.string()),
   /** Sellable options left out because they do not fit under ceilingCm (with the clearance). */
   tooTallForCeiling: z.int(),
+  /** No ceilingCm yet and an option of this step is TALL_CM or taller: in a room or an apartment, ask the ceiling first. */
+  needsCeiling: z.boolean(),
   reason: z.string().nullable(),
   validUntil: z.string().nullable(),
 });
@@ -94,6 +96,8 @@ const stepOfKind = (kind: string | null): Step | null => (kind ? (BUILD_STEPS.fi
 
 /** Space a product needs above it, beyond its own height, to fit under a ceiling. */
 const CEILING_CLEARANCE_CM = 5; // ponytail: fixed margin; loading the bar or pull-ups need more, Pesín says the height
+/** From this height an option can hit a room ceiling (owner 2026-11-23: cages, Smith, cable and big machines). */
+const TALL_CM = 210;
 
 /**
  * Height in cm from the owner's dimension features («Dimensiones del producto», «… armado»: «Alto: 241 cm»); the
@@ -144,7 +148,7 @@ export function catalogBuildStepCapability(catalog: CatalogPort, graphFile: stri
     definition: readDefinition({
       capabilityId: LANE_CAPABILITY_IDS.catalogBuildStep,
       description:
-        `One step of a home-gym build. step = the piece to choose now (${BUILD_STEPS.join(', ')}); selected = the products already chosen with their quantities; budgetMaxClp = the visitor's budget ceiling (CLP, tax included); targetPlateKg = total plate load for step discos (default ${DEFAULT_PLATE_KG}); ceilingCm = the ceiling height when the visitor gave it (options taller than ceilingCm − ${CEILING_CLEARANCE_CM} are left out and counted in tooTallForCeiling). Returns up to three options labelled by live price from lowest to highest (menor precio, precio medio, mayor precio; the label says nothing about quality) compatible with everything already chosen per the store's product relations, sellable now with current prices, with the quantity to buy (plates: enough units to reach the load), totals and heightCm (from the shop's dimensions; null when unknown), within what remains of the budget after reserving the cheapest option of each piece still needed (stillNeeded). Empty options come with a reason.`,
+        `One step of a home-gym build. step = the piece to choose now (${BUILD_STEPS.join(', ')}); selected = the products already chosen with their quantities; budgetMaxClp = the visitor's budget ceiling (CLP, tax included); targetPlateKg = total plate load for step discos (default ${DEFAULT_PLATE_KG}); ceilingCm = the ceiling height when the visitor gave it (options taller than ceilingCm − ${CEILING_CLEARANCE_CM} are left out and counted in tooTallForCeiling; without ceilingCm, needsCeiling is true when an option of this step is ${TALL_CM} cm or taller). Returns up to three options labelled by live price from lowest to highest (menor precio, precio medio, mayor precio; the label says nothing about quality) compatible with everything already chosen per the store's product relations, sellable now with current prices, with the quantity to buy (plates: enough units to reach the load), totals and heightCm (from the shop's dimensions; null when unknown), within what remains of the budget after reserving the cheapest option of each piece still needed (stillNeeded). Empty options come with a reason.`,
       owner: 'catalog',
       requiredScopes: [SCOPES.catalogRead],
       freshnessTtlMs: CATALOG_FRESHNESS_TTL_MS,
@@ -198,6 +202,7 @@ export function catalogBuildStepCapability(catalog: CatalogPort, graphFile: stri
         // Under a known ceiling, a product of known height must leave the clearance (unknown height stays: Pesín says so).
         const fits = (x: (typeof sellable)[number]) => input.ceilingCm === undefined || x.l!.heightCm === null || x.l!.heightCm <= input.ceilingCm - CEILING_CLEARANCE_CM;
         const tooTall = sellable.filter((x) => !fits(x)).length;
+        const needsCeiling = input.ceilingCm === undefined && sellable.some((x) => (x.l!.heightCm ?? 0) >= TALL_CM);
         const ok = sellable
           .filter(fits)
           // The labels follow the price the visitor sees: re-sort by live total (the candidates were sorted by snapshot price).
@@ -217,6 +222,7 @@ export function catalogBuildStepCapability(catalog: CatalogPort, graphFile: stri
           reservedForNeededClp: reserved,
           stillNeeded: needed,
           tooTallForCeiling: tooTall,
+          needsCeiling,
           reason: picks.length ? null : tooTall ? 'the compatible options within the budget are taller than the ceiling allows' : candidates.length ? 'no compatible option is sellable now within the budget' : cap <= 0 ? 'the budget is used up by what was already chosen and the pieces it still needs' : 'no product of this step is related to what was already chosen',
           validUntil: validUntil.length ? validUntil.reduce((a, b) => (Date.parse(a) <= Date.parse(b) ? a : b)) : null,
         };
