@@ -21,6 +21,7 @@ describe('ADR-051 incident helpers', () => {
     ['inbound_problem', 'failed/incomplete_inbound_record', 'high'],
     ['inbound_problem', 'foreign_business_number', 'info'],
     ['slow_reply', 'customer_turn_over_60s', 'medium'],
+    ['consultation_waiting', 'unanswered_over_10_min', 'high'],
   ] as const)('%s %s → %s', (detector, code, severity) => {
     expect(incidentSeverity(detector, code)).toBe(severity);
   });

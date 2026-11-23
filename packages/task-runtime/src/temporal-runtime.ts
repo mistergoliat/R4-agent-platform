@@ -370,7 +370,7 @@ export class TemporalRuntime implements RunFailureHandoff, TurnCompletionGuard {
         const base = { requestId: referenceId, taskId: owned.task.taskId, runId: owned.run.runId, status: 'requested' as const, humanRef: null, createdAt: now, updatedAt: now, correlationId: owned.task.correlationId };
         const request: HumanRequest =
           decision.type === 'request_consultation'
-            ? { ...base, kind: 'consultation', expiresAt: decision.expiresAt ?? null, payload: { question: decision.question, contextRefs: decision.contextRefs } }
+            ? { ...base, kind: 'consultation', expiresAt: decision.expiresAt ?? null, payload: { question: decision.question, contextRefs: decision.contextRefs, ...(decision.options ? { options: decision.options } : {}) } }
             : { ...base, kind: 'handoff', expiresAt: null, payload: { summary: decision.summary, contextRefs: decision.contextRefs, initiatedBy: 'agent' } };
         await p.insertHuman(request);
         await this.event(uow, owned.task, referenceId, request.kind === 'consultation' ? 'consultation.requested' : 'handoff.requested', now, events);

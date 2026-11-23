@@ -263,7 +263,7 @@ describe('cross-task continuity (R4-J4-R7-4)', () => {
   it('R74-9 (IR-1): a turn of an earlier task made AFTER its binding closed is kept when inside the window — never another conversation\'s, never twice', async () => {
     const b = await start();
     const operatorReply = (taskId: string, text: string) =>
-      b.store.createOperatorOutbound({ outboundId: randomUUID(), taskId, text, humanRef: 'operator-1', responseKey: randomUUID(), correlationId: 'r74-9' });
+      b.store.createOperatorOutbound({ outboundId: randomUUID(), taskId, text, humanRef: 'operator-1', authorName: null, responseKey: randomUUID(), correlationId: 'r74-9' });
     const closedAt = async (taskId: string) => (await b.rows<{ closed_at: Date | null }>('select closed_at from channel_conversation_bindings where task_id = $1', [taskId]))[0]!.closed_at;
 
     // The customer's first task ends; their next message opens the current task and closes the first binding.

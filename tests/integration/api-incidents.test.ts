@@ -82,6 +82,13 @@ beforeAll(async () => {
   for (let i = 0; i < 6; i++) await inbound('rejected', 'foreign_business_number', null);
   await inbound('failed', 'incomplete_inbound_record', tasks.answered);
   await inbound('rejected', 'old_rejection', null, `clock_timestamp() - interval '3 days'`);
+  // (ADR-056 D5) A consultation nobody answers; it is not a handoff, so the customer is not held by it.
+  const [run] = await bed.rows<{ run_id: string }>('select run_id from agent_runs where task_id = $1 limit 1', [tasks.answered]);
+  await bed.rows(
+    `insert into human_requests (request_id, task_id, run_id, kind, status, payload, created_at, updated_at, correlation_id)
+     values ($1, $2, $3, 'consultation', 'requested', $4::jsonb, clock_timestamp(), clock_timestamp(), 'incident-test')`,
+    [randomUUID(), tasks.answered, run!.run_id, JSON.stringify({ question: '¿Factura a 30 días? SECRETO-PREGUNTA', contextRefs: [], options: ['Sí', 'No'] })],
+  );
 
   const dir = mkdtempSync(join(tmpdir(), 'r4-incidents-it-'));
   const operatorsFile = join(dir, 'operators.json');
@@ -157,8 +164,9 @@ describe('ADR-051 GET /v1/incidents', () => {
     expect(bySignature[INBOUND_SIGNATURE]).toMatchObject({ detector: 'inbound_problem', severity: 'info', agentId: null, agentVersion: null, code: 'foreign_business_number', count: 6, exampleTaskIds: [] });
     expect(bySignature[`inbound_problem:${at}:failed/incomplete_inbound_record`]).toMatchObject({ severity: 'high', count: 1, exampleTaskIds: [tasks.answered] });
     expect(bySignature[`slow_reply:${at}:customer_turn_over_60s`]).toMatchObject({ severity: 'medium', count: 1, exampleTaskIds: [tasks.answered] });
-    // Ten minutes have not passed: nobody is unanswered yet.
+    // Ten minutes have not passed: nobody is unanswered yet, and the consultation is not late yet.
     expect(find(v, 'customer_unanswered:')).toEqual([]);
+    expect(find(v, 'consultation_waiting:')).toEqual([]);
 
     for (const i of v.incidents) {
       expect(Object.keys(i).sort()).toEqual(['agentId', 'agentVersion', 'code', 'count', 'detector', 'exampleTaskIds', 'firstSeen', 'lastSeen', 'severity', 'signature', 'triage']);
@@ -176,7 +184,13 @@ describe('ADR-051 GET /v1/incidents', () => {
       const rank = order.indexOf(a.severity) - order.indexOf(b.severity);
       expect(rank < 0 || (rank === 0 && Date.parse(a.lastSeen) >= Date.parse(b.lastSeen)), `${a.signature} before ${b.signature}`).toBe(true);
     }
-    expect(new Set(v.incidents.map((i) => i.detector))).toEqual(new Set(['customer_unanswered', 'run_failed', 'platform_handoff', 'step_error', 'outbound_problem', 'inbound_problem', 'slow_reply']));
+    expect(new Set(v.incidents.map((i) => i.detector))).toEqual(new Set(['customer_unanswered', 'run_failed', 'platform_handoff', 'step_error', 'outbound_problem', 'inbound_problem', 'slow_reply', 'consultation_waiting']));
+  });
+
+  it('consultation_waiting after ten minutes: high, with the task as example, never the question text', async () => {
+    const v = await view(later);
+    expect(find(v, 'consultation_waiting:')).toEqual([expect.objectContaining({ severity: 'high', code: 'unanswered_over_10_min', count: 1, exampleTaskIds: [tasks.answered] })]);
+    expect(JSON.stringify(v)).not.toMatch(/SECRETO-PREGUNTA/);
   });
 
   it('customer_unanswered after ten minutes: only autonomous, unheld, unanswered customers; five newest examples', async () => {
