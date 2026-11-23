@@ -31,7 +31,7 @@ describe('Sales WhatsApp gateway: rollout percentage and the cohort lane', () =>
   });
 
   it('refuses a percentage > 0 with a lane profile outside the approved cohort set; composes it with @22 and with @21 (the lane rollback, no drop to 0 %)', () => {
-    for (const p of SALES_LANE_PROFILES.map(profileLabel).filter((l) => l !== 'sales-production@22' && l !== 'sales-production@21')) {
+    for (const p of SALES_LANE_PROFILES.map(profileLabel).filter((l) => l !== 'sales-production@23' && l !== 'sales-production@22' && l !== 'sales-production@21')) {
       expect(() => gateway(1, p)).toThrow(new RegExp(`lane profile ${p}, which is not approved for the rollout cohort`));
     }
     const composed = gateway(20, 'sales-production@22').bindings;

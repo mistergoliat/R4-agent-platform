@@ -33,6 +33,7 @@ import { SALES_ROOT_GOAL } from '../goal.js';
 import { SalesWorkspaceContextSource } from '../workspace/context-source.js';
 import { SalesQuoteRecoveryContextSource } from '../workspace/quote-recovery-source.js';
 import { SALES_QUOTE_LANE_V22_PROFILE_LABEL } from './profile-v22.js';
+import { SALES_QUOTE_LANE_V23_PROFILE_LABEL, SALES_STOCK_COUNT_PROFILES } from './profile-v23.js';
 import { PostgresSalesStore } from '../workspace/store.js';
 import { SALES_DOMAINS } from './profile.js';
 import { isAutonomousQuoteProfile } from './profile-v5.js';
@@ -121,7 +122,7 @@ export interface SalesProductionWorkerOptions {
   readonly quoteParity?: QuoteParityGuard | null;
   /** Catalog descriptive freshness (R4_SALES_CATALOG_DESCRIPTIVE_WINDOW_SECONDS): null or absent = off; see workspace/catalog-descriptive.ts. */
   readonly catalogDescriptiveWindowMs?: number | null;
-  /** (F1-COMMERCIAL-POLICY-v3) Promotional prices that outlast the quote may be quoted (@19, @20, @21 and @22 only; default off). */
+  /** (F1-COMMERCIAL-POLICY-v3) Promotional prices that outlast the quote may be quoted (@19, @20, @21, @22 and @23 only; default off). */
   readonly promotionalQuotes?: boolean;
   /** (M3) R4_SALES_QUOTE_RECOVERY=enabled: the conversation's earlier quotes with their current Quote V2 state enter the context (profiles with a REAL Quote; default off). */
   readonly quoteRecovery?: boolean;
@@ -198,7 +199,7 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
     // READ capabilities offered to the model; they execute through the CapabilityInvoker only.
     // (F1-COMMERCIAL-POLICY-v3) Under an F1 policy, a discounted product says whether its promotional price can be quoted.
     const commercial = salesCommercialEligibility(profile, options.promotionalQuotes === true);
-    const [catalogSearch, productContext] = catalogCapabilities(catalog, { variantAvailability: SALES_VARIANT_AVAILABILITY_PROFILES.has(profileLabel(profile)) || isSalesWebProfile(profile), promotions: commercial ? { eligibility: commercial, now: () => clock.now() } : null });
+    const [catalogSearch, productContext] = catalogCapabilities(catalog, { variantAvailability: SALES_VARIANT_AVAILABILITY_PROFILES.has(profileLabel(profile)) || isSalesWebProfile(profile), stockCount: SALES_STOCK_COUNT_PROFILES.has(profileLabel(profile)), promotions: commercial ? { eligibility: commercial, now: () => clock.now() } : null });
     capabilities.register(progress(catalogSearch));
     capabilities.register(progress(productContext));
   }
@@ -244,7 +245,7 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
           // (R4-J5 F1) The F1 canary, and the quote lane @14, run within the owner-approved canary limits, never looser.
           if (isF1CanaryProfile(profile) || isQuoteLaneProfile(profile)) assertF1CanaryLimits(limits, profileLabel(profile));
           if (options.quoteParity) options.logger.info({ quoteParity: { profile: profileLabel(profile), fingerprint: options.quoteParity.fingerprint, items: options.quoteParity.items, maxAgeSeconds: options.quoteParity.maxAgeSeconds } }, 'sales quote parity evidence configured');
-          if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV3Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now(), parity: options.quoteParity ?? null, eligibility: salesCommercialEligibility(profile, options.promotionalQuotes === true), naturalAcceptance: SALES_INTENT_ACCEPTANCE_PROFILES.has(profileLabel(profile)) }));
+          if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV3Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now(), parity: options.quoteParity ?? null, eligibility: salesCommercialEligibility(profile, options.promotionalQuotes === true), naturalAcceptance: SALES_INTENT_ACCEPTANCE_PROFILES.has(profileLabel(profile)), hideStockCounts: SALES_STOCK_COUNT_PROFILES.has(profileLabel(profile)) }));
           if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV5Capability({ store: sales, quotes, catalog, shipping: options.shipping, limits, conversation: options.store, admission: controls, now: () => clock.now(), parity: options.quoteParity ?? null, eligibility: salesCommercialEligibility(profile, options.promotionalQuotes === true), documents: SALES_QUOTE_DOCUMENT_PROFILES.has(profileLabel(profile)) ? quoteDocumentDelivery(options.store, options.logger) : null, naturalAcceptance: SALES_INTENT_ACCEPTANCE_PROFILES.has(profileLabel(profile)) }));
         } else {
           if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV2Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now() }));
@@ -392,7 +393,7 @@ export const SALES_RUN_FAILURE_FALLBACK_TEXT = salesRunFailureNotice(SALES_IN_HO
 export const SALES_HUMAN_REQUEST_NOTICE_TEXT = salesHumanRequestNotice(SALES_IN_HOURS_REFERENCE);
 
 /** The profiles whose conversations get that notice: only the F1 quote lane candidate (@13 and the others unchanged). */
-export const SALES_HUMAN_REQUEST_NOTICE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_QUOTE_LANE_V18_PROFILE_LABEL, 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22']);
+export const SALES_HUMAN_REQUEST_NOTICE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_QUOTE_LANE_V18_PROFILE_LABEL, 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23']);
 
 /**
  * (ADR-046) The web chat's own notices. No person attends it yet: they say so, show the store contact ([[contacto]],
@@ -505,8 +506,9 @@ export function salesGatewayLane(env: Readonly<Record<string, string | undefined
  * (ADR-045 amendment 1) The lane profiles the owner approved to serve the rollout cohort, i.e. real customers. A code
  * constant on purpose: adding a profile is a reviewed change, never a variable. @22 is the live lane profile and @21 its
  * declared rollback (owner decision 2026-11-18): switching the lane @22 → @21 never requires dropping the percentage to 0.
+ * @23 (owner decision 2026-11-23: @22 plus units in stock on request, capped at 20) succeeds @22, which stays its rollback.
  */
-export const SALES_COHORT_LANE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V22_PROFILE_LABEL, SALES_QUOTE_LANE_V21_PROFILE_LABEL]);
+export const SALES_COHORT_LANE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V23_PROFILE_LABEL, SALES_QUOTE_LANE_V22_PROFILE_LABEL, SALES_QUOTE_LANE_V21_PROFILE_LABEL]);
 
 /**
  * (ADR-045 amendment 1) With R4_PROD_ROLLOUT_PERCENT > 0 the WhatsApp gateway serves the cohort only through an
@@ -574,7 +576,7 @@ export function loadQuoteRecovery(env: Readonly<Record<string, string | undefine
 }
 
 /** (M3, owner mandate 2026-11-18) The only profiles on which R4_SALES_QUOTE_RECOVERY takes effect. */
-export const SALES_QUOTE_RECOVERY_PROFILES: ReadonlySet<string> = new Set([SALES_QUOTE_LANE_V22_PROFILE_LABEL]);
+export const SALES_QUOTE_RECOVERY_PROFILES: ReadonlySet<string> = new Set([SALES_QUOTE_LANE_V22_PROFILE_LABEL, SALES_QUOTE_LANE_V23_PROFILE_LABEL]);
 
 /**
  * (M3) Whether the quote-recovery source is composed: enabled, an allowed profile, and a REAL Quote V2 binding. On any
