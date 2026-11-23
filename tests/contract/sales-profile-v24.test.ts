@@ -17,6 +17,7 @@ import {
   SALES_HUMAN_REQUEST_NOTICE_PROFILES,
   SALES_INTENT_ACCEPTANCE_PROFILES,
   SALES_LANE_PROFILES,
+  SALES_NON_PAUSING_CONSULTATION_PROFILES,
   SALES_PRODUCTION_PROFILES,
   SALES_PRODUCTION_PROFILE_V23,
   SALES_PRODUCTION_PROFILE_V23_GATE,
@@ -80,6 +81,12 @@ describe('A. @24 is @23 pinned to v24; a lane profile; @23 stays the rollback', 
     expect(salesCommercialEligibility(v24, true)).toEqual(salesCommercialEligibility(v23, true));
     expect(isQuoteLaneProfile(v24)).toBe(true);
     expect(() => composeSalesProductionWorker({ ...options('sales-production@24'), autonomousQuoteLimits: { ...SALES_F1_CANARY_LIMITS, maxUnitsPerLine: SALES_F1_CANARY_LIMITS.maxUnitsPerLine + 1 } })).toThrow(/sales-production@24 runs within the owner-approved canary limits/);
+  });
+
+  it('(K3) the platform makes @24 consultations non-pausing, whatever the model writes; @23 keeps the model\'s choice', () => {
+    expect([...SALES_NON_PAUSING_CONSULTATION_PROFILES]).toEqual(['sales-production@24']);
+    expect(composed('sales-production@24').bindings.consultationsWithoutPause).toBe(true);
+    expect(composed('sales-production@23').bindings.consultationsWithoutPause).toBeUndefined();
   });
 
   it('lane and canary only, never a production profile', () => {

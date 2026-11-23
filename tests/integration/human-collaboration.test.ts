@@ -108,6 +108,21 @@ describe('(ADR-056 D1) consultation without pause', () => {
   const ask = (question: string, extra: Record<string, unknown> = {}) => ({ type: 'structured' as const, data: { type: 'request_consultation', question, contextRefs: [], blocking: false, ...extra } });
   const kinds = async (taskId: string) => (await waitRows(platform.pool, taskId)).map((w) => `${w.kind}:${w.status}:${w.resolution ?? '-'}`);
 
+  it('(K3) a worker composed with consultationsWithoutPause never pauses, even when the model omits blocking; without it, the same decision pauses', async () => {
+    const omitted = { type: 'structured' as const, data: { type: 'request_consultation', question: '¿Se puede anclar a madera?', contextRefs: [] } };
+    const enforced = await createActionTask(platform);
+    const w1 = await worker({ consultationsWithoutPause: true, script: sequence([omitted, respond('Lo confirmo con el equipo. ¿Qué medidas tiene tu espacio?'), waitInput()]) });
+    await w1.platform.worker.runOnce();
+    expect((await platform.temporal.inspect(enforced)).humans).toEqual([expect.objectContaining({ kind: 'consultation', status: 'requested', payload: { question: '¿Se puede anclar a madera?', contextRefs: [], blocking: false } })]);
+    expect(await kinds(enforced)).toEqual(['WAIT_FOR_INPUT:waiting:-']);
+
+    const classic = await createActionTask(platform);
+    const w2 = await worker({ script: sequence([omitted]) });
+    await w2.platform.worker.runOnce();
+    expect((await platform.temporal.inspect(classic)).humans).toEqual([expect.objectContaining({ kind: 'consultation', status: 'requested', payload: { question: '¿Se puede anclar a madera?', contextRefs: [] } })]);
+    expect(await kinds(classic)).toEqual(['WAIT_FOR_HUMAN:waiting:-']);
+  });
+
   it('the run goes on: the agent answers the participant and waits for input; the team answer wakes it, and the next run sees question and answer', async () => {
     const taskId = await createActionTask(platform);
     const first = await worker({ script: sequence([ask('¿Emitimos factura a 30 días?'), respond('Lo confirmo con el equipo y te respondo aquí. Mientras tanto, ¿a qué comuna va el despacho?'), waitInput()]) });

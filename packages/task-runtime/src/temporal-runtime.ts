@@ -76,6 +76,11 @@ export interface TemporalRuntimeOptions {
    * that of R7-1. It is the first canary gate and the rollback.
    */
   turnGuard?: TurnGuardMode;
+  /**
+   * (ADR-056 K3) Worker composition: every consultation of the agents this worker runs is without pause, whatever the
+   * model wrote in `blocking` (model output is untrusted; L3 showed it omitted). Absent: the model's `blocking` decides.
+   */
+  consultationsWithoutPause?: boolean;
 }
 
 export const TURN_GUARD_MODES = ['enforce', 'observe'] as const;
@@ -347,7 +352,7 @@ export class TemporalRuntime implements RunFailureHandoff, TurnCompletionGuard {
 
       // (ADR-056 D1) A consultation without pause: recorded with its step, and the run goes on — the agent still has to
       // answer the participant this turn. The human's answer (or its expiry) wakes the task later, like an input.
-      if (decision.type === 'request_consultation' && decision.blocking === false) {
+      if (decision.type === 'request_consultation' && (decision.blocking === false || this.#options.consultationsWithoutPause === true)) {
         await this.#options.execution.appendStepWithin(uow, owned, token, command, now, events);
         const requestId = this.#options.ids.next();
         await p.insertHuman({
