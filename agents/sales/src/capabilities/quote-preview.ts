@@ -7,6 +7,7 @@ import type { PostgresSalesStore } from '../workspace/store.js';
 import { snapshotLimitBreaches, type AutonomousQuoteLimits, type AutonomousQuoteLimitsV6 } from './autonomy-limits.js';
 import { OFFER_MESSAGE_MAX_CHARS, OFFER_TEMPLATE_V2, OFFER_TEMPLATE_VERSION, formatClp, offerReference, renderOfferMessage, type OfferTemplate } from './offer-presentation.js';
 import { buildCommercialSnapshot, type CommercialEligibility } from './commercial-snapshot.js';
+import { STOCK_DISCLOSURE_CAP } from './catalog.js';
 import { domainRead, readDefinition } from './common.js';
 import type { QuoteParityGuard } from './parity-guard.js';
 
@@ -217,6 +218,19 @@ const offerPresentation = <T extends OfferTemplate>(template: T) =>
     })
     .nullable();
 
+/**
+ * (@23, owner decision 2026-11-23) The model tells units only from catalog.get_product_context@3, capped at 20, so the
+ * preview stops showing it the uncapped available quantity (nothing else reads it). insufficient_stock still reports what
+ * is available, except above the cap (only possible when more than 20 are requested): then "more than 20", never the number.
+ */
+export function withoutStockCounts<T extends Pick<QuotePreviewV2Output, 'blockers' | 'evidence'>>(preview: T): T {
+  const capped = (b: T['blockers'][number]) =>
+    b.code === 'insufficient_stock' && typeof b.details.available === 'number' && b.details.available > STOCK_DISCLOSURE_CAP
+      ? { ...b, message: `more than ${STOCK_DISCLOSURE_CAP} units are available, fewer than requested`, details: { ...b.details, available: `more_than_${STOCK_DISCLOSURE_CAP}` } }
+      : b;
+  return { ...preview, blockers: preview.blockers.map(capped), evidence: { ...preview.evidence, catalog: preview.evidence.catalog.map((l) => ({ ...l, availableQuantity: null })) } };
+}
+
 /** quote.preview@3: template `r4-sales-offer-es-v1`. */
 export const quotePreviewV3Output = quotePreviewV2Output.extend({ presentation: offerPresentation(OFFER_TEMPLATE_VERSION) });
 /** quote.preview@4 (@19): the same output with template `r4-sales-offer-es-v2` (a natural closing question). */
@@ -230,7 +244,7 @@ export type QuotePreviewV3Output = z.infer<typeof quotePreviewV3Output> | z.infe
  * message, and issues only if the message the customer answered is
  * byte-identical to it.
  */
-export function quotePreviewV3Capability(deps: { readonly store: Pick<PostgresSalesStore, 'workspace' | 'commercialVersion'>; readonly catalog: CatalogPort; readonly shipping: ShippingService; readonly limits: AutonomousQuoteLimitsV6; readonly now?: () => Date; readonly parity?: QuoteParityGuard | null; readonly eligibility?: CommercialEligibility | null; readonly naturalAcceptance?: boolean }): CapabilityRegistration<QuotePreviewInput, QuotePreviewV3Output> {
+export function quotePreviewV3Capability(deps: { readonly store: Pick<PostgresSalesStore, 'workspace' | 'commercialVersion'>; readonly catalog: CatalogPort; readonly shipping: ShippingService; readonly limits: AutonomousQuoteLimitsV6; readonly now?: () => Date; readonly parity?: QuoteParityGuard | null; readonly eligibility?: CommercialEligibility | null; readonly naturalAcceptance?: boolean; readonly hideStockCounts?: boolean }): CapabilityRegistration<QuotePreviewInput, QuotePreviewV3Output> {
   const v2 = quotePreviewV2Capability(deps);
   // (@19) quote.preview@4: the same preview with offer template v2 (a natural closing question, no phrase to copy).
   // The SAME flag selects quote.create@6, so the template rendered here and the one checked at issuance never diverge.
@@ -248,7 +262,8 @@ export function quotePreviewV3Capability(deps: { readonly store: Pick<PostgresSa
     output: v4 ? quotePreviewV4Output : quotePreviewV3Output,
     ownerValidUntil: (output) => output.evidence.validUntil,
     handler: async (input, context) => {
-      const preview = await v2.handler(input, context);
+      const raw = await v2.handler(input, context);
+      const preview = deps.hideStockCounts === true ? withoutStockCounts(raw) : raw;
       // Only an issuable quote is offered: with a limit breach there is nothing the customer could confirm.
       if (preview.status !== 'ready' || !preview.issuable || !preview.snapshot || !preview.presentation) return { ...preview, presentation: null };
       const offerMessage = renderOfferMessage(preview.snapshot, preview.presentation.reference, template);

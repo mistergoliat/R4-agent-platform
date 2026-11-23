@@ -36,8 +36,8 @@ function compose(profile: string, quoteRecovery: boolean) {
 }
 
 describe('quote recovery composition (M3, @22 only)', () => {
-  it('the allowed set is exactly sales-production@22', () => {
-    expect([...SALES_QUOTE_RECOVERY_PROFILES]).toEqual(['sales-production@22']);
+  it('the allowed set is exactly sales-production@22 and @23', () => {
+    expect([...SALES_QUOTE_RECOVERY_PROFILES]).toEqual(['sales-production@22', 'sales-production@23']);
   });
 
   it('@22 composes the source when enabled, and not when disabled', () => {
