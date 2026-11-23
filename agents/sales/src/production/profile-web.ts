@@ -75,10 +75,92 @@ export const SALES_WEB_PROFILE_V6: ProductionProfile = Object.freeze({
   description: 'sales-web@5 without handoffs (store contact instead) and with the chosen option, cart and Mi gym set as context; no writes.',
 } satisfies ProductionProfile);
 
-export const SALES_WEB_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_WEB_PROFILE_V1, SALES_WEB_PROFILE_V2, SALES_WEB_PROFILE_V3, SALES_WEB_PROFILE_V4, SALES_WEB_PROFILE_V5, SALES_WEB_PROFILE_V6]);
+/**
+ * Experimental, web QA only (owner decision 2026-11-13, F1). sales-web@6 whose cards may cite any product a catalog
+ * observation of the conversation showed as sellable (a Discover candidate with OBSERVED commercial status or a search
+ * result counts) as a provisional recommendation, without re-reading it or repeating Discover only because its price
+ * and stock expired. Prices and stock stated in the text still need a current observation; the store card stays the
+ * authority for price, stock and what can be bought. Same reads; no write.
+ */
+export const SALES_WEB_PROFILE_V7: ProductionProfile = Object.freeze({
+  ...SALES_WEB_PROFILE_V1,
+  version: 7,
+  description: 'sales-web@6 citing products already shown as sellable as provisional recommendations, without re-reading them only because their price and stock expired; no writes.',
+} satisfies ProductionProfile);
+
+/**
+ * (graph A/B, owner OK 2026-11-18, first run on the isolated F2 instance) sales-web@7 plus
+ * catalog.set_complements: the store-curated relations of a chosen product, to complete a set in one read.
+ */
+export const SALES_WEB_PROFILE_V8: ProductionProfile = Object.freeze({
+  ...SALES_WEB_PROFILE_V1,
+  version: 8,
+  description: 'sales-web@7 plus catalog.set_complements (experiment: store-curated relations to complete a set); no writes.',
+  capabilities: [...SALES_WEB_PROFILE_V1.capabilities, { capabilityId: LANE_CAPABILITY_IDS.catalogSetComplements, domain: SALES_DOMAINS.catalog, effect: 'read' }],
+} satisfies ProductionProfile);
+
+/** (graph A/B confirmation) sales-web@8 whose definition keeps each version's products, a useful minimum load and the budget. */
+export const SALES_WEB_PROFILE_V9: ProductionProfile = Object.freeze({
+  ...SALES_WEB_PROFILE_V8,
+  version: 9,
+  description: 'sales-web@8 delivering exactly the priced version, with a useful minimum load and using the stated budget (experiment); no writes.',
+} satisfies ProductionProfile);
+
+/** (home-gym builder, owner idea 2026-11-19) sales-web@7 plus catalog.build_step; the home gym is built one piece at a time. */
+export const SALES_WEB_PROFILE_V10: ProductionProfile = Object.freeze({
+  ...SALES_WEB_PROFILE_V1,
+  version: 10,
+  description: 'sales-web@7 building the home gym step by step with catalog.build_step (experiment); no writes.',
+  capabilities: [...SALES_WEB_PROFILE_V1.capabilities, { capabilityId: LANE_CAPABILITY_IDS.catalogBuildStep, domain: SALES_DOMAINS.catalog, effect: 'read' }],
+} satisfies ProductionProfile);
+
+/** sales-web@10 whose definition keeps Pesín on the store and gives an unavailable product a way out (alert, second selection, alternatives). */
+export const SALES_WEB_PROFILE_V11: ProductionProfile = Object.freeze({
+  ...SALES_WEB_PROFILE_V10,
+  version: 11,
+  description: 'sales-web@10 that declines tasks unrelated to the store and offers the back-in-stock alert, second selection and sellable alternatives for an unavailable product (experiment); no writes.',
+} satisfies ProductionProfile);
+
+/** sales-web@11 plus catalog.replacements (an unavailable product gets its second selection and replacements in one read). */
+export const SALES_WEB_PROFILE_V12: ProductionProfile = Object.freeze({
+  ...SALES_WEB_PROFILE_V11,
+  version: 12,
+  description: 'sales-web@11 plus catalog.replacements: second selection and sellable replacements of an unavailable product from the store graph (experiment); no writes.',
+  capabilities: [...SALES_WEB_PROFILE_V11.capabilities, { capabilityId: LANE_CAPABILITY_IDS.catalogReplacements, domain: SALES_DOMAINS.catalog, effect: 'read' }],
+} satisfies ProductionProfile);
+
+/** sales-web@12 whose definition starts the build from the cart or Mi gym, uses large budgets and discloses a replacement's different load. */
+export const SALES_WEB_PROFILE_V13: ProductionProfile = Object.freeze({
+  ...SALES_WEB_PROFILE_V12,
+  version: 13,
+  description: 'sales-web@12 building from what the visitor already has, using large budgets and stating a replacement\'s different load (experiment); no writes.',
+} satisfies ProductionProfile);
+
+/** sales-web@13 whose definition offers products of the same type when the named one is not in the catalog. */
+export const SALES_WEB_PROFILE_V14: ProductionProfile = Object.freeze({
+  ...SALES_WEB_PROFILE_V13,
+  version: 14,
+  description: 'sales-web@13 offering sellable products of the same type when the product the visitor names is not in the catalog (experiment); no writes.',
+} satisfies ProductionProfile);
+
+/** sales-web@14 whose definition never shows catalog keys in the visible text. */
+export const SALES_WEB_PROFILE_V15: ProductionProfile = Object.freeze({
+  ...SALES_WEB_PROFILE_V14,
+  version: 15,
+  description: 'sales-web@14 that names products in the text and keeps catalog keys inside card markers only (experiment); no writes.',
+} satisfies ProductionProfile);
+
+/** (owner 2026-11-22/23) sales-web@15 whose build options are labelled and ordered by live price only (no quality claims) and filtered by the ceiling height in a room or an apartment. */
+export const SALES_WEB_PROFILE_V16: ProductionProfile = Object.freeze({
+  ...SALES_WEB_PROFILE_V15,
+  version: 16,
+  description: 'sales-web@15 that presents build options from the lowest to the highest price, labelled by price only, and asks the ceiling height for a room or an apartment (experiment); no writes.',
+} satisfies ProductionProfile);
+
+export const SALES_WEB_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_WEB_PROFILE_V1, SALES_WEB_PROFILE_V2, SALES_WEB_PROFILE_V3, SALES_WEB_PROFILE_V4, SALES_WEB_PROFILE_V5, SALES_WEB_PROFILE_V6, SALES_WEB_PROFILE_V7, SALES_WEB_PROFILE_V8, SALES_WEB_PROFILE_V9, SALES_WEB_PROFILE_V10, SALES_WEB_PROFILE_V11, SALES_WEB_PROFILE_V12, SALES_WEB_PROFILE_V13, SALES_WEB_PROFILE_V14, SALES_WEB_PROFILE_V15, SALES_WEB_PROFILE_V16]);
 
 /** The sales-web definition version each web profile pins. */
-const SALES_WEB_AGENT_VERSIONS: Readonly<Record<string, number>> = Object.freeze({ 'sales-web@1': 1, 'sales-web@2': 2, 'sales-web@3': 3, 'sales-web@4': 4, 'sales-web@5': 5, 'sales-web@6': 6 });
+const SALES_WEB_AGENT_VERSIONS: Readonly<Record<string, number>> = Object.freeze({ 'sales-web@1': 1, 'sales-web@2': 2, 'sales-web@3': 3, 'sales-web@4': 4, 'sales-web@5': 5, 'sales-web@6': 6, 'sales-web@7': 7, 'sales-web@8': 8, 'sales-web@9': 9, 'sales-web@10': 10, 'sales-web@11': 11, 'sales-web@12': 12, 'sales-web@13': 13, 'sales-web@14': 14, 'sales-web@15': 15, 'sales-web@16': 16 });
 
 export function salesWebProfile(label: string): ProductionProfile | null {
   return SALES_WEB_PROFILES.find((p) => profileLabel(p) === label) ?? null;

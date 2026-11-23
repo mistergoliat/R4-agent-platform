@@ -100,7 +100,7 @@ describe('outbound: one honest submission to the edge', () => {
     const sent = async (origin?: 'agent' | 'operator' | 'platform') => {
       const seen: { body?: string } = {};
       await new WebOutboundAdapter(config, { fetch: replying(201, { messageId: 'm' }, seen) }).submit({ ...submission, ...(origin ? { origin } : {}) }, { timeoutMs: 1000 });
-      return JSON.parse(seen.body!);
+      return JSON.parse(seen.body!) as { from?: string };
     };
     expect((await sent('operator')).from).toBe('person');
     expect(await sent('operator')).not.toHaveProperty('author');
@@ -144,5 +144,12 @@ describe('outbound: one honest submission to the edge', () => {
     expect(JSON.parse(seen.body!)).toEqual({ accountRef: 'shop-qa', eventId: 'evt-00000001', step: 'discover' });
     expect(await new WebOutboundAdapter(config, { fetch: replying(204, undefined) }).reportProgress({ ...progress, step: 'quote' as never }, { timeoutMs: 1000 })).toBe(false);
     expect(await new WebOutboundAdapter(config, { fetch: () => Promise.reject(new Error('down')) }).reportProgress(progress, { timeoutMs: 1000 })).toBe(false);
+  });
+
+  it('progress carries up to 6 catalog keys as thumbnails; anything that is not a catalog key is dropped', async () => {
+    const seen: { body?: string } = {};
+    const keys = ['P1547', 'P1547-V12', 'X1', 'P0', 'P1-Vx', 'P2', 'P3', 'P4', 'P5', 'P6'];
+    await new WebOutboundAdapter(config, { fetch: replying(204, undefined, seen) }).reportProgress({ accountRef: 'shop-qa', providerEventId: 'evt-00000001', step: 'build', detail: 'Elegí 3 opciones', products: keys }, { timeoutMs: 1000 });
+    expect((JSON.parse(seen.body!) as { products?: string[] }).products).toEqual(['P1547', 'P1547-V12', 'P2', 'P3', 'P4', 'P5']);
   });
 });

@@ -30,6 +30,12 @@ export const AUTONOMOUS_QUOTE_CAPABILITY_IDS = {
 export const LANE_CAPABILITY_IDS = {
   /** READ: need → candidates, Catalog V2 Discover. */
   catalogDiscover: 'catalog.discover',
+  /** (graph A/B, sales-web@8/@9 only): READ, anchors → store-curated complements. */
+  catalogSetComplements: 'catalog.set_complements',
+  /** (home-gym builder, sales-web@10+): READ, one build step → up to three compatible options within the budget. */
+  catalogBuildStep: 'catalog.build_step',
+  /** (sales-web@12+): READ, a product → its second selection and sellable replacements (store graph). */
+  catalogReplacements: 'catalog.replacements',
 } as const;
 
 /**
