@@ -1,7 +1,7 @@
 # ADR-056 — Consultas al equipo sin pausar la conversación
 
 - **Identificador:** `R4-CONSULT-01`
-- **Estado:** **Propuesto. No implementado.** Cada fase necesita autorización explícita del owner.
+- **Estado:** **Aceptado** por el owner el 2026-11-23 («Dejemos cerrado el ADR056 y 057»). Fases K1 a K3 autorizadas ese día; K4 espera su autorización.
 - **Fecha:** 2026-11-20
 - **Mandato:** owner, 2026-11-20: «ese diseño del lienzo es el que debemos lograr» (pantallas «Ventas · Pesín te
   consulta» y «Cliente · Pesín consulta al equipo» de la consola). El cliente no cambia de persona: Pesín dice «lo
