@@ -30,6 +30,9 @@ export interface QuoteEmailDeps {
   readonly quotes: QuoteV2Service;
   /** The conversation the platform recorded: the address must be one the customer wrote. */
   readonly conversation: ConversationThreadReader;
+  /** How many times (and how often) to re-read a queued delivery before answering; defaults 8 × 1 s. */
+  readonly waitPolls?: number;
+  readonly waitMs?: number;
 }
 
 type Refusal = Extract<WriteExecutionResult<never>, { status: 'rejected' | 'failed' }>;
@@ -50,7 +53,7 @@ export function quoteEmailCapability(deps: QuoteEmailDeps): WriteCapabilityRegis
       capabilityId: QUOTE_EMAIL_CAPABILITY_ID,
       version: 1,
       description:
-        'Emails the PDF of a quote issued in this conversation to the customer, through the quote owner. Use it only when the customer asked for the quote by email and wrote their email address in this conversation; pass the quoteNumber of the issued quote and that address exactly as they wrote it. Refused, with nothing sent, when the quote was not issued in this conversation, when the address does not appear in the customer\'s own messages (ask them to write it), when it is not a single valid address, or when email is unavailable right now (say so; never promise the email). The result gives only the masked address (for example ca***@gmail.com): tell the customer it was sent there, never the full address, and never that it arrived.',
+        'Emails the PDF of a quote issued in this conversation to the customer, through the quote owner. Use it only when the customer asked for the quote by email and wrote their email address in this conversation; pass the quoteNumber of the issued quote and that address exactly as they wrote it. Refused, with nothing sent, when the quote was not issued in this conversation, when the address does not appear in the customer\'s own messages (ask them to write it), when it is not a single valid address, or when email is unavailable right now (say so; never promise the email). The result gives only the masked address (for example ca***@gmail.com) and the status: sent = tell the customer it was sent there; pending or sending = it is on its way there; failed = it could not be sent. Never the full address, and never that it arrived.',
       owner: 'quote',
       riskClass: 'EXTERNAL_COMMUNICATION',
       requiredScopes: [QUOTE_EMAIL_SCOPE],
@@ -78,7 +81,17 @@ export function quoteEmailCapability(deps: QuoteEmailDeps): WriteCapabilityRegis
       // ponytail: one delivery per (quote, address); no cap on how many different addresses the customer writes — add one if abused.
       const key = `r4-qe_${createHash('sha256').update(`${taskId}|${quote.quoteId}|${email}`).digest('hex').slice(0, 48)}`;
       try {
-        const { delivery } = await deps.quotes.requestEmailDelivery(quote.quoteId, { recipient: { email } }, key, { signal: context.signal, correlationId: context.execution.correlationId });
+        const options = { signal: context.signal, correlationId: context.execution.correlationId };
+        let { delivery } = await deps.quotes.requestEmailDelivery(quote.quoteId, { recipient: { email } }, key, options);
+        // The owner queues the email and sends it a second or two later: wait briefly so the agent can say it was sent.
+        for (let i = 0; i < (deps.waitPolls ?? 8) && (delivery.status === 'pending' || delivery.status === 'sending'); i++) {
+          await new Promise((r) => setTimeout(r, deps.waitMs ?? 1_000));
+          try {
+            delivery = await deps.quotes.getDelivery(quote.quoteId, delivery.deliveryId, options);
+          } catch {
+            break; // a failed read changes nothing: the delivery stays queued with the owner
+          }
+        }
         return { status: 'applied', result: { quoteNumber: quote.quoteNumber, status: delivery.status, recipientMasked: delivery.recipientMasked }, resourceRef: `quote-delivery:${delivery.deliveryId}`, externalOperationRef: key, replayed: false };
       } catch (error) {
         if (!(error instanceof DomainError)) throw error;

@@ -151,7 +151,7 @@ function world(options: { limits?: Partial<AutonomousQuoteLimitsV6>; owner?: Fix
       capability = create();
     },
     /** (ADR-057 C4) quote.email@1 over the same records and the same guarded Quote port. */
-    email: (quoteNumber: string, address: string) => quoteEmailCapability({ store, quotes, conversation: thread.reader }).execute(quoteEmailInput.parse({ quoteNumber, email: address }), writeContext(newKey())),
+    email: (quoteNumber: string, address: string) => quoteEmailCapability({ store, quotes, conversation: thread.reader, waitMs: 1 }).execute(quoteEmailInput.parse({ quoteNumber, email: address }), writeContext(newKey())),
     decisions: async () => (await pool.query<{ outcome: string; reason_code: string }>('select outcome, reason_code from sales.quote_autonomous_decisions where task_id = $1 order by decided_at', [taskId])).rows.map((r) => `${r.outcome}:${r.reason_code}`),
   };
 }

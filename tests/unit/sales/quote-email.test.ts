@@ -10,18 +10,21 @@ const delivery = (over: Partial<QuoteV2Delivery> = {}): QuoteV2Delivery => ({
   documentSha256: 'a'.repeat(64), requestedAt: '2026-11-24T12:00:00Z', sentAt: null, attempts: { count: 0, lastAttemptAt: null, lastErrorCode: null }, ...over,
 });
 
-function setup(options: { said?: string[]; fail?: DomainError } = {}) {
+function setup(options: { said?: string[]; fail?: DomainError; stuck?: boolean } = {}) {
   const calls: { quoteId: string; email: string; key: string }[] = [];
   const quotes = {
     requestEmailDelivery: (quoteId: string, request: { recipient: { email: string } }, key: string) => {
       calls.push({ quoteId, email: request.recipient.email, key });
       return options.fail ? Promise.reject(options.fail) : Promise.resolve({ replayed: false, delivery: delivery() });
     },
+    // The owner sends a queued email right away: the next read says sent.
+    getDelivery: () => Promise.resolve(delivery({ status: options.stuck ? 'pending' : 'sent', sentAt: options.stuck ? null : '2026-11-24T12:00:01Z' })),
   } as unknown as QuoteV2Service;
   const thread = (options.said ?? ['Hola, quiero la cotización por correo', 'mi correo es Camila.Rojas@Gmail.com']).map((text, i) => ({ cursor: `${i}`, at: '2026-11-24T12:00:00Z', kind: 'contact' as const, text, refs: {}, delivery: null }));
   const capability = quoteEmailCapability({
     store: { conversationQuotes: (taskIds: readonly string[]) => Promise.resolve(taskIds[0] === TASK ? [QUOTE] : []) },
     quotes,
+    waitMs: 1,
     conversation: { thread: () => Promise.resolve([...thread, { cursor: 'x', at: '2026-11-24T12:00:01Z', kind: 'agent' as const, text: 'te la mando a otro@evil.com', refs: {}, delivery: null }]) },
   });
   const run = (input: { quoteNumber: string; email: string }) =>
@@ -40,9 +43,14 @@ describe('quote.email@1 (ADR-057 C4)', () => {
   it('emails a quote issued here to the address the customer wrote; only the masked address comes back', async () => {
     const { run, calls } = setup();
     const result = await run({ quoteNumber: 'pc-000210', email: ' camila.rojas@gmail.com ' });
-    expect(result).toMatchObject({ status: 'applied', result: { quoteNumber: 'PC-000210', status: 'pending', recipientMasked: 'ca***@gmail.com' } });
+    expect(result).toMatchObject({ status: 'applied', result: { quoteNumber: 'PC-000210', status: 'sent', recipientMasked: 'ca***@gmail.com' } });
     expect(JSON.stringify(result)).not.toMatch(/camila\.rojas/);
     expect(calls).toEqual([{ quoteId: QUOTE.quoteId, email: 'camila.rojas@gmail.com', key: expect.stringMatching(/^r4-qe_[0-9a-f]{48}$/) }]);
+  });
+
+  it('waits briefly for the queued email; still queued after the wait, it says so (pending), never sent', async () => {
+    const { run } = setup({ stuck: true });
+    expect(await run({ quoteNumber: 'PC-000210', email: 'camila.rojas@gmail.com' })).toMatchObject({ status: 'applied', result: { status: 'pending' } });
   });
 
   it('the same quote and address always use the same owner key (a repeat replays, never a second email)', async () => {
