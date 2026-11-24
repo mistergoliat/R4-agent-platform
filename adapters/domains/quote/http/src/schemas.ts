@@ -58,6 +58,19 @@ export const idempotencyLookupSchema = z.discriminatedUnion('state', [
   }),
 ]);
 
+/** (ADR-057 C4) The owner's Delivery representation (closed). */
+export const deliverySchema = z.strictObject({
+  deliveryId: z.uuid(),
+  quoteId: z.uuid(),
+  channel: z.literal('email'),
+  status: z.enum(['pending', 'sending', 'sent', 'failed', 'unknown']),
+  recipientMasked: z.string().min(1).max(254),
+  documentSha256: sha256,
+  requestedAt: instant,
+  sentAt: instant.nullable(),
+  attempts: z.strictObject({ count: z.int().min(0), lastAttemptAt: instant.nullable(), lastErrorCode: z.string().regex(/^[a-z][a-z0-9_]{1,63}$/).nullable() }),
+});
+
 export const errorResponseSchema = z.object({
   error: z.object({ code: z.string().max(64), message: z.string().max(500), requestId: z.string().max(100), details: z.record(z.string(), z.unknown()).optional() }),
 });

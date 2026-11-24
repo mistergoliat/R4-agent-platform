@@ -38,7 +38,7 @@ function slowOwner(ms: number) {
     getQuote: () => Promise.resolve({ status: 'issued' } as never),
     getOperation: () => Promise.resolve({} as never),
     lookupIdempotency: () => Promise.resolve(null),
-    getDocument: () => Promise.resolve({} as never),
+    getDocument: () => Promise.resolve({} as never), requestEmailDelivery: () => Promise.reject(new Error('unused')), getDelivery: () => Promise.reject(new Error('unused')),
   } satisfies QuoteV2Service;
   return { quotes, state };
 }

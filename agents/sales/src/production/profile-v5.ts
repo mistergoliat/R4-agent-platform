@@ -57,12 +57,23 @@ export const SALES_PRODUCTION_AUTONOMOUS_ACTION_POLICY: ActionPolicyConfiguratio
   },
 } satisfies ActionPolicyConfigurationInput);
 
+/** (ADR-057 C4) sales-web@19: the autonomous policy plus quote.email (an external communication the capability gates itself). */
+export const SALES_WEB_QUOTE_ACTION_POLICY: ActionPolicyConfigurationInput = Object.freeze({
+  policyId: 'sales-web-quote-policy',
+  version: 1,
+  riskClasses: DEFAULT_ACTION_POLICY.riskClasses,
+  capabilities: {
+    ...SALES_PRODUCTION_AUTONOMOUS_ACTION_POLICY.capabilities,
+    'quote.email': { autonomy: 'allow', minimumIdentity: 'provisional' },
+  },
+} satisfies ActionPolicyConfigurationInput);
+
 /**
  * Profiles whose quote issuance is autonomous (they compose quote.preview and workspace.update@2 and the
  * autonomous action policy): @5 (quote.create@3, model-attested request), @6 (R4-J3E-B: quote.create@4,
  * customer confirmation read from the conversation) and @7 (R4-J3E-C1: quote.create@5, the exact Sales-rendered offer).
  */
-export const SALES_AUTONOMOUS_QUOTE_PROFILES: ReadonlySet<string> = new Set(['sales-production@5', 'sales-production@6', 'sales-production@7', 'sales-production@8', 'sales-production@12', 'sales-production@14', 'sales-production@15', 'sales-production@16', 'sales-production@17', 'sales-production@18', 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23', 'sales-production@24', 'sales-production@25', 'sales-production@26']);
+export const SALES_AUTONOMOUS_QUOTE_PROFILES: ReadonlySet<string> = new Set(['sales-production@5', 'sales-production@6', 'sales-production@7', 'sales-production@8', 'sales-production@12', 'sales-production@14', 'sales-production@15', 'sales-production@16', 'sales-production@17', 'sales-production@18', 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23', 'sales-production@24', 'sales-production@25', 'sales-production@26', 'sales-web@19']);
 
 export function isAutonomousQuoteProfile(profile: ProductionProfile): boolean {
   return SALES_AUTONOMOUS_QUOTE_PROFILES.has(profileLabel(profile));

@@ -97,6 +97,8 @@ function tampering(owner: FixtureQuoteV2Service, tamper: (quote: QuoteV2Quote) =
     getOperation: (...a) => owner.getOperation(...a),
     lookupIdempotency: (...a) => owner.lookupIdempotency(...a),
     getDocument: (...a) => owner.getDocument(...a),
+    requestEmailDelivery: (...a) => owner.requestEmailDelivery(...a),
+    getDelivery: (...a) => owner.getDelivery(...a),
   };
 }
 

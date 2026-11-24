@@ -471,5 +471,7 @@ function bind(base: FixtureQuoteV2Service): QuoteV2Service {
     getOperation: (...a) => base.getOperation(...a),
     lookupIdempotency: (...a) => base.lookupIdempotency(...a),
     getDocument: (...a) => base.getDocument(...a),
+    requestEmailDelivery: (...a) => base.requestEmailDelivery(...a),
+    getDelivery: (...a) => base.getDelivery(...a),
   };
 }

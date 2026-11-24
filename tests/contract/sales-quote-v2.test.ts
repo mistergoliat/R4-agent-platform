@@ -57,12 +57,12 @@ describe('sales-production@4 (Quote V2 REAL) — composition', () => {
     expect(v4.bindings.actionPolicy).toBe(SALES_PRODUCTION_ACTION_POLICY);
   });
 
-  it('declares exactly the minimum owner scopes and only owner routes without email, draft, cancel or override', () => {
+  it('declares exactly the minimum owner scopes and only owner routes without draft, cancel or override; email only as the explicit delivery request (ADR-057 C4)', () => {
     expect(SALES_PRODUCTION_V4_QUOTE_BINDING.principalScopes).toEqual(['quotes:create', 'quotes:read', 'quotes:document:read']);
     const client = source('adapters/domains/quote/http/src/client.ts');
     const routes = [...client.matchAll(/'(\/v2\/[^'`?]*)|`(\/v2\/[^`?]*)/g)].map((m) => (m[1] ?? m[2])!.replace(/\$\{[^}]+\}/g, '{id}'));
-    expect([...new Set(routes)].sort()).toEqual(['/v2/idempotency/current', '/v2/operations/{id}', '/v2/quotes', '/v2/quotes/{id}', '/v2/quotes/{id}/document'].sort());
-    expect(client).not.toMatch(/\/deliveries|\/cancel|\/drafts|\/issue\b|validityOverride/);
+    expect([...new Set(routes)].sort()).toEqual(['/v2/idempotency/current', '/v2/operations/{id}', '/v2/quotes', '/v2/quotes/{id}', '/v2/quotes/{id}/document', '/v2/quotes/{id}/deliveries/email', '/v2/quotes/{id}/deliveries/{id}'].sort());
+    expect(client).not.toMatch(/\/cancel|\/drafts|\/issue\b|validityOverride/);
   });
 });
 

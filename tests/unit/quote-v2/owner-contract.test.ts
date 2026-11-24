@@ -136,9 +136,9 @@ describe('FixtureQuoteV2Service parity with the owner contract', () => {
     expect(fingerprintOf({ ...OWNER_REQUEST, customer: { kind: 'guest' } })).not.toBe(fingerprintOf(OWNER_REQUEST));
   });
 
-  it('never prices: it has no Catalog or Shipping dependency and sends no email', () => {
+  it('never prices: it has no Catalog or Shipping dependency; email only on an explicit delivery request (ADR-057 C4)', () => {
     const owner = new FixtureQuoteV2Service() as unknown as Record<string, unknown>;
-    expect(Object.getOwnPropertyNames(Object.getPrototypeOf(owner)).sort()).toEqual(['completeIssuance', 'constructor', 'createAndIssue', 'createCalls', 'getDocument', 'getOperation', 'getQuote', 'lookupIdempotency', 'quotes'].sort());
+    expect(Object.getOwnPropertyNames(Object.getPrototypeOf(owner)).sort()).toEqual(['completeIssuance', 'constructor', 'createAndIssue', 'createCalls', 'getDocument', 'getOperation', 'getQuote', 'lookupIdempotency', 'quotes', 'requestEmailDelivery', 'getDelivery'].sort());
     expect(new DomainError('validation', 'x', 'y').retryable).toBe(false);
   });
 });

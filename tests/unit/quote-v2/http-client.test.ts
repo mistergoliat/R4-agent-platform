@@ -118,6 +118,39 @@ describe('QuoteV2HttpClient — reads', () => {
   });
 });
 
+describe('QuoteV2HttpClient — email delivery (ADR-057 C4)', () => {
+  const QUOTE = '0f8e4a52-3c1b-4d6e-9b7a-2e5f1c8d9a10';
+  const DELIVERY = fixture('delivery.response-202.json');
+  const RECIPIENT = { recipient: { email: 'camila.rojas@example.com' } };
+
+  it("POSTs the recipient to the quote's deliveries/email with Idempotency-Key; parses the owner 202; telemetry never carries the address", async () => {
+    const { quotes, seen, telemetry } = client(() => respond(202, DELIVERY, { 'Idempotent-Replay': 'true' }));
+    const result = await quotes.requestEmailDelivery(QUOTE, RECIPIENT, KEY, { correlationId: 'corr-2' });
+    expect(result).toMatchObject({ replayed: true, delivery: { status: 'pending', recipientMasked: 'ca***@example.com', quoteId: QUOTE } });
+    expect(seen[0]).toMatchObject({ url: `http://127.0.0.1:4020/v2/quotes/${QUOTE}/deliveries/email`, method: 'POST', headers: { 'idempotency-key': KEY, 'content-type': 'application/json' } });
+    expect(JSON.parse(seen[0]!.body!)).toEqual(RECIPIENT);
+    expect(JSON.stringify(telemetry)).not.toMatch(/camila|rojas/i);
+    expect(telemetry[0]).toMatchObject({ operation: 'requestEmailDelivery', outcome: 'ok', httpStatus: 202, replayed: true });
+  });
+
+  it('a disabled email provider is «nothing queued» (temporarily unavailable), never an unknown outcome; other 5xx stay unknown', async () => {
+    const disabled = JSON.stringify({ error: { code: 'dependency_unavailable', message: 'x', requestId: 'req-1', details: { dependency: 'email_provider', retryable: false } } });
+    await expect(client(() => respond(503, disabled)).quotes.requestEmailDelivery(QUOTE, RECIPIENT, KEY)).rejects.toMatchObject({ category: 'temporarily_unavailable', code: 'email_provider_unavailable' });
+    await expect(client(() => respond(500, '{}')).quotes.requestEmailDelivery(QUOTE, RECIPIENT, KEY)).rejects.toMatchObject({ category: 'unknown_outcome' });
+    const conflict = JSON.stringify({ error: { code: 'invalid_state_transition', message: 'x', requestId: 'r' } });
+    await expect(client(() => respond(409, conflict)).quotes.requestEmailDelivery(QUOTE, RECIPIENT, KEY)).rejects.toMatchObject({ category: 'conflict', code: 'invalid_state_transition' });
+  });
+
+  it('a delivery of another quote, or a body outside the contract, is a contract violation; reads the delivery back', async () => {
+    await expect(client(() => respond(202, DELIVERY)).quotes.requestEmailDelivery('11111111-1111-4111-8111-111111111111', RECIPIENT, KEY)).rejects.toMatchObject({ category: 'contract_violation' });
+    const leaky = JSON.stringify({ ...JSON.parse(DELIVERY), recipient: 'camila.rojas@example.com' });
+    await expect(client(() => respond(202, leaky)).quotes.requestEmailDelivery(QUOTE, RECIPIENT, KEY)).rejects.toMatchObject({ category: 'contract_violation' });
+    const { quotes, seen } = client(() => respond(200, DELIVERY));
+    expect(await quotes.getDelivery(QUOTE, '7d2f9b1e-3a4c-4e8d-9f0a-6b5c2e1d8a90')).toMatchObject({ status: 'pending' });
+    expect(seen[0]).toMatchObject({ method: 'GET', url: `http://127.0.0.1:4020/v2/quotes/${QUOTE}/deliveries/7d2f9b1e-3a4c-4e8d-9f0a-6b5c2e1d8a90` });
+  });
+});
+
 describe('Quote adapter configuration', () => {
   const env = { R4_QUOTE_MODE: 'real', R4_QUOTE_BASE_URL: 'http://127.0.0.1:4020', R4_QUOTE_BEARER_TOKEN: TOKEN, R4_QUOTE_TIMEOUT_MS: '20000' };
 

@@ -12,6 +12,9 @@ import {
   type QuoteV2Operation,
   type QuoteV2Quote,
   type QuoteV2Service,
+  type QuoteV2Delivery,
+  type QuoteV2DeliveryResult,
+  type QuoteV2EmailDeliveryRequest,
 } from './v2.js';
 
 export interface FixtureQuoteV2Faults {
@@ -147,6 +150,41 @@ export class FixtureQuoteV2Service implements QuoteV2Service {
     if (mode === 'unavailable') throw new DomainError('temporarily_unavailable', 'document_storage_failed', 'stored artifact unavailable', { httpStatus: 503 });
     const bytes = mode === 'corrupt' ? new TextEncoder().encode('%PDF-1.7\n% tampered\n') : stored.pdf;
     return { bytes, declaredSha256: stored.quote.document.pdfSha256 };
+  }
+
+  /** (ADR-057 C4) Deliveries by idempotency key; `faults.emailProvider = () => false` answers like a disabled provider. */
+  readonly #deliveries = new Map<string, { fingerprint: string; delivery: QuoteV2Delivery }>();
+  /** Every recipient a delivery was queued for (tests only; the owner never returns it). */
+  readonly deliveredTo: string[] = [];
+
+  async requestEmailDelivery(quoteId: string, request: QuoteV2EmailDeliveryRequest, idempotencyKey: string, options?: CallOptions): Promise<QuoteV2DeliveryResult> {
+    await this.#enter(options);
+    const fingerprint = JSON.stringify([quoteId, request]);
+    const bound = this.#deliveries.get(idempotencyKey);
+    if (bound) {
+      if (bound.fingerprint !== fingerprint) throw new DomainError('conflict', 'idempotency_key_conflict', 'key bound to another request', { httpStatus: 409 });
+      return { replayed: true, delivery: bound.delivery };
+    }
+    if ((this.faults as { emailProvider?: () => boolean }).emailProvider?.() === false) throw new DomainError('temporarily_unavailable', 'email_provider_unavailable', 'no email provider', { httpStatus: 503 });
+    const stored = this.#quotes.get(quoteId);
+    if (!stored) throw new DomainError('not_found', 'quote_not_found', 'no such quote', { httpStatus: 404 });
+    if (!/^[^\s<>,;:"()[\]\\@]+@[^\s<>,;:"()[\]\\@]+\.[^\s<>,;:"()[\]\\@]+$/.test(request.recipient.email)) throw new DomainError('validation', 'validation_error', 'invalid recipient', { httpStatus: 422 });
+    if (stored.quote.status !== 'issued') throw new DomainError('conflict', 'invalid_state_transition', 'quote not issued', { httpStatus: 409 });
+    const [local = '', domain = ''] = request.recipient.email.split('@');
+    const delivery: QuoteV2Delivery = {
+      deliveryId: crypto.randomUUID(), quoteId, channel: 'email', status: 'pending', recipientMasked: `${local.slice(0, local.length <= 2 ? 1 : 2)}***@${domain}`,
+      documentSha256: stored.quote.document.pdfSha256 ?? '0'.repeat(64), requestedAt: new Date().toISOString(), sentAt: null, attempts: { count: 0, lastAttemptAt: null, lastErrorCode: null },
+    };
+    this.#deliveries.set(idempotencyKey, { fingerprint, delivery });
+    this.deliveredTo.push(request.recipient.email);
+    return { replayed: false, delivery };
+  }
+
+  async getDelivery(quoteId: string, deliveryId: string, options?: CallOptions): Promise<QuoteV2Delivery> {
+    await this.#enter(options);
+    const found = [...this.#deliveries.values()].find((d) => d.delivery.deliveryId === deliveryId && d.delivery.quoteId === quoteId);
+    if (!found) throw new DomainError('not_found', 'delivery_not_found', 'no such delivery', { httpStatus: 404 });
+    return found.delivery;
   }
 
   async #enter(options: CallOptions | undefined): Promise<void> {

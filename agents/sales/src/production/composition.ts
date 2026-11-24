@@ -1,3 +1,4 @@
+import { QUOTE_EMAIL_CAPABILITY_ID, quoteEmailCapability } from '../capabilities/quote-email.js';
 import type pg from 'pg';
 import type { Logger } from 'pino';
 import { DomainError, type CatalogPort, type CheckoutConsentSource, type CheckoutService, type QuoteV2Service, type ShippingService } from '@r4-adapters/domains';
@@ -74,7 +75,7 @@ import { catalogSetComplementsCapability } from '../capabilities/catalog-set-com
 import { catalogBuildStepCapability, catalogReplacementsCapability, type GraphSource } from '../capabilities/catalog-build-step.js';
 import type { CatalogDiscoverPort } from '@r4-adapters/catalog-http';
 import { checkoutPurchaseStatusCapability, checkoutRequestLinkCapability, checkoutStartPurchaseCapability } from '../capabilities/checkout.js';
-import { SALES_WEB_PROFILES, isSalesWebProfile, salesWebAgentVersion, salesWebProfile } from './profile-web.js';
+import { SALES_WEB_PROFILES, SALES_WEB_QUOTE_PROFILES, isSalesWebProfile, salesWebAgentVersion, salesWebProfile } from './profile-web.js';
 import { LANE_CAPABILITY_IDS, SALES_WEB_AGENT_ID } from '../ids.js';
 
 /** (ADR-046) The agent (identity and pinned definition version) a Sales profile runs: `sales-web@N` for web profiles, `sales@vN` otherwise. */
@@ -269,10 +270,12 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
           // (R4-J5 F1, P-1) A profile that requires the parity-verified set never composes quote.create without it; the evidence in use is logged.
           assertQuoteParityConfigured(profileLabel(profile), options.quoteParity);
           // (R4-J5 F1) The F1 canary, and the quote lane @14, run within the owner-approved canary limits, never looser.
-          if (isF1CanaryProfile(profile) || isQuoteLaneProfile(profile)) assertF1CanaryLimits(limits, profileLabel(profile));
+          if (isF1CanaryProfile(profile) || isQuoteLaneProfile(profile) || SALES_WEB_QUOTE_PROFILES.has(profileLabel(profile))) assertF1CanaryLimits(limits, profileLabel(profile));
           if (options.quoteParity) options.logger.info({ quoteParity: { profile: profileLabel(profile), fingerprint: options.quoteParity.fingerprint, items: options.quoteParity.items, maxAgeSeconds: options.quoteParity.maxAgeSeconds } }, 'sales quote parity evidence configured');
           if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV3Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now(), parity: options.quoteParity ?? null, eligibility: salesCommercialEligibility(profile, options.promotionalQuotes === true), naturalAcceptance: SALES_INTENT_ACCEPTANCE_PROFILES.has(profileLabel(profile)), hideStockCounts: SALES_STOCK_COUNT_PROFILES.has(profileLabel(profile)) }));
           if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV5Capability({ store: sales, quotes, catalog, shipping: options.shipping, limits, conversation: options.store, admission: controls, now: () => clock.now(), parity: options.quoteParity ?? null, eligibility: salesCommercialEligibility(profile, options.promotionalQuotes === true), documents: SALES_QUOTE_DOCUMENT_PROFILES.has(profileLabel(profile)) ? quoteDocumentDelivery(options.store, options.logger) : null, naturalAcceptance: SALES_INTENT_ACCEPTANCE_PROFILES.has(profileLabel(profile)) }));
+          // (ADR-057 C4) The issued quote's PDF by email, through the same kill-switch-guarded Quote port.
+          if (capabilityAvailability(profile, QUOTE_EMAIL_CAPABILITY_ID).available) capabilities.registerWrite(quoteEmailCapability({ store: sales, quotes, conversation: options.store }));
         } else {
           if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV2Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now() }));
           if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV4Capability({ store: sales, quotes: options.quotes, catalog, shipping: options.shipping, limits, conversation: options.store, now: () => clock.now() }));
@@ -559,7 +562,7 @@ function laneOf(lane: ConversationLane | undefined): { lane?: ConversationLane }
 }
 
 /**
- * (R4-J3E-C1) Quote V2 with its only mutation, createAndIssue, behind the kill switch: the guard re-reads the
+ * (R4-J3E-C1) Quote V2 with its mutations (createAndIssue and, ADR-057 C4, requestEmailDelivery) behind the kill switch: the guard re-reads the
  * durable autonomy controls immediately before every call (never cached; unreadable = engaged) and refuses with
  * "definitely not sent" instead of calling the owner. The reads (idempotency lookup, quote, operation, document)
  * stay open, so reconciliation and document verification keep working while the switch is engaged.
@@ -574,8 +577,11 @@ export function killSwitchGuardedQuotes(quotes: QuoteV2Service, controls: Autono
     getOperation: (...a) => quotes.getOperation(...a),
     lookupIdempotency: (...a) => quotes.lookupIdempotency(...a),
     getDocument: (...a) => quotes.getDocument(...a),
+    // (ADR-057 C4) Emailing the quote reaches the customer: a write, stopped by the kill switch like issuance.
+    requestEmailDelivery: (...a) => quotes.requestEmailDelivery(...a),
+    getDelivery: (...a) => quotes.getDelivery(...a),
   };
-  return guardProductionWrites(port, { domain: SALES_DOMAINS.quote, writeOperations: ['createAndIssue'], controls, logger, blocked: () => quoteWritesBlockedError() });
+  return guardProductionWrites(port, { domain: SALES_DOMAINS.quote, writeOperations: ['createAndIssue', 'requestEmailDelivery'], controls, logger, blocked: () => quoteWritesBlockedError() });
 }
 
 /**
@@ -650,6 +656,9 @@ export function singleFlightQuoteIssuance(quotes: QuoteV2Service, pool: pg.Pool,
     getOperation: (...a) => quotes.getOperation(...a),
     lookupIdempotency: (...a) => quotes.lookupIdempotency(...a),
     getDocument: (...a) => quotes.getDocument(...a),
+    // Emailing an issued quote is not issuance: never serialized.
+    requestEmailDelivery: (...a) => quotes.requestEmailDelivery(...a),
+    getDelivery: (...a) => quotes.getDelivery(...a),
     createAndIssue: async (...a) => {
       const client = await pool.connect();
       let locked = false;

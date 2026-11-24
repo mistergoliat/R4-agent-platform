@@ -3,7 +3,9 @@ import { fileURLToPath } from 'node:url';
 import { agentDefinitionSchema, type AgentDefinition } from '@r4/contracts';
 import { profileLabel, type ProductionProfile } from '@r4/live-ops';
 import { WEB_CHANNEL_ID, WEB_EDGE_CONTRACT_REF } from '@r4-adapters/web';
-import { CAPABILITY_IDS, LANE_CAPABILITY_IDS, SALES_WEB_AGENT_ID } from '../ids.js';
+import { AUTONOMOUS_QUOTE_CAPABILITY_IDS, CAPABILITY_IDS, LANE_CAPABILITY_IDS, SALES_WEB_AGENT_ID } from '../ids.js';
+import { QUOTE_EMAIL_CAPABILITY_ID } from '../capabilities/quote-email.js';
+import { QUOTE_CONTRACT_REF } from './profile-v4.js';
 import { SALES_DOMAINS } from './profile.js';
 import { SALES_PRODUCTION_PROFILE_V13 } from './profile-v13.js';
 
@@ -181,10 +183,36 @@ export const SALES_WEB_PROFILE_V18: ProductionProfile = Object.freeze({
   description: 'sales-web@17 with brief help for small general requests that serve the purchase, consistent declines and the v26 consultation rule (asymmetric safety guidance, options on every consultation); never hands off; no writes.',
 } satisfies ProductionProfile);
 
-export const SALES_WEB_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_WEB_PROFILE_V1, SALES_WEB_PROFILE_V2, SALES_WEB_PROFILE_V3, SALES_WEB_PROFILE_V4, SALES_WEB_PROFILE_V5, SALES_WEB_PROFILE_V6, SALES_WEB_PROFILE_V7, SALES_WEB_PROFILE_V8, SALES_WEB_PROFILE_V9, SALES_WEB_PROFILE_V10, SALES_WEB_PROFILE_V11, SALES_WEB_PROFILE_V12, SALES_WEB_PROFILE_V13, SALES_WEB_PROFILE_V14, SALES_WEB_PROFILE_V15, SALES_WEB_PROFILE_V16, SALES_WEB_PROFILE_V17, SALES_WEB_PROFILE_V18]);
+/**
+ * (ADR-057 C4, owner 2026-11-24) sales-web@18 that issues the formal quote of the products the visitor chose, as the
+ * WhatsApp lane does (workspace.update@2, quote.preview, quote.create@6: the Sales-rendered offer, the visitor's
+ * acceptance in natural language, F1 limits, parity, the kill switch), and emails its PDF through the Quote owner
+ * (quote.email@1: only a quote issued here, only to an address the visitor wrote). Nothing enters the store cart.
+ */
+export const SALES_WEB_PROFILE_V19: ProductionProfile = Object.freeze({
+  ...SALES_WEB_PROFILE_V18,
+  version: 19,
+  description: 'sales-web@18 that issues the formal quote of the products the visitor chose (Sales-rendered offer, accepted in their own words, F1 limits, parity-verified SKUs, kill switch) and emails its PDF to the address the visitor wrote, through the Quote owner. No cart writes, no Checkout, no payments.',
+  domains: {
+    ...SALES_WEB_PROFILE_V18.domains,
+    [SALES_DOMAINS.quote]: { status: 'REAL', contractRef: QUOTE_CONTRACT_REF, note: 'Quote V2 HTTP binding: autonomous issuance of the offer the visitor accepted; email delivery of its PDF (quotes:delivery:email); no PDF to the channel' },
+  },
+  capabilities: [
+    ...SALES_WEB_PROFILE_V18.capabilities,
+    { capabilityId: CAPABILITY_IDS.workspaceUpdate, domain: SALES_DOMAINS.catalog, effect: 'write' as const, decision: 'ALLOW' as const },
+    { capabilityId: AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview, domain: SALES_DOMAINS.quote, effect: 'read' as const },
+    { capabilityId: CAPABILITY_IDS.quoteCreate, domain: SALES_DOMAINS.quote, effect: 'write' as const, decision: 'ALLOW' as const },
+    { capabilityId: QUOTE_EMAIL_CAPABILITY_ID, domain: SALES_DOMAINS.quote, effect: 'write' as const, decision: 'ALLOW' as const },
+  ],
+} satisfies ProductionProfile);
+
+/** (ADR-057 C4) Web profiles that issue quotes and email them. */
+export const SALES_WEB_QUOTE_PROFILES: ReadonlySet<string> = new Set(['sales-web@19']);
+
+export const SALES_WEB_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_WEB_PROFILE_V1, SALES_WEB_PROFILE_V2, SALES_WEB_PROFILE_V3, SALES_WEB_PROFILE_V4, SALES_WEB_PROFILE_V5, SALES_WEB_PROFILE_V6, SALES_WEB_PROFILE_V7, SALES_WEB_PROFILE_V8, SALES_WEB_PROFILE_V9, SALES_WEB_PROFILE_V10, SALES_WEB_PROFILE_V11, SALES_WEB_PROFILE_V12, SALES_WEB_PROFILE_V13, SALES_WEB_PROFILE_V14, SALES_WEB_PROFILE_V15, SALES_WEB_PROFILE_V16, SALES_WEB_PROFILE_V17, SALES_WEB_PROFILE_V18, SALES_WEB_PROFILE_V19]);
 
 /** The sales-web definition version each web profile pins. */
-const SALES_WEB_AGENT_VERSIONS: Readonly<Record<string, number>> = Object.freeze({ 'sales-web@1': 1, 'sales-web@2': 2, 'sales-web@3': 3, 'sales-web@4': 4, 'sales-web@5': 5, 'sales-web@6': 6, 'sales-web@7': 7, 'sales-web@8': 8, 'sales-web@9': 9, 'sales-web@10': 10, 'sales-web@11': 11, 'sales-web@12': 12, 'sales-web@13': 13, 'sales-web@14': 14, 'sales-web@15': 15, 'sales-web@16': 16, 'sales-web@17': 17, 'sales-web@18': 18 });
+const SALES_WEB_AGENT_VERSIONS: Readonly<Record<string, number>> = Object.freeze({ 'sales-web@1': 1, 'sales-web@2': 2, 'sales-web@3': 3, 'sales-web@4': 4, 'sales-web@5': 5, 'sales-web@6': 6, 'sales-web@7': 7, 'sales-web@8': 8, 'sales-web@9': 9, 'sales-web@10': 10, 'sales-web@11': 11, 'sales-web@12': 12, 'sales-web@13': 13, 'sales-web@14': 14, 'sales-web@15': 15, 'sales-web@16': 16, 'sales-web@17': 17, 'sales-web@18': 18, 'sales-web@19': 19 });
 
 export function salesWebProfile(label: string): ProductionProfile | null {
   return SALES_WEB_PROFILES.find((p) => profileLabel(p) === label) ?? null;
