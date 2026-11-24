@@ -8,7 +8,8 @@
   - **G3 en producción** (PR #136): 589 propuestas abiertas el 2026-11-23.
   - **G2b-1 en producción** (PR #138): altas por analogía, reemplazos, grupos musculares y cierre automático de avisos.
   - **Decisión 9 en producción** (PR #141): la versión 2 se publicó sola el 2026-11-23, con 290 cambios automáticos.
-  - **Decisión 10 implementada** (datos que se responden en R4).
+  - **Decisión 10 en producción** (PR #143).
+  - **G5 implementado:** las herramientas del chat web leen el grafo firmado.
   - Cada fase necesita autorización explícita del owner.
 - **Fecha:** 2026-11-23
 - **Mandato:** decisiones del owner del 2026-11-23:
@@ -411,6 +412,24 @@ sin perfiles quedaba olvidada.
   - lista para exportar: los `FACT_NOT_IN_SHEET` abiertos.
 - **Pesín** usará los hechos cuando lea el grafo firmado (G5). Las consultas de Pesín que terminan en un hecho son
   G6 (Decisión 7).
+
+## G5 — implementación (2026-11-24)
+
+- **Fuente del grafo:** `catalog.build_step`, `catalog.replacements` y `catalog.set_complements` leen el grafo a
+  través de una fuente (`GraphSource`): un archivo, o una fuente viva. Cada llamada lee la versión que la fuente tiene
+  en ese momento.
+- **`SignedStoreGraph`, en el paquete de Ventas:**
+  - al arrancar, el worker web carga la última versión firmada del tipo `product-graph`. Una versión mal formada
+    detiene el arranque;
+  - cada 10 minutos busca una versión más nueva, así que lo que el curador publica el domingo llega sin reiniciar;
+  - una lectura fallida o mal formada conserva la versión en uso y queda en el log.
+  - El código de Ventas no toca la persistencia: la lectura de Core la arma el CLI del worker (`cli/production.ts`),
+    como exige el contrato de límites de Ventas.
+- **Respaldo:** si no hay ninguna versión firmada, se usa el archivo `R4_EXP_GRAPH_FILE`, como antes.
+- **Efecto con la versión 2:** Pesín deja de proponer productos inactivos o descontinuados (unas 8.350 relaciones
+  menos) y usa los nombres corregidos.
+- **Queda pendiente:** que Pesín use también los hechos de la Decisión 10. Leen la ficha en vivo desde Catalog, y
+  sumar los hechos a esa lectura es un cambio del adaptador de catálogo de Ventas. Queda como G5b.
 
 ## Fuera de alcance
 

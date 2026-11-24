@@ -82,11 +82,27 @@ const graphFileSchema = z.object({
 });
 export type GraphFile = z.infer<typeof graphFileSchema>;
 
+/** Checks a store graph (a file's JSON or the signed version's content): a malformed one is refused, never half-used. */
+export function parseGraph(content: unknown, label: string): GraphFile {
+  const parsed = graphFileSchema.safeParse(content);
+  if (!parsed.success) throw new Error(`store graph ${label} is malformed: ${parsed.error.issues[0]?.path.join('.') ?? ''} ${parsed.error.issues[0]?.message ?? ''}`.trim());
+  return parsed.data;
+}
+
 /** Reads and checks the store graph once, at composition: a malformed file stops the start instead of failing every call. */
 export function loadGraphFile(graphFile: string): GraphFile {
-  const parsed = graphFileSchema.safeParse(JSON.parse(readFileSync(graphFile, 'utf8')));
-  if (!parsed.success) throw new Error(`store graph ${graphFile} is malformed: ${parsed.error.issues[0]?.path.join('.') ?? ''} ${parsed.error.issues[0]?.message ?? ''}`.trim());
-  return parsed.data;
+  return parseGraph(JSON.parse(readFileSync(graphFile, 'utf8')), graphFile);
+}
+
+/**
+ * Where the web tools read the store graph: a file (read once), or a live source (ADR-058 G5: the owner-signed version,
+ * which the worker refreshes). Each call reads the graph the source holds at that moment.
+ */
+export type GraphSource = string | { readonly get: () => GraphFile };
+export function graphReader(source: GraphSource): () => GraphFile {
+  if (typeof source !== 'string') return () => source.get();
+  const graph = loadGraphFile(source);
+  return () => graph;
 }
 
 /** Plate weight of one sellable unit, from the product name (a "Par" counts twice; lb → kg). */
@@ -134,16 +150,16 @@ function live(context: CatalogProductContext): { name: string; price: number | n
   return { name: context.facts.name, price: context.derived.priceSummary?.finalGross.amount ?? null, sellable: context.derived.availability.sellability === 'sellable', validUntil: context.freshness.validUntil ?? null, heightCm: heightCm(context.facts.specifications ?? []) };
 }
 
-export function catalogBuildStepCapability(catalog: CatalogPort, graphFile: string, progress?: BuildProgress): CapabilityRegistration<z.infer<typeof buildStepInput>, BuildStepView> {
-  const graph = loadGraphFile(graphFile);
-  const ofStep = (k: string, s: Step) => KINDS[s].includes(graph.products[k]?.kind ?? '') && graph.products[k]?.act !== false;
-  const neighbours = (k: string) => new Set(Object.entries(graph.view[k] ?? {}).filter(([a]) => !a.startsWith('vr:')).flatMap(([, l]) => l));
+export function catalogBuildStepCapability(catalog: CatalogPort, graphFile: GraphSource, progress?: BuildProgress): CapabilityRegistration<z.infer<typeof buildStepInput>, BuildStepView> {
+  const graphOf = graphReader(graphFile);
+  const ofStep = (k: string, s: Step) => KINDS[s].includes(graphOf().products[k]?.kind ?? '') && graphOf().products[k]?.act !== false;
+  const neighbours = (k: string) => new Set(Object.entries(graphOf().view[k] ?? {}).filter(([a]) => !a.startsWith('vr:')).flatMap(([, l]) => l));
   /** Products of a step compatible with every chosen piece that constrains that step (CONSTRAINED_BY). */
   const pool = (s: Step, selected: readonly string[]): string[] => {
-    let keys = Object.keys(graph.products).filter((k) => ofStep(k, s));
-    if (!selected.some((x) => stepOfKind(graph.products[x]?.kind ?? null) === 'barra')) keys = keys.filter((k) => !NEEDS_BAR_KINDS.includes(graph.products[k]?.kind ?? ''));
+    let keys = Object.keys(graphOf().products).filter((k) => ofStep(k, s));
+    if (!selected.some((x) => stepOfKind(graphOf().products[x]?.kind ?? null) === 'barra')) keys = keys.filter((k) => !NEEDS_BAR_KINDS.includes(graphOf().products[k]?.kind ?? ''));
     const by = CONSTRAINED_BY[s] ?? [];
-    for (const k of selected.filter((x) => by.includes(stepOfKind(graph.products[x]?.kind ?? null) as Step))) {
+    for (const k of selected.filter((x) => by.includes(stepOfKind(graphOf().products[x]?.kind ?? null) as Step))) {
       const n = neighbours(k);
       if ([...n].some((x) => ofStep(x, s))) keys = keys.filter((x) => n.has(x));
     }
@@ -151,7 +167,7 @@ export function catalogBuildStepCapability(catalog: CatalogPort, graphFile: stri
   };
   const quantityFor = (s: Step, k: string, targetKg: number) => {
     if (s !== 'discos') return 1;
-    const kg = unitKg(graph.products[k]?.n ?? '');
+    const kg = unitKg(graphOf().products[k]?.n ?? '');
     return kg ? Math.min(MAX_PLATE_UNITS, Math.max(1, Math.ceil(targetKg / kg))) : 1;
   };
   return {
@@ -177,30 +193,30 @@ export function catalogBuildStepCapability(catalog: CatalogPort, graphFile: stri
             // A report never affects the read.
           }
         };
-        const short = (k: string) => (graph.products[k]?.n ?? k).split('|')[0]!.trim().slice(0, 40);
+        const short = (k: string) => (graphOf().products[k]?.n ?? k).split('|')[0]!.trim().slice(0, 40);
         // A variant key (from the cart or Mi gym) stands for its product: relations are per product.
         const selected = input.selected.map((s) => ({ productKey: s.productKey.split('-')[0]!, quantity: s.quantity }));
-        const anchor = selected.map((x) => x.productKey).find((k) => (CONSTRAINED_BY[input.step] ?? []).includes(stepOfKind(graph.products[k]?.kind ?? null) as Step));
+        const anchor = selected.map((x) => x.productKey).find((k) => (CONSTRAINED_BY[input.step] ?? []).includes(stepOfKind(graphOf().products[k]?.kind ?? null) as Step));
         say(anchor ? 'Buscando ' + LABEL[input.step] + ' que calcen con ' + short(anchor) + '…' : 'Buscando ' + LABEL[input.step] + ' para tu gimnasio…');
         const read = async (k: string) => live(await catalog.getProductContext(k, options).catch((): CatalogProductContext => ({ status: 'not_found', productKey: k })));
         const chosen = selected.map((s) => s.productKey);
         const targetKg = input.targetPlateKg ?? DEFAULT_PLATE_KG;
         const chosenLive = await Promise.all(chosen.map(read));
-        const selectedTotal = selected.reduce((sum, s, i) => sum + (chosenLive[i]?.price ?? graph.products[s.productKey]?.price ?? 0) * s.quantity, 0);
+        const selectedTotal = selected.reduce((sum, s, i) => sum + (chosenLive[i]?.price ?? graphOf().products[s.productKey]?.price ?? 0) * s.quantity, 0);
         const remaining = input.budgetMaxClp - selectedTotal;
-        const have = new Set<Step>(chosen.map((k) => stepOfKind(graph.products[k]?.kind ?? null)).filter((s): s is Step => s !== null));
+        const have = new Set<Step>(chosen.map((k) => stepOfKind(graphOf().products[k]?.kind ?? null)).filter((s): s is Step => s !== null));
         have.add(input.step);
         const needed = [...new Set([...have].flatMap((s) => NEEDS[s] ?? []))].filter((s) => !have.has(s));
         // Reserve the cheapest compatible option of each piece still needed (snapshot price; live check happens at its own step).
         const reserved = needed.reduce((sum, s) => {
-          const prices = pool(s, chosen).map((k) => (graph.products[k]?.price ?? Number.MAX_SAFE_INTEGER) * quantityFor(s, k, targetKg));
+          const prices = pool(s, chosen).map((k) => (graphOf().products[k]?.price ?? Number.MAX_SAFE_INTEGER) * quantityFor(s, k, targetKg));
           return sum + (prices.length ? Math.min(...prices) : 0);
         }, 0);
         const cap = remaining - reserved;
         if (reserved > 0) say('Guardo ' + clp(reserved) + ' para ' + needed.map((s) => LABEL[s]).join(' y '));
-        const total = (k: string) => (graph.products[k]?.price ?? Number.MAX_SAFE_INTEGER) * quantityFor(input.step, k, targetKg);
+        const total = (k: string) => (graphOf().products[k]?.price ?? Number.MAX_SAFE_INTEGER) * quantityFor(input.step, k, targetKg);
         // Plates must reach the load with at most MAX_PLATE_UNITS units; a weight that cannot be read is not offered.
-        const reachesLoad = (k: string) => input.step !== 'discos' || (unitKg(graph.products[k]?.n ?? '') ?? 0) * quantityFor('discos', k, targetKg) >= targetKg - 1;
+        const reachesLoad = (k: string) => input.step !== 'discos' || (unitKg(graphOf().products[k]?.n ?? '') ?? 0) * quantityFor('discos', k, targetKg) >= targetKg - 1;
         const candidates = pool(input.step, chosen).filter((k) => total(k) <= cap && reachesLoad(k)).sort((a, b) => total(a) - total(b));
         say(candidates.length + ' ' + LABEL[input.step] + ' compatibles en tu presupuesto · revisando precio y stock');
         // ponytail: hydrate at most 9 spread candidates in parallel, then keep 3 sellable ones within the cap at live prices.
@@ -261,9 +277,9 @@ export const replacementsOutput = z.strictObject({
 });
 export type ReplacementsView = z.infer<typeof replacementsOutput>;
 
-export function catalogReplacementsCapability(catalog: CatalogPort, graphFile: string, progress?: BuildProgress): CapabilityRegistration<z.infer<typeof replacementsInput>, ReplacementsView> {
-  const graph = loadGraphFile(graphFile);
-  const side = (k: string, ...areas: string[]) => [...new Set(areas.flatMap((a) => graph.view[k]?.[a] ?? []))].filter((x) => graph.products[x]?.act !== false);
+export function catalogReplacementsCapability(catalog: CatalogPort, graphFile: GraphSource, progress?: BuildProgress): CapabilityRegistration<z.infer<typeof replacementsInput>, ReplacementsView> {
+  const graphOf = graphReader(graphFile);
+  const side = (k: string, ...areas: string[]) => [...new Set(areas.flatMap((a) => graphOf().view[k]?.[a] ?? []))].filter((x) => graphOf().products[x]?.act !== false);
   return {
     definition: readDefinition({
       capabilityId: LANE_CAPABILITY_IDS.catalogReplacements,
@@ -290,11 +306,11 @@ export function catalogReplacementsCapability(catalog: CatalogPort, graphFile: s
         const read = async (k: string) => live(await catalog.getProductContext(k, options).catch((): CatalogProductContext => ({ status: 'not_found', productKey: k })));
         const k = input.productKey;
         const base = await read(k);
-        say('Buscando reemplazos para ' + (base?.name ?? graph.products[k]?.n ?? k).split('|')[0]!.trim().slice(0, 40) + '…');
+        say('Buscando reemplazos para ' + (base?.name ?? graphOf().products[k]?.n ?? k).split('|')[0]!.trim().slice(0, 40) + '…');
         const used = side(k, 'vr:b');
         const similar = side(k, 'sub:a', 'sub:b');
-        const ref = base?.price ?? graph.products[k]?.price ?? null;
-        const distance = (x: string) => Math.abs((graph.products[x]?.price ?? Number.MAX_SAFE_INTEGER) - (ref ?? 0));
+        const ref = base?.price ?? graphOf().products[k]?.price ?? null;
+        const distance = (x: string) => Math.abs((graphOf().products[x]?.price ?? Number.MAX_SAFE_INTEGER) - (ref ?? 0));
         const probe = [...similar].sort((a, b) => distance(a) - distance(b)).slice(0, input.limit * 3);
         say(similar.length + ' productos cumplen la misma función · revisando precio y stock');
         const lives = await Promise.all([...used, ...probe].map(async (x) => [x, await read(x)] as const));
@@ -307,7 +323,7 @@ export function catalogReplacementsCapability(catalog: CatalogPort, graphFile: s
         const validUntil = [base, ...lives.map(([, l]) => l)].map((l) => l?.validUntil ?? null).filter((v): v is string => v !== null);
         return {
           product: base ? { productKey: k, name: base.name, finalGrossClp: base.price, sellable: base.sellable } : null,
-          inGraph: Boolean(graph.view[k]),
+          inGraph: Boolean(graphOf().view[k]),
           secondSelection,
           replacements,
           validUntil: validUntil.length ? validUntil.reduce((a, b) => (Date.parse(a) <= Date.parse(b) ? a : b)) : null,

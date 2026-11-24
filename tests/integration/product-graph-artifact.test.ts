@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PostgresArtifacts, type Pool } from '@r4/persistence-postgres';
 import { PRODUCT_GRAPH_KIND, importSignedGraph, readSignedGraph } from '@r4-graph/curator';
+import { createSilentLogger } from '@r4/observability';
 import { createMigratedTestDatabase, openPool, type TestDatabase } from '../support/database.js';
 
 /**
@@ -79,5 +80,16 @@ describe('product graph as a signed Artifact (ADR-058 G1)', () => {
     expect(signed).toMatchObject({ version: 1, signedBy: 'owner', contentSha256: first.contentSha256 });
     expect(signed!.graph.unreviewed).toEqual([['col', 'P30', 'P20']]);
     expect(signed!.graph.products.P30).toEqual({ n: 'Collarín', act: true, price: 20000, kind: null });
+  });
+});
+
+describe('the web tools read the signed graph (ADR-058 G5)', () => {
+  it('the Sales worker loads the version the curator signed (extra fields such as unreviewed and muscles are ignored)', async () => {
+    const { SignedStoreGraph } = await import('@r4-sales/agent/production');
+    const read = async () => { const c = await artifacts.current('product-graph'); return c ? { version: c.version, content: c.content } : null; };
+    const source = (await SignedStoreGraph.load(read, createSilentLogger()))!;
+    expect(source.version).toBe(1);
+    expect(Object.keys(source.get().products).sort()).toEqual(['P10', 'P20', 'P30']);
+    expect(source.get().view.P20).toEqual({ 'rb:b': ['P10'], 'col:b': ['P30'] });
   });
 });
