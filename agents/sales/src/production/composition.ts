@@ -479,6 +479,7 @@ export function composeSalesWebGateway(options: Omit<SalesGatewayOptions, 'fetch
   if (!profile) throw new Error(`refusing the web gateway: R4_PROD_POLICY_PROFILE=${config.policyProfile} is not a Sales web profile (${SALES_WEB_PROFILES.map(profileLabel).join(', ')})`);
   const web = loadWebChannelConfig(options.env, { allowNetwork: config.allowNetwork });
   const agent = salesAgentOf(profile);
+  const now = options.now ?? (() => new Date());
   return {
     describe: describeWebChannelConfig(web),
     bindings: {
@@ -488,8 +489,9 @@ export function composeSalesWebGateway(options: Omit<SalesGatewayOptions, 'fetch
       outbound: [new WebOutboundAdapter(web, options.fetch ? { fetch: options.fetch } : {})],
       taskFactory: salesConversationTaskFactory(options.pool, agent.version, agent.agentId),
       runFailureFallback: { text: SALES_WEB_RUN_FAILURE_FALLBACK_TEXT },
-      // (ADR-056 K4) A web profile that consults the team says so (no restart); earlier ones keep «nobody can attend».
-      humanRequestNotice: { text: SALES_NON_PAUSING_CONSULTATION_PROFILES.has(profileLabel(profile)) ? SALES_HUMAN_REQUEST_NOTICE_TEXT : SALES_WEB_HUMAN_REQUEST_NOTICE_TEXT, profiles: [profileLabel(profile)] },
+      // (ADR-056 K4) A web profile that consults the team says so (no restart), worded by service hours like WhatsApp;
+      // earlier ones keep «nobody can attend».
+      humanRequestNotice: { text: SALES_NON_PAUSING_CONSULTATION_PROFILES.has(profileLabel(profile)) ? () => salesHumanRequestNotice(now()) : SALES_WEB_HUMAN_REQUEST_NOTICE_TEXT, profiles: [profileLabel(profile)] },
     },
   };
 }
