@@ -72,6 +72,7 @@ import { quoteDocumentDelivery } from '../capabilities/quote-document.js';
 import { catalogDiscoverCapability } from '../capabilities/catalog-discover.js';
 import { catalogSetComplementsCapability } from '../capabilities/catalog-set-complements.js';
 import { catalogBuildStepCapability, catalogReplacementsCapability, type GraphSource } from '../capabilities/catalog-build-step.js';
+import { catalogWithFacts, type ProductFactsSource } from './product-facts.js';
 import type { CatalogDiscoverPort } from '@r4-adapters/catalog-http';
 import { checkoutPurchaseStatusCapability, checkoutRequestLinkCapability, checkoutStartPurchaseCapability } from '../capabilities/checkout.js';
 import { SALES_WEB_PROFILES, isSalesWebProfile, salesWebAgentVersion, salesWebProfile } from './profile-web.js';
@@ -106,6 +107,8 @@ function unavailableCatalog(): Promise<never> {
 
 export interface SalesProductionWorkerOptions {
   readonly pool: pg.Pool;
+  /** (ADR-058 G5b) Facts answered in R4 for products, added to each product sheet Pesín reads; absent: the sheets alone. */
+  readonly productFacts?: Pick<ProductFactsSource, 'of'>;
   /** (ADR-058 G5) The owner-signed store graph the web tools read; absent: the exported file R4_EXP_GRAPH_FILE. */
   readonly storeGraph?: GraphSource;
   /** The durable production store (autonomy controls, delivery state), composed by the deployment. */
@@ -197,7 +200,8 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
   if (catalogReal && (!options.catalog || options.catalog.bindingKind === UNAVAILABLE_CATALOG.bindingKind)) {
     throw new Error(`refusing production composition: ${profileLabel(profile)} binds Catalog REAL but no catalog-service binding was provided (R4_CATALOG_*)`);
   }
-  const catalog: CatalogPort = catalogReal ? options.catalog! : UNAVAILABLE_CATALOG;
+  // (ADR-058 G5b) A product sheet carries the facts a person answered in R4 for fields the store does not declare yet.
+  const catalog: CatalogPort = catalogReal ? (options.productFacts ? catalogWithFacts(options.catalog!, options.productFacts) : options.catalog!) : UNAVAILABLE_CATALOG;
   // (R4-J3E) v5 records the customer's shipping choice and quote request (workspace.update@2, which re-quotes Shipping); v1–v4 keep version 1.
   const autonomousQuotes = isAutonomousQuoteProfile(profile);
   if (capabilityAvailability(profile, CAPABILITY_IDS.workspaceUpdate).available && !autonomousQuotes) {
