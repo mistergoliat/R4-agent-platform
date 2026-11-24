@@ -3,7 +3,7 @@ import { runGatewayProcess, loadGatewayConfig } from '@r4/channel-gateway';
 import { stableJson } from '@r4/evaluation';
 import { gitState, secretsFromEnv, writeArtifacts } from '@r4/evaluator';
 import { createLogger } from '@r4/observability';
-import { PostgresArtifacts, PostgresProductionStore, createPool } from '@r4/persistence-postgres';
+import { PostgresArtifactFacts, PostgresArtifacts, PostgresProductionStore, createPool } from '@r4/persistence-postgres';
 import {
   assertProductionComposition,
   conversationKey,
@@ -27,6 +27,7 @@ import { assertSalesProductionPrerequisites, composeSalesGateway, composeSalesPr
 import { loadCatalogDescriptiveWindowMs } from '../workspace/catalog-descriptive.js';
 import { isSalesWebProfile } from '../production/profile-web.js';
 import { STORE_GRAPH_KIND, SignedStoreGraph, type SignedRead } from '../production/store-graph.js';
+import { ProductFactsSource, type ProductFactsRead } from '../production/product-facts.js';
 import { QUOTE_RECOVERY_SOURCE_ID } from '../ids.js';
 import { webProgressReporter } from '../production/web-progress.js';
 import { WebOutboundAdapter, loadWebChannelConfig } from '@r4-adapters/web';
@@ -314,6 +315,12 @@ function signedStoreGraphRead(pool: ReturnType<typeof createPool>): SignedRead {
   };
 }
 
+/** (ADR-058 G5b) The current facts answered in R4 for products (Core artifact facts of the store graph kind). */
+function productFactsRead(pool: ReturnType<typeof createPool>): ProductFactsRead {
+  const facts = new PostgresArtifactFacts(pool);
+  return async () => (await facts.current(STORE_GRAPH_KIND)).map((f) => ({ subject: f.subject, field: f.field, value: f.value }));
+}
+
 async function worker(production: ReturnType<typeof loadProductionConfig>): Promise<void> {
   const model = configuredModelProvider(process.env);
   if (!model) throw new Error('refusing: no model provider configured (R4_MODEL_*)');
@@ -328,7 +335,9 @@ async function worker(production: ReturnType<typeof loadProductionConfig>): Prom
   const quotes = productionQuotes(production, logger);
   // (ADR-058 G5) A web worker reads the owner-signed store graph and refreshes it in the background.
   const storeGraph = isSalesWebProfile(workerProfile(production)) ? (await SignedStoreGraph.load(signedStoreGraphRead(pool), logger))?.start() ?? null : null;
-  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...(storeGraph ? { storeGraph } : {}), ...webProgressOf(production, pool), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production, logger), quoteRecovery: loadQuoteRecovery(process.env) , catalogDescriptiveWindowMs: loadCatalogDescriptiveWindowMs(process.env) });
+  // (ADR-058 G5b) Facts answered in R4 for products: part of each product sheet Pesín reads (WhatsApp and web).
+  const productFacts = catalog ? (await ProductFactsSource.load(productFactsRead(pool), logger)).start() : null;
+  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...(storeGraph ? { storeGraph } : {}), ...(productFacts ? { productFacts } : {}), ...webProgressOf(production, pool), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production, logger), quoteRecovery: loadQuoteRecovery(process.env) , catalogDescriptiveWindowMs: loadCatalogDescriptiveWindowMs(process.env) });
   await assertSalesProductionPrerequisites(workerProfile(production), pool);
   // (M3) What the operator needs to see from the logs: whether the quote-recovery source was composed, and the promotional-quotes switch.
   const features = { quoteRecovery: composed.bindings.contextSources?.some((s) => s.id === QUOTE_RECOVERY_SOURCE_ID) === true, promotionalQuotes: loadPromotionalQuotes(process.env) };
