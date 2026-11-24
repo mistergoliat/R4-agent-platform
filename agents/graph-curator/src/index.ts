@@ -11,3 +11,7 @@ export * from './undo.js';
 export * from './facts.js';
 export * from './fit.js';
 export * from './reactivation.js';
+export * from './agent/definition.js';
+export * from './agent/capabilities.js';
+export * from './agent/classify.js';
+export * from './agent/batch.js';

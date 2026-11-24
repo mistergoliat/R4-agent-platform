@@ -22,6 +22,8 @@ export const graphChangeSchema = z.discriminatedUnion('op', [
     relations: z.array(z.tuple([z.string().regex(/^[a-z]{1,8}$/u), key, key])).max(60),
   }),
   z.strictObject({ op: z.literal('set_muscles'), key, muscles: z.array(z.enum(MUSCLE_GROUPS)).min(1).max(MUSCLE_GROUPS.length) }),
+  // G4: the kind the graph-curator agent classified (from the closed list), with its cited evidence in the proposal.
+  z.strictObject({ op: z.literal('set_kind'), key, kind: z.string().min(1).max(60) }),
   // G2b-2: declared physical fits the graph lacks ([area, a, b]: view[a]['area:a'] ∋ b).
   z.strictObject({ op: z.literal('add_relations'), relations: z.array(z.tuple([z.string().regex(/^[a-z]{1,8}$/u), key, key])).min(1).max(200) }),
 ]);
@@ -95,6 +97,11 @@ export function applyChanges(graph: ProductGraph, changes: readonly GraphChange[
     }
     if (c.op === 'add_relations') {
       for (const [area, a, b] of c.relations) link(area, a, b);
+      continue;
+    }
+    if (c.op === 'set_kind') {
+      const target = g.products[c.key];
+      if (target) target.kind = c.kind;
       continue;
     }
     if (c.op === 'set_muscles') {
