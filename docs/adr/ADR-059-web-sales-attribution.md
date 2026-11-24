@@ -112,8 +112,10 @@ Cierra la primera mitad de la decisión abierta 8 de ADR-048.
   - si venía de la propuesta de una persona, se atribuye a esa persona.
 - **Asistida:** se atribuye a quien mostró el producto por última vez dentro de la ventana, Pesín o una persona.
 - **Un mismo pedido puede tener líneas de los dos.** Cada línea tiene un solo dueño.
-- **Atribuir no es pagar.** Si una línea asistida paga comisión lo deciden las reglas versionadas de ADR-048 Decisión
-  4, no este ADR.
+- **Atribuir no es pagar.**
+  - Lo que se atribuye a Pesín no paga comisión a nadie: va al fondo del equipo (ADR-048 Decisión 4).
+  - Lo asistido no paga comisión a nadie: se mide, pero no se paga (owner, 2026-11-24).
+  - La comisión de un vendedor sale solo de sus líneas directas, según las reglas versionadas de ADR-048 Decisión 4.
 
 ## Decisión 5 — Se ve en el libro de la mesa y en la consola
 
@@ -168,8 +170,7 @@ Recomendaciones para cerrar el ADR:
 1. **Ventana:** 7 días, igual que la conversación recordada.
 2. **Monto:** la suma de las líneas atribuidas, no el pedido completo. El total del pedido se muestra como contexto.
 3. **Estados que cuentan como pagado:** los de pago aceptado de la tienda, configurables en el back office.
-4. **Comisión de lo asistido para personas:** se mide, pero no paga, hasta tener datos. Se fija en las reglas de ADR-048
-   Decisión 4.
+4. **Lo asistido no paga comisión** (decidido por el owner el 2026-11-24). Lo de Pesín tampoco: va al fondo del equipo.
 5. **Grupo de control:** 20 % de los visitantes sin chat, durante 4 semanas, cuando haya tráfico real.
 
 ## Fuera de alcance
