@@ -11,7 +11,8 @@ import type { Finding } from './rules.js';
 const key = z.string().regex(/^P[1-9]\d{0,8}$/u);
 export const graphChangeSchema = z.discriminatedUnion('op', [
   z.strictObject({ op: z.literal('deactivate'), key }),
-  z.strictObject({ op: z.literal('activate'), key }),
+  // A reactivated product, with the relations it had when it was last active (restore; optional).
+  z.strictObject({ op: z.literal('activate'), key, restore: z.array(z.tuple([z.string().regex(/^[a-z]{1,8}$/u), key, key])).max(500).optional() }),
   z.strictObject({ op: z.literal('rename'), key, name: z.string().min(1).max(300) }),
   z.strictObject({ op: z.literal('remove_relation'), area: z.string().regex(/^[a-z]{1,8}$/u), a: key, b: key }),
   // G2b: a product the graph did not have, with its relations ([area, a, b]: view[a]['area:a'] ∋ b).
@@ -36,8 +37,12 @@ export function changeOf(f: Finding): { change: GraphChange | null; effect: stri
     case 'DISCONTINUED':
     case 'INACTIVE_WITH_RELATIONS':
       return { change: { op: 'deactivate', key: f.productKey }, effect: `Al aprobar: queda inactivo en el grafo y se quitan sus ${relations === null ? '' : `${relations} `}relaciones.` };
-    case 'REACTIVATED':
-      return { change: { op: 'activate', key: f.productKey }, effect: 'Al aprobar: vuelve a estar activo en el grafo.' };
+    case 'REACTIVATED': {
+      const restore = f.evidence.restore as [string, string, string][] | undefined;
+      return restore?.length
+        ? { change: { op: 'activate', key: f.productKey, restore }, effect: `Al aprobar: vuelve a estar activo en el grafo y recupera ${restore.length} relaciones.` }
+        : { change: { op: 'activate', key: f.productKey }, effect: 'Al aprobar: vuelve a estar activo en el grafo.' };
+    }
     case 'RENAMED':
       return { change: { op: 'rename', key: f.productKey, name: shortName(String(f.evidence.after)) }, effect: 'Al aprobar: el grafo usa el nombre nuevo.' };
     case 'SUBSTITUTE_KIND_MISMATCH':
@@ -105,6 +110,8 @@ export function applyChanges(graph: ProductGraph, changes: readonly GraphChange[
       g.unreviewed = g.unreviewed.filter(([, a, b]) => a !== c.key && b !== c.key);
     } else if (c.op === 'activate') {
       if (p) p.act = true;
+      // Only with products that are still active; a missing one is skipped.
+      for (const [area, a, b] of c.restore ?? []) if (g.products[a]?.act !== false && g.products[b]?.act !== false) link(area, a, b);
     } else if (c.op === 'rename') {
       if (p) p.n = c.name;
     } else {

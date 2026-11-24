@@ -12,7 +12,8 @@
   - **G5 en producción** (PR #144): las herramientas del chat web leen el grafo firmado, versión 2, desde el
     2026-11-24.
   - **G5b en producción** (PR #146): Pesín lee los hechos de la Decisión 10 como parte de la ficha.
-  - **G2b-2 implementado:** calce físico y cuántas relaciones desbloquea cada dato faltante.
+  - **G2b-2 en producción** (PR #150): calce físico y cuántas relaciones desbloquea cada dato faltante.
+  - **Corrección de la reactivación implementada:** un producto reactivado recupera sus relaciones.
   - Cada fase necesita autorización explícita del owner.
 - **Fecha:** 2026-11-23
 - **Mandato:** decisiones del owner del 2026-11-23:
@@ -477,6 +478,24 @@ sin perfiles quedaba olvidada.
   sin contradicciones. Al rack «Squat Rack Lite Series» le faltan 16 barras. Completar el largo de agarre de la «Barra
   Olímpica Power Bar 20kg» desbloquea 18 relaciones. Desde aquí, las corridas semanales vigilan los productos nuevos
   y los datos que cambien.
+
+## Decisión 9, corrección: un producto reactivado recupera sus relaciones (2026-11-24)
+
+- **Qué es «inactivo»:** el producto está desactivado en la tienda, según el indicador `status.active` de Catalog, o
+  ya no está en el catálogo. **No** es falta de stock. El stock (`sellability`) no vive en el grafo: las herramientas
+  lo leen en vivo.
+- **El vacío:** al desactivarse, el producto pierde sus relaciones automáticamente. Al reactivarse, `REACTIVATED` solo
+  volvía a marcarlo activo, y quedaba sin relaciones.
+- **La corrección** (pregunta del owner, 2026-11-24):
+  - el curador busca en el historial, hasta 20 versiones, la última versión en que el producto estaba activo y con
+    relaciones;
+  - el cambio `activate` lleva esas relaciones (`restore`), salvo las que son con productos que hoy no están activos;
+  - sigue siendo automático. «Deshacer» lo revierte entero: el producto vuelve a como estaba en la versión base.
+- **Forzar una lectura:** correr el curador a pedido (unos 15 segundos). El chat web toma la versión nueva en menos
+  de 10 minutos.
+- **El cruce entre Catalog y el grafo** es por la clave del producto (el ID de PrestaShop, `P…`).
+- **Lo que el grafo no limita:** que el grafo diga «inactivo» solo afecta lo que Pesín sugiere a partir de otro
+  producto (armar, complementos, «Lo reemplaza»). La búsqueda, Discover y la ficha se leen en vivo.
 
 ## Fuera de alcance
 

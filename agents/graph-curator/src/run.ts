@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { migrate, migrationStatus, withTransaction, type Pool, type PostgresArtifactFacts, type PostgresArtifacts } from '@r4/persistence-postgres';
 import { withFacts } from './facts.js';
+import { withRestoredRelations } from './reactivation.js';
 import type { StructuredLogger } from '@r4/observability';
 import { walkCatalog, type ProductSheetPort } from './catalog.js';
 import { applyChanges, changeOf, graphChangeSchema } from './changes.js';
@@ -39,7 +40,7 @@ export interface CurationRunResult {
  * ADR-058 G2: one on-demand curator run. Reads the signed graph, walks the catalog, applies the rules and stores the
  * run with its findings (findings in one transaction with the completed run). Changes nothing in the graph.
  */
-export async function runCuration(deps: { readonly pool: Pool; readonly artifacts: Pick<PostgresArtifacts, 'current' | 'propose' | 'resolveUnseen' | 'proposals' | 'createVersion' | 'decide' | 'sign'>; readonly catalog: ProductSheetPort; readonly facts?: Pick<PostgresArtifactFacts, 'current'> }, input: { readonly startedBy: string; readonly concurrency?: number; readonly tailMisses?: number }): Promise<CurationRunResult> {
+export async function runCuration(deps: { readonly pool: Pool; readonly artifacts: Pick<PostgresArtifacts, 'current' | 'propose' | 'resolveUnseen' | 'proposals' | 'createVersion' | 'decide' | 'sign' | 'versions' | 'version'>; readonly catalog: ProductSheetPort; readonly facts?: Pick<PostgresArtifactFacts, 'current'> }, input: { readonly startedBy: string; readonly concurrency?: number; readonly tailMisses?: number }): Promise<CurationRunResult> {
   if (!(await graphSchemaIsCurrent(deps.pool))) throw new Error('the graph schema is not current: run graph:migrate first');
   const signed = await readSignedGraph(deps.artifacts);
   if (!signed) throw new Error('no signed product graph: import the baseline first (graph:import)');
@@ -54,7 +55,8 @@ export async function runCuration(deps: { readonly pool: Pool; readonly artifact
     // Decision 10: what a person answered in R4 counts as part of the sheet; what the store still lacks is a notice.
     const facts = deps.facts ? (await deps.facts.current(PRODUCT_GRAPH_KIND)).map((f) => ({ subject: f.subject, field: f.field, value: f.value, recordedBy: f.recordedBy, recordedAt: f.recordedAt })) : [];
     const read = withFacts(walk.sheets, facts);
-    const findings = [...curate(signed.graph, read.catalog), ...read.notices];
+    // A reactivated product gets back the relations it had when it was last active (D9 fix).
+    const findings = await withRestoredRelations(deps.artifacts, signed.graph, [...curate(signed.graph, read.catalog), ...read.notices]);
     const counts = countFindings(findings);
     await withTransaction(deps.pool, async (c) => {
       const rows = findings.map((f) => ({ task: f.task, rule: f.rule, product_key: f.productKey, related_key: f.relatedKey, summary: f.summary, evidence: f.evidence, fingerprint: fingerprintOf(f) }));
