@@ -13,6 +13,8 @@ import {
   quoteCreateV5Capability,
   createQuoteParityGuard,
   quotePreviewV3Capability,
+  quoteEmailCapability,
+  quoteEmailInput,
   renderOfferMessage,
   resolveOrderBasis,
   workspaceCapabilityV2,
@@ -148,6 +150,8 @@ function world(options: { limits?: Partial<AutonomousQuoteLimitsV6>; owner?: Fix
     restart: () => {
       capability = create();
     },
+    /** (ADR-057 C4) quote.email@1 over the same records and the same guarded Quote port. */
+    email: (quoteNumber: string, address: string) => quoteEmailCapability({ store, quotes, conversation: thread.reader }).execute(quoteEmailInput.parse({ quoteNumber, email: address }), writeContext(newKey())),
     decisions: async () => (await pool.query<{ outcome: string; reason_code: string }>('select outcome, reason_code from sales.quote_autonomous_decisions where task_id = $1 order by decided_at', [taskId])).rows.map((r) => `${r.outcome}:${r.reason_code}`),
   };
 }
@@ -209,6 +213,24 @@ describe('A. the exact Sales offer, confirmed, issues once', () => {
     const p = await w.preview();
     expect(p).toMatchObject({ status: 'ready', issuable: false, presentation: null });
     expect(p.limitBreaches.map((b) => b.code)).toEqual(['autonomy_limit_amount']);
+  });
+});
+
+describe('A+. (ADR-057 C4) the issued quote by email', () => {
+  it('A3 a quote issued by quote.create@5 (sales.quote_v2_issued) is emailed only to an address the customer wrote', async () => {
+    const w = world();
+    const p = await offered(w);
+    w.thread.customer('Sí, emítela.');
+    const issued = await w.issue(p.previewId!);
+    expect(issued).toMatchObject({ status: 'applied' });
+    const quoteNumber = (issued as { result: { quoteNumber: string } }).result.quoteNumber;
+    // Not yet written by the customer: refused, nothing sent.
+    expect(await w.email(quoteNumber, 'visita@example.com')).toMatchObject({ status: 'rejected', code: 'email_not_from_customer' });
+    w.thread.customer('Mándamela a Visita@Example.com porfa');
+    expect(await w.email(quoteNumber, 'visita@example.com')).toMatchObject({ status: 'applied', result: { quoteNumber, status: 'pending', recipientMasked: 'vi***@example.com' } });
+    expect(w.owner.deliveredTo).toEqual(['visita@example.com']);
+    // Another conversation's quote number is not this conversation's.
+    expect(await world().email(quoteNumber, 'visita@example.com')).toMatchObject({ status: 'rejected', code: 'quote_not_in_conversation' });
   });
 });
 

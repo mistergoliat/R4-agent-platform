@@ -25,8 +25,8 @@ export const quoteEmailOutput = z.strictObject({
 export type QuoteEmailOutput = z.infer<typeof quoteEmailOutput>;
 
 export interface QuoteEmailDeps {
-  /** The quotes issued in this conversation (sales.quote_references). */
-  readonly store: { quoteReferences(taskId: string): Promise<readonly { readonly quoteId: string; readonly quoteNumber: string }[]> };
+  /** The quotes issued in this conversation: Quote V2 issuance records them in sales.quote_v2_issued (conversationQuotes). */
+  readonly store: { conversationQuotes(taskIds: readonly string[], options: { readonly since: string; readonly limit: number }): Promise<readonly { readonly quoteId: string; readonly quoteNumber: string }[]> };
   readonly quotes: QuoteV2Service;
   /** The conversation the platform recorded: the address must be one the customer wrote. */
   readonly conversation: ConversationThreadReader;
@@ -70,7 +70,7 @@ export function quoteEmailCapability(deps: QuoteEmailDeps): WriteCapabilityRegis
       const taskId = context.execution.taskId;
       const email = input.email.toLowerCase();
       if (!MAILBOX.test(email)) return rejected('invalid_email', 'that is not one valid email address: ask the customer to write it again');
-      const quote = (await deps.store.quoteReferences(taskId)).find((q) => q.quoteNumber.toUpperCase() === input.quoteNumber.toUpperCase());
+      const quote = (await deps.store.conversationQuotes([taskId], { since: '1970-01-01T00:00:00Z', limit: 100 })).find((q) => q.quoteNumber.toUpperCase() === input.quoteNumber.toUpperCase());
       if (!quote) return rejected('quote_not_in_conversation', 'no quote with that number was issued in this conversation: only a quote issued here can be emailed');
       const thread = await deps.conversation.thread(taskId);
       const fromCustomer = thread.some((e) => e.kind === 'contact' && typeof e.text === 'string' && e.text.toLowerCase().includes(email));
