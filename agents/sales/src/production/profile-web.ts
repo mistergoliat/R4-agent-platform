@@ -207,12 +207,22 @@ export const SALES_WEB_PROFILE_V19: ProductionProfile = Object.freeze({
 } satisfies ProductionProfile);
 
 /** (ADR-057 C4) Web profiles that issue quotes and email them. */
-export const SALES_WEB_QUOTE_PROFILES: ReadonlySet<string> = new Set(['sales-web@19']);
+/**
+ * (Owner 2026-11-24, home-gym graph test) sales-web@19 whose build plan is sized to the budget range and, when the set
+ * stays below the bottom of the range, offers to raise a piece or add pieces. Capabilities, channel and limits are @19's.
+ */
+export const SALES_WEB_PROFILE_V20: ProductionProfile = Object.freeze({
+  ...SALES_WEB_PROFILE_V19,
+  version: 20,
+  description: 'sales-web@19 with the home-gym plan sized to the budget range and the set brought towards the range (raise a piece or add pieces); quote by email; consultations without pause.',
+} satisfies ProductionProfile);
 
-export const SALES_WEB_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_WEB_PROFILE_V1, SALES_WEB_PROFILE_V2, SALES_WEB_PROFILE_V3, SALES_WEB_PROFILE_V4, SALES_WEB_PROFILE_V5, SALES_WEB_PROFILE_V6, SALES_WEB_PROFILE_V7, SALES_WEB_PROFILE_V8, SALES_WEB_PROFILE_V9, SALES_WEB_PROFILE_V10, SALES_WEB_PROFILE_V11, SALES_WEB_PROFILE_V12, SALES_WEB_PROFILE_V13, SALES_WEB_PROFILE_V14, SALES_WEB_PROFILE_V15, SALES_WEB_PROFILE_V16, SALES_WEB_PROFILE_V17, SALES_WEB_PROFILE_V18, SALES_WEB_PROFILE_V19]);
+export const SALES_WEB_QUOTE_PROFILES: ReadonlySet<string> = new Set(['sales-web@19', 'sales-web@20']);
+
+export const SALES_WEB_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_WEB_PROFILE_V1, SALES_WEB_PROFILE_V2, SALES_WEB_PROFILE_V3, SALES_WEB_PROFILE_V4, SALES_WEB_PROFILE_V5, SALES_WEB_PROFILE_V6, SALES_WEB_PROFILE_V7, SALES_WEB_PROFILE_V8, SALES_WEB_PROFILE_V9, SALES_WEB_PROFILE_V10, SALES_WEB_PROFILE_V11, SALES_WEB_PROFILE_V12, SALES_WEB_PROFILE_V13, SALES_WEB_PROFILE_V14, SALES_WEB_PROFILE_V15, SALES_WEB_PROFILE_V16, SALES_WEB_PROFILE_V17, SALES_WEB_PROFILE_V18, SALES_WEB_PROFILE_V19, SALES_WEB_PROFILE_V20]);
 
 /** The sales-web definition version each web profile pins. */
-const SALES_WEB_AGENT_VERSIONS: Readonly<Record<string, number>> = Object.freeze({ 'sales-web@1': 1, 'sales-web@2': 2, 'sales-web@3': 3, 'sales-web@4': 4, 'sales-web@5': 5, 'sales-web@6': 6, 'sales-web@7': 7, 'sales-web@8': 8, 'sales-web@9': 9, 'sales-web@10': 10, 'sales-web@11': 11, 'sales-web@12': 12, 'sales-web@13': 13, 'sales-web@14': 14, 'sales-web@15': 15, 'sales-web@16': 16, 'sales-web@17': 17, 'sales-web@18': 18, 'sales-web@19': 19 });
+const SALES_WEB_AGENT_VERSIONS: Readonly<Record<string, number>> = Object.freeze({ 'sales-web@1': 1, 'sales-web@2': 2, 'sales-web@3': 3, 'sales-web@4': 4, 'sales-web@5': 5, 'sales-web@6': 6, 'sales-web@7': 7, 'sales-web@8': 8, 'sales-web@9': 9, 'sales-web@10': 10, 'sales-web@11': 11, 'sales-web@12': 12, 'sales-web@13': 13, 'sales-web@14': 14, 'sales-web@15': 15, 'sales-web@16': 16, 'sales-web@17': 17, 'sales-web@18': 18, 'sales-web@19': 19, 'sales-web@20': 20 });
 
 export function salesWebProfile(label: string): ProductionProfile | null {
   return SALES_WEB_PROFILES.find((p) => profileLabel(p) === label) ?? null;

@@ -84,7 +84,7 @@ export function isCustomerIdentityProfile(profile: ProductionProfile): boolean {
 export function salesActionPolicyFor(profile: ProductionProfile): ActionPolicyConfigurationInput {
   if (isCheckoutLaneProfile(profile)) return SALES_PRODUCTION_V15_ACTION_POLICY;
   // (ADR-057 C4) The web quote profile (a string, not an import: profile-web imports this pack's earlier profiles).
-  if (profileLabel(profile) === 'sales-web@19') return SALES_WEB_QUOTE_ACTION_POLICY;
+  if (['sales-web@19', 'sales-web@20'].includes(profileLabel(profile))) return SALES_WEB_QUOTE_ACTION_POLICY;
   return isCustomerIdentityProfile(profile) ? SALES_PRODUCTION_V8_ACTION_POLICY : salesProductionActionPolicy(profile);
 }
 
