@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PostgresArtifactFacts, PostgresArtifacts, type Pool } from '@r4/persistence-postgres';
 import { PRODUCT_GRAPH_KIND, importSignedGraph, migrateGraph, runCuration, type ProductSheetPort } from '@r4-graph/curator';
+import { createSilentLogger } from '@r4/observability';
 import { createMigratedTestDatabase, openPool, type TestDatabase } from '../support/database.js';
 
 /**
@@ -67,5 +68,14 @@ describe('facts answered in R4 (ADR-058 Decision 10)', () => {
   it('facts are append-only', async () => {
     await expect(pool.query(`update artifact_facts set value = 'x'`)).rejects.toThrow();
     await expect(pool.query(`delete from artifact_facts`)).rejects.toThrow();
+  });
+});
+
+describe('Pesín reads the facts (ADR-058 G5b)', () => {
+  it('the Sales worker loads the current facts answered in R4 (the latest answer per field)', async () => {
+    const { ProductFactsSource } = await import('@r4-sales/agent/production');
+    const read = async () => (await facts.current(PRODUCT_GRAPH_KIND)).map((f) => ({ subject: f.subject, field: f.field, value: f.value }));
+    const source = await ProductFactsSource.load(read, createSilentLogger());
+    expect(source.of('P1')).toEqual([{ subject: 'P1', field: 'Largo de agarre', value: '131 cm' }]);
   });
 });

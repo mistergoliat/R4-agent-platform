@@ -9,7 +9,9 @@
   - **G2b-1 en producción** (PR #138): altas por analogía, reemplazos, grupos musculares y cierre automático de avisos.
   - **Decisión 9 en producción** (PR #141): la versión 2 se publicó sola el 2026-11-23, con 290 cambios automáticos.
   - **Decisión 10 en producción** (PR #143).
-  - **G5 implementado:** las herramientas del chat web leen el grafo firmado.
+  - **G5 en producción** (PR #144): las herramientas del chat web leen el grafo firmado, versión 2, desde el
+    2026-11-24.
+  - **G5b implementado:** Pesín lee los hechos de la Decisión 10 como parte de la ficha.
   - Cada fase necesita autorización explícita del owner.
 - **Fecha:** 2026-11-23
 - **Mandato:** decisiones del owner del 2026-11-23:
@@ -430,6 +432,23 @@ sin perfiles quedaba olvidada.
   menos) y usa los nombres corregidos.
 - **Queda pendiente:** que Pesín use también los hechos de la Decisión 10. Leen la ficha en vivo desde Catalog, y
   sumar los hechos a esa lectura es un cambio del adaptador de catálogo de Ventas. Queda como G5b.
+
+## G5b — implementación (2026-11-24)
+
+- **`catalogWithFacts`**, en el paquete de Ventas, envuelve el puerto de catálogo que lee Pesín.
+  - Cada ficha de producto (`getProductContext`) recibe, como especificaciones, los hechos que una persona respondió en
+    R4 para campos que la tienda no declara.
+  - Si la tienda ya declara el campo con valor, manda la tienda. Es la misma regla del curador.
+  - La búsqueda y las variantes pasan sin cambios.
+- **`ProductFactsSource`:**
+  - el worker carga los hechos vigentes al arrancar y los relee cada 10 minutos;
+  - una lectura fallida conserva los hechos en uso;
+  - si la primera lectura falla, Pesín arranca solo con las fichas, como antes.
+  - La lectura de Core la arma el CLI del worker, por el contrato de límites de Ventas.
+- **Alcance:** todos los workers con catálogo real, es decir, WhatsApp y chat web. Lo que se responde en R4 es un dato
+  de producto, igual para los dos canales (Decisión 10).
+- **Efecto:** ninguno hasta que alguien responda un dato. Desde ese momento, Pesín lo usa a más tardar 10 minutos
+  después.
 
 ## Fuera de alcance
 
