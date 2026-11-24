@@ -432,8 +432,13 @@ export class PostgresProductionStore implements ProductionStore {
          join agent_tasks t on t.task_id = h.task_id
         where h.status = 'requested'
           and (h.kind = 'consultation' or (h.kind = 'handoff' and h.payload->>'initiatedBy' = 'agent'))
-          -- (ADR-056 D1) A consultation without pause shares its run with the agent's reply: no notice.
-          and (h.payload->>'blocking') is distinct from 'false'
+          -- (ADR-056 D1) A consultation without pause shares its run with the agent's reply: no notice — unless that run
+          -- ended without replying after it (model output is untrusted; the turn guard may only observe): then the
+          -- contact would wait in silence, so the notice goes out like for a pausing consultation.
+          and ((h.payload->>'blocking') is distinct from 'false'
+               or (exists (select 1 from agent_runs r where r.run_id = h.run_id and r.status <> 'running')
+                   and not exists (select 1 from agent_run_steps s
+                                    where s.run_id = h.run_id and s.decision_type = 'respond' and s.outcome = 'recorded' and s.created_at >= h.created_at)))
           and b.profile = any($1::text[])
           and not exists (select 1 from outbound_messages o where o.human_request_id = h.request_id)
         order by h.created_at, h.request_id limit $2`,

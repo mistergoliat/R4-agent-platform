@@ -85,7 +85,7 @@ describe('A. @24 is @23 pinned to v24; a lane profile; @23 stays the rollback', 
   });
 
   it('(K3) the platform makes @24 consultations non-pausing, whatever the model writes; @23 keeps the model\'s choice', () => {
-    expect([...SALES_NON_PAUSING_CONSULTATION_PROFILES].sort()).toEqual(['sales-production@24', 'sales-production@25', 'sales-production@26', 'sales-web@17', 'sales-web@18']);
+    expect([...SALES_NON_PAUSING_CONSULTATION_PROFILES].sort()).toEqual(['sales-production@24', 'sales-production@25', 'sales-production@26', 'sales-web@17', 'sales-web@18', 'sales-web@19']);
     expect(composed('sales-production@24').bindings.consultationsWithoutPause).toEqual({ expiry: salesConsultationExpiry });
     expect(composed('sales-production@23').bindings.consultationsWithoutPause).toBeUndefined();
   });

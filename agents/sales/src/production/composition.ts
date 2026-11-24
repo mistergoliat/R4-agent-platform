@@ -488,7 +488,8 @@ export function composeSalesWebGateway(options: Omit<SalesGatewayOptions, 'fetch
       outbound: [new WebOutboundAdapter(web, options.fetch ? { fetch: options.fetch } : {})],
       taskFactory: salesConversationTaskFactory(options.pool, agent.version, agent.agentId),
       runFailureFallback: { text: SALES_WEB_RUN_FAILURE_FALLBACK_TEXT },
-      humanRequestNotice: { text: SALES_WEB_HUMAN_REQUEST_NOTICE_TEXT, profiles: [profileLabel(profile)] },
+      // (ADR-056 K4) A web profile that consults the team says so (no restart); earlier ones keep «nobody can attend».
+      humanRequestNotice: { text: SALES_NON_PAUSING_CONSULTATION_PROFILES.has(profileLabel(profile)) ? SALES_HUMAN_REQUEST_NOTICE_TEXT : SALES_WEB_HUMAN_REQUEST_NOTICE_TEXT, profiles: [profileLabel(profile)] },
     },
   };
 }
