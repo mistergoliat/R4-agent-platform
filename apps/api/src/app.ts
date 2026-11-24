@@ -16,7 +16,7 @@ import {
 import type { AgentRegistry } from '@r4/agent-registry';
 import type { TaskRuntime, TemporalRuntime } from '@r4/task-runtime';
 import type { ProductionOperator } from '@r4/live-ops';
-import { ARTIFACT_PROPOSAL_STATES, INCIDENT_SIGNATURE, type PostgresAgentDrafts, type PostgresArtifacts, type PostgresConsoleReads, type PostgresIncidents, type PostgresInsights, type PostgresKnowledge } from '@r4/persistence-postgres';
+import { ARTIFACT_PROPOSAL_STATES, INCIDENT_SIGNATURE, type PostgresAgentDrafts, type PostgresArtifactFacts, type PostgresArtifacts, type PostgresConsoleReads, type PostgresIncidents, type PostgresInsights, type PostgresKnowledge } from '@r4/persistence-postgres';
 import { resolveCorrelationId, runWithCorrelation } from '@r4/observability';
 import { toErrorResponse } from './errors.js';
 import { unauthenticatedPrincipalResolver, type PrincipalResolver } from './principal.js';
@@ -58,6 +58,8 @@ export interface AppDependencies {
   readonly drafts?: PostgresAgentDrafts;
   /** (ADR-058) Signed artifacts, opaque content (read: the current version and its signatures). */
   readonly artifacts?: PostgresArtifacts;
+  /** (ADR-058 D10) Facts a person answered for an artifact kind (read; signed operator writes with artifact.curate). */
+  readonly facts?: PostgresArtifactFacts;
   /** ADR-050: 'disabled' refuses unauthenticated callers on POST /v1/tasks and /v1/tasks/:id/inputs. Default 'enabled'. */
   readonly anonymousWrites?: 'enabled' | 'disabled';
 }
@@ -437,6 +439,28 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
           return { signature: await artifacts.sign({ kind, version: body.version, signedBy: operator.humanRef, note: body.note ?? null, correlationId: request.id }) };
         }),
       );
+      if (deps.facts) {
+        // ADR-058 D10: what a person answered once (subject, field, value: opaque). Writes need artifact.curate.
+        const facts = deps.facts;
+        const text = (max: number) => z.string().trim().min(1).max(max);
+        const factBody = z.strictObject({ subject: text(120), field: text(120), value: text(500), source: text(200).optional(), note: text(500).optional() });
+        app.get('/v1/artifacts/:kind/facts', (request) =>
+          inContext(request, async () => {
+            reader(request);
+            const { subject } = parse(z.strictObject({ subject: text(120).optional() }), request.query, 'query');
+            return { facts: await facts.current(parse(kindParams, request.params, 'path').kind, subject) };
+          }),
+        );
+        app.post('/v1/artifacts/:kind/facts', (request, reply) =>
+          inContext(request, async () => {
+            const operator = operatorWith(request, 'artifact.curate');
+            const { kind } = parse(kindParams, request.params, 'path');
+            const body = parse(factBody, request.body ?? undefined, 'body');
+            const fact = await facts.record(kind, { subject: body.subject, field: body.field, value: body.value, source: body.source ?? 'console', note: body.note ?? null }, operator.humanRef, request.id);
+            return reply.status(201).send({ fact });
+          }),
+        );
+      }
       app.get('/v1/artifacts/:kind/current', (request) =>
         inContext(request, async () => {
           reader(request);

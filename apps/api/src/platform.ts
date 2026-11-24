@@ -14,6 +14,7 @@ import {
   PostgresAgentDrafts,
   PostgresKnowledge,
   PostgresArtifacts,
+  PostgresArtifactFacts,
   checkDatabaseReadiness,
   createPool,
   migrationStatus,
@@ -93,7 +94,7 @@ export async function createPlatform(config: ApiConfig, overrides: PlatformOverr
     const serviceReader = overrides.serviceReader ?? createServiceReader(config.serviceReaderTokenSha256);
     const incidents = new PostgresIncidents(pool, clock);
     const app = buildApp({ logger, tasks, agents, readiness, temporal, production, consoleReads: new PostgresConsoleReads(pool, clock), incidents,
-      insights: new PostgresInsights(pool, clock, incidents), knowledge: new PostgresKnowledge(pool), drafts: new PostgresAgentDrafts(pool), artifacts: new PostgresArtifacts(pool),
+      insights: new PostgresInsights(pool, clock, incidents), knowledge: new PostgresKnowledge(pool), drafts: new PostgresAgentDrafts(pool), artifacts: new PostgresArtifacts(pool), facts: new PostgresArtifactFacts(pool),
       ...(serviceReader ? { serviceReader } : {}),
       ...(humanContext ? { humanContext } : {}),
       ...(config.anonymousWrites ? { anonymousWrites: config.anonymousWrites } : {}),

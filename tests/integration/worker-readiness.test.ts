@@ -74,8 +74,8 @@ describe('dead worker (the central regression)', () => {
     const r4 = await get('/ready/r4');
     expect(r4.code).toBe(503);
     expect(r4.body).toMatchObject({ status: 'not_ready', checks: { channel: { ok: true }, execution: { ok: false, status: 'no_worker', expected: { executionMode: 'production' } } } });
-    // R4-J4-R7-4 R-9, R4 Checkout R-4, inbound multimodal v1 (0016), ADR-051 (0017), then ADR-052 (0018), then ADR-054 (0019, 0020), then ADR-048 D5: 0021_outbound_author_name, then ADR-057 D3: 0022_binding_presence, then ADR-058 D1: 0023_artifacts, then ADR-058 G3: 0025_artifact_proposals, 0026_artifact_proposal_resolution and D9: 0027_artifact_version_base (the Core head).
-    expect(r4.body.checks.execution.expected.compatibility).toMatch(/^0027_artifact_version_base:sales-production@1$/);
+    // R4-J4-R7-4 R-9, R4 Checkout R-4, inbound multimodal v1 (0016), ADR-051 (0017), then ADR-052 (0018), then ADR-054 (0019, 0020), then ADR-048 D5: 0021_outbound_author_name, then ADR-057 D3: 0022_binding_presence, then ADR-058 D1: 0023_artifacts, then ADR-058 G3: 0025_artifact_proposals, 0026_artifact_proposal_resolution D9: 0027_artifact_version_base and D10: 0028_artifact_facts (the Core head).
+    expect(r4.body.checks.execution.expected.compatibility).toMatch(/^0028_artifact_facts:sales-production@1$/);
   });
 });
 
@@ -88,7 +88,7 @@ describe('worker presence lifecycle', () => {
     w.worker.start();
     await waitFor(async () => (await row('A'))?.state === 'ready');
     const first = (await row('A'))!;
-    expect(first).toMatchObject({ execution_mode: 'production', compatibility: '0027_artifact_version_base:sales-production@1', build_ref: null, reason: null, fresh: true, window_ms: 1000 });
+    expect(first).toMatchObject({ execution_mode: 'production', compatibility: '0028_artifact_facts:sales-production@1', build_ref: null, reason: null, fresh: true, window_ms: 1000 });
     await waitFor(async () => (await row('A'))!.heartbeat_at.getTime() > first.heartbeat_at.getTime());
     expect((await row('A'))!.window_ms).toBe(1000);
     expect(await get('/ready/r4')).toMatchObject({ code: 200, body: { status: 'ready', checks: { execution: { ok: true, status: 'ready', workers: { ready: 1 } } } } });
@@ -172,7 +172,7 @@ describe('who counts toward production execution readiness', () => {
     bed = await LiveOpsTestbed.start();
     await started('S', { ...FAST, presence: { executionMode: 'shadow', runtimeProfile: 'sales-production@1' } });
     await started('T', { ...FAST, presence: { executionMode: 'test', runtimeProfile: 'sales-production@1' } });
-    expect(await row('S')).toMatchObject({ execution_mode: 'shadow', compatibility: '0027_artifact_version_base:sales-production@1', fresh: true });
+    expect(await row('S')).toMatchObject({ execution_mode: 'shadow', compatibility: '0028_artifact_facts:sales-production@1', fresh: true });
     expect(await get('/ready/r4')).toMatchObject({ code: 503, body: { checks: { execution: { status: 'no_worker', workers: { ready: 0, otherMode: 2 } } } } });
     await started('P', FAST);
     expect((await get('/ready/r4')).code).toBe(200);
@@ -191,7 +191,7 @@ describe('who counts toward production execution readiness', () => {
     await started('NULL', FAST);
     expect(await execution()).toMatchObject({ ok: true, workers: { buildRefs: [] } });
     await started('REF', { ...FAST, presence: { executionMode: 'production', runtimeProfile: 'sales-production@1', buildRef: 'git-0123abc' } });
-    expect(await row('REF')).toMatchObject({ build_ref: 'git-0123abc', compatibility: '0027_artifact_version_base:sales-production@1' });
+    expect(await row('REF')).toMatchObject({ build_ref: 'git-0123abc', compatibility: '0028_artifact_facts:sales-production@1' });
     expect(await execution()).toMatchObject({ ok: true, workers: { ready: 2, buildRefs: ['git-0123abc'] } });
   });
 });

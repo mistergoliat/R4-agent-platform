@@ -14,4 +14,5 @@ export * from './incidents.js';
 export * from './insights.js';
 export * from './knowledge.js';
 export * from './artifacts.js';
+export * from './facts.js';
 export * from './agent-drafts.js';
