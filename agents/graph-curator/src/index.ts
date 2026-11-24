@@ -10,3 +10,4 @@ export * from './additions.js';
 export * from './undo.js';
 export * from './facts.js';
 export * from './fit.js';
+export * from './reactivation.js';
