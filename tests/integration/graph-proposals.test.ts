@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { PostgresArtifacts, type Pool } from '@r4/persistence-postgres';
+import { PostgresArtifacts, type NewArtifactProposal, type Pool } from '@r4/persistence-postgres';
 import { AUTO_ACTOR, PRODUCT_GRAPH_KIND, composeNextVersion, importSignedGraph, migrateGraph, readSignedGraph, runCuration, undoChange, type ProductSheetPort } from '@r4-graph/curator';
 import { createMigratedTestDatabase, openPool, type TestDatabase } from '../support/database.js';
 
@@ -88,7 +88,7 @@ describe('graph proposals (ADR-058 G3, Decision 9)', () => {
     const kind = PRODUCT_GRAPH_KIND;
     const notice = { fingerprint: 'missing_data|SPEC_MISSING|P1|', summary: 'falta Perfiles', evidence: {}, change: null };
     const change = { fingerprint: 'inconsistency|X|P1|P2', summary: 'quitar', evidence: {}, change: { op: 'remove_relation', area: 'ld', a: 'P1', b: 'P2' } };
-    const propose = (items: (typeof notice | typeof change)[]) => artifacts.propose({ kind, baseVersion: 2, source: 'graph-curator:t', correlationId: 't', proposals: items });
+    const propose = (items: NewArtifactProposal[]) => artifacts.propose({ kind, baseVersion: 2, source: 'graph-curator:t', correlationId: 't', proposals: items });
     expect(await propose([notice, change])).toMatchObject({ created: 2 });
     const ids = (await artifacts.proposals(kind, 'proposed')).filter((p) => p.source === 'graph-curator:t').map((p) => p.proposalId);
     await artifacts.decide({ kind, proposalIds: ids, decision: 'rejected', decidedBy: 'oidc:owner', note: null, correlationId: 'r' });
@@ -96,5 +96,10 @@ describe('graph proposals (ADR-058 G3, Decision 9)', () => {
     expect(await artifacts.resolveUnseen({ kind, sourcePrefix: 'graph-curator:t', seenFingerprints: [], resolvedBy: 'graph-curator:t2', correlationId: 'u' })).toEqual({ resolved: 1 });
     expect((await artifacts.proposals(kind, 'resolved')).map((p) => p.fingerprint)).toContain(notice.fingerprint);
     expect(await propose([notice])).toMatchObject({ created: 1 });
+    // An open proposal found again takes the latest change too (e.g. more fitting plates since the last run).
+    const grown = { fingerprint: 'new_or_changed|FIT_MISSING_PLATES|P1|', summary: 'a', evidence: {}, change: { op: 'add_relations', relations: [['ld', 'P1', 'P2']] } };
+    await propose([grown]);
+    expect(await propose([{ ...grown, change: { op: 'add_relations', relations: [['ld', 'P1', 'P2'], ['ld', 'P1', 'P3']] } }])).toMatchObject({ refreshed: 1 });
+    expect((await artifacts.proposals(kind, 'proposed')).find((p) => p.fingerprint === grown.fingerprint)!.change).toEqual({ op: 'add_relations', relations: [['ld', 'P1', 'P2'], ['ld', 'P1', 'P3']] });
   });
 });

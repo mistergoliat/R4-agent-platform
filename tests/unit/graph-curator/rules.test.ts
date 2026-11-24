@@ -36,6 +36,8 @@ describe('curator rules (ADR-058 G2)', () => {
     ]);
     expect(rules(catalog)).toEqual([
       'DISCONTINUED P4',
+      // G2b-2: bar P1 (sleeve 50 mm) and plate P3 (bore 50 mm) fit and have no «Discos sugeridos» relation.
+      'FIT_MISSING_PLATES P1',
       'NOT_IN_GRAPH P7',
       'REACTIVATED P5',
       'RENAMED P3',
@@ -49,7 +51,7 @@ describe('curator rules (ADR-058 G2)', () => {
       'SUBSTITUTE_KIND_MISMATCH P2-P6',
     ]);
     const missing = curate(graph, catalog).find((f) => f.rule === 'SPEC_MISSING')!;
-    expect(missing.evidence).toEqual({ kind: 'PLATE_OLY', missing: ['Diámetro interno'], sellable: false });
+    expect(missing.evidence).toEqual({ kind: 'PLATE_OLY', missing: ['Diámetro interno'], sellable: false, unblocks: 1 }); // its pair with bar P1
   });
 
   it('an unsellable product with no sellable substitute, and an inactive one still related to active products', () => {

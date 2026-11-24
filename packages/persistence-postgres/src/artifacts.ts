@@ -162,7 +162,7 @@ export class PostgresArtifacts {
       for (const state of ['approved', 'rejected']) await this.#events(c, reopened.filter((r) => r.old_state === state).map((r) => r.proposal_id as string), state, 'proposed', input.source, null, input.correlationId);
       const reopenedIds = reopened.map((r) => r.proposal_id as string);
       const refreshed = (await c.query(
-        `update artifact_proposals p set summary = i.summary, evidence = i.evidence, base_version = $2, source = $3
+        `update artifact_proposals p set summary = i.summary, evidence = i.evidence, change = i.change, base_version = $2, source = $3
            from ${INCOMING}
           where p.kind = $1 and p.fingerprint = i.fingerprint and p.state = 'proposed' and not (p.proposal_id = any($5::uuid[]))`,
         [input.kind, input.baseVersion, input.source, incoming, reopenedIds],

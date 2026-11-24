@@ -11,7 +11,8 @@
   - **Decisión 10 en producción** (PR #143).
   - **G5 en producción** (PR #144): las herramientas del chat web leen el grafo firmado, versión 2, desde el
     2026-11-24.
-  - **G5b implementado:** Pesín lee los hechos de la Decisión 10 como parte de la ficha.
+  - **G5b en producción** (PR #146): Pesín lee los hechos de la Decisión 10 como parte de la ficha.
+  - **G2b-2 implementado:** calce físico y cuántas relaciones desbloquea cada dato faltante.
   - Cada fase necesita autorización explícita del owner.
 - **Fecha:** 2026-11-23
 - **Mandato:** decisiones del owner del 2026-11-23:
@@ -449,6 +450,33 @@ sin perfiles quedaba olvidada.
   de producto, igual para los dos canales (Decisión 10).
 - **Efecto:** ninguno hasta que alguien responda un dato. Desde ese momento, Pesín lo usa a más tardar 10 minutos
   después.
+
+## G2b-2 — implementación (2026-11-24)
+
+- **Reglas de calce físico** (`fit.ts`). Vienen de la revisión del grafo: `review-bar-plate`, `review-collar-rackbar` y
+  la capa de entrenador de `final-decisions`, con criterio delegado del 2026-11-17. Solo usan datos declarados.
+  - **Barra ↔ disco** (`bpc`; a es la barra): calza con 0 a 3 mm de holgura entre el orificio y la manga, según la
+    propuesta PRG-D5. Una barra de técnica o junior va solo con discos de caucho, y un par de discos no puede superar
+    la carga máxima declarada de la barra. Los packs y los soportes se saltan.
+  - **Barra ↔ collarín** (`col`; a es la barra): calza si el collarín mide hasta 1 mm más que la manga. Entre 1 y 5 mm
+    también entra, porque los collarines de palanca, aluminio o magnéticos aprietan esa diferencia. Si es más chico
+    que la manga, o más de 5 mm más grande, no calza.
+  - **Rack ↔ barra** (`rb`; a es el rack): no se aceptan las barras que declaran «no apta para racks» ni las
+    infantiles. Calza si el agarre es mayor o igual a la medida mayor del rack, o si es una barra estándar de 128 cm
+    o más.
+- **Lo que propone** (ninguna regla automática; todo espera a una persona):
+  - `FIT_MISSING_PLATES`, `_COLLARS` y `_BARS`: por barra o por rack, los calces declarados que el grafo no tiene. El
+    cambio es `add_relations`, con hasta 60 por propuesta, y deshacerlo quita solo lo que la base no tenía.
+  - `FIT_CONTRADICTED`: una relación publicada que los datos declarados contradicen, con `remove_relation`.
+- **Cuánto desbloquea cada dato faltante:** cada par que queda sin decidir por un dato suma a ese producto y a ese
+  campo. `SPEC_MISSING` lo muestra («desbloquea N relaciones») y se ordena primero por vendible y después por esa
+  cifra. Las barras preolímpicas entran a los datos requeridos (diámetro de manga).
+- **Core:** una propuesta abierta que se vuelve a encontrar se refresca también con su cambio más reciente, por
+  ejemplo cuando llegan más discos que calzan.
+- **Prueba en seco** con el grafo real y una copia local de fichas: barra–disco y barra–collarín ya están completos,
+  sin contradicciones. Al rack «Squat Rack Lite Series» le faltan 16 barras. Completar el largo de agarre de la «Barra
+  Olímpica Power Bar 20kg» desbloquea 18 relaciones. Desde aquí, las corridas semanales vigilan los productos nuevos
+  y los datos que cambien.
 
 ## Fuera de alcance
 
