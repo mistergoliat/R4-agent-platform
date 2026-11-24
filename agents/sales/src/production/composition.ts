@@ -555,7 +555,7 @@ function laneOf(lane: ConversationLane | undefined): { lane?: ConversationLane }
 }
 
 /**
- * (R4-J3E-C1) Quote V2 with its only mutation, createAndIssue, behind the kill switch: the guard re-reads the
+ * (R4-J3E-C1) Quote V2 with its mutations (createAndIssue and, ADR-057 C4, requestEmailDelivery) behind the kill switch: the guard re-reads the
  * durable autonomy controls immediately before every call (never cached; unreadable = engaged) and refuses with
  * "definitely not sent" instead of calling the owner. The reads (idempotency lookup, quote, operation, document)
  * stay open, so reconciliation and document verification keep working while the switch is engaged.
@@ -570,8 +570,11 @@ export function killSwitchGuardedQuotes(quotes: QuoteV2Service, controls: Autono
     getOperation: (...a) => quotes.getOperation(...a),
     lookupIdempotency: (...a) => quotes.lookupIdempotency(...a),
     getDocument: (...a) => quotes.getDocument(...a),
+    // (ADR-057 C4) Emailing the quote reaches the customer: a write, stopped by the kill switch like issuance.
+    requestEmailDelivery: (...a) => quotes.requestEmailDelivery(...a),
+    getDelivery: (...a) => quotes.getDelivery(...a),
   };
-  return guardProductionWrites(port, { domain: SALES_DOMAINS.quote, writeOperations: ['createAndIssue'], controls, logger, blocked: () => quoteWritesBlockedError() });
+  return guardProductionWrites(port, { domain: SALES_DOMAINS.quote, writeOperations: ['createAndIssue', 'requestEmailDelivery'], controls, logger, blocked: () => quoteWritesBlockedError() });
 }
 
 /**
@@ -646,6 +649,9 @@ export function singleFlightQuoteIssuance(quotes: QuoteV2Service, pool: pg.Pool,
     getOperation: (...a) => quotes.getOperation(...a),
     lookupIdempotency: (...a) => quotes.lookupIdempotency(...a),
     getDocument: (...a) => quotes.getDocument(...a),
+    // Emailing an issued quote is not issuance: never serialized.
+    requestEmailDelivery: (...a) => quotes.requestEmailDelivery(...a),
+    getDelivery: (...a) => quotes.getDelivery(...a),
     createAndIssue: async (...a) => {
       const client = await pool.connect();
       let locked = false;
