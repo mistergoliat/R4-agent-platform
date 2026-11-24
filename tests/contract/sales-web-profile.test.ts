@@ -16,6 +16,9 @@ import {
   SALES_WEB_PROFILE_V5,
   SALES_WEB_PROFILE_V6,
   SALES_WEB_PROFILE_V7,
+  SALES_WEB_PROFILE_V16,
+  SALES_WEB_PROFILE_V17,
+  SALES_NON_PAUSING_CONSULTATION_PROFILES,
   SALES_WEB_RUN_FAILURE_FALLBACK_TEXT,
   SALES_WEB_HUMAN_REQUEST_NOTICE_TEXT,
   composeSalesGateway,
@@ -255,3 +258,43 @@ describe('sales-web@7 (experimental, web QA): products already shown as sellable
     expect(v7.capabilityScopes).toEqual(loadSalesWebAgentDefinition(6).capabilityScopes);
   });
 });
+
+describe('sales-web@17 (ADR-056 K4): the web Don Pesín consults the team without pausing the chat', () => {
+  const v16 = loadSalesWebAgentDefinition(16);
+  const v17 = loadSalesWebAgentDefinition(17);
+
+  it('is sales-web@16 pinned to v17: same reads and channel; the platform makes its consultations non-pausing', () => {
+    expect(profileLabel(assertProductionProfile(SALES_WEB_PROFILE_V17))).toBe('sales-web@17');
+    expect(salesAgentOf(SALES_WEB_PROFILE_V17)).toEqual({ agentId: 'sales-web', version: 17 });
+    expect(SALES_NON_PAUSING_CONSULTATION_PROFILES.has('sales-web@17')).toBe(true);
+    expect(SALES_NON_PAUSING_CONSULTATION_PROFILES.has('sales-web@16')).toBe(false);
+    // The composition sets consultationsWithoutPause from that set (it needs a REAL Catalog and the graph to compose).
+    expect(SALES_WEB_PROFILE_V17.capabilities).toEqual(SALES_WEB_PROFILE_V16.capabilities);
+    expect(SALES_WEB_PROFILE_V17.channel).toEqual(SALES_WEB_PROFILE_V16.channel);
+    expect(SALES_WEB_PROFILE_V17.domains).toEqual(SALES_WEB_PROFILE_V16.domains);
+    expect({ ...v17, version: 16, description: '', instructions: '' }).toEqual({ ...v16, description: '', instructions: '' });
+  });
+
+  it('exactly two lines change: consult instead of «nobody can join / never consult», with the WhatsApp consultation rule (v25) on [[contacto]]', () => {
+    const l16 = v16.instructions.split('\n');
+    const l17 = v17.instructions.split('\n');
+    expect(l17).toHaveLength(l16.length);
+    const changed = l17.map((l, i) => (l === l16[i] ? null : i)).filter((i) => i !== null);
+    expect(changed).toHaveLength(2);
+    expect(v16.instructions).toMatch(/Never use request_handoff or request_consultation on this website/);
+    expect(v17.instructions).not.toMatch(/request_consultation on this website|no person from the team can join this chat yet/);
+    expect(v17.instructions).toMatch(/Never use request_handoff on this website, and never promise that a person will join this chat/);
+    const rule = l17.find((l) => l.startsWith('- request_consultation:'))!;
+    const whatsapp = loadSalesAgentDefinitionLine();
+    expect(rule).toBe(whatsapp.split('give the store contacts below').join("add [[contacto]] on its own line (the chat shows the store's real contact details there)"));
+    for (const must of ['Always with blocking=false', 'never to ask for a discount or a special price', 'never draw the conclusion yourself', 'never tell them to contact, ask or check with PesasChile', 'the team attends Monday to Friday from 10:00 to 17:00']) expect(rule).toContain(must);
+  });
+});
+
+function loadSalesAgentDefinitionLine(): string {
+  // The WhatsApp v25 consultation rule the web line is built from (one source of the wording).
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { readFileSync } = require('node:fs') as typeof import('node:fs');
+  const v25 = JSON.parse(readFileSync(`${SALES_AGENT_DIR}/candidates/sales.v25.candidate.json`, 'utf8')) as { instructions: string };
+  return v25.instructions.split('\n').find((l) => l.startsWith('- request_consultation:'))!;
+}
