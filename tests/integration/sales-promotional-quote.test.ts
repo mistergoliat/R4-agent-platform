@@ -113,6 +113,8 @@ function world(options: { eligibility?: CommercialEligibility } = {}) {
     getOperation: (...a) => owner.getOperation(...a),
     lookupIdempotency: (...a) => owner.lookupIdempotency(...a),
     getDocument: (...a) => owner.getDocument(...a),
+    requestEmailDelivery: (...a) => owner.requestEmailDelivery(...a),
+    getDelivery: (...a) => owner.getDelivery(...a),
   };
   const quotes = killSwitchGuardedQuotes(flaky, controls, logger);
   const eligibility = options.eligibility ?? V3;

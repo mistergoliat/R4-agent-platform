@@ -201,6 +201,8 @@ const quotes = (status: QuoteV2Quote['status'] = 'issued', validUntil = new Date
   getOperation: () => Promise.reject(new Error('unused')),
   lookupIdempotency: () => Promise.reject(new Error('unused')),
   getDocument: () => Promise.reject(new Error('unused')),
+  requestEmailDelivery: () => Promise.reject(new Error('unused')),
+  getDelivery: () => Promise.reject(new Error('unused')),
 });
 
 const consent: CheckoutConsentSource & { calls: number } = { calls: 0, obtain() { this.calls += 1; return Promise.resolve({ format: 'checkout-sbx-test-consent.v1', token: `stub-consent-${'x'.repeat(24)}` }); } };

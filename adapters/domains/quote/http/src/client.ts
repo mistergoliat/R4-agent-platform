@@ -8,13 +8,16 @@ import {
   type QuoteV2Binding,
   type QuoteV2CreateRequest,
   type QuoteV2CreateResult,
+  type QuoteV2Delivery,
+  type QuoteV2DeliveryResult,
+  type QuoteV2EmailDeliveryRequest,
   type QuoteV2DocumentBytes,
   type QuoteV2Operation,
   type QuoteV2Quote,
   type QuoteV2Service,
 } from '@r4-adapters/domains';
 import type { QuoteHttpConfig } from './config.js';
-import { errorResponseSchema, idempotencyLookupSchema, operationSchema, quoteOperationResultSchema, quoteSchema } from './schemas.js';
+import { deliverySchema, errorResponseSchema, idempotencyLookupSchema, operationSchema, quoteOperationResultSchema, quoteSchema } from './schemas.js';
 
 /** The subset of `fetch` the client uses (injected: tests and deployments decide the transport). */
 export type QuoteFetch = (
@@ -22,7 +25,7 @@ export type QuoteFetch = (
   init: { method: 'GET' | 'POST'; headers: Record<string, string>; body?: string; signal: AbortSignal },
 ) => Promise<{ status: number; headers: { get(name: string): string | null }; text(): Promise<string>; arrayBuffer(): Promise<ArrayBuffer> }>;
 
-export type QuoteOperationName = 'createAndIssue' | 'getQuote' | 'getOperation' | 'lookupIdempotency' | 'getDocument';
+export type QuoteOperationName = 'createAndIssue' | 'getQuote' | 'getOperation' | 'lookupIdempotency' | 'getDocument' | 'requestEmailDelivery' | 'getDelivery';
 
 /** One owner call for telemetry. Carries no token, idempotency key, customer data or body. */
 export interface QuoteCallTelemetry {
@@ -46,8 +49,8 @@ const NOT_SENT = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREAC
  * Quote V2 HTTP client (R4-J3B), the production implementation of the
  * Quote V2 port. Transport only: bearer auth, `Idempotency-Key`, deadline,
  * cancellation, JSON/size/schema validation, typed owner errors, telemetry.
- * No pricing, no arithmetic, no document rendering, no email route: the only
- * reachable mutation is `POST /v2/quotes`.
+ * No pricing, no arithmetic, no document rendering. Two mutations: `POST /v2/quotes` and (ADR-057 C4)
+ * `POST /v2/quotes/{quoteId}/deliveries/email`, whose recipient travels only in the body (never in telemetry or errors).
  *
  * Mutation outcome classification (POST /v2/quotes):
  *   201 / 202                → answer (the caller checks quote/operation state; never success by status)
@@ -128,6 +131,27 @@ export class QuoteV2HttpClient implements QuoteV2Service {
     const declared = response.headers.get('x-document-sha256');
     this.#emitOk(started, 'getDocument', 200, null, options);
     return { bytes, declaredSha256: declared && /^[0-9a-f]{64}$/.test(declared) ? declared : null };
+  }
+
+  async requestEmailDelivery(quoteId: string, request: QuoteV2EmailDeliveryRequest, idempotencyKey: string, options?: CallOptions): Promise<QuoteV2DeliveryResult> {
+    const started = performance.now();
+    assertKey(idempotencyKey);
+    const response = await this.#call(started, 'requestEmailDelivery', 'POST', `/v2/quotes/${uuidPath(quoteId)}/deliveries/email`, options, { 'idempotency-key': idempotencyKey, 'content-type': 'application/json' }, JSON.stringify(request));
+    if (response.status !== 202) throw this.#unexpected(response.status);
+    const replayed = response.headers.get('idempotent-replay') === 'true';
+    const delivery = this.#parse(deliverySchema, await this.#json(response), 202);
+    if (delivery.quoteId !== quoteId) throw this.#violation(started, 'requestEmailDelivery', 'the delivery belongs to another quote', 202);
+    this.#emitOk(started, 'requestEmailDelivery', 202, replayed, options);
+    return { replayed, delivery };
+  }
+
+  async getDelivery(quoteId: string, deliveryId: string, options?: CallOptions): Promise<QuoteV2Delivery> {
+    const started = performance.now();
+    const response = await this.#call(started, 'getDelivery', 'GET', `/v2/quotes/${uuidPath(quoteId)}/deliveries/${uuidPath(deliveryId)}`, options, {});
+    if (response.status !== 200) throw this.#unexpected(response.status);
+    const delivery = this.#parse(deliverySchema, await this.#json(response), 200);
+    this.#emitOk(started, 'getDelivery', 200, null, options);
+    return delivery;
   }
 
   /** One HTTP exchange up to the status line. Non-2xx answers are mapped to typed errors here. */
@@ -231,6 +255,10 @@ export function failureOf(status: number, owner: { code: string | null; requestI
     }
   }
   if (typeof owner.details.boundRequestFingerprint === 'string') details.boundRequestFingerprint = owner.details.boundRequestFingerprint;
+  // (ADR-057 C4) The owner refuses an email delivery before binding anything when no email provider is configured.
+  if (status === 503 && code === 'dependency_unavailable' && owner.details.dependency === 'email_provider') {
+    return new DomainError('temporarily_unavailable', 'email_provider_unavailable', 'the quote owner cannot send email right now; nothing was queued', details);
+  }
   if (status === 400 || status === 413 || status === 422) return new DomainError('validation', code, `the quote owner refused the request (${code})`, details);
   if (status === 401 || status === 403) return new DomainError('unauthorized', code, `the quote owner refused R4's credential (${code})`, details);
   if (status === 404) return new DomainError('not_found', code, `the quote owner has no such resource (${code})`, details);

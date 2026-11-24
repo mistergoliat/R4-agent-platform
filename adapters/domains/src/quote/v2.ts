@@ -153,6 +153,29 @@ export interface QuoteV2Binding {
   readonly quoteStatus: QuoteV2Status;
 }
 
+/** (ADR-057 C4) Body of POST /v2/quotes/{quoteId}/deliveries/email: the address the customer gave (owner Email, single mailbox). */
+export interface QuoteV2EmailDeliveryRequest {
+  readonly recipient: { readonly email: string; readonly name?: string };
+}
+
+/** The owner's Delivery: only the masked recipient ever comes back (the raw address never does). */
+export interface QuoteV2Delivery {
+  readonly deliveryId: string;
+  readonly quoteId: string;
+  readonly channel: 'email';
+  readonly status: 'pending' | 'sending' | 'sent' | 'failed' | 'unknown';
+  readonly recipientMasked: string;
+  readonly documentSha256: string;
+  readonly requestedAt: string;
+  readonly sentAt: string | null;
+  readonly attempts: { readonly count: number; readonly lastAttemptAt: string | null; readonly lastErrorCode: string | null };
+}
+
+export interface QuoteV2DeliveryResult {
+  readonly replayed: boolean;
+  readonly delivery: QuoteV2Delivery;
+}
+
 export interface QuoteV2DocumentBytes {
   readonly bytes: Uint8Array;
   /** `X-Document-Sha256` as the owner sent it (null when absent). */
@@ -170,6 +193,13 @@ export interface QuoteV2Service {
   lookupIdempotency(idempotencyKey: string, options?: CallOptions): Promise<QuoteV2Binding | null>;
   /** GET /v2/quotes/{quoteId}/document: the exact stored PDF bytes (never re-rendered). */
   getDocument(quoteId: string, options?: CallOptions): Promise<QuoteV2DocumentBytes>;
+  /**
+   * (ADR-057 C4) POST /v2/quotes/{quoteId}/deliveries/email with `Idempotency-Key`: queues ONE email of the issued
+   * quote's PDF (the same key replays the same delivery). Scope quotes:delivery:email.
+   */
+  requestEmailDelivery(quoteId: string, request: QuoteV2EmailDeliveryRequest, idempotencyKey: string, options?: CallOptions): Promise<QuoteV2DeliveryResult>;
+  /** GET /v2/quotes/{quoteId}/deliveries/{deliveryId}. */
+  getDelivery(quoteId: string, deliveryId: string, options?: CallOptions): Promise<QuoteV2Delivery>;
 }
 
 // ---- owner arithmetic (QUOTE_V2_DOMAIN_CONTRACT §6.3), exact integers only -------------------

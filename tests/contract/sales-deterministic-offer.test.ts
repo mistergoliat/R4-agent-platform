@@ -199,6 +199,8 @@ describe('D. the kill-switch write guard', () => {
     const engaged = killSwitchGuardedQuotes(client, controlsAt(false), createSilentLogger());
     await expect(engaged.lookupIdempotency('r4x_0123456789abcdef0123456789abcdef')).resolves.toBeNull();
     await expect(engaged.createAndIssue({} as never, 'r4x_0123456789abcdef0123456789abcdef')).rejects.toMatchObject({ code: 'autonomy_disabled', category: 'temporarily_unavailable' });
+    // (ADR-057 C4) Emailing the quote reaches the customer: refused while engaged, before any request.
+    await expect(engaged.requestEmailDelivery('0f8e4a52-3c1b-4d6e-9b7a-2e5f1c8d9a10', { recipient: { email: 'a@b.cl' } }, 'r4x_0123456789abcdef0123456789abcdef')).rejects.toMatchObject({ code: 'autonomy_disabled', category: 'temporarily_unavailable' });
     expect(calls).toEqual(['GET /v2/idempotency/current']);
   });
 });
