@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { migrate, migrationStatus, withTransaction, type Pool, type PostgresArtifacts } from '@r4/persistence-postgres';
+import { migrate, migrationStatus, withTransaction, type Pool, type PostgresArtifactFacts, type PostgresArtifacts } from '@r4/persistence-postgres';
+import { withFacts } from './facts.js';
 import type { StructuredLogger } from '@r4/observability';
 import { walkCatalog, type ProductSheetPort } from './catalog.js';
 import { applyChanges, changeOf, graphChangeSchema } from './changes.js';
@@ -38,7 +39,7 @@ export interface CurationRunResult {
  * ADR-058 G2: one on-demand curator run. Reads the signed graph, walks the catalog, applies the rules and stores the
  * run with its findings (findings in one transaction with the completed run). Changes nothing in the graph.
  */
-export async function runCuration(deps: { readonly pool: Pool; readonly artifacts: Pick<PostgresArtifacts, 'current' | 'propose' | 'resolveUnseen' | 'proposals' | 'createVersion' | 'decide' | 'sign'>; readonly catalog: ProductSheetPort }, input: { readonly startedBy: string; readonly concurrency?: number; readonly tailMisses?: number }): Promise<CurationRunResult> {
+export async function runCuration(deps: { readonly pool: Pool; readonly artifacts: Pick<PostgresArtifacts, 'current' | 'propose' | 'resolveUnseen' | 'proposals' | 'createVersion' | 'decide' | 'sign'>; readonly catalog: ProductSheetPort; readonly facts?: Pick<PostgresArtifactFacts, 'current'> }, input: { readonly startedBy: string; readonly concurrency?: number; readonly tailMisses?: number }): Promise<CurationRunResult> {
   if (!(await graphSchemaIsCurrent(deps.pool))) throw new Error('the graph schema is not current: run graph:migrate first');
   const signed = await readSignedGraph(deps.artifacts);
   if (!signed) throw new Error('no signed product graph: import the baseline first (graph:import)');
@@ -50,7 +51,10 @@ export async function runCuration(deps: { readonly pool: Pool; readonly artifact
       await finish(deps.pool, runId, 'failed', walk.counts, null, `catalog reads failed: ${walk.counts.failed} of ${walk.counts.scanned}`);
       return { runId, graphVersion: signed.version, status: 'failed', catalog: walk.counts, counts: {}, proposals: { created: 0, refreshed: 0, reopened: 0, skipped: 0, resolved: 0 }, automatic: { approved: 0, version: null, applied: 0 } };
     }
-    const findings = curate(signed.graph, walk.sheets);
+    // Decision 10: what a person answered in R4 counts as part of the sheet; what the store still lacks is a notice.
+    const facts = deps.facts ? (await deps.facts.current(PRODUCT_GRAPH_KIND)).map((f) => ({ subject: f.subject, field: f.field, value: f.value, recordedBy: f.recordedBy, recordedAt: f.recordedAt })) : [];
+    const read = withFacts(walk.sheets, facts);
+    const findings = [...curate(signed.graph, read.catalog), ...read.notices];
     const counts = countFindings(findings);
     await withTransaction(deps.pool, async (c) => {
       const rows = findings.map((f) => ({ task: f.task, rule: f.rule, product_key: f.productKey, related_key: f.relatedKey, summary: f.summary, evidence: f.evidence, fingerprint: fingerprintOf(f) }));

@@ -8,3 +8,4 @@ export * from './changes.js';
 export * from './classify.js';
 export * from './additions.js';
 export * from './undo.js';
+export * from './facts.js';
