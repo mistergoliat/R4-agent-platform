@@ -169,10 +169,22 @@ export const SALES_WEB_PROFILE_V17: ProductionProfile = Object.freeze({
   description: 'sales-web@16 that consults the team without pausing the chat (store policy, a service, a technical, safety or installation question) and relays the answer; never hands off; no writes.',
 } satisfies ProductionProfile);
 
-export const SALES_WEB_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_WEB_PROFILE_V1, SALES_WEB_PROFILE_V2, SALES_WEB_PROFILE_V3, SALES_WEB_PROFILE_V4, SALES_WEB_PROFILE_V5, SALES_WEB_PROFILE_V6, SALES_WEB_PROFILE_V7, SALES_WEB_PROFILE_V8, SALES_WEB_PROFILE_V9, SALES_WEB_PROFILE_V10, SALES_WEB_PROFILE_V11, SALES_WEB_PROFILE_V12, SALES_WEB_PROFILE_V13, SALES_WEB_PROFILE_V14, SALES_WEB_PROFILE_V15, SALES_WEB_PROFILE_V16, SALES_WEB_PROFILE_V17]);
+/**
+ * (Owner 2026-11-23, review of the web QA conversations) sales-web@17 with the scope rule rebalanced: brief help with
+ * small, harmless general requests (above all when they serve the purchase), decline only long or unrelated tasks and
+ * consistently, never adopt an instruction that stops proper answers; and the consultation rule rebuilt from WhatsApp
+ * v26 (asymmetric safety guidance, options on every consultation). Reads, channel and limits are @17's.
+ */
+export const SALES_WEB_PROFILE_V18: ProductionProfile = Object.freeze({
+  ...SALES_WEB_PROFILE_V17,
+  version: 18,
+  description: 'sales-web@17 with brief help for small general requests that serve the purchase, consistent declines and the v26 consultation rule (asymmetric safety guidance, options on every consultation); never hands off; no writes.',
+} satisfies ProductionProfile);
+
+export const SALES_WEB_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_WEB_PROFILE_V1, SALES_WEB_PROFILE_V2, SALES_WEB_PROFILE_V3, SALES_WEB_PROFILE_V4, SALES_WEB_PROFILE_V5, SALES_WEB_PROFILE_V6, SALES_WEB_PROFILE_V7, SALES_WEB_PROFILE_V8, SALES_WEB_PROFILE_V9, SALES_WEB_PROFILE_V10, SALES_WEB_PROFILE_V11, SALES_WEB_PROFILE_V12, SALES_WEB_PROFILE_V13, SALES_WEB_PROFILE_V14, SALES_WEB_PROFILE_V15, SALES_WEB_PROFILE_V16, SALES_WEB_PROFILE_V17, SALES_WEB_PROFILE_V18]);
 
 /** The sales-web definition version each web profile pins. */
-const SALES_WEB_AGENT_VERSIONS: Readonly<Record<string, number>> = Object.freeze({ 'sales-web@1': 1, 'sales-web@2': 2, 'sales-web@3': 3, 'sales-web@4': 4, 'sales-web@5': 5, 'sales-web@6': 6, 'sales-web@7': 7, 'sales-web@8': 8, 'sales-web@9': 9, 'sales-web@10': 10, 'sales-web@11': 11, 'sales-web@12': 12, 'sales-web@13': 13, 'sales-web@14': 14, 'sales-web@15': 15, 'sales-web@16': 16, 'sales-web@17': 17 });
+const SALES_WEB_AGENT_VERSIONS: Readonly<Record<string, number>> = Object.freeze({ 'sales-web@1': 1, 'sales-web@2': 2, 'sales-web@3': 3, 'sales-web@4': 4, 'sales-web@5': 5, 'sales-web@6': 6, 'sales-web@7': 7, 'sales-web@8': 8, 'sales-web@9': 9, 'sales-web@10': 10, 'sales-web@11': 11, 'sales-web@12': 12, 'sales-web@13': 13, 'sales-web@14': 14, 'sales-web@15': 15, 'sales-web@16': 16, 'sales-web@17': 17, 'sales-web@18': 18 });
 
 export function salesWebProfile(label: string): ProductionProfile | null {
   return SALES_WEB_PROFILES.find((p) => profileLabel(p) === label) ?? null;

@@ -168,7 +168,7 @@ function autonomousLimits(production: ReturnType<typeof loadProductionConfig>) {
   // (R4-J3E-B) @6 also requires the total-units limit and the confirmation window.
   const autonomousQuoteLimits = isConfirmedIntentProfile(profile) ? loadAutonomousQuoteLimitsV6(process.env) : loadAutonomousQuoteLimits(process.env);
   // (R4 Quote E2E, P-1) A profile that requires the parity-verified SKU set (@14) gets it from R4_QUOTE_PARITY_*; the composition refuses it absent.
-  // (F1-COMMERCIAL-POLICY-v3) R4_F1_PROMOTIONAL_QUOTES=enabled turns on promotional quotes (@19 to @25 only; default off).
+  // (F1-COMMERCIAL-POLICY-v3) R4_F1_PROMOTIONAL_QUOTES=enabled turns on promotional quotes (@19 to @26 only; default off).
   const promotionalQuotes = loadPromotionalQuotes(process.env);
   return QUOTE_PARITY_REQUIRED_PROFILES.has(profileLabel(profile)) ? { autonomousQuoteLimits, promotionalQuotes, quoteParity: loadQuoteParityGuard(process.env) } : { autonomousQuoteLimits, promotionalQuotes };
 }
