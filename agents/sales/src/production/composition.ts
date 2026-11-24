@@ -72,7 +72,7 @@ import { SALES_QUOTE_LANE_V21_PROFILE_LABEL } from './profile-v21.js';
 import { quoteDocumentDelivery } from '../capabilities/quote-document.js';
 import { catalogDiscoverCapability } from '../capabilities/catalog-discover.js';
 import { catalogSetComplementsCapability } from '../capabilities/catalog-set-complements.js';
-import { catalogBuildStepCapability, catalogReplacementsCapability } from '../capabilities/catalog-build-step.js';
+import { catalogBuildStepCapability, catalogReplacementsCapability, type GraphSource } from '../capabilities/catalog-build-step.js';
 import type { CatalogDiscoverPort } from '@r4-adapters/catalog-http';
 import { checkoutPurchaseStatusCapability, checkoutRequestLinkCapability, checkoutStartPurchaseCapability } from '../capabilities/checkout.js';
 import { SALES_WEB_PROFILES, SALES_WEB_QUOTE_PROFILES, isSalesWebProfile, salesWebAgentVersion, salesWebProfile } from './profile-web.js';
@@ -107,6 +107,8 @@ function unavailableCatalog(): Promise<never> {
 
 export interface SalesProductionWorkerOptions {
   readonly pool: pg.Pool;
+  /** (ADR-058 G5) The owner-signed store graph the web tools read; absent: the exported file R4_EXP_GRAPH_FILE. */
+  readonly storeGraph?: GraphSource;
   /** The durable production store (autonomy controls, delivery state), composed by the deployment. */
   readonly store: ProductionStore;
   readonly production: { readonly config: ProductionConfig };
@@ -216,12 +218,12 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
     if (!catalogReal || !options.catalogDiscover?.discoverConfigured) throw new Error(`refusing production composition: ${profileLabel(profile)} requires Catalog V2 Discover (R4_CATALOG_V2_* and R4_CATALOG_V2_DISCOVER_API_KEY)`);
     capabilities.register(progress(catalogDiscoverCapability(options.catalogDiscover)));
   }
-  // The store graph (product relations) behind the web tools: one source, read here only. Today the exported file named by
-  // R4_EXP_GRAPH_FILE; ADR-058 G5 replaces it with the owner-signed graph version stored in R4 (a change of this function).
-  const storeGraph = (): string => {
-    const graphFile = process.env.R4_EXP_GRAPH_FILE;
-    if (!catalogReal || !graphFile) throw new Error(`refusing production composition: ${profileLabel(profile)} requires a REAL Catalog and the store graph (R4_EXP_GRAPH_FILE)`);
-    return graphFile;
+  // The store graph (product relations) behind the web tools: one source, read here only. (ADR-058 G5) The owner-signed
+  // version the worker loaded and refreshes; when nothing is signed yet, the exported file named by R4_EXP_GRAPH_FILE.
+  const storeGraph = (): GraphSource => {
+    const graph = options.storeGraph ?? process.env.R4_EXP_GRAPH_FILE;
+    if (!catalogReal || !graph) throw new Error(`refusing production composition: ${profileLabel(profile)} requires a REAL Catalog and the store graph (a signed version, or R4_EXP_GRAPH_FILE)`);
+    return graph;
   };
   // Their progress (what they found and filtered) goes to the store chat as the build step's own report (web only).
   const buildProgress = webProgress ? (taskId: string, detail: string, products?: readonly string[]) => webProgress.report(taskId, 'build', detail, products) : undefined;

@@ -1,4 +1,4 @@
-import { loadGraphFile } from './catalog-build-step.js';
+import { graphReader, type GraphSource } from './catalog-build-step.js';
 import { z } from 'zod';
 import type { CatalogPort, CatalogProductContext } from '@r4-adapters/domains';
 import type { CapabilityRegistration } from '@r4/capability-runtime';
@@ -51,8 +51,8 @@ function liveOf(context: CatalogProductContext): { name: string; finalGrossClp: 
   };
 }
 
-export function catalogSetComplementsCapability(catalog: CatalogPort, graphFile: string): CapabilityRegistration<z.infer<typeof setComplementsInput>, SetComplementsView> {
-  const graph = loadGraphFile(graphFile);
+export function catalogSetComplementsCapability(catalog: CatalogPort, graphFile: GraphSource): CapabilityRegistration<z.infer<typeof setComplementsInput>, SetComplementsView> {
+  const graphOf = graphReader(graphFile);
   return {
     definition: readDefinition({
       capabilityId: LANE_CAPABILITY_IDS.catalogSetComplements,
@@ -69,12 +69,12 @@ export function catalogSetComplementsCapability(catalog: CatalogPort, graphFile:
     handler: (input, context) =>
       domainRead(async () => {
         const options = { signal: context.signal, correlationId: context.execution.correlationId };
-        const price = (k: string) => graph.products[k]?.price ?? Number.MAX_SAFE_INTEGER;
+        const price = (k: string) => graphOf().products[k]?.price ?? Number.MAX_SAFE_INTEGER;
         const groups: { anchorKey: string; area: string; picks: string[] }[] = [];
         for (const anchor of input.anchorKeys) {
-          const view = graph.view[anchor] ?? {};
+          const view = graphOf().view[anchor] ?? {};
           for (const area of ORDER.filter((a) => view[a]?.length)) {
-            const pool = view[area]!.filter((k) => graph.products[k]?.act !== false && (input.maxUnitPriceClp === undefined || price(k) <= input.maxUnitPriceClp)).sort((a, b) => price(a) - price(b));
+            const pool = view[area]!.filter((k) => graphOf().products[k]?.act !== false && (input.maxUnitPriceClp === undefined || price(k) <= input.maxUnitPriceClp)).sort((a, b) => price(a) - price(b));
             if (pool.length) groups.push({ anchorKey: anchor, area, picks: spread(pool, input.perRelation * 2) });
           }
         }
@@ -85,7 +85,7 @@ export function catalogSetComplementsCapability(catalog: CatalogPort, graphFile:
         const relations = kept
           .map((g) => ({
             anchorKey: g.anchorKey,
-            relation: (graph.labels[g.area] ?? g.area).replace(/ \(nueva\)$/u, ''),
+            relation: (graphOf().labels[g.area] ?? g.area).replace(/ \(nueva\)$/u, ''),
             candidates: g.picks
               .map((k) => ({ k, l: live.get(k) }))
               .filter(({ l }) => l && l.sellability === 'sellable' && (input.maxUnitPriceClp === undefined || (l.finalGrossClp ?? 0) <= input.maxUnitPriceClp))
@@ -96,7 +96,7 @@ export function catalogSetComplementsCapability(catalog: CatalogPort, graphFile:
         const until = relations.flatMap((r) => r.candidates.map((c) => live.get(c.productKey)?.validUntil ?? null)).filter((v): v is string => v !== null);
         return {
           meaning: MEANING,
-          anchors: input.anchorKeys.map((k) => ({ productKey: k, name: graph.products[k]?.n ?? null, inGraph: Boolean(graph.view[k]) })),
+          anchors: input.anchorKeys.map((k) => ({ productKey: k, name: graphOf().products[k]?.n ?? null, inGraph: Boolean(graphOf().view[k]) })),
           relations,
           validUntil: until.length ? until.reduce((a, b) => (Date.parse(a) <= Date.parse(b) ? a : b)) : null,
         };
