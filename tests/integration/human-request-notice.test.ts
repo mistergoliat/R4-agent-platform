@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FakeModelStep } from '@r4/model-gateway';
 import { SALES_HUMAN_REQUEST_NOTICE_PROFILES, SALES_HUMAN_REQUEST_NOTICE_TEXT, SALES_RUN_FAILURE_FALLBACK_TEXT } from '@r4-sales/agent/production';
-import { LiveOpsTestbed, say } from '../support/live-ops.js';
+import { LiveOpsTestbed, say, waitInput } from '../support/live-ops.js';
 
 /**
  * F-ADV-2 (ADR-041 extension): when the agent opens a human request (a consultation or a handoff) without replying,
@@ -64,6 +64,26 @@ describe('an agent-opened human request never leaves the contact in silence (F-A
     expect(await requests(b)).toEqual([{ kind: 'consultation', status: 'requested' }]);
     await b.deliver();
     expect(await b.rows(`select origin from outbound_messages`)).toEqual([{ origin: 'agent' }]);
+  });
+
+  it('(prod 2026-11-24) a consultation without pause whose run ends WITHOUT a reply (turn guard only observing) gets the notice, once', async () => {
+    const b = await start([BED_PROFILE]);
+    await b.worker('worker-1', { turnGuard: 'observe' });
+    b.next(CONSULT_WITHOUT_PAUSE, waitInput());
+    await b.customer(CUSTOMER, 'wamid.1', '¿Hacen revisión en terreno?');
+    await settle(b);
+    expect(sentTexts(b)).toEqual([SALES_HUMAN_REQUEST_NOTICE_TEXT]);
+    expect(await requests(b)).toEqual([{ kind: 'consultation', status: 'requested' }]);
+    await b.deliver();
+    expect(sentTexts(b)).toEqual([SALES_HUMAN_REQUEST_NOTICE_TEXT]);
+  });
+
+  it('with the turn guard enforcing, the same silent wait is refused once: the agent replies and no notice goes out', async () => {
+    const b = await start([BED_PROFILE]);
+    b.next(CONSULT_WITHOUT_PAUSE, waitInput(), say('Lo confirmo con el equipo y te aviso por aquí.'), waitInput());
+    await b.customer(CUSTOMER, 'wamid.1', '¿Hacen revisión en terreno?');
+    await settle(b);
+    expect(sentTexts(b)).toEqual(['Lo confirmo con el equipo y te aviso por aquí.']);
   });
 
   it('a profile outside the scope keeps the previous behaviour: the request, and no notice', async () => {

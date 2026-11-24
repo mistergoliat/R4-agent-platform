@@ -14,6 +14,7 @@ import {
   SALES_F1_CANARY_LIMITS,
   SALES_F1_SHIPPING_PROFILES,
   SALES_INTENT_ACCEPTANCE_PROFILES,
+  SALES_NON_PAUSING_CONSULTATION_PROFILES,
   SALES_PRODUCTION_AUTONOMOUS_ACTION_POLICY,
   SALES_PRODUCTION_PROFILE_V26,
   SALES_QUOTE_DOCUMENT_PROFILES,
@@ -73,6 +74,8 @@ describe('sales-web@19: the formal quote by email (ADR-057 C4)', () => {
       expect(set.has('sales-web@18')).toBe(false);
     }
     expect(SALES_QUOTE_DOCUMENT_PROFILES.has('sales-web@19')).toBe(false);
+    // (ADR-056) Like @17/@18: its consultations never pause, whatever the model writes.
+    expect(SALES_NON_PAUSING_CONSULTATION_PROFILES.has('sales-web@19')).toBe(true);
     expect(QUOTE_PARITY_REQUIRED_PROFILES.has('sales-web@19')).toBe(QUOTE_PARITY_REQUIRED_PROFILES.has(profileLabel(SALES_PRODUCTION_PROFILE_V26)));
   });
 

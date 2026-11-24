@@ -23,6 +23,7 @@ import {
   SALES_NON_PAUSING_CONSULTATION_PROFILES,
   SALES_WEB_RUN_FAILURE_FALLBACK_TEXT,
   SALES_WEB_HUMAN_REQUEST_NOTICE_TEXT,
+  salesHumanRequestNotice,
   composeSalesGateway,
   composeSalesProductionWorker,
   composeSalesWebGateway,
@@ -290,6 +291,18 @@ describe('sales-web@17 (ADR-056 K4): the web Don Pesín consults the team withou
     const whatsapp = loadSalesAgentDefinitionLine();
     expect(rule).toBe(whatsapp.split('give the store contacts below').join("add [[contacto]] on its own line (the chat shows the store's real contact details there)"));
     for (const must of ['Always with blocking=false', 'never to ask for a discount or a special price', 'never draw the conclusion yourself', 'never tell them to contact, ask or check with PesasChile', 'the team attends Monday to Friday from 10:00 to 17:00']) expect(rule).toContain(must);
+  });
+
+  it('its consultation notice says it is consulting (no restart), worded by service hours like WhatsApp', () => {
+    let at = new Date('2026-01-07T15:00:00.000Z'); // Wednesday 12:00 Santiago: open
+    const { bindings } = composeSalesWebGateway({ pool: noPool, production: production('sales-web@17'), env: webEnv, now: () => at });
+    const text = bindings.humanRequestNotice?.text as () => string;
+    expect(text()).toBe(salesHumanRequestNotice(at));
+    expect(text()).toContain('Lo estoy consultando con un asesor');
+    at = new Date('2026-01-10T15:00:00.000Z'); // Saturday: closed
+    expect(text()).toBe(salesHumanRequestNotice(at));
+    expect(text()).toContain('entre las 10:00 y las 17:00');
+    expect(text()).not.toContain('[[nueva-conversacion]]');
   });
 });
 
