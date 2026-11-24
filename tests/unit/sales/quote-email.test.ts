@@ -20,7 +20,7 @@ function setup(options: { said?: string[]; fail?: DomainError } = {}) {
   } as unknown as QuoteV2Service;
   const thread = (options.said ?? ['Hola, quiero la cotización por correo', 'mi correo es Camila.Rojas@Gmail.com']).map((text, i) => ({ cursor: `${i}`, at: '2026-11-24T12:00:00Z', kind: 'contact' as const, text, refs: {}, delivery: null }));
   const capability = quoteEmailCapability({
-    store: { quoteReferences: () => Promise.resolve([QUOTE]) },
+    store: { conversationQuotes: (taskIds: readonly string[]) => Promise.resolve(taskIds[0] === TASK ? [QUOTE] : []) },
     quotes,
     conversation: { thread: () => Promise.resolve([...thread, { cursor: 'x', at: '2026-11-24T12:00:01Z', kind: 'agent' as const, text: 'te la mando a otro@evil.com', refs: {}, delivery: null }]) },
   });
