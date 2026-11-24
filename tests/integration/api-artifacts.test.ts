@@ -131,3 +131,24 @@ describe('ADR-058 artifact writes', () => {
     expect([res.statusCode, code(res)]).toEqual([400, 'validation_failed']);
   });
 });
+
+describe('ADR-058 D10 facts', () => {
+  it('recording needs artifact.curate; the latest answer is the current fact', async () => {
+    const body = { subject: 'P1', field: 'Perfiles', value: '50x50', note: 'medido en bodega' };
+    const denied = await post('/v1/artifacts/test.graph/facts', body, ['artifact.sign']);
+    expect([denied.statusCode, code(denied)]).toEqual([422, 'human_scope_denied']);
+    const first = await post('/v1/artifacts/test.graph/facts', body, ['artifact.curate']);
+    expect(first.statusCode, first.body).toBe(201);
+    expect(first.json()).toMatchObject({ fact: { subject: 'P1', field: 'Perfiles', value: '50x50', source: 'console', recordedBy: 'oidc:owner' } });
+    await post('/v1/artifacts/test.graph/facts', { ...body, value: '60x60' }, ['artifact.curate']);
+    const current = (await get('/v1/artifacts/test.graph/facts?subject=P1')).json<{ facts: { value: string }[] }>().facts;
+    expect(current.map((f) => f.value)).toEqual(['60x60']);
+    const res = await get('/v1/artifacts/test.graph/facts', {});
+    expect([res.statusCode, code(res)]).toEqual([422, 'trusted_human_required']);
+  });
+
+  it.each([{ subject: 'P1', field: 'Perfiles' }, { subject: 'P1', field: 'Perfiles', value: 'x'.repeat(501) }, { subject: '', field: 'f', value: 'v' }, { subject: 'P1', field: 'f', value: 'v', extra: 1 }])('POST facts %j is a 400', async (body) => {
+    const res = await post('/v1/artifacts/test.graph/facts', body, ['artifact.curate']);
+    expect([res.statusCode, code(res)]).toEqual([400, 'validation_failed']);
+  });
+});

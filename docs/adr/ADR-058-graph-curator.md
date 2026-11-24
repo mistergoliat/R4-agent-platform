@@ -7,8 +7,8 @@
   - **G2 en producción** (PR #134). Primera corrida el 2026-11-23: 2.550 fichas, 588 hallazgos.
   - **G3 en producción** (PR #136): 589 propuestas abiertas el 2026-11-23.
   - **G2b-1 en producción** (PR #138): altas por analogía, reemplazos, grupos musculares y cierre automático de avisos.
-  - **Decisión 9 implementada** (cambios automáticos); la Decisión 10 (datos que se responden en R4) va en una fase
-    aparte.
+  - **Decisión 9 en producción** (PR #141): la versión 2 se publicó sola el 2026-11-23, con 290 cambios automáticos.
+  - **Decisión 10 implementada** (datos que se responden en R4).
   - Cada fase necesita autorización explícita del owner.
 - **Fecha:** 2026-11-23
 - **Mandato:** decisiones del owner del 2026-11-23:
@@ -211,7 +211,7 @@ volver a aprobar. Esto amplía «Fuera de alcance»: R4 guarda datos de producto
    faltante se cierra solo.
 4. **La ficha se corrige después, en lote.** La consola exporta la lista de hechos que la tienda todavía no tiene,
    para quien carga productos. Cuando la ficha ya trae el dato, el hecho queda como respaldo.
-5. **Implementación en una fase aparte**, después de la Decisión 9.
+5. **Implementación en una fase aparte**, después de la Decisión 9 (ver «Decisión 10 — implementación»).
 
 ## Privacidad y repositorio público
 
@@ -389,6 +389,28 @@ sin perfiles quedaba olvidada.
   - el resumen semanal son las propuestas `applied` o `undone` decididas por `graph-curator:auto`;
   - «Deshacer» corre `graph:undo` como trabajo del host;
   - una versión `stale` muestra «volver a armar» en vez de «firmar».
+
+## Decisión 10 — implementación (2026-11-24)
+
+- **Core, migración `0028_artifact_facts`:** `artifact_facts` es genérico. Guarda tipo, sujeto, campo, valor, origen,
+  nota, quién y cuándo, y Core no interpreta nada de eso.
+  - Es append-only: el hecho vigente de un sujeto y campo es la última respuesta.
+  - `PostgresArtifactFacts`: `record`, `current` (opcionalmente de un sujeto) y `history`.
+- **API:**
+  - `GET /v1/artifacts/:kind/facts?subject=` (lector de servicio);
+  - `POST /v1/artifacts/:kind/facts` (operador firmado con `artifact.curate`) con `{ subject, field, value, source?,
+    note? }`. Responde 201 con el hecho; `recordedBy` es el operador.
+- **Curador:** cada corrida lee los hechos y los suma a las fichas (`withFacts`).
+  - Un hecho completa un campo que la ficha no declara. Si la ficha ya lo declara, la ficha manda.
+  - El aviso de dato faltante se cierra solo en esa misma corrida.
+  - Cada hecho que la ficha todavía no tiene es un aviso `FACT_NOT_IN_SHEET` («está en R4, falta cargarlo en la
+    tienda»). Esa es la lista para corregir la tienda en lote, y se cierra sola cuando la ficha trae el dato.
+- **Consola:**
+  - bandeja «Datos que faltan»: los `SPEC_MISSING` abiertos, con un campo por dato que hace `POST …/facts`, con
+    sujeto = producto y campo = el dato que falta;
+  - lista para exportar: los `FACT_NOT_IN_SHEET` abiertos.
+- **Pesín** usará los hechos cuando lea el grafo firmado (G5). Las consultas de Pesín que terminan en un hecho son
+  G6 (Decisión 7).
 
 ## Fuera de alcance
 

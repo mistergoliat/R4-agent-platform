@@ -37,6 +37,7 @@ const API_WRITE_ROUTES: Readonly<Record<string, string>> = {
   'POST /v1/agent-drafts/:id/revisions': 'ADR-054 operator-written draft revision and note, persisted append-only; never registered and never run in production (never in a task or its context)',
   'POST /v1/agent-drafts/:id/discard': 'no text (empty body)',
   'POST /v1/artifacts/:kind/proposals/decide': 'ADR-058 operator decision and note on proposed artifact changes, persisted in the proposal tables; no agent reads them (never in a task or its context)',
+  'POST /v1/artifacts/:kind/facts': 'ADR-058 D10 operator-answered fact (subject, field, value, note), persisted append-only in the facts table; read by the graph curator, never in a task or its context',
   'POST /v1/artifacts/:kind/sign': 'ADR-058 operator signature and note on an artifact version, persisted in the signature log (never in a task or its context)',
 };
 
