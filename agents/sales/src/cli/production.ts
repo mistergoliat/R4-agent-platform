@@ -3,7 +3,7 @@ import { runGatewayProcess, loadGatewayConfig } from '@r4/channel-gateway';
 import { stableJson } from '@r4/evaluation';
 import { gitState, secretsFromEnv, writeArtifacts } from '@r4/evaluator';
 import { createLogger } from '@r4/observability';
-import { PostgresProductionStore, createPool } from '@r4/persistence-postgres';
+import { PostgresArtifacts, PostgresProductionStore, createPool } from '@r4/persistence-postgres';
 import {
   assertProductionComposition,
   conversationKey,
@@ -26,6 +26,7 @@ import { configuredModelProvider } from '../model.js';
 import { assertSalesProductionPrerequisites, composeSalesGateway, composeSalesProductionWorker, composeSalesWebGateway, loadPromotionalQuotes, loadQuoteRecovery, salesAgentOf, selectedSalesProductionProfile } from '../production/composition.js';
 import { loadCatalogDescriptiveWindowMs } from '../workspace/catalog-descriptive.js';
 import { isSalesWebProfile } from '../production/profile-web.js';
+import { STORE_GRAPH_KIND, SignedStoreGraph, type SignedRead } from '../production/store-graph.js';
 import { QUOTE_RECOVERY_SOURCE_ID } from '../ids.js';
 import { webProgressReporter } from '../production/web-progress.js';
 import { WebOutboundAdapter, loadWebChannelConfig } from '@r4-adapters/web';
@@ -304,6 +305,15 @@ async function webGateway(production: ReturnType<typeof loadProductionConfig>): 
   await runGatewayProcess(config, bindings, { logger });
 }
 
+/** (ADR-058 G5) The current signed store graph of the production database (Core artifacts). */
+function signedStoreGraphRead(pool: ReturnType<typeof createPool>): SignedRead {
+  const artifacts = new PostgresArtifacts(pool);
+  return async () => {
+    const current = await artifacts.current(STORE_GRAPH_KIND);
+    return current ? { version: current.version, content: current.content } : null;
+  };
+}
+
 async function worker(production: ReturnType<typeof loadProductionConfig>): Promise<void> {
   const model = configuredModelProvider(process.env);
   if (!model) throw new Error('refusing: no model provider configured (R4_MODEL_*)');
@@ -316,7 +326,9 @@ async function worker(production: ReturnType<typeof loadProductionConfig>): Prom
   const catalog = productionCatalog(production, logger);
   const shipping = productionShipping(production, logger);
   const quotes = productionQuotes(production, logger);
-  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...webProgressOf(production, pool), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production, logger), quoteRecovery: loadQuoteRecovery(process.env) , catalogDescriptiveWindowMs: loadCatalogDescriptiveWindowMs(process.env) });
+  // (ADR-058 G5) A web worker reads the owner-signed store graph and refreshes it in the background.
+  const storeGraph = isSalesWebProfile(workerProfile(production)) ? (await SignedStoreGraph.load(signedStoreGraphRead(pool), logger))?.start() ?? null : null;
+  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...(storeGraph ? { storeGraph } : {}), ...webProgressOf(production, pool), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production, logger), quoteRecovery: loadQuoteRecovery(process.env) , catalogDescriptiveWindowMs: loadCatalogDescriptiveWindowMs(process.env) });
   await assertSalesProductionPrerequisites(workerProfile(production), pool);
   // (M3) What the operator needs to see from the logs: whether the quote-recovery source was composed, and the promotional-quotes switch.
   const features = { quoteRecovery: composed.bindings.contextSources?.some((s) => s.id === QUOTE_RECOVERY_SOURCE_ID) === true, promotionalQuotes: loadPromotionalQuotes(process.env) };
