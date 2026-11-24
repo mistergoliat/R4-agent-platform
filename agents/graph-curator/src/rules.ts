@@ -1,4 +1,5 @@
 import { additionFor, missingMuscles, musclesOf } from './additions.js';
+import { physicalFit } from './fit.js';
 import type { ProductGraph } from './graph.js';
 
 /**
@@ -40,6 +41,7 @@ export const REQUIRED_SPECS: Readonly<Record<string, readonly (readonly string[]
   PLATE_PRE: [['Diámetro interno']],
   COLLAR: [['Diámetro interno']],
   OLY_BAR: [['Diámetro de manga'], ['Largo de agarre']],
+  PRE_BAR: [['Diámetro de manga']],
   SPECIALTY_BAR: [['Diámetro de manga']],
   TECH_BAR: [['Diámetro de manga']],
   CURL_BAR: [['Diámetro de manga']],
@@ -91,16 +93,20 @@ export function curate(g: ProductGraph, catalog: CatalogView): Finding[] {
     if (p.n !== null && shortName(seen.name).toLowerCase() !== shortName(p.n).toLowerCase()) add('new_or_changed', 'RENAMED', key, null, `Cambió de nombre: «${shortName(p.n)}» → «${shortName(seen.name)}»`, { before: p.n, after: seen.name });
   }
 
-  // 2. Missing data on the sheets (active products of the kinds that need it), sellable first.
+  // 2. Missing data on the sheets (active products of the kinds that need it): sellable first, then what it would unblock
+  // (G2b-2: the physical-fit pairs it alone keeps undecided).
+  const fit = physicalFit(g, catalog);
   const missing: Finding[] = [];
   for (const [key, p] of Object.entries(g.products)) {
     const f = fact(key);
     const required = p.kind ? REQUIRED_SPECS[p.kind] : undefined;
     if (!f || !f.active || !required) continue;
     const lacks = required.filter((alternatives) => !alternatives.some((s) => (f.specs[s] ?? '').trim() !== '')).map((alternatives) => alternatives.join(' o '));
-    if (lacks.length) missing.push({ task: 'missing_data', rule: 'SPEC_MISSING', productKey: key, relatedKey: null, summary: `${shortName(f.name)}: falta ${lacks.join(', ')} en la ficha`, evidence: { kind: p.kind, missing: lacks, sellable: f.sellable } });
+    const unblocks = lacks.flatMap((l) => l.split(' o ')).reduce((n, field) => n + (fit.unblocks.get(key)?.get(field) ?? 0), 0);
+    if (lacks.length) missing.push({ task: 'missing_data', rule: 'SPEC_MISSING', productKey: key, relatedKey: null, summary: `${shortName(f.name)}: falta ${lacks.join(', ')} en la ficha${unblocks ? ` (desbloquea ${unblocks} relaciones)` : ''}`, evidence: { kind: p.kind, missing: lacks, sellable: f.sellable, unblocks } });
   }
-  out.push(...missing.sort((a, b) => Number(b.evidence.sellable) - Number(a.evidence.sellable)));
+  out.push(...missing.sort((a, b) => Number(b.evidence.sellable) - Number(a.evidence.sellable) || Number(b.evidence.unblocks) - Number(a.evidence.unblocks)));
+  out.push(...fit.findings);
   out.push(...missingMuscles(g, catalog));
 
   // 3. Inconsistencies.

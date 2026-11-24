@@ -21,6 +21,8 @@ export const graphChangeSchema = z.discriminatedUnion('op', [
     relations: z.array(z.tuple([z.string().regex(/^[a-z]{1,8}$/u), key, key])).max(60),
   }),
   z.strictObject({ op: z.literal('set_muscles'), key, muscles: z.array(z.enum(MUSCLE_GROUPS)).min(1).max(MUSCLE_GROUPS.length) }),
+  // G2b-2: declared physical fits the graph lacks ([area, a, b]: view[a]['area:a'] ∋ b).
+  z.strictObject({ op: z.literal('add_relations'), relations: z.array(z.tuple([z.string().regex(/^[a-z]{1,8}$/u), key, key])).min(1).max(200) }),
 ]);
 export type GraphChange = z.infer<typeof graphChangeSchema>;
 type GraphMuscles = (typeof MUSCLE_GROUPS)[number][];
@@ -45,6 +47,14 @@ export function changeOf(f: Finding): { change: GraphChange | null; effect: stri
       const e = f.evidence as { name: string; price: number | null; kind: string; muscles: string[]; relations: [string, string, string][] };
       return { change: { op: 'add_product', key: f.productKey, product: { n: shortName(e.name), price: e.price, kind: e.kind, muscles: e.muscles as GraphMuscles }, relations: e.relations }, effect: `Al aprobar: entra al grafo con ${e.relations.length} relaciones.` };
     }
+    case 'FIT_MISSING_PLATES':
+    case 'FIT_MISSING_COLLARS':
+    case 'FIT_MISSING_BARS': {
+      const rel = f.evidence.relations as [string, string, string][];
+      return { change: { op: 'add_relations', relations: rel }, effect: `Al aprobar: se agregan ${rel.length} relaciones de calce declarado.` };
+    }
+    case 'FIT_CONTRADICTED':
+      return { change: { op: 'remove_relation', area: String(f.evidence.area), a: f.productKey, b: f.relatedKey! }, effect: 'Al aprobar: se quita la relación que los datos declarados contradicen.' };
     case 'SET_MUSCLES':
       return { change: { op: 'set_muscles', key: f.productKey, muscles: f.evidence.muscles as GraphMuscles }, effect: 'Al aprobar: el grafo registra qué grupos trabaja.' };
     default:
@@ -75,6 +85,10 @@ export function applyChanges(graph: ProductGraph, changes: readonly GraphChange[
   for (const c of changes) {
     if (c.op === 'add_product') {
       g.products[c.key] ??= { n: c.product.n, act: true, price: c.product.price, kind: c.product.kind, ...(c.product.muscles.length ? { muscles: c.product.muscles } : {}) };
+      for (const [area, a, b] of c.relations) link(area, a, b);
+      continue;
+    }
+    if (c.op === 'add_relations') {
       for (const [area, a, b] of c.relations) link(area, a, b);
       continue;
     }

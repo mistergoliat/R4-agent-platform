@@ -32,6 +32,22 @@ export function revertChange(current: ProductGraph, base: ProductGraph, change: 
       if (!list.includes(to)) list.push(to);
     }
   };
+  if (change.op === 'add_relations') {
+    // Each added relation goes away unless the base already had it.
+    const inBase = (area: string, a: string, b: string) => (base.view[a]?.[`${area}:a`] ?? []).includes(b);
+    for (const [area, a, b] of change.relations) {
+      if (inBase(area, a, b)) continue;
+      for (const [from, to, side] of [[a, b, 'a'], [b, a, 'b']] as const) {
+        const groups = g.view[from];
+        const list = groups?.[`${area}:${side}`];
+        if (!groups || !list) continue;
+        groups[`${area}:${side}`] = list.filter((k) => k !== to);
+        if (!groups[`${area}:${side}`]!.length) delete groups[`${area}:${side}`];
+        if (!Object.keys(groups).length) delete g.view[from];
+      }
+    }
+    return productGraphSchema.parse(g);
+  }
   if (change.op === 'remove_relation') {
     for (const [directed, other] of relationsOf(base, change.a)) if (other === change.b && directed.startsWith(`${change.area}:`)) link(directed, change.a, change.b);
     const back = base.unreviewed.filter(([ar, a, b]) => ar === change.area && ((a === change.a && b === change.b) || (a === change.b && b === change.a)));
