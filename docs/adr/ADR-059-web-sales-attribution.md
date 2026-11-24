@@ -1,7 +1,7 @@
 # ADR-059 — Chat web: qué ventas se atribuyen a Pesín y a las personas
 
 - **Identificador:** `R4-WEB-ATTR-01`
-- **Estado:** **Propuesto.** No autoriza código ni despliegues. Cada fase necesita autorización explícita del owner.
+- **Estado:** **Aceptado** por el owner el 2026-11-24 («sí, merge del #151»). No autoriza código ni despliegues: cada fase (A1, A2) necesita autorización explícita del owner.
 - **Fecha:** 2026-11-24
 - **Mandato:** owner, 2026-11-24.
   - Al revisar qué compara la consola, pidió ver las ventas atribuidas a Pesín. Para WhatsApp la venta queda ligada a la
