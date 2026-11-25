@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { MetaInboundAdapter, MetaOutboundAdapter, checkMetaConnection, loadMetaChannelConfig, splitForSurface, type MetaFetch } from '@r4-adapters/meta';
 import type { OutboundSubmission } from '@r4/live-ops';
 
-/** ADR-060 M1: Messenger and Instagram Direct through the Page — verification, signature, canonical inbound, honest send. */
+/** ADR-060 M1: the facebook (Messenger) and instagram (Instagram Direct) channels through the Page — verification, signature, canonical inbound, honest send. */
 const env = { R4_META_PAGE_ID: '1111111111', R4_META_INSTAGRAM_ACCOUNT_ID: '17840000000000001', R4_META_PAGE_ACCESS_TOKEN: 'page-token', R4_WHATSAPP_APP_SECRET: 'app-secret', R4_WHATSAPP_VERIFY_TOKEN: 'verify-me', R4_META_GRAPH_BASE_URL: 'http://127.0.0.1:9' };
 const config = loadMetaChannelConfig(env, { allowNetwork: false });
 const sign = (body: string) => `sha256=${createHmac('sha256', 'app-secret').update(body, 'utf8').digest('hex')}`;
@@ -36,11 +36,13 @@ describe('Meta channel configuration', () => {
     expect(() => loadMetaChannelConfig({ R4_WHATSAPP_APP_SECRET: 'x', R4_WHATSAPP_VERIFY_TOKEN: 'y' }, { allowNetwork: false })).toThrow(/R4_META_PAGE_ID is missing.*R4_META_PAGE_ACCESS_TOKEN is missing/);
     expect(() => loadMetaChannelConfig({ ...env, R4_META_GRAPH_BASE_URL: '' }, { allowNetwork: false })).toThrow(/R4_PROD_ALLOW_NETWORK/);
     expect(() => loadMetaChannelConfig({ ...env, R4_META_PAGE_ID: 'my-page' }, { allowNetwork: false })).toThrow(/numeric Page id/);
+    expect(() => loadMetaChannelConfig({ ...env, R4_META_INSTAGRAM_ACCOUNT_ID: '' }, { allowNetwork: false, surface: 'instagram' })).toThrow(/channel instagram: R4_META_INSTAGRAM_ACCOUNT_ID is missing/);
   });
 });
 
 describe('Meta inbound', () => {
-  const inbound = new MetaInboundAdapter(config);
+  const inbound = new MetaInboundAdapter(config, 'facebook');
+  const instagram = new MetaInboundAdapter(config, 'instagram');
 
   it('verifies the subscription and the signature over the raw body, failing closed', () => {
     expect(inbound.verifySubscription({ 'hub.mode': 'subscribe', 'hub.verify_token': 'verify-me', 'hub.challenge': '42' })).toEqual({ ok: true, body: '42' });
@@ -51,40 +53,41 @@ describe('Meta inbound', () => {
     expect(inbound.authenticate(body, {})).toEqual({ ok: false, reason: 'missing_signature' });
   });
 
-  it('a Messenger text becomes a one-to-one inbound with the platform channel note', () => {
+  it('a Messenger text becomes a one-to-one inbound of the facebook channel, the text as written', () => {
     const parsed = inbound.parse(dm('page', '1111111111', { text: ' ¿Tienen barras olímpicas? ' }));
     expect(parsed.rejected).toEqual([]);
     expect(parsed.inbound).toEqual([
-      { channel: 'meta', accountRef: '1111111111', conversationRef: '2222222222', senderRef: '2222222222', providerEventId: 'm_1', occurredAt: new Date(1764040000000).toISOString(), metadata: { surface: 'messenger' }, content: { kind: 'text', text: '¿Tienen barras olímpicas?\n\n[Canal informado por la plataforma: Messenger de Facebook, mensaje directo.]' } },
+      { channel: 'facebook', accountRef: '1111111111', conversationRef: '2222222222', senderRef: '2222222222', providerEventId: 'm_1', occurredAt: new Date(1764040000000).toISOString(), metadata: {}, content: { kind: 'text', text: '¿Tienen barras olímpicas?' } },
     ]);
   });
 
   it('an Instagram story reply says so; media is unsupported (told to the agent), never dropped', () => {
-    const story = inbound.parse(dm('instagram', '17840000000000001', { text: 'qué buena rutina', reply_to: { story: { id: 's1', url: 'https://x' } } }));
-    expect(story.inbound[0]!.content).toEqual({ kind: 'text', text: 'qué buena rutina\n\n[Canal informado por la plataforma: Instagram, mensaje directo, respondiendo a una historia de la cuenta.]' });
-    expect(story.inbound[0]!.metadata).toEqual({ surface: 'instagram' });
-    expect(inbound.parse(dm('instagram', '17840000000000001', { attachments: [{ type: 'image', payload: { url: 'https://x' } }] })).inbound[0]!.content).toEqual({ kind: 'unsupported', contentType: 'instagram.image' });
-    expect(inbound.parse(dm('instagram', '17840000000000001', { is_unsupported: true })).inbound[0]!.content).toEqual({ kind: 'unsupported', contentType: 'instagram.unsupported' });
+    const story = instagram.parse(dm('instagram', '17840000000000001', { text: 'qué buena rutina', reply_to: { story: { id: 's1', url: 'https://x' } } }));
+    expect(story.inbound[0]).toMatchObject({ channel: 'instagram', accountRef: '17840000000000001', content: { kind: 'text', text: 'qué buena rutina\n\n[Nota de la plataforma: este mensaje responde a una historia de la cuenta.]' } });
+    expect(instagram.parse(dm('instagram', '17840000000000001', { text: 'hola' })).inbound[0]!.content).toEqual({ kind: 'text', text: 'hola' });
+    expect(instagram.parse(dm('instagram', '17840000000000001', { attachments: [{ type: 'image', payload: { url: 'https://x' } }] })).inbound[0]!.content).toEqual({ kind: 'unsupported', contentType: 'instagram.image' });
+    expect(instagram.parse(dm('instagram', '17840000000000001', { is_unsupported: true })).inbound[0]!.content).toEqual({ kind: 'unsupported', contentType: 'instagram.unsupported' });
   });
 
-  it('skips echoes (what the account sent) and deleted messages; refuses foreign accounts and a mismatched object', () => {
+  it('skips echoes (what the account sent) and deleted messages; refuses foreign accounts; each channel takes only its own object', () => {
     expect(inbound.parse(dm('page', '1111111111', { text: 'eco', is_echo: true }))).toEqual({ inbound: [], statuses: [], rejected: [] });
-    expect(inbound.parse(dm('instagram', '17840000000000001', { is_deleted: true })).inbound).toEqual([]);
+    expect(instagram.parse(dm('instagram', '17840000000000001', { is_deleted: true })).inbound).toEqual([]);
     expect(inbound.parse(dm('page', '9999999999', { text: 'hola' })).rejected).toEqual([{ providerEventId: null, reason: 'foreign_account' }]);
-    expect(inbound.parse(dm('instagram', '1111111111', { text: 'hola' })).rejected).toEqual([{ providerEventId: null, reason: 'foreign_account' }]);
+    expect(instagram.parse(dm('instagram', '1111111111', { text: 'hola' })).rejected).toEqual([{ providerEventId: null, reason: 'foreign_account' }]);
+    expect(inbound.parse(dm('instagram', '17840000000000001', { text: 'hola' })).rejected[0]!.reason).toBe('unsupported_notification_object');
+    expect(instagram.parse(dm('page', '1111111111', { text: 'hola' })).rejected[0]!.reason).toBe('unsupported_notification_object');
     expect(inbound.parse(JSON.stringify({ object: 'whatsapp_business_account', entry: [] })).rejected[0]!.reason).toBe('unsupported_notification_object');
   });
 
-  it('without an Instagram account, Instagram notifications are foreign', () => {
-    const messengerOnly = new MetaInboundAdapter(loadMetaChannelConfig({ ...env, R4_META_INSTAGRAM_ACCOUNT_ID: '' }, { allowNetwork: false }));
-    expect(messengerOnly.parse(dm('instagram', '17840000000000001', { text: 'hola' })).rejected[0]!.reason).toBe('foreign_account');
+  it('without an Instagram account, the instagram channel cannot be composed', () => {
+    expect(() => new MetaInboundAdapter(loadMetaChannelConfig({ ...env, R4_META_INSTAGRAM_ACCOUNT_ID: '' }, { allowNetwork: false }), 'instagram')).toThrow(/R4_META_INSTAGRAM_ACCOUNT_ID/);
   });
 });
 
 describe('Meta outbound', () => {
   it('sends through the Page with the Page token and classifies the reply id as accepted', async () => {
     const { fetch, calls } = fakeFetch([{ status: 200, body: { recipient_id: '2222222222', message_id: 'mid.1' } }]);
-    const result = await new MetaOutboundAdapter(config, { fetch }).submit(submission('Hola 💪'), { timeoutMs: 5000 });
+    const result = await new MetaOutboundAdapter(config, 'facebook', { fetch }).submit(submission('Hola 💪'), { timeoutMs: 5000 });
     expect(result).toMatchObject({ outcome: 'accepted', providerMessageId: 'mid.1' });
     expect(calls[0]).toEqual({ url: 'http://127.0.0.1:9/v25.0/1111111111/messages', headers: { authorization: 'Bearer page-token', 'content-type': 'application/json' }, body: { recipient: { id: '2222222222' }, messaging_type: 'RESPONSE', message: { text: 'Hola 💪' } } });
   });
@@ -92,12 +95,12 @@ describe('Meta outbound', () => {
   it('a long Instagram reply goes as parts ≤ 1000 bytes; a failed later part is a partial delivery, never a retry', async () => {
     const long = `${'á'.repeat(450)}\n\n${'é'.repeat(450)}`;
     expect(splitForSurface(long, 'instagram').map((p) => Buffer.byteLength(p))).toEqual([900, 900]);
-    expect(splitForSurface(long, 'messenger')).toEqual([long]);
+    expect(splitForSurface(long, 'facebook')).toEqual([long]);
     const ok = fakeFetch([{ status: 200, body: { message_id: 'a' } }, { status: 200, body: { message_id: 'b' } }]);
-    expect(await new MetaOutboundAdapter(config, { fetch: ok.fetch }).submit(submission(long, '17840000000000001'), { timeoutMs: 5000 })).toMatchObject({ outcome: 'accepted', providerMessageId: 'a', errorClass: null });
+    expect(await new MetaOutboundAdapter(config, 'instagram', { fetch: ok.fetch }).submit(submission(long, '17840000000000001'), { timeoutMs: 5000 })).toMatchObject({ outcome: 'accepted', providerMessageId: 'a', errorClass: null });
     expect(ok.calls).toHaveLength(2);
     const partial = fakeFetch([{ status: 200, body: { message_id: 'a' } }, { status: 500, body: null }]);
-    expect(await new MetaOutboundAdapter(config, { fetch: partial.fetch }).submit(submission(long, '17840000000000001'), { timeoutMs: 5000 })).toMatchObject({ outcome: 'accepted', providerMessageId: 'a', errorClass: 'partial_delivery' });
+    expect(await new MetaOutboundAdapter(config, 'instagram', { fetch: partial.fetch }).submit(submission(long, '17840000000000001'), { timeoutMs: 5000 })).toMatchObject({ outcome: 'accepted', providerMessageId: 'a', errorClass: 'partial_delivery' });
   });
 
   it.each([
@@ -110,20 +113,21 @@ describe('Meta outbound', () => {
     [Object.assign(new Error('reset'), { cause: { code: 'ECONNRESET' } }), { outcome: 'unknown', errorClass: 'network_after_send' }],
   ])('classifies honestly: %o', async (response, expected) => {
     const { fetch } = fakeFetch([response]);
-    expect(await new MetaOutboundAdapter(config, { fetch }).submit(submission('hola'), { timeoutMs: 5000 })).toMatchObject(expected);
+    expect(await new MetaOutboundAdapter(config, 'facebook', { fetch }).submit(submission('hola'), { timeoutMs: 5000 })).toMatchObject(expected);
   });
 
-  it('refuses a foreign account or a malformed recipient before any call', async () => {
+  it('refuses a foreign account (the other channel too) or a malformed recipient before any call', async () => {
     const { fetch, calls } = fakeFetch([]);
-    const adapter = new MetaOutboundAdapter(config, { fetch });
+    const adapter = new MetaOutboundAdapter(config, 'facebook', { fetch });
     expect(await adapter.submit(submission('hola', '5555555555'), { timeoutMs: 5000 })).toMatchObject({ outcome: 'rejected', errorClass: 'foreign_account' });
+    expect(await adapter.submit(submission('hola', '17840000000000001'), { timeoutMs: 5000 })).toMatchObject({ outcome: 'rejected', errorClass: 'foreign_account' });
     expect(await adapter.submit({ ...submission('hola'), recipientRef: '+56 9' }, { timeoutMs: 5000 })).toMatchObject({ outcome: 'rejected', errorClass: 'invalid_recipient' });
     expect(calls).toEqual([]);
   });
 
   it('shows typing in the conversation of the inbound; without it, nothing', async () => {
     const { fetch, calls } = fakeFetch([{ status: 200, body: { recipient_id: '2222222222' } }]);
-    const adapter = new MetaOutboundAdapter(config, { fetch });
+    const adapter = new MetaOutboundAdapter(config, 'facebook', { fetch });
     expect(await adapter.signalWorking({ accountRef: '1111111111', providerEventId: 'm_1', conversationRef: '2222222222' }, { timeoutMs: 1000 })).toBe(true);
     expect(calls[0]!.body).toEqual({ recipient: { id: '2222222222' }, sender_action: 'typing_on' });
     expect(await adapter.signalWorking({ accountRef: '1111111111', providerEventId: 'm_1' }, { timeoutMs: 1000 })).toBe(false);

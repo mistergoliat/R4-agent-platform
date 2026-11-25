@@ -77,15 +77,15 @@ import { catalogWithFacts, type ProductFactsSource } from './product-facts.js';
 import type { CatalogDiscoverPort } from '@r4-adapters/catalog-http';
 import { checkoutPurchaseStatusCapability, checkoutRequestLinkCapability, checkoutStartPurchaseCapability } from '../capabilities/checkout.js';
 import { SALES_WEB_PROFILES, SALES_WEB_QUOTE_PROFILES, isSalesWebProfile, salesWebAgentVersion, salesWebProfile } from './profile-web.js';
-import { LANE_CAPABILITY_IDS, SALES_SOCIAL_AGENT_ID, SALES_WEB_AGENT_ID } from '../ids.js';
-import { MetaInboundAdapter, MetaOutboundAdapter, describeMetaChannelConfig, loadMetaChannelConfig, type MetaFetch } from '@r4-adapters/meta';
-import { SALES_SOCIAL_PROFILES, isSalesSocialProfile, salesSocialAgentVersion, salesSocialProfile } from './profile-social.js';
+import { LANE_CAPABILITY_IDS, SALES_WEB_AGENT_ID } from '../ids.js';
+import { MetaInboundAdapter, MetaOutboundAdapter, describeMetaChannelConfig, loadMetaChannelConfig, type MetaFetch, type MetaSurface } from '@r4-adapters/meta';
+import { SALES_META_PROFILES, isSalesMetaProfile, salesMetaAgentOf, salesMetaProfile } from './profile-meta.js';
 
 /** (ADR-046) The agent (identity and pinned definition version) a Sales profile runs: `sales-web@N` for web profiles, `sales@vN` otherwise. */
 export function salesAgentOf(profile: ProductionProfile): { readonly agentId: string; readonly version: number } {
   const web = salesWebAgentVersion(profile);
-  const social = salesSocialAgentVersion(profile);
-  if (social !== null) return { agentId: SALES_SOCIAL_AGENT_ID, version: social };
+  const meta = salesMetaAgentOf(profile);
+  if (meta !== null) return meta;
   return web === null ? { agentId: SALES_AGENT_ID, version: salesProductionAgentVersion(profile) } : { agentId: SALES_WEB_AGENT_ID, version: web };
 }
 
@@ -167,7 +167,7 @@ export function selectedSalesProductionProfile(config: ProductionConfig, options
     // (ADR-046) A web profile is selected by a worker or by the web gateway, never by the WhatsApp gateway.
     (options.web ? salesWebProfile(config.policyProfile) : null) ??
     // (ADR-060) A Meta direct-messages profile is selected by a worker or by the Meta gateway only.
-    (options.web ? salesSocialProfile(config.policyProfile) : null);
+    (options.web ? salesMetaProfile(config.policyProfile) : null);
   if (!profile) throw new Error(`refusing production composition: R4_PROD_POLICY_PROFILE=${config.policyProfile} is not a Sales production profile (${SALES_PRODUCTION_PROFILES.map(profileLabel).join(', ')})`);
   return profile;
 }
@@ -218,12 +218,12 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
     // READ capabilities offered to the model; they execute through the CapabilityInvoker only.
     // (F1-COMMERCIAL-POLICY-v3) Under an F1 policy, a discounted product says whether its promotional price can be quoted.
     const commercial = salesCommercialEligibility(profile, options.promotionalQuotes === true);
-    const [catalogSearch, productContext] = catalogCapabilities(catalog, { variantAvailability: SALES_VARIANT_AVAILABILITY_PROFILES.has(profileLabel(profile)) || isSalesWebProfile(profile) || isSalesSocialProfile(profile), stockCount: SALES_STOCK_COUNT_PROFILES.has(profileLabel(profile)), promotions: commercial ? { eligibility: commercial, now: () => clock.now() } : null });
+    const [catalogSearch, productContext] = catalogCapabilities(catalog, { variantAvailability: SALES_VARIANT_AVAILABILITY_PROFILES.has(profileLabel(profile)) || isSalesWebProfile(profile) || isSalesMetaProfile(profile), stockCount: SALES_STOCK_COUNT_PROFILES.has(profileLabel(profile)), promotions: commercial ? { eligibility: commercial, now: () => clock.now() } : null });
     capabilities.register(progress(catalogSearch));
     capabilities.register(progress(productContext));
   }
   // (ADR-045) The lane profile reads Catalog V2 Discover; it never composes without it. (ADR-046) Nor does a web profile.
-  if (isSalesLaneProfile(profile) || isSalesWebProfile(profile) || isSalesSocialProfile(profile)) {
+  if (isSalesLaneProfile(profile) || isSalesWebProfile(profile) || isSalesMetaProfile(profile)) {
     // A port whose Discover key (or V2 source) is missing would compose and then fail every call: refuse at start.
     if (!catalogReal || !options.catalogDiscover?.discoverConfigured) throw new Error(`refusing production composition: ${profileLabel(profile)} requires Catalog V2 Discover (R4_CATALOG_V2_* and R4_CATALOG_V2_DISCOVER_API_KEY)`);
     capabilities.register(progress(catalogDiscoverCapability(options.catalogDiscover)));
@@ -503,25 +503,26 @@ export function composeSalesWebGateway(options: Omit<SalesGatewayOptions, 'fetch
 }
 
 /**
- * (ADR-060 M1) Gateway bindings of Meta direct messages (Messenger + Instagram Direct through the Page): the Meta
- * adapters, a sales-social profile and its own task factory. A separate process from the WhatsApp and web gateways (one
- * channel per profile); no lane, no inspector. Its notices are the WhatsApp ones (worded by service hours): the team
+ * (ADR-060 M1) Gateway bindings of one Meta channel (instagram or facebook, through the Page): the Meta adapters of the
+ * profile's channel, its agent's task factory. A separate process per channel, apart from the WhatsApp and web gateways
+ * (one channel per profile); no lane, no inspector. Its notices are the WhatsApp ones (worded by service hours): the team
  * answers consultations from the desk and its replies go out through this same channel, within Meta's 24 h window.
  */
 export function composeSalesMetaGateway(options: Omit<SalesGatewayOptions, 'fetch'> & { readonly fetch?: MetaFetch }): { bindings: GatewayBindings; describe: Record<string, string | boolean> } {
   const config = assertProductionMode(options.production.config);
-  const profile = salesSocialProfile(config.policyProfile);
-  if (!profile) throw new Error(`refusing the Meta gateway: R4_PROD_POLICY_PROFILE=${config.policyProfile} is not a Sales Meta profile (${SALES_SOCIAL_PROFILES.map(profileLabel).join(', ')})`);
-  const meta = loadMetaChannelConfig(options.env, { allowNetwork: config.allowNetwork });
+  const profile = salesMetaProfile(config.policyProfile);
+  if (!profile) throw new Error(`refusing the Meta gateway: R4_PROD_POLICY_PROFILE=${config.policyProfile} is not a Sales Meta profile (${SALES_META_PROFILES.map(profileLabel).join(', ')})`);
+  const surface = profile.channel.id as MetaSurface;
+  const meta = loadMetaChannelConfig(options.env, { allowNetwork: config.allowNetwork, surface });
   const agent = salesAgentOf(profile);
   const now = options.now ?? (() => new Date());
   return {
-    describe: describeMetaChannelConfig(meta),
+    describe: describeMetaChannelConfig(meta, surface),
     bindings: {
       production: options.production,
       profile,
-      inbound: [new MetaInboundAdapter(meta)],
-      outbound: [new MetaOutboundAdapter(meta, options.fetch ? { fetch: options.fetch } : {})],
+      inbound: [new MetaInboundAdapter(meta, surface)],
+      outbound: [new MetaOutboundAdapter(meta, surface, options.fetch ? { fetch: options.fetch } : {})],
       taskFactory: salesConversationTaskFactory(options.pool, agent.version, agent.agentId),
       runFailureFallback: { text: () => salesRunFailureNotice(now()) },
       humanRequestNotice: { text: () => salesHumanRequestNotice(now()), profiles: [profileLabel(profile)] },

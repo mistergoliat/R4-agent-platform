@@ -26,7 +26,7 @@ import { configuredModelProvider } from '../model.js';
 import { assertSalesProductionPrerequisites, composeSalesGateway, composeSalesProductionWorker, composeSalesWebGateway, composeSalesMetaGateway, loadPromotionalQuotes, loadQuoteRecovery, salesAgentOf, selectedSalesProductionProfile } from '../production/composition.js';
 import { loadCatalogDescriptiveWindowMs } from '../workspace/catalog-descriptive.js';
 import { isSalesWebProfile } from '../production/profile-web.js';
-import { isSalesSocialProfile } from '../production/profile-social.js';
+import { isSalesMetaProfile } from '../production/profile-meta.js';
 import { checkMetaConnection, loadMetaChannelConfig, META_CONNECTION_PARAMETERS } from '@r4-adapters/meta';
 import { STORE_GRAPH_KIND, SignedStoreGraph, type SignedRead } from '../production/store-graph.js';
 import { ProductFactsSource, type ProductFactsRead } from '../production/product-facts.js';
@@ -66,7 +66,7 @@ import { VALIDATION_SCENARIOS, VALIDATION_SECRETS, validationIdentity, type Scen
  *                     acceptance (and a status callback if it arrives).
  *   --gateway         run the channel gateway process (deployment entry point)
  *   --web-gateway     (ADR-046) run the store website chat gateway (a web profile; its own process)
- *   --meta-gateway    (ADR-060) run the Messenger + Instagram Direct gateway (a sales-social profile; its own process)
+ *   --meta-gateway    (ADR-060) run the gateway of one Meta channel (a sales-instagram or sales-facebook profile; its own process)
  *   --meta-check      (ADR-060) check the Meta connection parameters (reads only); --subscribe also subscribes the Page
  *   --worker          run the production worker process (deployment entry point)
  *   --identity-key W  print the conversation key (keyed hash) of wa_id W for the allowlist
@@ -201,7 +201,7 @@ function webProgressOf(production: ReturnType<typeof loadProductionConfig>, pool
 /** (ADR-045) The lane profile's Discover binding: the same Catalog V2 adapter (the composition refuses it without the Discover key). */
 function discoverOf(production: ReturnType<typeof loadProductionConfig>, catalog: HttpCatalogAdapter | undefined) {
   const profile = workerProfile(production);
-  return catalog && (isSalesLaneProfile(profile) || isSalesWebProfile(profile) || isSalesSocialProfile(profile)) ? { catalogDiscover: catalog } : {};
+  return catalog && (isSalesLaneProfile(profile) || isSalesWebProfile(profile) || isSalesMetaProfile(profile)) ? { catalogDiscover: catalog } : {};
 }
 
 /** (R4-J4-R4) The worker's R4_CUSTOMER_* configuration, passed only when the selected profile composes Customer (v8). */
@@ -312,11 +312,12 @@ async function webGateway(production: ReturnType<typeof loadProductionConfig>): 
   await runGatewayProcess(config, bindings, { logger });
 }
 
-/** (ADR-060) The Messenger + Instagram Direct gateway: a sales-social profile, the Meta adapters; nothing of the other gateways. */
+/** (ADR-060) The gateway of one Meta channel (the profile's: instagram or facebook), the Meta adapters; nothing of the other gateways. */
 async function metaGateway(production: ReturnType<typeof loadProductionConfig>): Promise<void> {
   const config = loadGatewayConfig(process.env);
-  const logger = createLogger({ service: 'r4-meta-gateway', level: config.logLevel });
-  const pool = createPool({ connectionString: config.databaseUrl, logger, applicationName: 'r4-meta-gateway-bindings', max: 2 });
+  const channel = selectedSalesProductionProfile(production.config, { web: true }).channel.id;
+  const logger = createLogger({ service: `r4-${channel}-gateway`, level: config.logLevel });
+  const pool = createPool({ connectionString: config.databaseUrl, logger, applicationName: `r4-${channel}-gateway-bindings`, max: 2 });
   const { bindings, describe } = composeSalesMetaGateway({ pool, production, env: process.env });
   logger.info({ event: 'service.composed', profile: profileLabel(bindings.profile), meta: describe }, 'meta gateway composed');
   await runGatewayProcess(config, bindings, { logger });
@@ -338,7 +339,8 @@ async function metaCheck(production: ReturnType<typeof loadProductionConfig>): P
     return;
   }
   const result = await checkMetaConnection(config, { subscribe: flag('subscribe') });
-  print(JSON.stringify({ ok: result.ok, missing, webhook: { path: '/v1/channels/meta/webhook', objects: config.instagramAccountId ? ['page', 'instagram'] : ['page'], field: 'messages' }, steps: result.steps }, null, 2));
+  const webhooks = [{ object: 'page', path: '/v1/channels/facebook/webhook', field: 'messages' }, ...(config.instagramAccountId ? [{ object: 'instagram', path: '/v1/channels/instagram/webhook', field: 'messages' }] : [])];
+  print(JSON.stringify({ ok: result.ok, missing, webhooks, steps: result.steps }, null, 2));
   if (!result.ok) process.exitCode = 1;
 }
 

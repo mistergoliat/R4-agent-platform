@@ -2,8 +2,9 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { CanonicalInbound, HeaderBag, InboundChannelAdapter, OutboundChannelAdapter, OutboundSubmission, ParsedNotification, RejectedInbound, SubmissionResult } from '@r4/live-ops';
 
 /**
- * Meta direct messages (ADR-060): Messenger, on the store's Facebook Page, and Instagram Direct, on the professional
- * account linked to that Page. Both go through the Page with Facebook Login, in the same Meta app as WhatsApp:
+ * Meta direct messages (ADR-060): two channels, `facebook` (Messenger, on the store's Facebook Page) and `instagram`
+ * (Instagram Direct, on the professional account linked to that Page), one agent each (ADR-053). Both go through the
+ * Page with Facebook Login, in the same Meta app as WhatsApp; an adapter instance serves exactly one of them:
  *
  *   in   POST /v1/channels/meta/webhook, `X-Hub-Signature-256` = "sha256=" HMAC-SHA256(app secret, raw body)
  *        object "page" (Messenger) or "instagram" (Instagram Direct), entry[].messaging[] {sender, recipient, timestamp,
@@ -16,19 +17,20 @@ import type { CanonicalInbound, HeaderBag, InboundChannelAdapter, OutboundChanne
  * send-messages, instagram-messaging/webhooks, instagram-api-with-instagram-login/messaging-api). Pure transport: it
  * knows no agent, product or store. Comments and mentions (feed / comments webhooks) are not handled here (ADR-060 M2).
  */
-export const META_CHANNEL_ID = 'meta';
+export type MetaSurface = 'facebook' | 'instagram';
+export const META_SURFACES: readonly MetaSurface[] = ['facebook', 'instagram'];
 export const META_CONTRACT_REF = 'meta:messenger-platform + instagram-messaging via the Page (Facebook Login): webhooks page/instagram messaging[], Send API POST /{page-id}/messages (verified 2026-11-25, ADR-060)';
 /** Standard messaging window after the contact's last message (Messenger and Instagram policy). */
 export const META_CUSTOMER_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const META_DEFAULT_GRAPH_VERSION = 'v25.0';
 export const META_DEFAULT_GRAPH_BASE_URL = 'https://graph.facebook.com';
-/** The parameters that connect the channel; everything else has a default or comes from the WhatsApp app. */
+/** The parameters that connect both channels; everything else has a default or comes from the WhatsApp app. */
 export const META_CONNECTION_PARAMETERS = ['R4_META_PAGE_ID', 'R4_META_PAGE_ACCESS_TOKEN', 'R4_META_INSTAGRAM_ACCOUNT_ID'] as const;
 
-export type MetaSurface = 'messenger' | 'instagram';
-const SURFACE_NAME: Readonly<Record<MetaSurface, string>> = { messenger: 'Messenger de Facebook', instagram: 'Instagram' };
+/** The webhook object of each channel. */
+const OBJECT: Readonly<Record<MetaSurface, string>> = { facebook: 'page', instagram: 'instagram' };
 const TEXT_FITS: Readonly<Record<MetaSurface, (s: string) => boolean>> = {
-  messenger: (s) => [...s].length <= 2000,
+  facebook: (s) => [...s].length <= 2000,
   instagram: (s) => Buffer.byteLength(s, 'utf8') <= 1000,
 };
 const META_ID = /^\d{5,32}$/;
@@ -36,7 +38,7 @@ const BEFORE_SEND = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ENETUNRE
 
 export interface MetaChannelConfig {
   readonly pageId: string;
-  /** The Instagram professional account linked to the Page; null = Messenger only. */
+  /** The Instagram professional account linked to the Page; null = the instagram channel cannot be composed. */
   readonly instagramAccountId: string | null;
   readonly pageAccessToken: string;
   readonly appSecret: string;
@@ -51,7 +53,7 @@ const isLoopback = (url: URL): boolean => ['127.0.0.1', 'localhost', '[::1]', ':
  * Fails closed and says exactly what is missing. The app secret and the verify token default to the WhatsApp ones
  * (same Meta app); R4_META_APP_SECRET / R4_META_VERIFY_TOKEN override them for an app of its own.
  */
-export function loadMetaChannelConfig(env: Readonly<Record<string, string | undefined>>, options: { readonly allowNetwork: boolean }): MetaChannelConfig {
+export function loadMetaChannelConfig(env: Readonly<Record<string, string | undefined>>, options: { readonly allowNetwork: boolean; readonly surface?: MetaSurface }): MetaChannelConfig {
   const value = (name: string): string => env[name]?.trim() ?? '';
   const pageId = value('R4_META_PAGE_ID');
   const instagramAccountId = value('R4_META_INSTAGRAM_ACCOUNT_ID');
@@ -64,6 +66,7 @@ export function loadMetaChannelConfig(env: Readonly<Record<string, string | unde
   if (!pageId) problems.push('R4_META_PAGE_ID is missing (the Facebook Page id)');
   else if (!META_ID.test(pageId)) problems.push('R4_META_PAGE_ID must be the numeric Page id');
   if (!pageAccessToken) problems.push('R4_META_PAGE_ACCESS_TOKEN is missing (a Page access token with pages_messaging)');
+  if (!instagramAccountId && options.surface === 'instagram') problems.push('R4_META_INSTAGRAM_ACCOUNT_ID is missing (the Instagram professional account id linked to the Page)');
   if (instagramAccountId && !META_ID.test(instagramAccountId)) problems.push('R4_META_INSTAGRAM_ACCOUNT_ID must be the numeric Instagram professional account id');
   if (!appSecret) problems.push('the app secret is missing (R4_WHATSAPP_APP_SECRET of the same Meta app, or R4_META_APP_SECRET)');
   if (!verifyToken) problems.push('the webhook verify token is missing (R4_WHATSAPP_VERIFY_TOKEN, or R4_META_VERIFY_TOKEN)');
@@ -76,14 +79,14 @@ export function loadMetaChannelConfig(env: Readonly<Record<string, string | unde
   }
   if (base && !isLoopback(base) && !options.allowNetwork) problems.push('a non-local R4_META_GRAPH_BASE_URL requires R4_PROD_ALLOW_NETWORK=true');
   if (base && !isLoopback(base) && base.protocol !== 'https:') problems.push('a non-local R4_META_GRAPH_BASE_URL must use https');
-  if (problems.length > 0) throw new Error(`refusing the Meta channel: ${problems.join('; ')}`);
+  if (problems.length > 0) throw new Error(`refusing the Meta channel${options.surface ? ` ${options.surface}` : ''}: ${problems.join('; ')}`);
   return Object.freeze({ pageId, instagramAccountId: instagramAccountId || null, pageAccessToken, appSecret, verifyToken, graphVersion, graphBaseUrl: base!.toString().replace(/\/+$/, '') });
 }
 
 /** Safe description (no secret). */
-export function describeMetaChannelConfig(config: MetaChannelConfig): Record<string, string | boolean> {
+export function describeMetaChannelConfig(config: MetaChannelConfig, surface: MetaSurface): Record<string, string | boolean> {
   return {
-    channel: META_CHANNEL_ID,
+    channel: surface,
     pageIdSuffix: config.pageId.slice(-4),
     instagram: config.instagramAccountId !== null,
     graphVersion: config.graphVersion,
@@ -93,9 +96,9 @@ export function describeMetaChannelConfig(config: MetaChannelConfig): Record<str
   };
 }
 
-/** Which surface an account of this deployment is: the Page (Messenger) or the linked Instagram account; null = foreign. */
+/** Which channel an account of this deployment is: the Page (facebook) or the linked Instagram account; null = foreign. */
 export function metaSurface(config: MetaChannelConfig, accountRef: string): MetaSurface | null {
-  if (accountRef === config.pageId) return 'messenger';
+  if (accountRef === config.pageId) return 'facebook';
   return config.instagramAccountId !== null && accountRef === config.instagramAccountId ? 'instagram' : null;
 }
 
@@ -110,22 +113,19 @@ function safeEqual(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
-/**
- * The channel note, rebuilt from the account the message arrived on (never from the contact's text): which surface it
- * is, and whether the message answers one of the account's stories. The agent adapts its tone to it.
- */
-export function channelNote(surface: MetaSurface, storyReply: boolean): string {
-  return `[Canal informado por la plataforma: ${SURFACE_NAME[surface]}, mensaje directo${storyReply ? ', respondiendo a una historia de la cuenta' : ''}.]`;
-}
+/** The platform's note on an Instagram message that answers one of the account's stories (the agent cannot see it). */
+export const STORY_REPLY_NOTE = '[Nota de la plataforma: este mensaje responde a una historia de la cuenta.]';
 
 export class MetaInboundAdapter implements InboundChannelAdapter {
-  readonly channel = META_CHANNEL_ID;
+  readonly channel: MetaSurface;
   /** Direct messages are one to one: the conversation is the sender's Page- or Instagram-scoped id. */
   readonly directConversations = true;
   readonly #config: MetaChannelConfig;
 
-  constructor(config: MetaChannelConfig) {
+  constructor(config: MetaChannelConfig, surface: MetaSurface) {
+    if (surface === 'instagram' && config.instagramAccountId === null) throw new Error('the instagram channel needs R4_META_INSTAGRAM_ACCOUNT_ID');
     this.#config = config;
+    this.channel = surface;
   }
 
   verifySubscription(query: Readonly<Record<string, string | undefined>>) {
@@ -154,14 +154,14 @@ export class MetaInboundAdapter implements InboundChannelAdapter {
     } catch {
       return { inbound, statuses: [], rejected: [{ providerEventId: null, reason: 'invalid_json' }] };
     }
-    if (!isObject(payload) || (payload.object !== 'page' && payload.object !== 'instagram') || !Array.isArray(payload.entry)) {
+    if (!isObject(payload) || payload.object !== OBJECT[this.channel] || !Array.isArray(payload.entry)) {
       return { inbound, statuses: [], rejected: [{ providerEventId: null, reason: 'unsupported_notification_object' }] };
     }
     for (const entry of payload.entry) {
       if (!isObject(entry)) continue;
       const accountRef = typeof entry.id === 'string' ? entry.id : '';
       const surface = metaSurface(this.#config, accountRef);
-      if (!surface || (surface === 'messenger') !== (payload.object === 'page')) {
+      if (!surface || surface !== this.channel) {
         rejected.push({ providerEventId: null, reason: 'foreign_account' });
         continue;
       }
@@ -184,13 +184,13 @@ export class MetaInboundAdapter implements InboundChannelAdapter {
         }
         const attachments: unknown[] = Array.isArray(message.attachments) ? message.attachments : [];
         const text = typeof message.text === 'string' ? message.text.trim() : '';
-        const base = { channel: META_CHANNEL_ID, accountRef, conversationRef: sender, senderRef: sender, providerEventId: mid, occurredAt: occurred.toISOString(), metadata: { surface } };
+        const base = { channel: surface, accountRef, conversationRef: sender, senderRef: sender, providerEventId: mid, occurredAt: occurred.toISOString(), metadata: {} };
         if (message.is_unsupported === true || (attachments.length > 0 && !text)) {
           const first = attachments[0];
           inbound.push({ ...base, content: { kind: 'unsupported', contentType: `${surface}.${message.is_unsupported === true ? 'unsupported' : slug(isObject(first) ? first.type : null)}` } });
         } else if (text) {
-          const note = channelNote(surface, isObject(message.reply_to) && isObject(message.reply_to.story));
-          inbound.push({ ...base, content: { kind: 'text', text: `${text.slice(0, 8000 - note.length - 2)}\n\n${note}` } });
+          const story = isObject(message.reply_to) && isObject(message.reply_to.story);
+          inbound.push({ ...base, content: { kind: 'text', text: story ? `${text.slice(0, 8000 - STORY_REPLY_NOTE.length - 2)}\n\n${STORY_REPLY_NOTE}` : text.slice(0, 8000) } });
         } else {
           rejected.push({ providerEventId: mid, reason: 'empty_message' });
         }
@@ -242,15 +242,16 @@ export function splitForSurface(text: string, surface: MetaSurface): string[] {
  * part that fails leaves it `accepted` with errorClass `partial_delivery` (never retried: that would repeat part one).
  */
 export class MetaOutboundAdapter implements OutboundChannelAdapter {
-  readonly channel = META_CHANNEL_ID;
+  readonly channel: MetaSurface;
   readonly bindingKind = 'real' as const;
   readonly contractRef = META_CONTRACT_REF;
   readonly customerWindowMs = META_CUSTOMER_WINDOW_MS;
   readonly #config: MetaChannelConfig;
   readonly #fetch: MetaFetch;
 
-  constructor(config: MetaChannelConfig, options: { readonly fetch?: MetaFetch } = {}) {
+  constructor(config: MetaChannelConfig, surface: MetaSurface, options: { readonly fetch?: MetaFetch } = {}) {
     this.#config = config;
+    this.channel = surface;
     this.#fetch = options.fetch ?? globalThis.fetch;
   }
 
@@ -258,7 +259,7 @@ export class MetaOutboundAdapter implements OutboundChannelAdapter {
     const started = Date.now();
     const result = (r: Omit<SubmissionResult, 'latencyMs'>): SubmissionResult => ({ ...r, latencyMs: Date.now() - started });
     const surface = metaSurface(this.#config, submission.accountRef);
-    if (!surface) return result({ outcome: 'rejected', providerMessageId: null, httpStatus: null, errorClass: 'foreign_account', errorCode: null, retryAfterMs: null });
+    if (!surface || surface !== this.channel) return result({ outcome: 'rejected', providerMessageId: null, httpStatus: null, errorClass: 'foreign_account', errorCode: null, retryAfterMs: null });
     if (!META_ID.test(submission.recipientRef)) return result({ outcome: 'rejected', providerMessageId: null, httpStatus: null, errorClass: 'invalid_recipient', errorCode: null, retryAfterMs: null });
     const parts = splitForSurface(submission.text, surface);
     let first: Omit<SubmissionResult, 'latencyMs'> | null = null;
@@ -278,7 +279,7 @@ export class MetaOutboundAdapter implements OutboundChannelAdapter {
 
   /** "typing…" in the contact's conversation (Messenger and Instagram dismiss it after ~20 s or at the reply). Best effort. */
   async signalWorking(signal: { readonly accountRef: string; readonly providerEventId: string; readonly conversationRef?: string }, options: { readonly timeoutMs: number }): Promise<boolean> {
-    if (!metaSurface(this.#config, signal.accountRef) || !signal.conversationRef || !META_ID.test(signal.conversationRef)) return false;
+    if (metaSurface(this.#config, signal.accountRef) !== this.channel || !signal.conversationRef || !META_ID.test(signal.conversationRef)) return false;
     const sent = await this.#send({ recipient: { id: signal.conversationRef }, sender_action: 'typing_on' }, options.timeoutMs).catch(() => null);
     return sent !== null && sent.httpStatus !== null && sent.httpStatus >= 200 && sent.httpStatus < 300;
   }
@@ -364,7 +365,7 @@ export async function checkMetaConnection(config: MetaChannelConfig, options: { 
   steps.push({ step: 'page', ok: pageOk, detail: pageOk ? `the token reads the Page «${str((page.json as Json).name)}»` : `the token cannot read Page ${config.pageId} (HTTP ${page.status}: ${errorOf(page.json)})` });
   if (pageOk) {
     const linked = isObject((page.json as Json).instagram_business_account) ? str(((page.json as Json).instagram_business_account as Json).id) : null;
-    if (config.instagramAccountId === null) steps.push({ step: 'instagram', ok: true, detail: linked ? `Messenger only; the Page is linked to Instagram account ${linked} (set R4_META_INSTAGRAM_ACCOUNT_ID=${linked} to answer Instagram too)` : 'Messenger only (no Instagram account linked to the Page)' });
+    if (config.instagramAccountId === null) steps.push({ step: 'instagram', ok: true, detail: linked ? `Facebook only; the Page is linked to Instagram account ${linked} (set R4_META_INSTAGRAM_ACCOUNT_ID=${linked} to connect Instagram too)` : 'Facebook only (no Instagram account linked to the Page)' });
     else steps.push({ step: 'instagram', ok: linked === config.instagramAccountId, detail: linked === config.instagramAccountId ? 'the Instagram account is the one linked to the Page' : `R4_META_INSTAGRAM_ACCOUNT_ID is not the account linked to the Page (linked: ${linked ?? 'none'})` });
     const listed = await graph('GET', `${encodeURIComponent(config.pageId)}/subscribed_apps`).catch(() => ({ status: 0, json: null }));
     const apps = isObject(listed.json) && Array.isArray(listed.json.data) ? listed.json.data.filter(isObject) : [];

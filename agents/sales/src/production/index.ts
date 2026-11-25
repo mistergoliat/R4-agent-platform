@@ -28,7 +28,7 @@ export * from './profile-v15.js';
 export * from './shipping-plan.js';
 export * from './topology.js';
 export * from './profile-web.js';
-export * from './profile-social.js';
+export * from './profile-meta.js';
 export * from './web-progress.js';
 export * from './store-graph.js';
 export * from './product-facts.js';

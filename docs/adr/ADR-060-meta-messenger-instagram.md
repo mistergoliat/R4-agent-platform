@@ -7,7 +7,9 @@
 - **Mandato:** el dueño, 2026-11-25: crear los agentes y conectores de Instagram y Facebook, de modo que conectarlos
   sea agregar 2 o 3 parámetros. Alcance pedido: «una mezcla; que responda publicaciones y converse por chat,
   principalmente. En Instagram la gente no tiende a comprar, así que sería más como un *gymbro*». La página de Facebook
-  y la cuenta de Instagram están vinculadas y bajo la misma app de Meta que WhatsApp.
+  y la cuenta de Instagram están vinculadas y bajo la misma app de Meta que WhatsApp. Ese mismo día el dueño eligió
+  **dos agentes, uno para Instagram y otro para Facebook** (como dice el ADR-053), y que la conexión se haga desde la
+  consola.
 - **Autoridad superior:** Constitución; PRD §19 (canales); ADR-029 (modo productivo y entrega gobernada); ADR-045
   (carril); ADR-046 (canal web: el mismo paquete de Ventas con su propio perfil, gateway y worker); ADR-056 (consultas
   sin pausa).
@@ -42,12 +44,20 @@ Hechos verificados en el código (`main` `2ce4faa`) y en la documentación de Me
 
 ## Decisión (M1: mensajes directos)
 
-1. **Un canal `meta` para Messenger e Instagram Direct, un adapter, un gateway y un worker.**
-   - `@r4-adapters/meta` es transporte puro y depende solo de `@r4/live-ops`, como los de WhatsApp y web.
-   - `accountRef` es el id de la página (Messenger) o el de la cuenta de Instagram. `conversationRef` es el PSID o
-     IGSID de quien escribe; las conversaciones son 1 a 1 y atestiguadas.
-   - Un solo par gateway + worker, no dos, porque el EC2 tiene 3,8 GB sin swap.
-   - El perfil es uno; el tono cambia por superficie (punto 3).
+1. **Dos canales y dos agentes, como dice el ADR-053.**
+   - Los canales son `instagram` (Instagram Direct) y `facebook` (Messenger en la página). Los agentes son
+     `sales-instagram` y `sales-facebook`, y cada uno tiene su perfil, su definición, sus versiones, sus métricas, su
+     gateway y su worker.
+   - Ambos usan un solo paquete, `@r4-adapters/meta`. Es transporte puro y depende solo de `@r4/live-ops`, como los de
+     WhatsApp y web. Cada instancia sirve un canal y acepta solo su objeto de webhook (`page` o `instagram`).
+   - `accountRef` es el id de la página o el de la cuenta de Instagram. `conversationRef` es el PSID o IGSID de quien
+     escribe, distinto en cada red: la misma persona en Instagram y en Facebook son dos conversaciones que nunca se
+     mezclan. El resumen de conversaciones de la API ahora entrega `accountRef`, para que la consola muestre la red.
+   - **Memoria:** cada proceso de R4 ocupa ~170 MB, y 60 MB de eso son el `npm run` intermedio. Los cuatro procesos
+     nuevos arrancan con `node` directo (~110 MB cada uno, ~440 MB en total). Pasar los procesos actuales a `node`
+     directo liberaría ~60 MB por proceso; eso es un cambio de producción aparte, que el dueño autoriza por separado.
+   - `deploy.sh` detiene y vuelve a levantar los procesos opcionales que estén corriendo: el chat web QA, Instagram,
+     Facebook y el curador. Los que están apagados quedan apagados.
 2. **Conectar = 3 parámetros.**
 
    | Variable | Qué es |
@@ -59,25 +69,26 @@ Hechos verificados en el código (`main` `2ce4faa`) y en la documentación de Me
    El secreto de la app y el token de verificación se toman de `R4_WHATSAPP_APP_SECRET` y `R4_WHATSAPP_VERIFY_TOKEN`
    (misma app). `R4_META_APP_SECRET` y `R4_META_VERIFY_TOKEN` los reemplazan si algún día hay una app propia.
 
-   `npm run production:sales:meta-check` dice qué falta y prueba la conexión, sin escribir nada:
+   La conexión se hace desde la consola (pantalla Canales): ahí se escriben los 3 parámetros y se ve el resultado.
+   Por debajo, `npm run production:sales:meta-check` dice qué falta y prueba la conexión, sin escribir nada:
    - el token lee la página;
    - la cuenta de Instagram es la vinculada a la página;
    - la app está suscrita a los mensajes de la página.
 
    Con `-- --subscribe`, además suscribe la página. Es una escritura en Meta y se hace con el OK del dueño.
-3. **Perfil `sales-social@1`, solo lectura, con su propia línea de definición `sales-social`.**
+3. **Perfiles `sales-instagram@1` y `sales-facebook@1`, solo lectura, cada uno con su línea de definición.**
    - **Lecturas:** las del chat web (Catalog V2 con Discover y disponibilidad por variante, y Shipping), más consultas
      al equipo sin pausa (ADR-056).
    - **Sin escrituras:** ni workspace, Quote, Checkout, Customer ni pago. La persona compra en la tienda con el link
      del producto. Para una cotización formal se le da el WhatsApp de la tienda, donde Pesín cotiza.
    - **Contenido no soportado:** imágenes, stickers e historias se le informan al agente (`inform_agent`), que pide
      que se lo cuenten en palabras. No se retienen para una persona.
-   - **Superficie:** el adapter agrega una nota fija que arma desde la cuenta donde llegó el mensaje, nunca desde el
-     texto: *«[Canal informado por la plataforma: Instagram, mensaje directo, respondiendo a una historia de la
-     cuenta.]»*. Con esa nota, la definición ajusta el tono:
-     - **en Instagram**, Pesín es primero un compañero de entrenamiento (técnica, rutinas, progresión). Menciona un
-       producto solo si se lo piden o si ayuda claramente, como máximo uno o dos, y nunca insiste;
-     - **en Messenger**, es el asesor de ventas.
+   - **Tono:**
+     - **`sales-instagram`** es primero un compañero de entrenamiento (técnica, rutinas, progresión). Menciona un
+       producto solo si se lo piden o si ayuda claramente, como máximo uno o dos, y nunca insiste. Cuando el mensaje
+       responde a una historia, el adapter agrega una nota fija: *«[Nota de la plataforma: este mensaje responde a una
+       historia de la cuenta.]»*;
+     - **`sales-facebook`** es el asesor de ventas.
    - **Salida:** texto plano, sin markdown. Cada producto va con su link: el `publicUrl` de una lectura de
      `catalog.get_product_context` de la conversación. Nunca se arma un URL.
    - **Personas:** sin `request_handoff`. Las respuestas de una persona pasan por la consulta sin pausa: el equipo
@@ -125,16 +136,18 @@ El dueño pidió que Pesín «responda publicaciones». La propuesta:
    - En la app de WhatsApp, agregar el producto Messenger y la API de Instagram.
    - Crear un token de página permanente con un usuario de sistema del Business Manager.
    - Configurar el webhook de los objetos `page` e `instagram` (campo `messages`) hacia
-     `https://<host del gateway Meta>/v1/channels/meta/webhook`, con el mismo token de verificación de WhatsApp.
+     `https://<host>/v1/channels/facebook/webhook` (objeto `page`) y `https://<host>/v1/channels/instagram/webhook`
+     (objeto `instagram`), con el mismo token de verificación de WhatsApp.
 2. **Servidor.**
    - El dueño escribe los 3 parámetros en un archivo de configuración del servidor que no va al repositorio. Nunca
      se pegan en el chat.
    - Correr `production:sales:meta-check` y, con OK, `-- --subscribe`.
-3. **Procesos.**
-   - Registrar la definición con `production:sales:bootstrap` y `R4_PROD_POLICY_PROFILE=sales-social@1`.
-   - Levantar dos procesos pm2: el gateway (`production:sales:meta-gateway`, con su puerto y la ruta del proxy) y su
-     worker (`R4_PROD_POLICY_PROFILE=sales-social@1`).
-   - Antes, medir la memoria libre: cada proceso ocupa unos 100–150 MB.
+3. **Procesos (por canal, desde la consola).**
+   - Registrar la definición con `production:sales:bootstrap` y `R4_PROD_POLICY_PROFILE=sales-instagram@1` (o
+     `sales-facebook@1`).
+   - Levantar dos procesos pm2 por canal con `node` directo: `r4-instagram-gateway` + `r4-instagram-worker` y
+     `r4-facebook-gateway` + `r4-facebook-worker`, cada gateway con su puerto y su ruta del proxy.
+   - Antes, medir la memoria libre (~110 MB por proceso).
 4. **QA antes de App Review.** Con acceso estándar, solo responde a quienes tienen rol en la app. Ese es el QA real con
    la página real: el dueño y los testers prueban sin exponer nada al público.
 5. **App Review** de `pages_messaging` e `instagram_manage_messages`. Después, abrir al público.
@@ -147,15 +160,17 @@ El dueño pidió que Pesín «responda publicaciones». La propuesta:
   - entrada: Messenger, Instagram, respuesta a una historia, contenido no soportado, ecos, cuentas ajenas;
   - salida: cuerpo y token, partes de hasta 1000 bytes, entrega parcial, cada clase de error, «escribiendo…»;
   - verificación de la conexión.
-- **Contrato** (`tests/contract/sales-social-profile.test.ts`):
+- **Contrato** (`tests/contract/sales-meta-profiles.test.ts`, para cada agente):
   - solo lecturas; el worker compone exactamente cuatro, con Discover obligatorio;
   - aislamiento de los gateways de WhatsApp y web;
-  - la definición: texto plano con links, tono por superficie, sin handoff y sin escrituras.
+  - la definición: texto plano con links, sin handoff y sin escrituras; Instagram compañero de entrenamiento y Facebook
+    asesor de ventas.
 - **Integración** (`tests/integration/sales-meta-channel.test.ts`), sobre una base desechable:
-  - DM firmado de Instagram y de Messenger → tarea `sales-social@1` con la nota de canal → «escribiendo…» → respuesta
-    por la página;
+  - un DM firmado de Instagram → tarea `sales-instagram@1` → «escribiendo…» → respuesta por la página; un mensaje de
+    Messenger → tarea `sales-facebook@1`, respondida por su propio worker y gateway;
+  - las conversaciones quedan separadas por canal y por cuenta;
   - duplicados y firma falsa;
-  - el gateway Meta no conoce los canales `whatsapp` ni `web`.
+  - cada gateway conoce solo su canal, y solo el worker de su agente lo deja listo.
 - **Antes de abrir al público**, falta un L3 con el modelo real y testers con rol en la app:
   - en Instagram: el tono de compañero de entrenamiento, sin presionar la venta;
   - en Messenger: la asesoría;
