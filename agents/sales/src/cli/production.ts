@@ -6,6 +6,7 @@ import { createLogger } from '@r4/observability';
 import { PostgresArtifactFacts, PostgresArtifacts, PostgresProductionStore, createPool } from '@r4/persistence-postgres';
 import {
   assertProductionComposition,
+  capabilityAvailability,
   conversationKey,
   declaredExecutionMode,
   loadProductionConfig,
@@ -42,6 +43,7 @@ import { SALES_DOMAINS, SALES_PRODUCTION_PROFILE } from '../production/profile.j
 import { isCheckoutLaneProfile, isQuoteLaneProfile, isSalesLaneProfile, salesCatalogSourceOf } from '../production/profile-v15.js';
 import { assertF1CanaryWriteCeiling } from '../production/profile-v12.js';
 import { QUOTE_PARITY_REQUIRED_PROFILES, loadQuoteParityGuard } from '../capabilities/parity-guard.js';
+import { DESK_OPPORTUNITY_CAPABILITY_ID, loadDeskIngestConfig } from '../capabilities/desk-opportunity.js';
 import { SALES_PRODUCTION_PROCESSES, schedulerConfigurationStatus } from '../production/topology.js';
 import { flag, loadLocalEnv, option, print } from './common.js';
 import { VALIDATION_SCENARIOS, VALIDATION_SECRETS, validationIdentity, type ScenarioResult } from './production-validation.js';
@@ -181,6 +183,12 @@ function autonomousLimits(production: ReturnType<typeof loadProductionConfig>) {
   return QUOTE_PARITY_REQUIRED_PROFILES.has(profileLabel(profile)) ? { autonomousQuoteLimits, promotionalQuotes, quoteParity: loadQuoteParityGuard(process.env) } : { autonomousQuoteLimits, promotionalQuotes };
 }
 
+/** (ADR-062 O1) The sales desk ingest, read only when the selected profile records opportunities (sales-web@21); fails closed without R4_DESK_INGEST_*. */
+function deskOf(production: ReturnType<typeof loadProductionConfig>) {
+  if (!capabilityAvailability(workerProfile(production), DESK_OPPORTUNITY_CAPABILITY_ID).available) return {};
+  return { deskIngest: loadDeskIngestConfig(process.env, { allowNetwork: production.config.allowNetwork }) };
+}
+
 function composition() {
   const planOnly = () => Promise.reject(new Error('plan only'));
   const noStore = { readControls: planOnly, bindingByTask: planOnly, taskState: planOnly, thread: planOnly } as never;
@@ -188,7 +196,7 @@ function composition() {
   const catalog = productionCatalog(production);
   const shipping = productionShipping(production);
   const quotes = productionQuotes(production);
-  return composeSalesProductionWorker({ pool: { query: () => Promise.reject(new Error('plan only')) } as never, store: noStore, production, modelProvider: { providerId: 'plan', invoke: () => Promise.reject(new Error('plan only')) }, logger: createLogger({ service: 'plan', level: 'silent' }), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), catalogDescriptiveWindowMs: loadCatalogDescriptiveWindowMs(process.env), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production) });
+  return composeSalesProductionWorker({ pool: { query: () => Promise.reject(new Error('plan only')) } as never, store: noStore, production, modelProvider: { providerId: 'plan', invoke: () => Promise.reject(new Error('plan only')) }, logger: createLogger({ service: 'plan', level: 'silent' }), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), catalogDescriptiveWindowMs: loadCatalogDescriptiveWindowMs(process.env), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production), ...deskOf(production) });
 }
 
 /** (ADR-046) A web worker reports what it reads to the store chat, through the same signed edge as its replies. */
@@ -375,7 +383,7 @@ async function worker(production: ReturnType<typeof loadProductionConfig>): Prom
   const storeGraph = isSalesWebProfile(workerProfile(production)) ? (await SignedStoreGraph.load(signedStoreGraphRead(pool), logger))?.start() ?? null : null;
   // (ADR-058 G5b) Facts answered in R4 for products: part of each product sheet Pesín reads (WhatsApp and web).
   const productFacts = catalog ? (await ProductFactsSource.load(productFactsRead(pool), logger)).start() : null;
-  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...(storeGraph ? { storeGraph } : {}), ...(productFacts ? { productFacts } : {}), ...webProgressOf(production, pool), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production, logger), quoteRecovery: loadQuoteRecovery(process.env) , catalogDescriptiveWindowMs: loadCatalogDescriptiveWindowMs(process.env) });
+  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...(storeGraph ? { storeGraph } : {}), ...(productFacts ? { productFacts } : {}), ...webProgressOf(production, pool), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production, logger), ...deskOf(production), quoteRecovery: loadQuoteRecovery(process.env) , catalogDescriptiveWindowMs: loadCatalogDescriptiveWindowMs(process.env) });
   await assertSalesProductionPrerequisites(workerProfile(production), pool);
   // (M3) What the operator needs to see from the logs: whether the quote-recovery source was composed, and the promotional-quotes switch.
   const features = { quoteRecovery: composed.bindings.contextSources?.some((s) => s.id === QUOTE_RECOVERY_SOURCE_ID) === true, promotionalQuotes: loadPromotionalQuotes(process.env) };
