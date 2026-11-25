@@ -17,8 +17,8 @@
   - **G4a en producción** (PR #153): el agente `graph-curator` clasifica lo que ninguna regla clasifica.
   - **G4b en producción** (PR #154): el agente revisa por lotes las relaciones sin revisar. La corrección de la evidencia
     «Categoría» y `graph:recheck` están en producción desde el 2026-11-25 (PR #158).
-  - **Decisiones 11 y 12 propuestas** (enmienda del 2026-11-25): conversar con el curador y una revisión que se
-    entienda. Fase G7, sin implementar.
+  - **Decisiones 11 y 12 aceptadas** (enmienda del 2026-11-25, PR #160; owner: «apruebo el ADR y parte con G7a»):
+    conversar con el curador y una revisión que se entienda. G7a autorizada; G7b y G7c esperan su autorización.
   - Cada fase necesita autorización explícita del owner.
 - **Fecha:** 2026-11-23
 - **Mandato:** decisiones del owner del 2026-11-23:
@@ -223,7 +223,7 @@ volver a aprobar. Esto amplía «Fuera de alcance»: R4 guarda datos de producto
    para quien carga productos. Cuando la ficha ya trae el dato, el hecho queda como respaldo.
 5. **Implementación en una fase aparte**, después de la Decisión 9 (ver «Decisión 10 — implementación»).
 
-## Decisión 11 — Conversar con el curador (enmienda propuesta del 2026-11-25)
+## Decisión 11 — Conversar con el curador (enmienda del 2026-11-25)
 
 Pedido del owner del 2026-11-25: «uno debería poder explicarle al curador también y que lo interprete, es un agente al
 final». Hoy a cada propuesta solo se le contesta Aprobar o Rechazar. El curador no se entera de por qué y vuelve a
@@ -267,7 +267,7 @@ proponer lo mismo en casos parecidos.
    - Las explicaciones confirmadas y corregidas forman el conjunto de regresión de la interpretación: un plan corregido
      es un caso fallido.
 
-## Decisión 12 — Una revisión que se entienda (enmienda propuesta del 2026-11-25)
+## Decisión 12 — Una revisión que se entienda (enmienda del 2026-11-25)
 
 Hallazgo del owner del 2026-11-25, después de la primera revisión del agente (G4b): las propuestas «están difíciles de
 interpretar, incluso para mí, que lo diseñé». Hay ~1.050 propuestas abiertas, con códigos de regla y áreas en vez de
@@ -711,4 +711,4 @@ Decisiones del owner del 2026-11-24:
 4. **Tope diario para interpretar explicaciones** (Decisión 11). Se propone US$0,25 por día, unas 25 explicaciones.
 5. **Quién firma un criterio.** Se propone que confirmar el plan ya lo deje firmado si quien explica tiene
    `knowledge.sign` (hoy, el owner). Si no, el criterio queda verificado y espera la firma.
-6. **Orden de G7a y G7b.** Se propone G7a primero: hace legible lo que ya existe y no gasta en el modelo.
+6. ~~Orden de G7a y G7b~~: cerrada, G7a primero (owner, 2026-11-25).
