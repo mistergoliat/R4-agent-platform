@@ -131,6 +131,15 @@ Hechos verificados:
   - dónde vive: la mesa, mientras no haya un servicio de operaciones de tienda;
   - cómo lo usa Pesín de clientes: lo lee con vigencia y ofrece prueba solo si alguien lo confirmó en los últimos
     7 días (configurable).
+- **Postventa (acordado con el diseño de postventa por WhatsApp):**
+  - **Pesín equipo es la única entrada del equipo.** Despachadores y armadores reportan a Pesín equipo «salió»,
+    «entregado con foto», «cliente ausente» o «armado listo». El reporte cambia el estado del pedido o del armado.
+  - **Ese estado dispara el aviso al cliente.** Los avisos, las plantillas de Meta y las reglas de contacto son del
+    ADR de postventa (pendiente de aprobación del owner).
+  - **No hay una segunda pantalla para el personal.**
+  - **Una sola agenda en la mesa** para las tres reservas: entregas de flota propia, armados y pruebas en tienda.
+    Tiene bloques por equipo o rol, cupos, reserva, recordatorio, reagendamiento y «no vino». Su modelo lo define el
+    ADR de postventa.
 - **Despacho, armado, mantención y bodega:**
   - **Si ya existe un flujo que es dueño del dato** (n8n, PrestaShop o SAP), Pesín equipo lo alimenta por un
     conector de escritura en código (ADR-061 Decisión 6). No crea una copia paralela.
@@ -211,7 +220,9 @@ Core.
 
 ## Decisiones abiertas del owner
 
-1. Quién mantiene los flujos de n8n de postventa y mantenciones, y si Pesín equipo los alimenta o los reemplaza.
+1. Quién mantiene los flujos de n8n de postventa y mantención de cardio, y si se reemplazan o se alimentan. Es la
+   misma pregunta del ADR de postventa. La recomendación compartida es reemplazarlos cuando los avisos de R4 estén
+   activos, manteniendo las mismas plantillas aprobadas.
 2. Los roles iniciales y quién tiene cada uno.
 3. La vigencia de una exhibición confirmada (propuesta: 7 días).
 4. La retención de las fotos.
