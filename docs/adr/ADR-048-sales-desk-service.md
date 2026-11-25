@@ -10,7 +10,9 @@
   evidencia de venta en el chat web (Decisión 8).
 - **Revisión 2 (2026-11-25):** qué está hecho y qué falta, qué decisiones cambiaron otros ADR (049, 050, 053, 055,
   056, 057, 059, 060 y 062), qué significan las secciones apagadas de la consola y las brechas de seguridad que siguen
-  abiertas. Pedido del owner del 2026-11-25. Ver la sección «Revisión 2».
+  abiertas. También alinea el reparto con el plan comercial omnicanal del owner («Don Pesin · Plan Comercial
+  Omnicanal», 2026-11-24, fuera del repositorio): pools con autoasignación, sin comisiones por ahora, y metas por
+  vendedor medidas desde su onboarding. Pedido del owner del 2026-11-25. Ver la sección «Revisión 2».
 - **Mandato:** owner, 2026-11-18: diseñar una plataforma robusta que reemplace al proveedor de atención actual
   (menú de áreas y bandeja de agentes humanos) para WhatsApp y el chat web.
 - **Autoridad superior:** Constitución; PRD §17 (operador humano) y §19 (canales); ADR-029 (entrega gobernada);
@@ -56,23 +58,25 @@ un ADR posterior, rige el posterior, como indica la tabla de cambios.
 | D5: mensajes por iniciativa propia, fuera de 24 horas | **ADR-055** (propuesto): ventanas, plantillas y reglas de contacto |
 | D8 y la decisión abierta 8 (venta asistida y grupo de control) | **ADR-059** (aceptado el 2026-11-24): la venta de Pesín es una línea de la ficha del chat, pagada y que coincide, con un rescate de 7 días. La venta asistida se mide aparte y no da comisión. **No hay grupo de control** |
 | D7: roles OIDC `admin`, `supervisor` y `vendedor` | En R4, ámbitos por operador (ADR-050). En la mesa, los roles `seller`, `supervisor` y `admin` |
-| Oportunidades y su dueño | **ADR-062:** el CRM aplica las reglas de la Decisión 3 a las oportunidades |
+| D3, regla 4 (oferta rotativa dentro del área, con SLA) | **ADR-062 y el plan comercial** (owner, 2026-11-25): cada pool tiene un **pozo común con autoasignación**. Quien toma la oportunidad queda como responsable único, con un tope de 15 abiertas por vendedor. Si nadie la toma en 10 minutos, la mesa avisa al dueño del pool y luego al supervisor |
+| Los pools | **Plan comercial:** cinco pools, que son las áreas de la mesa: ventas general, mayoristas, institucionales, postventa y servicio técnico. Pesín clasifica por intención, monto, segmento y complejidad. Lo que no resuelve dentro de su alcance va como solicitud al pool que corresponde |
+| D4: atribución y comisión | **Comisiones fuera de alcance por ahora:** el plan comercial no las define. Las **metas por vendedor** del plan se medirán desde el onboarding de los vendedores en la app Ventas (owner, 2026-11-25). Para eso basta el libro de quién tomó, quién cotizó y qué se pagó, sin reglas de comisión |
 
 ### Los cambios en Core: ninguno está hecho
 
-| Cambio | Estado | Qué impide |
+| Cambio | Estado | ¿Lo pide el plan comercial? |
 |---|---|---|
-| **C-1.** Puerto de ruteo antes del agente | No existe | Mandar una conversación directo a una persona sin pasar por Pesín |
-| **C-2.** Referencia de entrada persistida | No existe | El link o QR personal de un vendedor (regla 1) |
-| **C-3.** Motivo estructurado del traspaso | No existe; el traspaso lleva solo texto (ADR-062 lo confirma) | Asignar por motivo a un área (regla 4) |
-| **C-4.** Feed de eventos con cursor | Parcial: `/v1/events` lista hacia atrás, sin cursor hacia adelante | Que la mesa construya el libro de atribución sin perder eventos |
+| **C-1.** Puerto de ruteo antes del agente | No existe | **No.** En el plan, Pesín atiende primero y clasifica cada conversación |
+| **C-2.** Referencia de entrada persistida | No existe | **No.** El plan no usa link ni QR personal por vendedor (regla 1) |
+| **C-3.** Motivo estructurado del traspaso | No existe; el traspaso lleva solo texto (ADR-062 lo confirma) | **Sí.** Es lo que manda cada solicitud al pool correcto. Por ejemplo, «≥ $1M o proyecto» va a ventas general y un distribuidor va a mayoristas |
+| **C-4.** Feed de eventos con cursor | Parcial: `/v1/events` lista hacia atrás, sin cursor hacia adelante | **Para medir las metas.** La mesa necesita el libro sin perder eventos desde el onboarding de los vendedores |
 
-**Consecuencia.** Sin C-1 y C-2 no funcionan las reglas 1 a 3 de la Decisión 3, que son el centro del reparto justo:
-- el link o QR del vendedor;
-- el cliente de cabecera de 90 días;
-- «quiero hablar con fulano».
-
-Hoy la mesa atiende consultas y traspasos, pero no reparte clientes entre vendedores.
+**El reparto que rige es el del plan comercial:** pools por intención, pozo común y autoasignación.
+- Las reglas 1 a 3 de la Decisión 3 (link o QR, cliente de cabecera, «quiero hablar con fulano») quedan escritas
+  en ADR-062, pero el plan no las pide.
+- El **cliente de cabecera** sí sirve para la continuidad: si vuelve un cliente con una oportunidad abierta, la ve su
+  mismo responsable. Esto se resuelve en la mesa, sin C-1.
+- C-1 y C-2 quedan solo para cuando el owner quiera links personales.
 
 ### Las secciones apagadas de la consola
 
@@ -81,9 +85,9 @@ no construidas, porque dependen de lo que falta.
 
 | Sección | Qué será | Qué le falta |
 |---|---|---|
-| **En vivo** (Mesa de ventas) | Colas por área, ofertas pendientes, SLA, quién está disponible | Asignación automática (Decisión 3, fase 2), C-3 para el área, y vendedores reales dados de alta |
-| **Reglas y equipo** (Mesa de ventas) | Vendedores, áreas, turnos, SLA y reglas versionadas | Decisiones abiertas 2 y 5: quiénes son, qué áreas y quién supervisa |
-| **Atribución** (Mesa de ventas) | El libro de atribución, primero en sombra | C-4 y la Decisión 4 en sombra (fase 2). ADR-059 para el chat web, y las decisiones abiertas 1, 6 y 7 |
+| **En vivo** (Mesa de ventas) | El pozo de cada pool, lo que nadie ha tomado y su tiempo, y quién está disponible | C-3 para mandar al pool, y vendedores reales dados de alta |
+| **Reglas y equipo** (Mesa de ventas) | Vendedores, pools, turnos, tope por vendedor y plazo | Decisiones abiertas 2 y 5: quiénes son, en qué pools y quién supervisa |
+| **Atribución** (Mesa de ventas) | Quién tomó, quién cotizó y qué se pagó, por vendedor, para las metas del plan. Sin comisiones por ahora | El onboarding de los vendedores en la app Ventas, C-4 y ADR-059 para el chat web |
 | **Contacto con clientes** | Mensajes por iniciativa propia: avisos, seguimientos y plantillas | ADR-055, propuesto y no implementado |
 
 ### Decisiones abiertas, al día
@@ -92,14 +96,20 @@ no construidas, porque dependen de lo que falta.
   - la 3, por ADR-057: correo, con su fase C5 pendiente;
   - la 8, por ADR-059.
 - **Siguen abiertas:**
-  - la 1, comisiones y fondo de equipo;
-  - la 2, vendedores, áreas y turnos;
+  - la 1, comisiones y fondo de equipo: fuera de alcance por ahora, porque el plan comercial no las define;
+  - la 2, vendedores, pools y turnos, con el onboarding de los vendedores en la app Ventas;
   - la 4, el repositorio de la mesa: la mesa está en un repositorio propio y en el mismo host. Falta confirmar que el
     repositorio sea privado;
   - la 5, quién supervisa el SLA;
   - la 6 y la 7, los casos K-3 y K-9.
-- **La fase 3 no tiene estado registrado:** migrar el número productivo de WhatsApp desde el proveedor actual, con el
-  bloqueante D-1. El owner debe decir si el proveedor actual sigue en uso y cuándo se planifica el corte.
+- **La fase 3:** el proveedor actual es **Zenvia** y sigue en uso. El plan comercial lo retira en su fase 6
+  («omnicanalidad»), cuando se valide la continuidad. Mientras tanto aplica el bloqueante D-1, y la fecha del corte es
+  decisión del owner.
+- **Decisiones nuevas que trae el plan comercial (owner):**
+  - **Cupón de 10 % en la primera compra**, para quien muestra interés y no cierra. Choca con la decisión vigente de
+    no ofrecer descuentos. Pesín no lo ofrece hasta que el owner lo active y defina su vigencia y exclusiones.
+  - **Pesín vende hasta $1M por cotización.** Hay que alinear este tope con los límites de cotización que Pesín tiene
+    hoy.
 
 ### Brechas de seguridad abiertas
 
@@ -113,9 +123,12 @@ requisito futuro. Cerrarlas necesita la decisión del owner (ADR-049, decisión 
 
 ### Próximo paso recomendado
 
-Si el reparto justo entre vendedores sigue siendo la prioridad, lo siguiente es **C-1 y C-2**: el ruteo antes del
-agente y la referencia de entrada para el link o QR de cada vendedor. Son cambios genéricos de Core, cada uno con su
-autorización. Antes, el owner tiene que dar de alta al primer vendedor real y responder las decisiones abiertas 2 y 5.
+1. **El onboarding de los vendedores en la app Ventas,** con sus pools. Desde ahí se miden las metas del plan.
+2. **C-3, el motivo estructurado del traspaso:** cada solicitud llega al pool correcto. Es un cambio genérico de Core,
+   con su propia autorización.
+3. **C-4, el feed con cursor,** para que el libro de atribución no pierda eventos.
+
+C-1 y C-2 no son necesarios para el plan comercial.
 
 ## Contexto
 
