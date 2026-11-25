@@ -17,7 +17,7 @@ export const SALES_PRODUCTION_PROFILE_V23: ProductionProfile = Object.freeze({
 export const SALES_QUOTE_LANE_V23_PROFILE_LABEL = 'sales-production@23';
 
 /** Profiles whose product context carries capped units in stock and whose preview hides the uncapped quantity. */
-export const SALES_STOCK_COUNT_PROFILES: ReadonlySet<string> = new Set([SALES_QUOTE_LANE_V23_PROFILE_LABEL, 'sales-production@24', 'sales-production@25', 'sales-production@26']);
+export const SALES_STOCK_COUNT_PROFILES: ReadonlySet<string> = new Set([SALES_QUOTE_LANE_V23_PROFILE_LABEL, 'sales-production@24', 'sales-production@25', 'sales-production@26', 'sales-production@27']);
 
 /** What must be true before @23 is activated on the lane: what @22 requires, plus the units-in-stock cases with the real model. */
 export const SALES_PRODUCTION_PROFILE_V23_GATE = Object.freeze([

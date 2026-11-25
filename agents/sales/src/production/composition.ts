@@ -1,9 +1,10 @@
 import { QUOTE_EMAIL_CAPABILITY_ID, quoteEmailCapability } from '../capabilities/quote-email.js';
+import { DESK_DOMAIN, DESK_OPPORTUNITY_CAPABILITY_ID, deskOpportunityCapability, type DeskIngestConfig } from '../capabilities/desk-opportunity.js';
 import type pg from 'pg';
 import type { Logger } from 'pino';
 import { DomainError, type CatalogPort, type CheckoutConsentSource, type CheckoutService, type QuoteV2Service, type ShippingService } from '@r4-adapters/domains';
 import { identityVerificationSchemaIsCurrent } from '@r4-adapters/identity-verification';
-import { WhatsAppInboundAdapter, WhatsAppMediaDownloader, WhatsAppOutboundAdapter, describeWhatsAppConfig, loadWhatsAppCloudConfig, type FetchLike, type WhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
+import { WHATSAPP_CHANNEL_ID, WhatsAppInboundAdapter, WhatsAppMediaDownloader, WhatsAppOutboundAdapter, describeWhatsAppConfig, loadWhatsAppCloudConfig, type FetchLike, type WhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
 import { WebInboundAdapter, WebOutboundAdapter, describeWebChannelConfig, loadWebChannelConfig, type WebFetch } from '@r4-adapters/web';
 import { CapabilityRegistry, type CapabilityRegistration } from '@r4/capability-runtime';
 import { systemClock, type Clock, type Principal } from '@r4/contracts';
@@ -38,6 +39,7 @@ import { SALES_QUOTE_LANE_V23_PROFILE_LABEL, SALES_STOCK_COUNT_PROFILES } from '
 import { SALES_NON_PAUSING_CONSULTATION_PROFILES, SALES_QUOTE_LANE_V24_PROFILE_LABEL } from './profile-v24.js';
 import { SALES_QUOTE_LANE_V25_PROFILE_LABEL } from './profile-v25.js';
 import { SALES_QUOTE_LANE_V26_PROFILE_LABEL } from './profile-v26.js';
+import { SALES_QUOTE_LANE_V27_PROFILE_LABEL } from './profile-v27.js';
 import { salesConsultationExpiry } from './service-hours.js';
 import { PostgresSalesStore } from '../workspace/store.js';
 import { SALES_DOMAINS } from './profile.js';
@@ -70,6 +72,7 @@ import { SALES_QUOTE_DOCUMENT_PROFILES, SALES_QUOTE_LANE_V18_PROFILE_LABEL } fro
 import { SALES_F1_SHIPPING_PROFILES, SALES_INTENT_ACCEPTANCE_PROFILES } from './profile-v19.js';
 import { SALES_QUOTE_LANE_V21_PROFILE_LABEL } from './profile-v21.js';
 import { quoteDocumentDelivery } from '../capabilities/quote-document.js';
+import { SALES_CONTACT_RULES, SALES_OPT_OUT, SALES_QUOTE_OPT_OUT_LINE, salesQuoteFollowUpSource } from './contact.js';
 import { catalogDiscoverCapability } from '../capabilities/catalog-discover.js';
 import { catalogSetComplementsCapability } from '../capabilities/catalog-set-complements.js';
 import { catalogBuildStepCapability, catalogReplacementsCapability, type GraphSource } from '../capabilities/catalog-build-step.js';
@@ -148,6 +151,8 @@ export interface SalesProductionWorkerOptions {
   readonly checkout?: CheckoutService & { readonly bindingKind: string };
   /** (R4 Checkout, R-3) Where the purchase-consent artifact comes from; required by @15. Sandbox only: SandboxConsentDirectory (R4 never signs). */
   readonly checkoutConsent?: CheckoutConsentSource;
+  /** (ADR-062 O1) The sales desk ingest (loadDeskIngestConfig: R4_DESK_INGEST_URL, R4_DESK_INGEST_KEY); required when the profile records opportunities (sales-web@21). */
+  readonly deskIngest?: DeskIngestConfig & { readonly fetch?: (url: string, init: RequestInit) => Promise<Response> };
   /** (R4-J4-R4) The R4_CUSTOMER_* configuration of the worker; required when the selected profile composes Customer and identity verification (v8). */
   readonly customer?: {
     readonly env: Readonly<Record<string, string | undefined>>;
@@ -177,6 +182,9 @@ export interface SalesProductionWorker {
   readonly report: ProductionCompositionReport;
   readonly controls: AutonomyControls;
 }
+
+/** (ADR-062 O1) The channels the sales desk ingest accepts (its contract). */
+const DESK_CHANNELS: readonly string[] = Object.freeze(['whatsapp', 'web', 'instagram', 'facebook']);
 
 /**
  * Production composition of the Sales worker (R4-I). Same pack, same
@@ -283,7 +291,7 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
           if (isF1CanaryProfile(profile) || isQuoteLaneProfile(profile) || SALES_WEB_QUOTE_PROFILES.has(profileLabel(profile))) assertF1CanaryLimits(limits, profileLabel(profile));
           if (options.quoteParity) options.logger.info({ quoteParity: { profile: profileLabel(profile), fingerprint: options.quoteParity.fingerprint, items: options.quoteParity.items, maxAgeSeconds: options.quoteParity.maxAgeSeconds } }, 'sales quote parity evidence configured');
           if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV3Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now(), parity: options.quoteParity ?? null, eligibility: salesCommercialEligibility(profile, options.promotionalQuotes === true), naturalAcceptance: SALES_INTENT_ACCEPTANCE_PROFILES.has(profileLabel(profile)), hideStockCounts: SALES_STOCK_COUNT_PROFILES.has(profileLabel(profile)) }));
-          if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV5Capability({ store: sales, quotes, catalog, shipping: options.shipping, limits, conversation: options.store, admission: controls, now: () => clock.now(), parity: options.quoteParity ?? null, eligibility: salesCommercialEligibility(profile, options.promotionalQuotes === true), documents: SALES_QUOTE_DOCUMENT_PROFILES.has(profileLabel(profile)) ? quoteDocumentDelivery(options.store, options.logger) : null, naturalAcceptance: SALES_INTENT_ACCEPTANCE_PROFILES.has(profileLabel(profile)) }));
+          if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV5Capability({ store: sales, quotes, catalog, shipping: options.shipping, limits, conversation: options.store, admission: controls, now: () => clock.now(), parity: options.quoteParity ?? null, eligibility: salesCommercialEligibility(profile, options.promotionalQuotes === true), documents: SALES_QUOTE_DOCUMENT_PROFILES.has(profileLabel(profile)) ? quoteDocumentDelivery(options.store, options.logger, config.contactMode && profile.channel.id === WHATSAPP_CHANNEL_ID ? SALES_QUOTE_OPT_OUT_LINE : null) : null, naturalAcceptance: SALES_INTENT_ACCEPTANCE_PROFILES.has(profileLabel(profile)) }));
           // (ADR-057 C4) The issued quote's PDF by email, through the same kill-switch-guarded Quote port.
           if (capabilityAvailability(profile, QUOTE_EMAIL_CAPABILITY_ID).available) capabilities.registerWrite(quoteEmailCapability({ store: sales, quotes, conversation: options.store }));
         } else {
@@ -311,6 +319,12 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
     capabilities.registerWrite(checkoutRequestLinkCapability(deps));
     capabilities.register(checkoutPurchaseStatusCapability(deps));
   }
+  // (ADR-062 O1) The sales desk ingest: a profile that declares desk.opportunity.record never composes without it.
+  const deskReal = capabilityAvailability(profile, DESK_OPPORTUNITY_CAPABILITY_ID).available;
+  if (deskReal) {
+    if (!options.deskIngest) throw new Error(`refusing production composition: ${profileLabel(profile)} records opportunities in the sales desk but no desk ingest was configured (R4_DESK_INGEST_URL, R4_DESK_INGEST_KEY)`);
+    capabilities.registerWrite(deskOpportunityCapability({ desk: options.deskIngest, store: sales, quotes: quoteReal ? options.quotes! : null, bindings: options.store, profileChannel: profile.channel.id, channels: DESK_CHANNELS, ...(options.deskIngest.fetch ? { fetch: options.deskIngest.fetch } : {}) }));
+  }
   // (R4-J4-R4) v8: the Customer reads and the identity verification; every other profile leaves Customer UNAVAILABLE.
   const customerIdentity = isCustomerIdentityProfile(profile);
   if (customerIdentity) composeCustomerIdentity(profile, options, capabilities);
@@ -324,6 +338,7 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
       ...(quoteReal ? [{ domain: SALES_DOMAINS.quote, bindingKind: 'real' as const }] : []),
       ...(customerIdentity ? [{ domain: SALES_DOMAINS.customer, bindingKind: 'real' as const }, { domain: SALES_DOMAINS.identity, bindingKind: 'real' as const }] : []),
       ...(checkoutReal ? [{ domain: SALES_DOMAINS.checkout, bindingKind: 'real' as const }] : []),
+      ...(deskReal ? [{ domain: DESK_DOMAIN, bindingKind: 'real' as const }] : []),
     ],
     capabilities.list().map((c) => c.capabilityId),
   );
@@ -434,7 +449,7 @@ export const SALES_RUN_FAILURE_FALLBACK_TEXT = salesRunFailureNotice(SALES_IN_HO
 export const SALES_HUMAN_REQUEST_NOTICE_TEXT = salesHumanRequestNotice(SALES_IN_HOURS_REFERENCE);
 
 /** The profiles whose conversations get that notice: only the F1 quote lane candidate (@13 and the others unchanged). */
-export const SALES_HUMAN_REQUEST_NOTICE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_QUOTE_LANE_V18_PROFILE_LABEL, 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23', 'sales-production@24', 'sales-production@25', 'sales-production@26']);
+export const SALES_HUMAN_REQUEST_NOTICE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_QUOTE_LANE_V18_PROFILE_LABEL, 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23', 'sales-production@24', 'sales-production@25', 'sales-production@26', 'sales-production@27']);
 
 /**
  * (ADR-046) The web chat's own notices. No person attends it yet: they say so, show the store contact ([[contacto]],
@@ -469,6 +484,8 @@ export function composeSalesGateway(options: SalesGatewayOptions): { bindings: G
       humanRequestNotice: { text: () => salesHumanRequestNotice(now()), profiles: SALES_HUMAN_REQUEST_NOTICE_PROFILES },
       ...laneOf(lane),
       ...(media.perception ? { media: media.perception } : {}),
+      // (ADR-055) Opt-out words and quote follow-ups; used only while R4_PROD_CONTACT_MODE is observe or active.
+      ...(config.contactMode ? { contact: { rules: SALES_CONTACT_RULES, optOut: SALES_OPT_OUT, source: salesQuoteFollowUpSource(options.pool, config.contactMode) } } : {}),
       // (R4-J4-R4) v8 never runs without the inbound inspector, requested in full (ADR-040).
       ...(isCustomerIdentityProfile(profile) ? { inspection: salesGatewayInspection(profile, options.env, { transport: options.identityFetch, allowedHosts: options.allowedHosts }) } : {}),
     },
@@ -583,7 +600,7 @@ export function salesGatewayLane(env: Readonly<Record<string, string | undefined
  * @25 (owner feedback on the live @24 relay test: follow-up consultations, official contacts) succeeds @24, its rollback.
  * @26 (owner decisions 2026-11-23: asymmetric safety rule, options on every consultation, general help) succeeds @25, its rollback.
  */
-export const SALES_COHORT_LANE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V26_PROFILE_LABEL, SALES_QUOTE_LANE_V25_PROFILE_LABEL, SALES_QUOTE_LANE_V24_PROFILE_LABEL, SALES_QUOTE_LANE_V23_PROFILE_LABEL, SALES_QUOTE_LANE_V22_PROFILE_LABEL, SALES_QUOTE_LANE_V21_PROFILE_LABEL]);
+export const SALES_COHORT_LANE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V27_PROFILE_LABEL, SALES_QUOTE_LANE_V26_PROFILE_LABEL, SALES_QUOTE_LANE_V25_PROFILE_LABEL, SALES_QUOTE_LANE_V24_PROFILE_LABEL, SALES_QUOTE_LANE_V23_PROFILE_LABEL, SALES_QUOTE_LANE_V22_PROFILE_LABEL, SALES_QUOTE_LANE_V21_PROFILE_LABEL]);
 
 /**
  * (ADR-045 amendment 1) With R4_PROD_ROLLOUT_PERCENT > 0 the WhatsApp gateway serves the cohort only through an
@@ -654,7 +671,7 @@ export function loadQuoteRecovery(env: Readonly<Record<string, string | undefine
 }
 
 /** (M3, owner mandate 2026-11-18) The only profiles on which R4_SALES_QUOTE_RECOVERY takes effect. */
-export const SALES_QUOTE_RECOVERY_PROFILES: ReadonlySet<string> = new Set([SALES_QUOTE_LANE_V22_PROFILE_LABEL, SALES_QUOTE_LANE_V23_PROFILE_LABEL, SALES_QUOTE_LANE_V24_PROFILE_LABEL, SALES_QUOTE_LANE_V25_PROFILE_LABEL, SALES_QUOTE_LANE_V26_PROFILE_LABEL]);
+export const SALES_QUOTE_RECOVERY_PROFILES: ReadonlySet<string> = new Set([SALES_QUOTE_LANE_V22_PROFILE_LABEL, SALES_QUOTE_LANE_V23_PROFILE_LABEL, SALES_QUOTE_LANE_V24_PROFILE_LABEL, SALES_QUOTE_LANE_V25_PROFILE_LABEL, SALES_QUOTE_LANE_V26_PROFILE_LABEL, SALES_QUOTE_LANE_V27_PROFILE_LABEL]);
 
 /**
  * (M3) Whether the quote-recovery source is composed: enabled, an allowed profile, and a REAL Quote V2 binding. On any

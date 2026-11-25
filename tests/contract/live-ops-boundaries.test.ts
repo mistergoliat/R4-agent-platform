@@ -49,8 +49,9 @@ describe('R4-I boundaries: channel neutrality', () => {
 
   it('the Sales agent runtime knows no channel: only its production composition (deployment wiring) names WhatsApp', () => {
     const mentions = SALES.filter((f) => /whatsapp/i.test(text(f))).map(rel);
-    // Deployment wiring only: the production composition and its CLI (outside the pack runtime).
-    expect(mentions.filter((f) => !f.startsWith('agents/sales/src/production/') && !/^agents\/sales\/src\/cli\/production(-validation)?\.ts$/.test(f))).toEqual([]);
+    // Deployment wiring only: the production composition and its CLI (outside the pack runtime), and (ADR-062) the
+    // opportunity evaluation's labeled set, which names the channel each case is played on in QA (never run by a worker).
+    expect(mentions.filter((f) => !f.startsWith('agents/sales/src/production/') && !/^agents\/sales\/src\/cli\/production(-validation)?\.ts$/.test(f) && f !== 'agents/sales/src/evaluations/opportunity.ts')).toEqual([]);
     const definition = readFileSync(join(ROOT, 'agents/sales/sales.agent.json'), 'utf8');
     expect(definition).not.toMatch(/whatsapp|delivered|outbound/i);
   });

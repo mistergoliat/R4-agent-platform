@@ -5,6 +5,7 @@ import { profileLabel, type ProductionProfile } from '@r4/live-ops';
 import { WEB_CHANNEL_ID, WEB_EDGE_CONTRACT_REF } from '@r4-adapters/web';
 import { AUTONOMOUS_QUOTE_CAPABILITY_IDS, CAPABILITY_IDS, LANE_CAPABILITY_IDS, SALES_WEB_AGENT_ID } from '../ids.js';
 import { QUOTE_EMAIL_CAPABILITY_ID } from '../capabilities/quote-email.js';
+import { DESK_DOMAIN, DESK_INGEST_CONTRACT_REF, DESK_OPPORTUNITY_CAPABILITY_ID } from '../capabilities/desk-opportunity.js';
 import { QUOTE_CONTRACT_REF } from './profile-v4.js';
 import { SALES_DOMAINS } from './profile.js';
 import { SALES_PRODUCTION_PROFILE_V13 } from './profile-v13.js';
@@ -217,12 +218,28 @@ export const SALES_WEB_PROFILE_V20: ProductionProfile = Object.freeze({
   description: 'sales-web@19 with the home-gym plan sized to the budget range and the set brought towards the range (raise a piece or add pieces); quote by email; consultations without pause.',
 } satisfies ProductionProfile);
 
-export const SALES_WEB_QUOTE_PROFILES: ReadonlySet<string> = new Set(['sales-web@19', 'sales-web@20']);
+/**
+ * (ADR-062 O1, owner 2026-11-25) sales-web@20 plus desk.opportunity.record@1: Pesín records the sales opportunity in the
+ * sales desk (classification from closed lists; conversation, channel and quote filled by the platform). The desk is a
+ * domain service reached by an HMAC-signed ingest (R4_DESK_INGEST_URL, R4_DESK_INGEST_KEY). Everything else is @20's.
+ */
+export const SALES_WEB_PROFILE_V21: ProductionProfile = Object.freeze({
+  ...SALES_WEB_PROFILE_V20,
+  version: 21,
+  description: 'sales-web@20 that records each sales opportunity in the sales desk (consultation, quote, or buying intent at the end), classified from closed lists; never shown to the visitor.',
+  domains: {
+    ...SALES_WEB_PROFILE_V20.domains,
+    [DESK_DOMAIN]: { status: 'REAL', contractRef: DESK_INGEST_CONTRACT_REF, note: 'internal opportunity record in the sales desk; no customer contact, no money' },
+  },
+  capabilities: [...SALES_WEB_PROFILE_V20.capabilities, { capabilityId: DESK_OPPORTUNITY_CAPABILITY_ID, domain: DESK_DOMAIN, effect: 'write' as const, decision: 'ALLOW' as const }],
+} satisfies ProductionProfile);
 
-export const SALES_WEB_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_WEB_PROFILE_V1, SALES_WEB_PROFILE_V2, SALES_WEB_PROFILE_V3, SALES_WEB_PROFILE_V4, SALES_WEB_PROFILE_V5, SALES_WEB_PROFILE_V6, SALES_WEB_PROFILE_V7, SALES_WEB_PROFILE_V8, SALES_WEB_PROFILE_V9, SALES_WEB_PROFILE_V10, SALES_WEB_PROFILE_V11, SALES_WEB_PROFILE_V12, SALES_WEB_PROFILE_V13, SALES_WEB_PROFILE_V14, SALES_WEB_PROFILE_V15, SALES_WEB_PROFILE_V16, SALES_WEB_PROFILE_V17, SALES_WEB_PROFILE_V18, SALES_WEB_PROFILE_V19, SALES_WEB_PROFILE_V20]);
+export const SALES_WEB_QUOTE_PROFILES: ReadonlySet<string> = new Set(['sales-web@19', 'sales-web@20', 'sales-web@21']);
+
+export const SALES_WEB_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_WEB_PROFILE_V1, SALES_WEB_PROFILE_V2, SALES_WEB_PROFILE_V3, SALES_WEB_PROFILE_V4, SALES_WEB_PROFILE_V5, SALES_WEB_PROFILE_V6, SALES_WEB_PROFILE_V7, SALES_WEB_PROFILE_V8, SALES_WEB_PROFILE_V9, SALES_WEB_PROFILE_V10, SALES_WEB_PROFILE_V11, SALES_WEB_PROFILE_V12, SALES_WEB_PROFILE_V13, SALES_WEB_PROFILE_V14, SALES_WEB_PROFILE_V15, SALES_WEB_PROFILE_V16, SALES_WEB_PROFILE_V17, SALES_WEB_PROFILE_V18, SALES_WEB_PROFILE_V19, SALES_WEB_PROFILE_V20, SALES_WEB_PROFILE_V21]);
 
 /** The sales-web definition version each web profile pins. */
-const SALES_WEB_AGENT_VERSIONS: Readonly<Record<string, number>> = Object.freeze({ 'sales-web@1': 1, 'sales-web@2': 2, 'sales-web@3': 3, 'sales-web@4': 4, 'sales-web@5': 5, 'sales-web@6': 6, 'sales-web@7': 7, 'sales-web@8': 8, 'sales-web@9': 9, 'sales-web@10': 10, 'sales-web@11': 11, 'sales-web@12': 12, 'sales-web@13': 13, 'sales-web@14': 14, 'sales-web@15': 15, 'sales-web@16': 16, 'sales-web@17': 17, 'sales-web@18': 18, 'sales-web@19': 19, 'sales-web@20': 20 });
+const SALES_WEB_AGENT_VERSIONS: Readonly<Record<string, number>> = Object.freeze({ 'sales-web@1': 1, 'sales-web@2': 2, 'sales-web@3': 3, 'sales-web@4': 4, 'sales-web@5': 5, 'sales-web@6': 6, 'sales-web@7': 7, 'sales-web@8': 8, 'sales-web@9': 9, 'sales-web@10': 10, 'sales-web@11': 11, 'sales-web@12': 12, 'sales-web@13': 13, 'sales-web@14': 14, 'sales-web@15': 15, 'sales-web@16': 16, 'sales-web@17': 17, 'sales-web@18': 18, 'sales-web@19': 19, 'sales-web@20': 20, 'sales-web@21': 21 });
 
 export function salesWebProfile(label: string): ProductionProfile | null {
   return SALES_WEB_PROFILES.find((p) => profileLabel(p) === label) ?? null;

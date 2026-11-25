@@ -91,9 +91,13 @@ describe('Sales Agent Pack boundary', () => {
     expect(instructions.length).toBeLessThan(6_000);
     expect(instructions).not.toMatch(/\bstep\s*\d|\bpaso\s*\d|^\s*\d+\.\s/im);
     expect(instructions).not.toMatch(/\bintent\b|\bstage\b|READY_TO_QUOTE|NEEDS_/i);
-    const sources = SALES.map((f) => readFileSync(f, 'utf8')).join('\n');
+    // (ADR-062 O1) The desk record's `intent` is a classification field the sales desk stores for its team (and its
+    // evaluation labels): data passed through, never a branch of the pack's behavior.
+    const deskRecord = (f: string) => /desk-opportunity\.ts$|evaluations[\\/]opportunity\.ts$/.test(f);
+    const sources = SALES.filter((f) => !deskRecord(f)).map((f) => readFileSync(f, 'utf8')).join('\n');
     // No workflow controller: nothing in the pack keys behavior on a conversation stage or an intent label.
     expect(sources).not.toMatch(/\b(stage|intent|nextStep|workflowState)\b\s*[:=]/);
+    for (const f of SALES.filter(deskRecord)) expect(readFileSync(f, 'utf8'), f).not.toMatch(/\bintent\s*(===|!==|==)|case\s+'(compra|cotizacion|postventa|servicio_tecnico|otra)'/);
   });
 
   it('catalog capabilities are READ-only and the Catalog port has no write operation', () => {
