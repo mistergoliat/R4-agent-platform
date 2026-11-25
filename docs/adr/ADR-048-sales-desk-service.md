@@ -1,18 +1,121 @@
 # ADR-048 — Mesa de ventas: servicio de dominio para derivar, asignar y atribuir conversaciones a vendedores
 
 - **Identificador:** `R4-SALES-DESK-01`
-- **Estado:** **Propuesto. No implementado.** Decisiones del owner del 2026-11-19 incorporadas. No autoriza código, despliegues ni cambios en Core. Cada fase y
-  cada cambio en Core listado abajo necesita autorización explícita del owner.
+- **Estado:** **En producción por partes.** La fase 1 está hecha y partes de la fase 2 están en producción, cada una
+  con autorización del owner. Los cambios en Core C-1 a C-4 no están implementados. La revisión 2 registra el estado
+  real. Lo pendiente sigue necesitando autorización explícita del owner, fase por fase y cambio por cambio.
 - **Fecha:** 2026-11-18
 - **Revisión 1 (2026-11-18):** cobertura cuando el vendedor dueño no está en turno (Decisión 3), protección por
   cotización y catálogo de casos de conflicto (Decisión 4), aviso no bloqueante en el chat web (Decisión 5) y
   evidencia de venta en el chat web (Decisión 8).
+- **Revisión 2 (2026-11-25):** qué está hecho y qué falta, qué decisiones cambiaron otros ADR (049, 050, 053, 055,
+  056, 057, 059, 060 y 062), qué significan las secciones apagadas de la consola y las brechas de seguridad que siguen
+  abiertas. Pedido del owner del 2026-11-25. Ver la sección «Revisión 2».
 - **Mandato:** owner, 2026-11-18: diseñar una plataforma robusta que reemplace al proveedor de atención actual
   (menú de áreas y bandeja de agentes humanos) para WhatsApp y el chat web.
 - **Autoridad superior:** Constitución; PRD §17 (operador humano) y §19 (canales); ADR-029 (entrega gobernada);
   ADR-033 (identidad de operadores, OIDC); ADR-041 (avisos de plataforma ante fallas); ADR-042 (colaboración
   con el owner); ADR-045 (carril de conversación); ADR-046 (canal web); ADR-047 (cierre por inactividad);
   auditoría R4-I CRM/WhatsApp (D-1: número productivo).
+
+## Revisión 2 — estado al 2026-11-25
+
+El resto del documento se conserva como se decidió. Esta sección dice qué rige hoy. Si una decisión de abajo choca con
+un ADR posterior, rige el posterior, como indica la tabla de cambios.
+
+### Lo que está en producción
+
+- **La mesa de ventas** es un servicio propio, fuera de R4 Core y con base de datos propia (Decisión 1), en
+  producción desde el 2026-11-23. Su base guarda:
+  - vendedores con rol (`seller`, `supervisor` o `admin`);
+  - áreas y la relación vendedor ↔ área;
+  - disponibilidad;
+  - un registro append-only de asignaciones (`offered`, `accepted`, `declined`, `replied`, `released`, `withdrawn` y
+    `answered`). Es la base del libro de la Decisión 4, todavía sin atribución.
+- **La app Ventas** (Decisión 7) muestra la bandeja y los casos del vendedor, y «Pesín te consulta» (ADR-056). Permite
+  tomar, responder y soltar, y muestra si el visitante web sigue en el chat.
+- **Cada acción va a nombre de una persona.** Se firma con la identidad del operador (ADR-050), nunca con una cuenta
+  compartida (Decisión 2). El nombre de la persona llega al cliente desde el registro de operadores (Decisión 5,
+  implementada el 2026-11-20).
+- **CRM en la mesa** (ADR-062, en producción desde el 2026-11-25):
+  - oportunidades con dueño, estado, próxima acción y resultado;
+  - la pantalla «Oportunidades» de la consola;
+  - Pesín las registra en la mesa desde el chat web (`sales-web@21`) y desde WhatsApp (carril `@27`, en despliegue el
+    2026-11-25).
+- **Operadores:** desde el 2026-11-25, la consola invita y da de alta personas con sus ámbitos (sección «Operadores»).
+  Hoy el único operador que responde es el owner.
+
+### Lo que cambiaron otros ADR
+
+| Esta decisión | Lo que rige hoy |
+|---|---|
+| D3, regla 5 («nadie disponible»: el agente promete un plazo), y D6 (modelo lento → cola humana) | **ADR-056:** consultas al equipo sin pausar la conversación. El vencimiento es de 30 minutos en horario; fuera de él, la próxima apertura más 30 minutos, con tope en la ventana de WhatsApp. Si nadie responde, el cliente recibe un aviso |
+| D5: el chat web ofrece avisar por correo o WhatsApp, y la decisión abierta 3 | **ADR-057:** la conversación del chat web no se pierde al cerrar la ventana. El aviso por correo es su fase C5, que espera autorización |
+| D5: no se unen contactos entre canales hasta que exista CIA | **ADR-053:** un agente por canal. Los vínculos entre contactos y personas no necesitan CIA, y no hay inicio de sesión automático |
+| D5: los canales son WhatsApp y el chat web | Hay además **Instagram y Facebook** (ADR-060), cada uno con su agente y con la ventana de 24 horas de Meta |
+| D5: mensajes por iniciativa propia, fuera de 24 horas | **ADR-055** (propuesto): ventanas, plantillas y reglas de contacto |
+| D8 y la decisión abierta 8 (venta asistida y grupo de control) | **ADR-059** (aceptado el 2026-11-24): la venta de Pesín es una línea de la ficha del chat, pagada y que coincide, con un rescate de 7 días. La venta asistida se mide aparte y no da comisión. **No hay grupo de control** |
+| D7: roles OIDC `admin`, `supervisor` y `vendedor` | En R4, ámbitos por operador (ADR-050). En la mesa, los roles `seller`, `supervisor` y `admin` |
+| Oportunidades y su dueño | **ADR-062:** el CRM aplica las reglas de la Decisión 3 a las oportunidades |
+
+### Los cambios en Core: ninguno está hecho
+
+| Cambio | Estado | Qué impide |
+|---|---|---|
+| **C-1.** Puerto de ruteo antes del agente | No existe | Mandar una conversación directo a una persona sin pasar por Pesín |
+| **C-2.** Referencia de entrada persistida | No existe | El link o QR personal de un vendedor (regla 1) |
+| **C-3.** Motivo estructurado del traspaso | No existe; el traspaso lleva solo texto (ADR-062 lo confirma) | Asignar por motivo a un área (regla 4) |
+| **C-4.** Feed de eventos con cursor | Parcial: `/v1/events` lista hacia atrás, sin cursor hacia adelante | Que la mesa construya el libro de atribución sin perder eventos |
+
+**Consecuencia.** Sin C-1 y C-2 no funcionan las reglas 1 a 3 de la Decisión 3, que son el centro del reparto justo:
+- el link o QR del vendedor;
+- el cliente de cabecera de 90 días;
+- «quiero hablar con fulano».
+
+Hoy la mesa atiende consultas y traspasos, pero no reparte clientes entre vendedores.
+
+### Las secciones apagadas de la consola
+
+La consola muestra cuatro secciones desactivadas con la marca «ADR-048». Están diseñadas en el lienzo de la consola y
+no construidas, porque dependen de lo que falta.
+
+| Sección | Qué será | Qué le falta |
+|---|---|---|
+| **En vivo** (Mesa de ventas) | Colas por área, ofertas pendientes, SLA, quién está disponible | Asignación automática (Decisión 3, fase 2), C-3 para el área, y vendedores reales dados de alta |
+| **Reglas y equipo** (Mesa de ventas) | Vendedores, áreas, turnos, SLA y reglas versionadas | Decisiones abiertas 2 y 5: quiénes son, qué áreas y quién supervisa |
+| **Atribución** (Mesa de ventas) | El libro de atribución, primero en sombra | C-4 y la Decisión 4 en sombra (fase 2). ADR-059 para el chat web, y las decisiones abiertas 1, 6 y 7 |
+| **Contacto con clientes** | Mensajes por iniciativa propia: avisos, seguimientos y plantillas | ADR-055, propuesto y no implementado |
+
+### Decisiones abiertas, al día
+
+- **Cerradas por otros ADR:**
+  - la 3, por ADR-057: correo, con su fase C5 pendiente;
+  - la 8, por ADR-059.
+- **Siguen abiertas:**
+  - la 1, comisiones y fondo de equipo;
+  - la 2, vendedores, áreas y turnos;
+  - la 4, el repositorio de la mesa: la mesa está en un repositorio propio y en el mismo host. Falta confirmar que el
+    repositorio sea privado;
+  - la 5, quién supervisa el SLA;
+  - la 6 y la 7, los casos K-3 y K-9.
+- **La fase 3 no tiene estado registrado:** migrar el número productivo de WhatsApp desde el proveedor actual, con el
+  bloqueante D-1. El owner debe decir si el proveedor actual sigue en uso y cuándo se planifica el corte.
+
+### Brechas de seguridad abiertas
+
+Las brechas **S-1 a S-3** del ADR-049 («Brechas de seguridad previas al despliegue productivo») siguen abiertas, y el
+owner las pospuso:
+- `r4-api`, y también gateway, workers y scheduler, usan el rol superusuario de la base de producción;
+- las llaves del webservice de PrestaShop no se limitan por orden.
+
+La mesa y la consola ya están en producción sobre esa base, así que estas brechas son un pendiente vigente, no un
+requisito futuro. Cerrarlas necesita la decisión del owner (ADR-049, decisión abierta 5).
+
+### Próximo paso recomendado
+
+Si el reparto justo entre vendedores sigue siendo la prioridad, lo siguiente es **C-1 y C-2**: el ruteo antes del
+agente y la referencia de entrada para el link o QR de cada vendedor. Son cambios genéricos de Core, cada uno con su
+autorización. Antes, el owner tiene que dar de alta al primer vendedor real y responder las decisiones abiertas 2 y 5.
 
 ## Contexto
 
