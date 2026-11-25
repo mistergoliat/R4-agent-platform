@@ -1,9 +1,11 @@
 # ADR-055 — Contacto con clientes: reglas para los mensajes por iniciativa propia
 
 - **Identificador:** `R4-CONTACT-01`
-- **Estado:** **Propuesto. No implementado.** No autoriza código ni despliegues. Cada fase necesita autorización
-  explícita del owner.
-- **Fecha:** 2026-11-20
+- **Estado:** **Propuesto, revisión 1.**
+  - El owner autorizó implementar el seguimiento automático el 2026-11-25 («dale, partamos con el seguimiento
+    automático»). Esto cubre las fases C1 y C2, con el diseño de la sección «Revisión 1».
+  - Desplegar, y pasar de sombra a activo, necesitan cada uno autorización explícita del owner.
+- **Fecha:** 2026-11-20; revisión 1, 2026-11-25.
 - **Mandato:** owner, 2026-11-20: «vamos con el ADR-048, la mesa de ventas y el contacto con clientes». El diseño de
   la pantalla «Contacto con clientes» del lienzo de la consola (2026-11-18) pasa a decisión escrita.
 - **Autoridad superior:** Constitución («la salida del modelo no es confiable»; «las escrituras requieren ejecución
@@ -108,14 +110,140 @@ En la consola, sección «Operar el día»:
 | C3 | Pausas de la mesa de ventas (reclamo abierto, dueño de la cotización) y desvío a «Preparado para ti» (ADR-048) |
 | C4 | Encuestas y campañas, cuando existan sus fuentes |
 
-## Decisiones abiertas del owner
+## Decisiones del owner
 
-1. El horario: propuesta, lunes a sábado de 9:00 a 20:00.
-2. El tope: propuesta, 1 cada 3 días y 4 al mes.
-3. Las palabras de baja y el texto con que se confirma.
-4. De dónde sale el permiso de marketing por canal. Por ejemplo, la casilla de la tienda para correo, y un permiso
-   explícito en WhatsApp.
-5. Quién puede liberar un mensaje detenido: el supervisor, el owner o ambos.
+**Tomadas el 2026-11-25:**
+1. **Horario:** lunes a sábado, de 9:00 a 20:00, hora de Chile.
+2. **Tope:** como máximo 1 mensaje cada 3 días y 4 cada 30 días.
+3. **Baja:**
+   - Las palabras son «BAJA», «no me escriban» y «no quiero más mensajes».
+   - La confirmación dice: «Listo, no te escribiremos por iniciativa propia. Si nos escribes, te respondemos como
+     siempre.»
+4. **Seguimiento:** uno con texto normal dentro de las 24 horas y otro después con la única plantilla de Meta,
+   `seguimiento_cotizacion`.
+5. **Encendido:** primero en sombra y después activo.
+
+**Siguen abiertas:**
+1. De dónde sale el permiso de marketing en cada canal. Solo hace falta para `campana` (C4).
+2. Quién puede liberar un mensaje detenido: el supervisor, el owner o ambos. Hace falta cuando exista la pantalla.
+3. Si el mensaje de la cotización agrega la línea «Si no quieres que te escribamos, responde BAJA».
+   - Meta pide que el cliente haya aceptado recibir mensajes que la empresa inicia.
+   - La Ley 21.719 pide transparencia.
+   - El cliente inició la conversación y pidió la cotización, pero esta línea deja explícito su permiso y le muestra
+     cómo darse de baja.
+4. Quién crea la plantilla `seguimiento_cotizacion` en WhatsApp Manager. Meta la aprueba y le asigna la categoría.
+5. Los feriados: hoy no están modelados, y el horario los trata como días hábiles.
+
+## Revisión 1 — Diseño de C1 y C2: seguimiento de cotizaciones por WhatsApp
+
+### Secuencia
+
+Aplica a una cotización emitida por el agente en WhatsApp, cuando el cliente no volvió a escribir.
+
+| Paso | Cuándo | Cómo sale |
+|---|---|---|
+| **S1** | En el primer momento dentro del horario entre las 18 h y las 23 h 30 desde el último mensaje del cliente | Texto fijo, con la ventana de 24 h todavía abierta, como aviso de plataforma sobre la tarea abierta (clave `sales.followup-1:<quoteId>`) |
+| **S2** | 3 días después de S1, o 4 días después de la cotización si S1 no salió. Siempre en el primer momento dentro del horario | La plantilla `seguimiento_cotizacion` de Meta, la única que se necesita |
+
+**Reglas de la secuencia:**
+- S2 queda a 3 días de S1 para respetar el tope de 1 cada 3 días.
+- Si el horario no deja un momento antes de las 23 h 30, S1 no sale y queda registrado como `fuera_de_horario`. Nunca
+  se corre fuera de la ventana.
+- El cierre por inactividad (ADR-047) no cambia: el caso se cierra a las 24 h del último mensaje del cliente.
+
+**La secuencia termina** cuando pasa cualquiera de estas cosas:
+- el cliente escribe: su mensaje abre un caso nuevo, que recuerda la cotización (lectura de cotizaciones de 30 días);
+- el cliente pide la baja;
+- la cotización vence antes del paso;
+- una persona toma la conversación;
+- salió S2. No hay un tercer intento.
+
+### Texto fijo, del paquete
+
+El modelo no redacta estos mensajes en esta versión. Así no puede prometer nada y la sombra muestra exactamente qué
+habría salido. El PRD (§16) deja que el agente decida si contactar; eso queda para una versión siguiente, y la
+compuerta lo seguirá gobernando igual.
+
+- **S1:**
+  > Hola, ¿pudiste revisar la cotización {número}? Si te queda alguna duda sobre los productos o el despacho,
+  > escríbeme y lo vemos. La cotización vale hasta el {fecha}.
+- **S2:** la plantilla dice:
+  > Hola, te escribe Pesín de Pesas Chile. Tu cotización {{1}} sigue disponible hasta el {{2}}. ¿Te ayudo a terminar tu
+  > compra o a resolver alguna duda?
+
+  Tiene tres botones de respuesta rápida: «Sí, ayúdame», «Ya compré» y «No me escriban». Un botón llega como un
+  mensaje con su texto:
+  - «No me escriban» es una palabra de baja;
+  - «Sí, ayúdame» y «Ya compré» abren un caso normal.
+- **Confirmación de baja:** responde a un mensaje del cliente, así que no necesita plantilla.
+
+### Baja (regla 1)
+
+- Se decide en la entrada del mensaje, sin el modelo. El texto se normaliza (minúsculas, sin tildes, sin puntuación)
+  y tiene que ser **igual** a una de las palabras declaradas. «No me escriban más tarde» no es una baja.
+- Cuando el texto es una baja:
+  - el mensaje se registra;
+  - no despierta al agente;
+  - sale la confirmación fija.
+- La baja se guarda por contacto: canal más la clave estable de la conversación (`conversation_key`). Vale para
+  todos los casos de ese contacto.
+- Volver atrás una baja: solo si el cliente lo pide, con una acción registrada de una persona. En C1 es un
+  procedimiento del runbook; la pantalla llega después.
+
+### La compuerta (R4 Core)
+
+**Entrada:** canal, contacto, propósito, origen (`sales.quote-followup:<quoteId>:<paso>`), momento debido y
+vencimiento.
+
+**Reglas, en el orden de la Decisión 2, con lo que existe hoy:**
+1. **Baja.**
+2. **Reclamo abierto.** Llega como pausa opaca en C3. Hasta entonces no hay ninguna, así que la regla pasa.
+3. **Conversando con una persona:** la tarea está tomada por una persona.
+4. **Dueño de la cotización.** Hoy todas son del agente; los vendedores entran con C3.
+5. **Tope:** 1 cada 3 días y 4 cada 30 días, contando los mensajes por iniciativa propia que salieron.
+6. **Horario.**
+7. **Canal:** pasadas 24 h, WhatsApp solo acepta una plantilla.
+
+**Registro:** cada decisión guarda contacto, propósito, origen, regla, resultado (`enviar`, `detenido`, `en_espera`
+o `descartado`), modo (`sombra` o `activo`) y el mensaje que salió, si salió.
+
+### Dónde corre
+
+**El barrido:**
+- Corre en el channel gateway cada 60 s, como el cierre por inactividad.
+- Lo controla `R4_PROD_CONTACT_MODE=off|shadow|active`. Por defecto está en `off`.
+- En `shadow` decide y registra, sin encolar nada.
+
+**Qué pone cada parte:**
+- **Sales** aporta la fuente: las cotizaciones emitidas, unidas a su conversación, y el texto.
+- **Core** aporta la compuerta, la baja, el registro y la plantilla.
+
+**Plantillas (Core):**
+- La salida gana un origen `contact` con plantilla (nombre, idioma, parámetros). Va sobre la última tarea del
+  contacto, aunque esté cerrada.
+- La entrega le aplica el kill switch, la lista de bloqueo, el rollout y la vigencia de 10 minutos.
+- No le exige ventana abierta, tarea viva ni enlace abierto, porque la plantilla es justamente lo que permite
+  escribir fuera de la ventana.
+- Si la ventana está cerrada y el mensaje no trae plantilla, se cancela.
+
+### Fases dentro de C1 y C2
+
+| Paso | Qué | Gate |
+|---|---|---|
+| C1 | Compuerta, baja y registro; barrido con S1 y S2 en sombra; informe de la sombra por script de solo lectura | Despliegue autorizado |
+| C2a | S1 activo | Owner revisa la sombra y autoriza |
+| C2b | S2 activo | Plantilla aprobada por Meta, y autorización del owner |
+
+La pantalla «Contacto con clientes» (Decisión 5) sigue la regla de la consola: primero se aprueba en el lienzo.
+
+### Evaluación
+
+Se entrega junto con el código:
+- pruebas de cada regla de la compuerta y de su orden;
+- pruebas de la elección de S1 y S2: horario, vigencia, cliente que volvió a escribir, persona a cargo;
+- pruebas de la normalización de las bajas, incluidos los casos que no son baja;
+- prueba del cuerpo de la plantilla en el adaptador de WhatsApp;
+- prueba de que en `shadow` no se encola nada.
 
 ## Fuera de alcance
 
