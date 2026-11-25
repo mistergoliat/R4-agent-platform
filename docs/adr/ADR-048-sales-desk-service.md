@@ -78,16 +78,28 @@ un ADR posterior, rige el posterior, como indica la tabla de cambios.
   mismo responsable. Esto se resuelve en la mesa, sin C-1.
 - C-1 y C-2 quedan solo para cuando el owner quiera links personales.
 
+### La consola y la app Ventas
+
+- **En la consola, la sección se llama «Equipo de ventas»** (owner, 2026-11-25). Antes se llamaba «Mesa de ventas».
+  Desde ahí el owner o un supervisor administran al equipo que trabaja en la app Ventas:
+  - configuran pools, turnos, el tope por vendedor, los plazos y el tope de Pesín;
+  - vigilan los pozos y toman o reasignan lo que nadie toma;
+  - ven el embudo de oportunidades;
+  - miden las metas.
+- **La app Ventas** es donde atiende cada vendedor: toma de su pool, responde, suelta, ve sus oportunidades y «Mis
+  ventas». Los vendedores no entran a la consola.
+- **«Mesa de ventas»** sigue siendo el nombre del servicio de este ADR.
+
 ### Las secciones apagadas de la consola
 
-La consola muestra cuatro secciones desactivadas con la marca «ADR-048». Están diseñadas en el lienzo de la consola y
-no construidas, porque dependen de lo que falta.
+La consola muestra cuatro secciones desactivadas con la marca «ADR-048». Están diseñadas en el lienzo de la consola,
+ya alineadas con el plan comercial, pero no construidas, porque dependen de lo que falta.
 
 | Sección | Qué será | Qué le falta |
 |---|---|---|
-| **En vivo** (Mesa de ventas) | El pozo de cada pool, lo que nadie ha tomado y su tiempo, y quién está disponible | C-3 para mandar al pool, y vendedores reales dados de alta |
-| **Reglas y equipo** (Mesa de ventas) | Vendedores, pools, turnos, tope por vendedor y plazo | Decisiones abiertas 2 y 5: quiénes son, en qué pools y quién supervisa |
-| **Atribución** (Mesa de ventas) | Quién tomó, quién cotizó y qué se pagó, por vendedor, para las metas del plan. Sin comisiones por ahora | El onboarding de los vendedores en la app Ventas, C-4 y ADR-059 para el chat web |
+| **En vivo** (Equipo de ventas) | El pozo de cada pool, lo que nadie ha tomado y su tiempo, y quién está disponible | C-3 para mandar al pool, y vendedores reales dados de alta |
+| **Reglas y equipo** (Equipo de ventas) | Vendedores, pools, turnos, tope por vendedor y plazo | Decisiones abiertas 2 y 5: quiénes son, en qué pools y quién supervisa |
+| **Atribución**, que pasa a llamarse **«Metas y ventas»** (Equipo de ventas) | El avance de cada vendedor y del equipo contra las metas del plan: quién tomó, quién cotizó y qué se pagó. Sin comisiones por ahora | El onboarding de los vendedores en la app Ventas, C-4 y ADR-059 para el chat web |
 | **Contacto con clientes** | Mensajes por iniciativa propia: avisos, seguimientos y plantillas | ADR-055, propuesto y no implementado |
 
 ### Decisiones abiertas, al día
