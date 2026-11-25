@@ -186,6 +186,59 @@ capacidad cuando está desplegada, y el owner decide en qué agente y con qué l
   La salud de los conectores entra a «Salud de R4» y sus fallas a «Incidentes» (ADR-051).
 - **Auditoría:** cada firma, cambio de secreto, encendido y apagado queda con el operador firmado.
 
+## Primer conector: pedidos de PrestaShop
+
+Revisión de la tienda real el 2026-11-25, con el usuario de solo lectura de la base y solo estructura y conteos, sin
+datos de clientes.
+
+**Lo que hay:**
+- **Webservice activo.** El webservice de PrestaShop está habilitado y ya tiene cuentas de acceso. Es la puerta
+  correcta: R4 no lee bases de otros sistemas (instrucciones del repositorio) y el webservice permite una clave
+  propia, limitada a `GET` y a los recursos que se elijan.
+- **El estado del pedido y su historial** (estado actual, fecha de cada cambio y transportista) están completos en
+  todos los pedidos.
+- **Estados del flujo real:**
+  - estándar: «Pago aceptado», «Enviado», «Entregado», «Cancelado»;
+  - de bodega: «Embalando», «Embalando BE», «Etiquetando»;
+  - de la flota propia: «Consolidando Ruta», «En Reparto»;
+  - de transportista: «Entregado a BlueExpress»;
+  - de retiro: «Listo para retiro», «Transacción Lista para retiro en tienda»;
+  - de pago: «Transacción Rechazada», «Transacción Reembolsada», «Transacción Terminada».
+
+  Las marcas de PrestaShop (pagado, enviado, entregado) no son confiables para el cliente; por ejemplo, «Entregado a
+  BlueExpress» no está marcado como enviado. Por eso el conector usa **una tabla explícita de estado → frase para el
+  cliente**, que aprueba el owner.
+- **Transportistas:** flota propia (Pesas Chile), Blue Express, Starken, retiro en tienda y retiro en el centro de
+  distribución de Maipú.
+- **Seguimiento:** PrestaShop **no guarda número de seguimiento**: el campo está vacío en todos los pedidos. Un módulo
+  de logística (`ps_logistics`, desde 2026-10-22) envía los despachos a un servicio externo. El seguimiento del
+  courier, si existe, vive ahí o en el courier.
+- **Identidad:** casi todos los pedidos tienen un celular chileno en la dirección de despacho, y la referencia del
+  pedido es de 9 letras. No hay compras como invitado: todo pedido tiene cuenta y correo.
+
+**Decisión propuesta:**
+- **Va en código, no como manifiesto declarativo:** es el adapter `@r4-adapters/prestashop-orders`, fuera de Core,
+  porque lleva la regla del sujeto y la tabla de estados. Sirve de referencia para el conector declarativo de la
+  Decisión 3.
+- **Clave de webservice propia** creada por el owner: solo `GET` sobre `orders`, `order_histories`, `order_states`,
+  `order_carriers`, `carriers` y `addresses`. Va en la bóveda; si se rota, el conector sigue funcionando.
+- **Capacidad `orders.status`, solo en WhatsApp para empezar.** El cliente da la referencia del pedido. La plataforma
+  lo busca, compara el celular de la dirección de despacho (normalizado) con el número de WhatsApp de la conversación,
+  y **solo si coinciden** responde con la proyección:
+  - referencia y fecha del pedido;
+  - estado traducido por la tabla y fecha de ese estado;
+  - transportista o retiro.
+
+  Nunca muestra dirección, nombre, montos ni productos. Si no coincide, responde lo mismo que si el pedido no
+  existiera, sin decir por qué, para no confirmar que un pedido es de otra persona.
+- **«Mis pedidos» sin referencia** (buscar por teléfono) no se puede con el webservice, que filtra por valor exacto y
+  los teléfonos están escritos de muchas formas. Queda para una segunda etapa, con un endpoint de solo lectura firmado
+  en el módulo propio de la tienda (`pc_r4chat`).
+- **Web, Instagram y Facebook:** sin un teléfono verificado no hay sujeto. Ahí el agente explica cómo ver el pedido en
+  «Mi cuenta» de la tienda o deriva.
+- **El agente no promete fechas de entrega** con este conector: dice el estado y su fecha. Una fecha estimada necesita
+  una regla del owner por transportista y región.
+
 ## Core
 
 Lo genérico vive en Core y no gana conceptos de dominio:
@@ -212,10 +265,13 @@ Email (Gmail) es un **canal**, no un conector: va en su propio ADR, como el ADR-
 
 ## Decisiones abiertas del owner
 
-1. **Fuente del estado del pedido:** el webservice de PrestaShop, una API propia o la de cada courier (Starken,
-   Chilexpress, Blue Express u otro). Qué campos puede ver el cliente.
-2. **Identidad para datos personales:** si basta el teléfono de WhatsApp que coincide con el del pedido, o se exige la
-   verificación del ADR-053.
+1. **Pedidos de PrestaShop** (sección «Primer conector»):
+   - si se aprueba el webservice como fuente, con una clave propia de solo lectura;
+   - la tabla estado → frase para el cliente;
+   - dónde vive el seguimiento del courier: el servicio externo del módulo `ps_logistics`, o la API de Blue Express y
+     Starken.
+2. **Identidad para datos personales:** si basta que el celular del pedido coincida con el número de WhatsApp (la
+   propuesta), o se exige la verificación del ADR-053.
 3. **Hosts y servidores MCP permitidos** al inicio.
 4. **Presupuestos por conector**, y si el gasto en llamadas de terceros se suma al tope mensual de modelo o va aparte.
 5. **Destinos de los avisos salientes** (Slack, correo, planilla) y si alguno puede llevar contenido de conversaciones.
