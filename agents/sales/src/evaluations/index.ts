@@ -11,3 +11,4 @@ export * from './fixtures/trajectories.js';
 export * from './run.js';
 export * from './catalog.js';
 export * from './opportunity.js';
+export * from './adversarial.js';

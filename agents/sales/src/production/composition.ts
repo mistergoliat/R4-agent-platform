@@ -1,5 +1,5 @@
 import { QUOTE_EMAIL_CAPABILITY_ID, quoteEmailCapability } from '../capabilities/quote-email.js';
-import { DESK_DOMAIN, DESK_OPPORTUNITY_CAPABILITY_ID, deskOpportunityCapability, type DeskIngestConfig } from '../capabilities/desk-opportunity.js';
+import { DESK_DOMAIN, DESK_OPPORTUNITY_CAPABILITY_ID, deskOpportunityCapability, deskOpportunityV2Capability, type DeskIngestConfig, type TaskObservationReader } from '../capabilities/desk-opportunity.js';
 import type pg from 'pg';
 import type { Logger } from 'pino';
 import { DomainError, type CatalogPort, type CheckoutConsentSource, type CheckoutService, type QuoteV2Service, type ShippingService } from '@r4-adapters/domains';
@@ -40,6 +40,7 @@ import { SALES_NON_PAUSING_CONSULTATION_PROFILES, SALES_QUOTE_LANE_V24_PROFILE_L
 import { SALES_QUOTE_LANE_V25_PROFILE_LABEL } from './profile-v25.js';
 import { SALES_QUOTE_LANE_V26_PROFILE_LABEL } from './profile-v26.js';
 import { SALES_QUOTE_LANE_V27_PROFILE_LABEL } from './profile-v27.js';
+import { SALES_DESK_SIGNALS_PROFILES, SALES_QUOTE_LANE_V28_PROFILE_LABEL } from './profile-v28.js';
 import { salesConsultationExpiry } from './service-hours.js';
 import { PostgresSalesStore } from '../workspace/store.js';
 import { SALES_DOMAINS } from './profile.js';
@@ -153,6 +154,8 @@ export interface SalesProductionWorkerOptions {
   readonly checkoutConsent?: CheckoutConsentSource;
   /** (ADR-062 O1) The sales desk ingest (loadDeskIngestConfig: R4_DESK_INGEST_URL, R4_DESK_INGEST_KEY); required when the profile records opportunities (sales-web@21). */
   readonly deskIngest?: DeskIngestConfig & { readonly fetch?: (url: string, init: RequestInit) => Promise<Response> };
+  /** (ADR-062) The task observations (PostgresObservationStore) desk.opportunity.record@2 computes the buying signals from; required by SALES_DESK_SIGNALS_PROFILES. */
+  readonly taskObservations?: TaskObservationReader;
   /** (R4-J4-R4) The R4_CUSTOMER_* configuration of the worker; required when the selected profile composes Customer and identity verification (v8). */
   readonly customer?: {
     readonly env: Readonly<Record<string, string | undefined>>;
@@ -323,7 +326,12 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
   const deskReal = capabilityAvailability(profile, DESK_OPPORTUNITY_CAPABILITY_ID).available;
   if (deskReal) {
     if (!options.deskIngest) throw new Error(`refusing production composition: ${profileLabel(profile)} records opportunities in the sales desk but no desk ingest was configured (R4_DESK_INGEST_URL, R4_DESK_INGEST_KEY)`);
-    capabilities.registerWrite(deskOpportunityCapability({ desk: options.deskIngest, store: sales, quotes: quoteReal ? options.quotes! : null, bindings: options.store, profileChannel: profile.channel.id, channels: DESK_CHANNELS, ...(options.deskIngest.fetch ? { fetch: options.deskIngest.fetch } : {}) }));
+    const deskDeps = { desk: options.deskIngest, store: sales, quotes: quoteReal ? options.quotes! : null, bindings: options.store, profileChannel: profile.channel.id, channels: DESK_CHANNELS, ...(options.deskIngest.fetch ? { fetch: options.deskIngest.fetch } : {}) };
+    if (SALES_DESK_SIGNALS_PROFILES.has(profileLabel(profile))) {
+      // (ADR-062) @2: the buying signals come from the task's recorded observations, never from the model.
+      if (!options.taskObservations) throw new Error(`refusing production composition: ${profileLabel(profile)} records opportunity signals but no task observation reader was provided`);
+      capabilities.registerWrite(deskOpportunityV2Capability({ ...deskDeps, observations: options.taskObservations }));
+    } else capabilities.registerWrite(deskOpportunityCapability(deskDeps));
   }
   // (R4-J4-R4) v8: the Customer reads and the identity verification; every other profile leaves Customer UNAVAILABLE.
   const customerIdentity = isCustomerIdentityProfile(profile);
@@ -449,7 +457,7 @@ export const SALES_RUN_FAILURE_FALLBACK_TEXT = salesRunFailureNotice(SALES_IN_HO
 export const SALES_HUMAN_REQUEST_NOTICE_TEXT = salesHumanRequestNotice(SALES_IN_HOURS_REFERENCE);
 
 /** The profiles whose conversations get that notice: only the F1 quote lane candidate (@13 and the others unchanged). */
-export const SALES_HUMAN_REQUEST_NOTICE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_QUOTE_LANE_V18_PROFILE_LABEL, 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23', 'sales-production@24', 'sales-production@25', 'sales-production@26', 'sales-production@27']);
+export const SALES_HUMAN_REQUEST_NOTICE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V17_PROFILE_LABEL, SALES_QUOTE_LANE_V18_PROFILE_LABEL, 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23', 'sales-production@24', 'sales-production@25', 'sales-production@26', 'sales-production@27', 'sales-production@28']);
 
 /**
  * (ADR-046) The web chat's own notices. No person attends it yet: they say so, show the store contact ([[contacto]],
@@ -600,7 +608,7 @@ export function salesGatewayLane(env: Readonly<Record<string, string | undefined
  * @25 (owner feedback on the live @24 relay test: follow-up consultations, official contacts) succeeds @24, its rollback.
  * @26 (owner decisions 2026-11-23: asymmetric safety rule, options on every consultation, general help) succeeds @25, its rollback.
  */
-export const SALES_COHORT_LANE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V27_PROFILE_LABEL, SALES_QUOTE_LANE_V26_PROFILE_LABEL, SALES_QUOTE_LANE_V25_PROFILE_LABEL, SALES_QUOTE_LANE_V24_PROFILE_LABEL, SALES_QUOTE_LANE_V23_PROFILE_LABEL, SALES_QUOTE_LANE_V22_PROFILE_LABEL, SALES_QUOTE_LANE_V21_PROFILE_LABEL]);
+export const SALES_COHORT_LANE_PROFILES: readonly string[] = Object.freeze([SALES_QUOTE_LANE_V28_PROFILE_LABEL, SALES_QUOTE_LANE_V27_PROFILE_LABEL, SALES_QUOTE_LANE_V26_PROFILE_LABEL, SALES_QUOTE_LANE_V25_PROFILE_LABEL, SALES_QUOTE_LANE_V24_PROFILE_LABEL, SALES_QUOTE_LANE_V23_PROFILE_LABEL, SALES_QUOTE_LANE_V22_PROFILE_LABEL, SALES_QUOTE_LANE_V21_PROFILE_LABEL]);
 
 /**
  * (ADR-045 amendment 1) With R4_PROD_ROLLOUT_PERCENT > 0 the WhatsApp gateway serves the cohort only through an
@@ -671,7 +679,7 @@ export function loadQuoteRecovery(env: Readonly<Record<string, string | undefine
 }
 
 /** (M3, owner mandate 2026-11-18) The only profiles on which R4_SALES_QUOTE_RECOVERY takes effect. */
-export const SALES_QUOTE_RECOVERY_PROFILES: ReadonlySet<string> = new Set([SALES_QUOTE_LANE_V22_PROFILE_LABEL, SALES_QUOTE_LANE_V23_PROFILE_LABEL, SALES_QUOTE_LANE_V24_PROFILE_LABEL, SALES_QUOTE_LANE_V25_PROFILE_LABEL, SALES_QUOTE_LANE_V26_PROFILE_LABEL, SALES_QUOTE_LANE_V27_PROFILE_LABEL]);
+export const SALES_QUOTE_RECOVERY_PROFILES: ReadonlySet<string> = new Set([SALES_QUOTE_LANE_V22_PROFILE_LABEL, SALES_QUOTE_LANE_V23_PROFILE_LABEL, SALES_QUOTE_LANE_V24_PROFILE_LABEL, SALES_QUOTE_LANE_V25_PROFILE_LABEL, SALES_QUOTE_LANE_V26_PROFILE_LABEL, SALES_QUOTE_LANE_V27_PROFILE_LABEL, SALES_QUOTE_LANE_V28_PROFILE_LABEL]);
 
 /**
  * (M3) Whether the quote-recovery source is composed: enabled, an allowed profile, and a REAL Quote V2 binding. On any

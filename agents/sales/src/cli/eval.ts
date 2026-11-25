@@ -8,7 +8,8 @@ import { OpenAICompatibleModelProvider, describeModelConfig, loadOpenAICompatibl
 import { adminDatabaseUrl } from '../harness/database.js';
 import { HarnessTrajectoryProducer, SCRIPTED_MODEL_PROFILE, modelProfileFromDescription, referenceScenarioSet } from '../evaluations/corpus.js';
 import { evaluateFixtureCorpus, evaluateSalesSubject } from '../evaluations/run.js';
-import { OPPORTUNITY_CHANNELS, OPPORTUNITY_LABELED_SET, opportunityCasesOf, scoreOpportunityRecords, type OpportunityChannel, type OpportunityLabel } from '../evaluations/opportunity.js';
+import { scoreAdversarialReplies, type RecordedTurn } from '../evaluations/adversarial.js';
+import { OPPORTUNITY_CHANNELS, OPPORTUNITY_LABELED_SET, opportunityCasesOf, scoreOpportunityRecords, type OpportunityChannel, type OpportunityPrediction } from '../evaluations/opportunity.js';
 import { configuredModelProvider } from '../model.js';
 import { flag, loadLocalEnv, option, print } from './common.js';
 
@@ -35,6 +36,8 @@ import { flag, loadLocalEnv, option, print } from './common.js';
  *                      and print per-field accuracy. No model, no network.
  *   --channel NAME     with --opportunity: only the cases of that channel
  *                      (one of OPPORTUNITY_CHANNELS).
+ *   --adversarial FILE score recorded replies against the real-traffic adversarial set
+ *                      (evaluations/adversarial.ts); exit 1 unless every case passes.
  *
  * Artifacts: artifacts/evaluations/<timestamp>/ (git-ignored), one directory
  * per evaluation run plus index.json. Never secrets, never reasoning text.
@@ -45,10 +48,18 @@ async function main(): Promise<void> {
     const channel = option('channel');
     if (channel !== undefined && !(OPPORTUNITY_CHANNELS as readonly string[]).includes(channel)) throw new Error(`--channel must be one of ${OPPORTUNITY_CHANNELS.join(', ')}`);
     const cases = channel ? opportunityCasesOf(channel as OpportunityChannel) : OPPORTUNITY_LABELED_SET;
-    const result = scoreOpportunityRecords(JSON.parse(readFileSync(predictions, 'utf8')) as Record<string, OpportunityLabel | null>, cases);
+    const result = scoreOpportunityRecords(JSON.parse(readFileSync(predictions, 'utf8')) as Record<string, OpportunityPrediction | null>, cases);
     print(`opportunity classification${channel ? ` (${channel})` : ''}, ${result.cases} cases`);
-    for (const [field, s] of [['record', result.record], ...Object.entries(result.fields)] as const) print(`  ${field}: ${s.correct}/${s.total} (${(s.accuracy * 100).toFixed(1)} %)`);
+    for (const [field, s] of [['record', result.record], ...Object.entries(result.fields), ['noIntentReason', result.noIntentReason], ['signals', result.signals]] as const) print(`  ${field}: ${s.correct}/${s.total} (${(s.accuracy * 100).toFixed(1)} %)`);
     for (const m of result.misses) print(`  miss ${m.caseId} ${m.field}: expected ${m.expected}, recorded ${m.predicted}`);
+    return;
+  }
+  const replies = option('adversarial');
+  if (replies) {
+    const result = scoreAdversarialReplies(JSON.parse(readFileSync(replies, 'utf8')) as Record<string, RecordedTurn[]>);
+    print(`adversarial real-traffic set: ${result.passed}/${result.cases} cases pass`);
+    for (const f of result.failures) print(`  fail ${f.caseId} turn ${f.turn}: ${f.check}`);
+    if (result.passed < result.cases) process.exit(1);
     return;
   }
   loadLocalEnv();

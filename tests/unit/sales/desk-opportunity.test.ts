@@ -24,7 +24,7 @@ function setup(options: { status?: number; body?: unknown; throws?: Error; quote
     desk: { url: URL_, key: KEY },
     store: { conversationQuotes: (taskIds) => Promise.resolve(taskIds[0] === TASK ? [{ quoteId: 'q-1', quoteNumber: 'PC-000210' }] : []) },
     quotes: options.quotes === false ? null : ({ getQuote: () => Promise.resolve({ totals: { net: 0, tax: 0, gross: options.gross ?? 459_900, exemptNet: 0 } }) } as never),
-    bindings: { bindingByTask: () => Promise.resolve(options.channel === null ? null : { channel: options.channel ?? 'web' }) },
+    bindings: { bindingByTask: () => Promise.resolve(options.channel === null ? null : { channel: options.channel ?? 'web', recipientRef: 'web-visitor-1' }) },
     profileChannel: 'web',
     channels: ['whatsapp', 'web', 'instagram', 'facebook'],
     now: () => NOW,
