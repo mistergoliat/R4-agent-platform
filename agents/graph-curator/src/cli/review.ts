@@ -11,6 +11,7 @@ import { productSheetView } from '../agent/capabilities.js';
 import { REVIEW_TOKENS_PER_TASK } from '../agent/definition.js';
 import { reviewedRelations, runReviewBatch, tokensSpent } from '../agent/review.js';
 import { PRODUCT_GRAPH_KIND } from '../graph.js';
+import { presentOpenProposals } from '../present.js';
 
 /**
  * `npm run graph:review -- [--wave 4] [--per-task 10] [--wait-min 60]` (ADR-058 G4b): one run of the graph-curator
@@ -45,7 +46,9 @@ try {
     maxTokensPerTask: REVIEW_TOKENS_PER_TASK, wave: bounded(values.wave, 4, 10), perTask: bounded(values['per-task'], 10, 10),
     waitMs: bounded(values['wait-min'], 60, 180) * 60_000,
   });
-  process.stdout.write(`${JSON.stringify(result)}\n`);
+  // ADR-058 G7a: runs refresh evidence, so the open proposals get their question again (no model).
+  const presented = await presentOpenProposals(new PostgresArtifacts(pool), await askedToPesin(pool)).catch((e: unknown) => ({ error: e instanceof Error ? e.message.slice(0, 200) : 'unexpected_failure' }));
+  process.stdout.write(`${JSON.stringify({ ...result, presented })}\n`);
 } catch (error) {
   process.stderr.write(`graph:review failed: ${error instanceof Error ? error.message.slice(0, 500) : 'unexpected_failure'}\n`);
   process.exitCode = 1;
