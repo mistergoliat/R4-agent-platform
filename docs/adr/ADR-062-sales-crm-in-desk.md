@@ -210,8 +210,11 @@ política de despacho.
   - una cotización pagada por Checkout, cuando exista;
   - en la web, la evidencia de ADR-059: líneas agregadas desde el chat, pagadas y que calzan;
   - un pedido de PrestaShop del mismo contacto (por sus claves, Decisión 10), con los productos cotizados, dentro
-    de la vigencia. Esto se lee con
-    el conector de pedidos de ADR-061: clave propia y de solo lectura.
+    de la vigencia.
+  - **Cómo se lee:** con una lectura interna de la plataforma sobre el mismo adapter de pedidos de ADR-061 (clave
+    propia y de solo lectura). Trae los pedidos pagados desde una fecha: referencia, fecha de pago, total y cliente.
+    Tiene su propia proyección y sus permisos. **Nunca se expone al modelo:** no es una capacidad de ningún agente.
+    Es distinta de la consulta de estado por referencia que ADR-061 ofrece a los clientes.
 
   La comparación es determinista. Si es ambigua, el dueño la confirma.
 - **`ganada` manual exige la referencia del pedido.** Sirve para ventas en tienda. La referencia se verifica cuando
