@@ -35,6 +35,10 @@ const DONE_MARK = '[r4-done]';
 const norm = (s: string) => s.normalize('NFD').replace(/\p{Diacritic}/gu, '').trim().toLowerCase().replace(/[.!¡]+$/u, '');
 /** An exact «sí» confirms; anything else is a new explanation. */
 export const isConfirmation = (text: string) => ['si', 'si, confirmo', 'confirmo', 'yes'].includes(norm(text));
+/** A comment that is only a yes or a no. */
+export const bareAnswer = (text: string): 'si' | 'no' | null => (norm(text) === 'si' ? 'si' : norm(text) === 'no' ? 'no' : null);
+/** R4's question tasks carry a proposal id in their tag (lowercased by the connector). */
+const PROPOSAL_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 
 const money = (n: number | null) => (n === null ? 'sin precio' : `$${Math.round(n).toLocaleString('es-CL')}`);
 
@@ -101,7 +105,11 @@ export async function syncClickUp(deps: ClickUpSyncDeps, cfg: ClickUpSyncConfig)
   const signed = await readSignedGraph(deps.artifacts);
   if (!signed) throw new Error('no signed product graph');
   const g: ProductGraph = signed.graph;
-  const options = await deps.board.readAnswerOptions();
+  // The Respuesta field is optional: without it, the PM answers with a comment (a bare «sí» or «no», or their words).
+  const options = await deps.board.readAnswerOptions().catch((e: unknown) => {
+    if ((e as { code?: string } | null)?.code === 'not_configured') return [];
+    throw e;
+  });
   const answerOf = (raw: string | null): 'si' | 'no' | null => {
     if (raw === null) return null;
     const o = options.find((x) => x.id === raw || String(x.orderindex) === raw);
@@ -109,8 +117,20 @@ export async function syncClickUp(deps: ClickUpSyncDeps, cfg: ClickUpSyncConfig)
     return n === 'si' ? 'si' : n === 'no' ? 'no' : null;
   };
   let open = new Map((await deps.artifacts.proposals(PRODUCT_GRAPH_KIND, 'proposed')).map((p) => [p.proposalId, p]));
-  const tasks = await deps.board.readList({ includeClosed: true });
+  // Only R4's question tasks: their tag carries a proposal id. Any other task in the list (a test, someone's own) is
+  // never touched.
+  const ours = (x: { questionId: string }) => PROPOSAL_ID.test(x.questionId);
+  const tasks = (await deps.board.readList({ includeClosed: true })).filter(ours);
   const step = async (what: string, fn: () => Promise<void>) => { try { await fn(); } catch (e) { report.errors.push(`${what}: ${e instanceof Error ? e.message.slice(0, 160) : 'unexpected'}`); } };
+  /** A yes/no answer of the PM, by what «Sí» means for that question: decides it in their name and closes the task. */
+  const answerQuestion = async (taskId: string, proposal: ArtifactProposal, answer: 'si' | 'no', how: string) => {
+    const shown = presentProposal(g, proposal, deps.asked);
+    if (!shown.yes) throw new Error('this question has no yes/no meaning');
+    const approve = (answer === 'si') === (shown.yes === 'approve');
+    await deps.artifacts.decide({ kind: PRODUCT_GRAPH_KIND, proposalIds: [proposal.proposalId], decision: approve ? 'approved' : 'rejected', decidedBy: cfg.pmRef, note: `Respondido en ClickUp (${how}): ${answer === 'si' ? 'Sí' : 'No'}`, correlationId: `clickup-${taskId}` });
+    await deps.board.closeTask(taskId, `${R4_COMMENT_PREFIX} listo, ${(answer === 'si' ? shown.ifYes : shown.ifNo) ?? ''} Entra en la próxima versión del grafo. ${DONE_MARK}`);
+    report.answered++;
+  };
 
   for (const t of tasks.filter((x) => !x.closed)) {
     const proposal = open.get(t.questionId);
@@ -121,14 +141,7 @@ export async function syncClickUp(deps: ClickUpSyncDeps, cfg: ClickUpSyncConfig)
     // 1. The Respuesta field, set by the PM: a decision without the model.
     const answer = answerOf(t.answer);
     if (answer) {
-      await step(`answer ${t.taskId}`, async () => {
-        const shown = presentProposal(g, proposal, deps.asked);
-        if (!shown.yes) throw new Error('this question has no yes/no meaning');
-        const approve = (answer === 'si') === (shown.yes === 'approve');
-        await deps.artifacts.decide({ kind: PRODUCT_GRAPH_KIND, proposalIds: [proposal.proposalId], decision: approve ? 'approved' : 'rejected', decidedBy: cfg.pmRef, note: `Respondido en ClickUp: ${answer === 'si' ? 'Sí' : 'No'}`, correlationId: `clickup-${t.taskId}` });
-        await deps.board.closeTask(t.taskId, `${R4_COMMENT_PREFIX} listo, ${(answer === 'si' ? shown.ifYes : shown.ifNo) ?? ''} Entra en la próxima versión del grafo. ${DONE_MARK}`);
-        report.answered++;
-      });
+      await step(`answer ${t.taskId}`, () => answerQuestion(t.taskId, proposal, answer, 'campo Respuesta'));
       continue;
     }
     // 2. The conversation: the latest PM comment after R4's latest comment.
@@ -139,6 +152,17 @@ export async function syncClickUp(deps: ClickUpSyncDeps, cfg: ClickUpSyncConfig)
       const latest = pending.at(-1);
       if (!latest) return;
       const planId = lastR4 ? PLAN_MARK.exec(lastR4.text)?.[1] : undefined;
+      const bare = bareAnswer(latest.text);
+      // A bare «sí» or «no» with no plan pending answers the question itself (no model), like the field.
+      if (bare && !planId) {
+        await answerQuestion(t.taskId, proposal, bare, 'comentario');
+        return;
+      }
+      // «no» to a plan: nothing is applied; the PM explains again or answers the question.
+      if (bare === 'no' && planId) {
+        await deps.board.commentTask(t.taskId, `${R4_COMMENT_PREFIX} entendido, no aplico ese plan. Explícame qué está mal, o responde «sí» o «no» a la pregunta.`);
+        return;
+      }
       if (isConfirmation(latest.text) && planId) {
         const done = await confirmPlan(deps, { taskId: planId, by: cfg.pmRef, scopes: cfg.pmScopes, correlationId: `clickup-${t.taskId}` });
         const left = (await deps.artifacts.proposals(PRODUCT_GRAPH_KIND, 'proposed')).some((p) => p.proposalId === proposal.proposalId);
@@ -158,7 +182,7 @@ export async function syncClickUp(deps: ClickUpSyncDeps, cfg: ClickUpSyncConfig)
 
   // 4. Fill the list with the most important open questions that never had a task (urgent and high come in G6-2).
   open = new Map((await deps.artifacts.proposals(PRODUCT_GRAPH_KIND, 'proposed')).map((p) => [p.proposalId, p]));
-  const after = await deps.board.readList({ includeClosed: true });
+  const after = (await deps.board.readList({ includeClosed: true })).filter(ours);
   const had = new Set(after.map((x) => x.questionId));
   report.open = after.filter((x) => !x.closed).length;
   const candidates = [...open.values()]

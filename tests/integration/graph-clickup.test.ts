@@ -166,4 +166,21 @@ describe('the PM curates the curator in ClickUp (ADR-058 Decision 13)', () => {
     expect([(await state(removeSub)).state, (await state(removeSub)).decidedBy, t.closed]).toEqual(['rejected', PM_REF, true]);
     expect(t.note).toContain('Pesín sigue ofreciendo «Dual Prensa Hack»');
   }, 60_000);
+
+  it('a list without the Respuesta field: a bare «No» comment answers; a task that is not R4’s is never touched', async () => {
+    await artifacts.propose({ kind: PRODUCT_GRAPH_KIND, baseVersion: 1, source: 'graph-curator-agent:b2', correlationId: 'c', proposals: [
+      { fingerprint: 'r|P5|P4', summary: 'quitar reemplazo', evidence: { rule: 'SUBSTITUTE_KIND_MISMATCH', reason: 'otra máquina' }, change: { op: 'remove_relation', area: 'sub', a: 'P5', b: 'P4' } },
+    ] });
+    const id = (await artifacts.proposals(PRODUCT_GRAPH_KIND, 'proposed')).find((p) => (p.change as { a: string }).a === 'P5')!.proposalId;
+    const plain = new FakeBoard();
+    plain.readAnswerOptions = () => Promise.reject(Object.assign(new Error('R4_CLICKUP_ANSWER_FIELD_ID is not set'), { code: 'not_configured' }));
+    plain.tasks.push({ taskId: 'foreign', questionId: 'prueba-curador', closed: false, answer: null, priority: 'normal', comments: [] });
+    const run = () => syncClickUp({ ...deps(), board: plain }, { ...cfg, maxOpen: 1 });
+    expect(await run()).toMatchObject({ created: 1, errors: [] });
+    const t = plain.tasks.find((x) => x.questionId === id)!;
+    plain.comment(t.taskId, PM, 'No');
+    expect(await run()).toMatchObject({ answered: 1, explained: 0, errors: [] });
+    expect([(await state(id)).state, (await state(id)).decidedBy, t.closed]).toEqual(['approved', PM_REF, true]); // «¿le ofrecerías…?» No → remove it
+    expect(plain.tasks.find((x) => x.taskId === 'foreign')).toMatchObject({ closed: false, comments: [] });
+  }, 60_000);
 });
