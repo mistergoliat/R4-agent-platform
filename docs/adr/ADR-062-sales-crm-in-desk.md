@@ -264,6 +264,12 @@ política de despacho.
 
   Las claves compartidas, como el teléfono de la tienda o un RUT de relleno, nunca unen. Se listan para que una
   persona las revise.
+- **Los RUT y códigos genéricos de «venta general» no son claves.** Son el RUT que se usa cuando el cliente no da
+  el suyo y los códigos de consumidor final de SAP. Se declaran en una lista explícita en la configuración de la
+  mesa, no en este repositorio. Nunca unen ni dan segmento.
+  - Un pedido o documento con ese RUT se une solo por correo o celular.
+  - Si no los tiene, se une por la referencia del pedido.
+  - El umbral de clave compartida queda como red de seguridad para los genéricos que falten en la lista.
 - **Unir es reversible.** Cada unión es un evento append-only con su clave y su regla. Separar es otro evento. Nunca
   se borran ni se editan los registros de origen en la tienda o en SAP.
 - **El segmento se guarda con su evidencia:** valor, fuente, fecha y nivel. Gana el nivel más alto. A igual nivel,
