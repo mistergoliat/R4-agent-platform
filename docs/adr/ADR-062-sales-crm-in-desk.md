@@ -169,7 +169,10 @@ política de despacho.
   1. entrada directa por el link o QR de un vendedor;
   2. cliente de cabecera (90 días);
   3. el cliente pide a alguien por nombre;
-  4. el motivo determina el área;
+  4. el motivo determina el área. **Dentro del área, la oportunidad queda en un pozo común y la toma quien quiera
+     del pool (autoasignación).** Así lo pide el plan comercial y lo decidió el owner el 2026-11-25. Esto cambia la
+     oferta rotativa de la regla 4 de ADR-048 solo para las oportunidades del CRM. Si nadie la toma dentro del plazo
+     (10 minutos, como el plazo de aceptación de ADR-048), la mesa avisa al dueño del pool y luego al supervisor;
   5. si nadie está disponible, nunca hay silencio.
 
   Los pools son las áreas de la mesa. Las áreas iniciales y sus integrantes son decisión del owner.
@@ -405,17 +408,28 @@ política de despacho.
 - **Riesgo de adopción:** se vigila con la medida de adopción de la Decisión 9. Si «Hoy» no se usa, se corrige antes
   de sumar fases.
 
+## Decisiones del owner (2026-11-25)
+
+- **Estados:** los cinco propuestos. Nueva, en gestión, cotizada, ganada o perdida.
+- **Reparto dentro de un pool:** autoasignación desde un pozo común, como dice el plan comercial. Las reglas 1 a 3 de
+  ADR-048 van antes, y hay aviso al supervisor si nadie la toma en el plazo (Decisión 4).
+- **Mayorista e institucional:** los indicios de los sistemas dejan al cliente como candidato y una persona lo
+  confirma. Nada cambia de pool solo (Decisión 10).
+- **Umbral:**
+  - Pesín cotiza solo hasta $1.000.000; sobre ese monto la oportunidad pasa al pool;
+  - el armador de home gym del chat web sigue proponiendo sets de cualquier monto, pero sobre $1.000.000 ofrece
+    pasar a un vendedor;
+  - el límite de cotización autónoma de R4 (`R4_AUTONOMOUS_QUOTE_MAX_GROSS_CLP`) se ajusta a ese monto, con
+    autorización propia.
+
 ## Decisiones abiertas del owner
 
-1. Los cinco estados propuestos: confirmar los nombres con Ventas.
-2. Los pools iniciales, quién está en cada uno y quién supervisa (coincide con las decisiones abiertas 2 y 5 de
+1. Los pools iniciales, quién está en cada uno y quién supervisa (coincide con las decisiones abiertas 2 y 5 de
    ADR-048).
-3. Cómo se reparte dentro de un pool: oferta rotativa (ADR-048 Decisión 3) o autoasignación (plan comercial).
-4. Qué distingue a un mayorista y a un institucional.
-5. El monto o tipo de caso desde el que una oportunidad pasa a una persona (el plan dice $1M), y qué hace el armador
-   de home gym sobre ese monto.
-6. El plazo máximo de una próxima acción y los plazos de escalamiento.
-7. La lista de motivos de pérdida.
-8. La retención de los datos personales de oportunidades perdidas.
-9. Si el historial de vendedores en SAP siembra el cliente de cabecera.
-10. El umbral N de clave compartida (propuesta: más de 3 cuentas).
+2. La lista de RUT y códigos genéricos de «venta general». Va en la configuración de la mesa, no en este
+   repositorio.
+3. El plazo máximo de una próxima acción y los plazos de escalamiento.
+4. La lista de motivos de pérdida.
+5. La retención de los datos personales de oportunidades perdidas.
+6. Si el historial de vendedores en SAP siembra el cliente de cabecera.
+7. El umbral N de clave compartida (propuesta: más de 3 cuentas).
