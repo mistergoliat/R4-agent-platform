@@ -8,6 +8,8 @@ import { TaskRuntime } from '@r4/task-runtime';
 import { productSheetView } from '../agent/capabilities.js';
 import { completedReviewTasks, recheckReviews } from '../agent/review.js';
 import { PRODUCT_GRAPH_KIND } from '../graph.js';
+import { askedToPesin } from '../agent/batch.js';
+import { presentOpenProposals } from '../present.js';
 
 /**
  * `npm run graph:recheck` (ADR-058 G4b): checks again the results of every completed review task against today's
@@ -31,7 +33,9 @@ try {
     tasks,
     sheet: (key) => productSheetView(catalog, async (k) => (await facts.current(PRODUCT_GRAPH_KIND, k)).map((f) => ({ subject: f.subject, field: f.field, value: f.value, recordedBy: f.recordedBy, recordedAt: f.recordedAt })), key),
   }, { batchId: randomUUID(), reviews: await completedReviewTasks(pool) });
-  process.stdout.write(`${JSON.stringify(result)}\n`);
+  // ADR-058 G7a: runs refresh evidence, so the open proposals get their question again (no model).
+  const presented = await presentOpenProposals(new PostgresArtifacts(pool), await askedToPesin(pool)).catch((e: unknown) => ({ error: e instanceof Error ? e.message.slice(0, 200) : 'unexpected_failure' }));
+  process.stdout.write(`${JSON.stringify({ ...result, presented })}\n`);
 } catch (error) {
   process.stderr.write(`graph:recheck failed: ${error instanceof Error ? error.message.slice(0, 500) : 'unexpected_failure'}\n`);
   process.exitCode = 1;

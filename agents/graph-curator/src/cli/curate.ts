@@ -3,6 +3,8 @@ import { HttpCatalogAdapter, loadCatalogHttpConfig } from '@r4-adapters/catalog-
 import { createLogger } from '@r4/observability';
 import { PostgresArtifactFacts, PostgresArtifacts, createPool } from '@r4/persistence-postgres';
 import { runCuration } from '../run.js';
+import { askedToPesin } from '../agent/batch.js';
+import { presentOpenProposals } from '../present.js';
 
 /**
  * `npm run graph:curate -- --started-by <humanRef>`: one curator run on demand (ADR-058 G2). Reads R4_DATABASE_URL and
@@ -20,7 +22,9 @@ const catalog = new HttpCatalogAdapter({ config: loadCatalogHttpConfig(process.e
 const pool = createPool({ connectionString: url, logger: createLogger({ service: 'graph-curate', level: 'warn' }), applicationName: 'graph-curate', max: 2 });
 try {
   const result = await runCuration({ pool, artifacts: new PostgresArtifacts(pool), catalog, facts: new PostgresArtifactFacts(pool) }, { startedBy: values['started-by'], concurrency });
-  process.stdout.write(`${JSON.stringify(result)}\n`);
+  // ADR-058 G7a: runs refresh evidence, so the open proposals get their question again (no model).
+  const presented = await presentOpenProposals(new PostgresArtifacts(pool), await askedToPesin(pool)).catch((e: unknown) => ({ error: e instanceof Error ? e.message.slice(0, 200) : 'unexpected_failure' }));
+  process.stdout.write(`${JSON.stringify({ ...result, presented })}\n`);
   if (result.status === 'failed') process.exitCode = 1;
 } catch (error) {
   process.stderr.write(`graph:curate failed: ${error instanceof Error ? error.message.slice(0, 500) : 'unexpected_failure'}\n`);

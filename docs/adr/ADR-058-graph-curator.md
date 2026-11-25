@@ -728,6 +728,48 @@ Decisiones del owner del 2026-11-24:
   La integración `graph-curator-agent` prueba el ciclo con un modelo guionado: quita la relación citada, confirma la
   otra, rechaza la evidencia inventada, no repite relaciones ya juzgadas y no parte si el tope no cubre una tarea.
 
+## G7a — una revisión que se entienda (2026-11-25)
+
+- **`presentProposal`** (`agents/graph-curator/src/present.ts`) convierte cada propuesta en una pregunta, según su
+  cambio. Usa plantillas en código, sin modelo:
+
+  | Cambio | Pregunta | Grupo | «Sí» |
+  |---|---|---|---|
+  | quitar un reemplazo (`sub`) | «Si un cliente busca A y está agotado, ¿le ofrecerías B?» | `changes` | rechaza la propuesta |
+  | quitar otra relación | «Para A, ¿B va en «etiqueta»?» | `changes` | rechaza la propuesta |
+  | agregar relaciones | «Para A, ¿van B1, B2… en «etiqueta»?» | `changes` | aprueba |
+  | sumar un producto | «¿Sumamos X al grafo como un producto del tipo de Y, Z?» | `changes` | aprueba |
+  | tipo de producto | «¿X es del mismo tipo que Y, Z?» | `changes` | aprueba |
+  | grupos musculares | «¿X trabaja espalda, brazos?» | `bulk` | aprueba |
+  | confirmar relaciones | «El curador revisó N relaciones de X y dice que están bien. ¿Las das por revisadas?» | `bulk` | aprueba |
+  | sin cambio | ninguna: solo el texto del aviso | `notice` | — |
+
+  - Un tipo de producto se nombra por dos productos de ese tipo, nunca por su código.
+  - Los grupos musculares van en `bulk` porque Pesín no los usa hoy.
+- **Qué se guarda.** Cada propuesta abierta lleva `evidence.presentation`:
+  - `group`, `question` y `yes` (`approve` o `reject`);
+  - `ifYes` e `ifNo`: el efecto de cada respuesta en palabras;
+  - `text`: el resumen;
+  - `products`: clave, nombre, precio y si está activo;
+  - `asked`: cuántas veces leyó Pesín esos productos en 90 días. Ordena cada grupo, primero lo más consultado.
+
+  La consola solo muestra estos campos: «Sí» y «No» llaman a la decisión que ya existe, según `yes`.
+- **Cuándo se escribe.**
+  - `presentOpenProposals` vuelve a proponer cada propuesta abierta con su misma fuente, versión base, resumen y
+    cambio, agregando solo `presentation`. Sigue siendo la misma propuesta, con el mismo id y el mismo estado.
+  - Las propuestas decididas no se tocan, y una presentación igual no se reescribe.
+  - Corre al final de `graph:curate`, `graph:classify`, `graph:review` y `graph:recheck`, porque esas corridas refrescan
+    la evidencia. También corre sola con `npm run graph:present`.
+- **Prueba con lo real** (lectura del 2026-11-25, sin escribir): de 1.051 propuestas abiertas, 77 son `changes`,
+  832 son `bulk` y 142 son `notice`. Todas las que piden decisión tienen pregunta.
+- **Evaluación:**
+  - `tests/unit/graph-curator/present.test.ts` fija la plantilla de cada cambio.
+  - La integración `graph-present`, con Postgres real, prueba que solo se agrega la presentación, que lo decidido no se
+    toca y que una segunda pasada no escribe nada. Postgres no guarda el orden de las claves, así que la comparación es
+    canónica.
+- **Pendiente para G7c, la consola:** fotos y link a la tienda. El grafo no los tiene; la consola los puede pedir por
+  `products[].key`.
+
 ## Fuera de alcance
 
 - Escribir en Catalog o en PrestaShop, o corregir fichas. R4 sí guarda los datos que el responsable le responde
