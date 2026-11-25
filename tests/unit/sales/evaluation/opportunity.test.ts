@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DESK_COMPLEXITIES, DESK_INTENTS, deskOpportunityInput } from '@r4-sales/agent';
-import { OPPORTUNITY_LABELED_SET, scoreOpportunityRecords, type OpportunityLabel } from '@r4-sales/agent/evaluations';
+import { OPPORTUNITY_LABELED_SET, opportunityCasesOf, scoreOpportunityRecords, type OpportunityLabel } from '@r4-sales/agent/evaluations';
 
 /** (ADR-062 O1) The labeled set of desk.opportunity.record and its per-field scorer. */
 const positives = OPPORTUNITY_LABELED_SET.filter((c) => c.expected !== null);
@@ -20,6 +20,20 @@ describe('opportunity labeled set', () => {
   it('every label is a valid capability input; no contact data in the conversations', () => {
     for (const c of positives) expect(deskOpportunityInput.safeParse({ ...c.expected, productRefs: [], summary: 'resumen' }).success, c.id).toBe(true);
     for (const c of OPPORTUNITY_LABELED_SET) for (const t of c.visitor) expect(t, c.id).not.toMatch(/@|\d{8,}|\+56/);
+  });
+
+  it('channel cases: at least 5 WhatsApp (with a handoff), 3 Instagram and 3 Facebook; triggers only where the channel has them', () => {
+    const wa = opportunityCasesOf('whatsapp');
+    const ig = opportunityCasesOf('instagram');
+    const fb = opportunityCasesOf('facebook');
+    expect(wa.length).toBeGreaterThanOrEqual(5);
+    expect(ig.length).toBeGreaterThanOrEqual(3);
+    expect(fb.length).toBeGreaterThanOrEqual(3);
+    expect(wa.some((c) => c.expected?.trigger === 'traspaso')).toBe(true);
+    // The web chat and Meta never hand off; Meta never quotes.
+    for (const c of [...opportunityCasesOf('web'), ...ig, ...fb]) expect(c.expected?.trigger, c.id).not.toBe('traspaso');
+    for (const c of [...ig, ...fb]) expect(c.expected?.trigger, c.id).not.toBe('cotizacion');
+    expect(opportunityCasesOf('web').length + wa.length + ig.length + fb.length).toBe(OPPORTUNITY_LABELED_SET.length);
   });
 });
 
@@ -45,5 +59,15 @@ describe('scoreOpportunityRecords', () => {
     const s = scoreOpportunityRecords({});
     expect(s.record.correct).toBe(OPPORTUNITY_LABELED_SET.length - positives.length);
     for (const f of Object.values(s.fields)) expect(f.accuracy).toBe(0);
+  });
+});
+
+describe('scoring one channel', () => {
+  it('scores only that channel\'s cases, so a per-channel QA file is not penalized for the others', () => {
+    const wa = opportunityCasesOf('whatsapp');
+    const s = scoreOpportunityRecords(Object.fromEntries(wa.map((c) => [c.id, c.expected])), wa);
+    expect(s.cases).toBe(wa.length);
+    expect(s.record.accuracy).toBe(1);
+    expect(s.misses).toEqual([]);
   });
 });

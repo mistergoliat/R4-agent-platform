@@ -8,7 +8,7 @@ import { SALES_DOMAINS, SALES_PRODUCTION_PROFILE } from './profile.js';
 import { SALES_PRODUCTION_PROFILE_V2_CANDIDATE } from './profile-v2.js';
 import { SALES_PRODUCTION_PROFILE_V3 } from './profile-v3.js';
 import { SALES_PRODUCTION_PROFILE_V4 } from './profile-v4.js';
-import { SALES_PRODUCTION_AUTONOMOUS_ACTION_POLICY, SALES_PRODUCTION_PROFILE_V5, SALES_WEB_DESK_ACTION_POLICY, SALES_WEB_QUOTE_ACTION_POLICY, salesProductionActionPolicy } from './profile-v5.js';
+import { SALES_META_DESK_ACTION_POLICY, SALES_PRODUCTION_AUTONOMOUS_ACTION_POLICY, SALES_PRODUCTION_DESK_ACTION_POLICY, SALES_PRODUCTION_PROFILE_V5, SALES_WEB_DESK_ACTION_POLICY, SALES_WEB_QUOTE_ACTION_POLICY, salesProductionActionPolicy } from './profile-v5.js';
 import { SALES_PRODUCTION_PROFILE_V6 } from './profile-v6.js';
 import { SALES_PRODUCTION_PROFILE_V7 } from './profile-v7.js';
 import { SALES_PRODUCTION_V15_ACTION_POLICY, isCheckoutLaneProfile } from './profile-v15.js';
@@ -87,6 +87,9 @@ export function salesActionPolicyFor(profile: ProductionProfile): ActionPolicyCo
   if (['sales-web@19', 'sales-web@20'].includes(profileLabel(profile))) return SALES_WEB_QUOTE_ACTION_POLICY;
   // (ADR-062 O1) sales-web@21 also records opportunities in the sales desk.
   if (profileLabel(profile) === 'sales-web@21') return SALES_WEB_DESK_ACTION_POLICY;
+  // (ADR-062 O1, all channels) The WhatsApp lane @27 and the Meta v2 profiles also record opportunities.
+  if (profileLabel(profile) === 'sales-production@27') return SALES_PRODUCTION_DESK_ACTION_POLICY;
+  if (['sales-instagram@2', 'sales-facebook@2'].includes(profileLabel(profile))) return SALES_META_DESK_ACTION_POLICY;
   return isCustomerIdentityProfile(profile) ? SALES_PRODUCTION_V8_ACTION_POLICY : salesProductionActionPolicy(profile);
 }
 
@@ -163,6 +166,8 @@ export const SALES_PRODUCTION_AGENT_VERSIONS: Readonly<Record<string, SalesAgent
   'sales-production@25': 25,
   // (owner decisions 2026-11-23) @26 = @25 pinned to definition v26; @25 stays the rollback.
   'sales-production@26': 26,
+  // (ADR-062 O1, all channels) @27 = @26 plus desk.opportunity.record, pinned to definition v27 (v26 plus the opportunity-record block); @26 stays the rollback.
+  'sales-production@27': 27,
   // (R4 Checkout integration) The E3 checkout sandbox lane profile: a lane profile only.
   'sales-production@15': 15,
 });

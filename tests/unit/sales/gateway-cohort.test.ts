@@ -16,8 +16,8 @@ describe('Sales gateway cohort guard', () => {
     expect(() => assertSalesGatewayCohort(100, undefined)).toThrow(/without a lane/);
   });
 
-  it('refuses a percentage > 0 with every lane profile outside the approved set; accepts only @26, @25, @24 and @23 (successors), @22 (live) and @21 (rollback) today', () => {
-    expect(SALES_COHORT_LANE_PROFILES).toEqual(['sales-production@26', 'sales-production@25', 'sales-production@24', 'sales-production@23', 'sales-production@22', 'sales-production@21']);
+  it('refuses a percentage > 0 with every lane profile outside the approved set; accepts only @27, @26, @25, @24 and @23 (successors), @22 (live) and @21 (rollback) today', () => {
+    expect(SALES_COHORT_LANE_PROFILES).toEqual(['sales-production@27', 'sales-production@26', 'sales-production@25', 'sales-production@24', 'sales-production@23', 'sales-production@22', 'sales-production@21']);
     expect(() => assertSalesGatewayCohort(5, lane(SALES_PRODUCTION_PROFILE_V22))).not.toThrow();
     expect(() => assertSalesGatewayCohort(5, lane(SALES_PRODUCTION_PROFILE_V21))).not.toThrow();
     const others = SALES_LANE_PROFILES.filter((p) => !SALES_COHORT_LANE_PROFILES.includes(profileLabel(p)));

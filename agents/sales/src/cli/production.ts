@@ -374,6 +374,8 @@ async function worker(production: ReturnType<typeof loadProductionConfig>): Prom
   const config = loadWorkerConfig(process.env);
   // (R4 Quote E2E) The quote lane worker issues quotes within the owner-approved write ceiling (1..SALES_F1_CANARY_MAX_WRITE_ACTIONS; 0 cannot issue).
   if (isQuoteLaneProfile(workerProfile(production))) assertF1CanaryWriteCeiling(config.execution.maxWriteActions, profileLabel(workerProfile(production)));
+  // (ADR-062 O1) A profile that records opportunities needs at least one write action per run (a Meta worker without writes runs 0, which would hide the capability).
+  if (capabilityAvailability(workerProfile(production), DESK_OPPORTUNITY_CAPABILITY_ID).available && config.execution.maxWriteActions < 1) throw new Error(`refusing the worker: ${profileLabel(workerProfile(production))} records opportunities in the sales desk and needs R4_EXEC_MAX_WRITE_ACTIONS of at least 1`);
   const logger = createLogger({ service: 'r4-worker', level: config.logLevel });
   const pool = createPool({ connectionString: config.databaseUrl, logger, applicationName: 'r4-worker-bindings', max: 2 });
   const catalog = productionCatalog(production, logger);

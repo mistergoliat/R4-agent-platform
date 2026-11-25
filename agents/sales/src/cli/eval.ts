@@ -8,7 +8,7 @@ import { OpenAICompatibleModelProvider, describeModelConfig, loadOpenAICompatibl
 import { adminDatabaseUrl } from '../harness/database.js';
 import { HarnessTrajectoryProducer, SCRIPTED_MODEL_PROFILE, modelProfileFromDescription, referenceScenarioSet } from '../evaluations/corpus.js';
 import { evaluateFixtureCorpus, evaluateSalesSubject } from '../evaluations/run.js';
-import { scoreOpportunityRecords, type OpportunityLabel } from '../evaluations/opportunity.js';
+import { OPPORTUNITY_CHANNELS, OPPORTUNITY_LABELED_SET, opportunityCasesOf, scoreOpportunityRecords, type OpportunityChannel, type OpportunityLabel } from '../evaluations/opportunity.js';
 import { configuredModelProvider } from '../model.js';
 import { flag, loadLocalEnv, option, print } from './common.js';
 
@@ -33,6 +33,8 @@ import { flag, loadLocalEnv, option, print } from './common.js';
  *   --opportunity FILE (ADR-062 O1) only: score the recorded desk.opportunity.record
  *                      inputs in FILE against the labeled set (evaluations/opportunity.ts)
  *                      and print per-field accuracy. No model, no network.
+ *   --channel NAME     with --opportunity: only the cases of that channel
+ *                      (one of OPPORTUNITY_CHANNELS).
  *
  * Artifacts: artifacts/evaluations/<timestamp>/ (git-ignored), one directory
  * per evaluation run plus index.json. Never secrets, never reasoning text.
@@ -40,8 +42,11 @@ import { flag, loadLocalEnv, option, print } from './common.js';
 async function main(): Promise<void> {
   const predictions = option('opportunity');
   if (predictions) {
-    const result = scoreOpportunityRecords(JSON.parse(readFileSync(predictions, 'utf8')) as Record<string, OpportunityLabel | null>);
-    print(`opportunity classification, ${result.cases} cases`);
+    const channel = option('channel');
+    if (channel !== undefined && !(OPPORTUNITY_CHANNELS as readonly string[]).includes(channel)) throw new Error(`--channel must be one of ${OPPORTUNITY_CHANNELS.join(', ')}`);
+    const cases = channel ? opportunityCasesOf(channel as OpportunityChannel) : OPPORTUNITY_LABELED_SET;
+    const result = scoreOpportunityRecords(JSON.parse(readFileSync(predictions, 'utf8')) as Record<string, OpportunityLabel | null>, cases);
+    print(`opportunity classification${channel ? ` (${channel})` : ''}, ${result.cases} cases`);
     for (const [field, s] of [['record', result.record], ...Object.entries(result.fields)] as const) print(`  ${field}: ${s.correct}/${s.total} (${(s.accuracy * 100).toFixed(1)} %)`);
     for (const m of result.misses) print(`  miss ${m.caseId} ${m.field}: expected ${m.expected}, recorded ${m.predicted}`);
     return;

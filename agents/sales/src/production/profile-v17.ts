@@ -18,7 +18,7 @@ export const SALES_PRODUCTION_PROFILE_V17: ProductionProfile = Object.freeze({
 export const SALES_QUOTE_LANE_V17_PROFILE_LABEL = 'sales-production@17';
 
 /** Profiles that bind catalog.get_product_context@2 (per-variant sellability); every other profile keeps @1. */
-export const SALES_VARIANT_AVAILABILITY_PROFILES: ReadonlySet<string> = new Set([SALES_QUOTE_LANE_V17_PROFILE_LABEL, 'sales-production@18', 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23', 'sales-production@24', 'sales-production@25', 'sales-production@26', 'sales-web@19', 'sales-web@20', 'sales-web@21']);
+export const SALES_VARIANT_AVAILABILITY_PROFILES: ReadonlySet<string> = new Set([SALES_QUOTE_LANE_V17_PROFILE_LABEL, 'sales-production@18', 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23', 'sales-production@24', 'sales-production@25', 'sales-production@26', 'sales-production@27', 'sales-web@19', 'sales-web@20', 'sales-web@21']);
 
 /**
  * (owner mandate «F1 WhatsApp quote canary release gates», 2026-11-09) @17 is the ONLY Sales F1 quote lane candidate; it
