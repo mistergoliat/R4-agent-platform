@@ -66,6 +66,37 @@ Hechos verificados:
   - por qué se perdió la venta.
 
   Tampoco se guarda el segmento: el código no conoce «mayorista» ni «institucional».
+- **Diagnóstico de los datos de clientes (2026-11-25).** Se hizo de solo lectura, sobre la copia de la tienda y la
+  copia sincronizada de documentos de venta de SAP. Solo se obtuvieron conteos; ningún dato personal salió de la
+  base.
+  - **Las claves de la tienda están casi completas:**
+    - prácticamente todas las cuentas tienen correo válido;
+    - cerca del 99 % de las direcciones tiene celular chileno válido;
+    - cerca del 99 % tiene RUT con dígito verificador correcto, en el campo de documento de la dirección.
+
+    En cerca del 99 % de los clientes están las tres claves a la vez. Los campos de empresa del cliente están
+    vacíos.
+  - **Duplicados:** al unir cuentas por correo, celular o RUT, cerca del 10 % de las cuentas cae en grupos
+    de 2 a 5 cuentas. Esos grupos son probablemente la misma persona. Unos pocos valores se repiten en decenas de
+    cuentas, y uno de esos grupos encadena más de cien. Son claves compartidas (un teléfono de tienda, un RUT de
+    relleno) y no deben unir cuentas solas.
+  - **No hay segmento en la tienda.** Solo existen los grupos de cliente por defecto, sin grupo mayorista.
+  - **La evidencia de empresa existe:**
+    - un módulo de facturación guarda RUT, razón social y giro de factura;
+    - cerca del 11 % de los pedidos va a una dirección de factura;
+    - la gran mayoría de esos RUT son de persona jurídica.
+  - **SAP cubre todos los canales**, incluida la tienda física:
+    - el código de cliente es un RUT válido en el 99,6 % de los casos;
+    - tres códigos genéricos (consumidor final) concentran cerca del 85 % de los documentos;
+    - el resto son clientes con nombre, casi todos empresas;
+    - de esos clientes con nombre, la mayoría también aparece en la tienda con el mismo RUT;
+    - unos cientos tienen cinco o más documentos en 24 meses;
+    - la mayoría tiene un solo vendedor en SAP.
+
+    El RUT también da un indicio de institución: entidades del Estado, municipalidades y organizaciones sin fines
+    de lucro tienen rangos propios.
+  - **Postventa ya tiene un flujo de casos** en una automatización existente, fuera de R4: casos por departamento,
+    estado y contacto posterior a la compra.
 - **Cómo fracasa un CRM:** se convierte en una página bonita cuando:
   - depende de que alguien digite;
   - sus campos son opcionales;
@@ -88,7 +119,8 @@ Hechos verificados:
   - **referencias:** conversaciones, cotizaciones y pedidos;
   - **resultado y motivo.**
 - **Una sola oportunidad abierta por contacto y área.** Si el mismo contacto vuelve por la misma área, se suma a la
-  oportunidad abierta, por cualquier canal. La clave del contacto es la clave opaca de R4 (ADR-053).
+  oportunidad abierta, por cualquier canal. Cada conversación se reconoce por la clave opaca de R4 (ADR-053). La
+  mesa une esas claves con las de la tienda y las de SAP en un contacto (Decisión 10).
 - **Historia append-only** (`opportunity_events`), igual que el registro de asignaciones. Cada cambio queda con su
   autor (persona, Pesín o sistema) y su fuente. Una corrección es un evento nuevo.
 
@@ -123,6 +155,8 @@ política de despacho.
 - **Un valor fuera de la lista se rechaza.** El resumen es texto de apoyo para el vendedor, no evidencia.
 - **El monto nunca lo dice el modelo.** Sale de Quote o de la tienda. Sin cotización ni carro, la oportunidad queda
   «sin monto».
+- **Lo que dice Pesín es evidencia de nivel conversación.** La evidencia de los sistemas y la confirmación de una
+  persona le ganan (Decisión 10).
 - **Una persona puede corregir** el segmento o el área. La corrección queda como evento con su autor. Las
   correcciones son la señal para medir la calidad de la clasificación.
 - **Las reglas de derivación son configuración versionada de la mesa**, no texto del prompt. Ejemplos: «sobre un
@@ -175,7 +209,8 @@ política de despacho.
 - **`ganada` se marca cuando un pedido pagado calza con la oportunidad.** Puede calzar de tres formas:
   - una cotización pagada por Checkout, cuando exista;
   - en la web, la evidencia de ADR-059: líneas agregadas desde el chat, pagadas y que calzan;
-  - un pedido de PrestaShop del mismo contacto, con los productos cotizados, dentro de la vigencia. Esto se lee con
+  - un pedido de PrestaShop del mismo contacto (por sus claves, Decisión 10), con los productos cotizados, dentro
+    de la vigencia. Esto se lee con
     el conector de pedidos de ADR-061: clave propia y de solo lectura.
 
   La comparación es determinista. Si es ambigua, el dueño la confirma.
@@ -207,7 +242,53 @@ política de despacho.
     `resuelto` (lo confirma el cliente o lo marca una persona con motivo) y `en_revision`.
   - **El silencio nunca resuelve un caso.**
 - **Lo que necesita un ADR propio:** el plan pide que la IA lea los chats de casos gestionados fuera del CRM y los
-  siga hasta su resolución. Eso requiere acceso al sistema donde viven esos chats y reglas de contacto.
+  siga hasta su resolución. Eso requiere acceso al sistema donde viven esos chats y reglas de contacto. Ese ADR parte
+  del flujo de casos de postventa que ya existe fuera de R4 (Contexto) y no lo duplica.
+
+## Decisión 10 — Identidad del contacto y segmento con evidencia (camino A)
+
+- **Tres claves, normalizadas con reglas fijas y sin modelo:**
+  - **celular:** formato chileno `+569XXXXXXXX`;
+  - **correo:** en minúsculas y sin espacios;
+  - **RUT:** sin puntos, con guion y con el dígito verificador comprobado.
+
+  Un valor que no pasa la regla no es clave: se guarda como dato, pero no une a nadie.
+- **El contacto de la mesa es un conjunto de claves.** Con ellas se une:
+  - las conversaciones de R4, por su clave opaca;
+  - las cuentas y pedidos de la tienda;
+  - los documentos de SAP, cuyo código de cliente lleva el RUT.
+- **Cuándo se unen dos registros solos:**
+  - comparten una clave;
+  - y esa clave no es compartida, es decir, no aparece en más de N cuentas. N es configuración; el valor inicial
+    propuesto es 3.
+
+  Las claves compartidas, como el teléfono de la tienda o un RUT de relleno, nunca unen. Se listan para que una
+  persona las revise.
+- **Unir es reversible.** Cada unión es un evento append-only con su clave y su regla. Separar es otro evento. Nunca
+  se borran ni se editan los registros de origen en la tienda o en SAP.
+- **El segmento se guarda con su evidencia:** valor, fuente, fecha y nivel. Gana el nivel más alto. A igual nivel,
+  gana el más reciente:
+  1. **Una persona lo confirmó.**
+  2. **Evidencia de los sistemas:**
+     - factura de la tienda a un RUT de persona jurídica;
+     - documento de SAP a un RUT de persona jurídica;
+     - un RUT en el rango de entidades del Estado o municipalidades (indicio institucional);
+     - volumen: varios documentos o líneas de muchas unidades (indicio mayorista).
+  3. **Lo dicho en la conversación**, leído por Pesín.
+  4. **Sin segmento.** Se completa en el próximo contacto.
+
+  Los indicios mayorista e institucional dejan al contacto como **candidato** hasta que una persona confirme o el
+  owner fije la regla (decisión abierta 4). Una persona jurídica sin más indicios es «empresa».
+- **Camino A: la mesa guarda lo mínimo y es transitoria como maestro.**
+  - La mesa guarda solo los contactos que tienen oportunidades: claves, uniones, segmento con evidencia y vínculo
+    con un vendedor.
+  - La historia se carga una vez, de solo lectura, desde la tienda y SAP. Solo trae la evidencia que necesitan las
+    oportunidades.
+  - El maestro de clientes sigue siendo el diseño de identidad (CIA) y perfil de cliente (CP). Hoy no están
+    desplegados. Cuando lo estén, la mesa les entrega claves y uniones y pasa a leerlos.
+  - La tabla de contactos de la mesa queda documentada como deuda acotada hasta ese momento.
+- **El historial de vendedores en SAP puede sembrar el cliente de cabecera** de ADR-048. Si se usa, aplica la misma
+  regla de 90 días desde la última venta. Decidirlo le corresponde al owner (decisión abierta 9).
 
 ## Decisión 9 — Medición
 
@@ -248,8 +329,9 @@ política de despacho.
 
 ## Seguridad y datos personales
 
-- **La mesa guarda datos personales:** contactos de tienda y leads de anuncios. Por eso vive en su repositorio
-  privado. Este repositorio es público: aquí no van datos personales, montos reales ni nombres de vendedores.
+- **La mesa guarda datos personales:** contactos de tienda, leads de anuncios y las tres claves de la Decisión 10.
+  Por eso vive en su repositorio privado. Guarda solo los contactos con oportunidades, no copia la base completa.
+  La carga inicial usa una credencial de solo lectura. Este repositorio es público: aquí no van datos personales, montos reales ni nombres de vendedores.
 - **La mesa usa un usuario de base de datos con permisos mínimos**, no el superusuario (lección de la brecha S-1).
 - **La lectura de pedidos usa la clave de solo lectura de ADR-061.** La brecha S-2 (llave de pedidos) se cierra
   antes de la fase O2.
@@ -263,6 +345,8 @@ política de despacho.
 - **O1. MVP útil.**
   - **Qué incluye:**
     - oportunidades e historia en la mesa;
+    - el contacto con sus claves normalizadas, uniones y segmento con evidencia (Decisión 10);
+    - la carga inicial de evidencia de solo lectura desde la tienda y SAP;
     - creación desde consultas, traspasos y cotizaciones emitidas;
     - dueño, estado y próxima acción obligatoria;
     - «Hoy» y los motivos de pérdida;
@@ -321,3 +405,5 @@ política de despacho.
 6. El plazo máximo de una próxima acción y los plazos de escalamiento.
 7. La lista de motivos de pérdida.
 8. La retención de los datos personales de oportunidades perdidas.
+9. Si el historial de vendedores en SAP siembra el cliente de cabecera.
+10. El umbral N de clave compartida (propuesta: más de 3 cuentas).
