@@ -25,7 +25,7 @@ export const SALES_QUOTE_LANE_V27_PROFILE_LABEL = 'sales-production@27';
 export const SALES_PRODUCTION_PROFILE_V27_GATE = Object.freeze([
   ...SALES_PRODUCTION_PROFILE_V26_GATE.filter((g) => g.id !== 'profile-26-registered' && g.id !== 'explicit-authorization'),
   { id: 'desk-ingest', blocking: true, requirement: 'the lane worker runs with R4_DESK_INGEST_URL and R4_DESK_INGEST_KEY (the key the desk verifies); it refuses to compose without them' },
-  { id: 'write-budget', blocking: true, requirement: 'R4_EXEC_MAX_WRITE_ACTIONS of the lane worker reviewed: the opportunity record takes one write action of the run, on top of the workspace updates and quote.create' },
+  { id: 'write-budget', blocking: true, requirement: 'owner decision 2026-11-25 («sácale el límite de acciones»): the @27 lane worker runs R4_EXEC_MAX_WRITE_ACTIONS=200, the code ceiling SALES_F1_CANARY_MAX_WRITE_ACTIONS, as the web chat does (F-WA-2\'s 6 no longer applies to @27); the commercial limits, the confirmation and the quote.create authorization stay independent of it' },
   { id: 'opportunity-l3', blocking: true, requirement: 'L3 with the real model on the fixed SHA: records on consultation, handoff (before request_handoff), issued quote and buying intent at the end, none on a pure FAQ, never mentioned to the customer; the classification meets the owner threshold (evaluations/opportunity.ts, WhatsApp cases)' },
   { id: 'profile-27-registered', blocking: true, requirement: 'identifier @27 registered with production:sales:bootstrap --lane (registers the candidate definition v27)' },
   { id: 'explicit-authorization', blocking: true, requirement: 'explicit owner authorization to switch the lane to @27, by exact SHA; @26 kept as rollback' },
