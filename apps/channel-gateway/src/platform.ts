@@ -159,7 +159,7 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
     const idleClose = production.caseIdleCloseHours ? new CaseIdleCloser({ store, temporal, channel: profile.channel.id, idleForMs: production.caseIdleCloseHours * 3_600_000, logger }) : null;
     const contacts = production.contactMode && bindings.contact ? new PostgresContactStore(pool) : null;
     const contact = contacts && bindings.contact && production.contactMode
-      ? new ContactSweep({ store, contacts, source: bindings.contact.source, rules: bindings.contact.rules, mode: production.contactMode, logger })
+      ? new ContactSweep({ store, contacts, source: bindings.contact.source, rules: bindings.contact.rules, mode: production.contactMode, templates: production.contactTemplates === true, logger })
       : null;
     const ingress = new ChannelIngress({
       store, tasks, temporal, controls, adapters: bindings.inbound, delivery, config: production, secrets: bindings.production.secrets, profile, taskFactory: bindings.taskFactory, ids, logger,
@@ -201,6 +201,7 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
           workingSignal: workingSignals !== null,
           caseIdleCloseHours: production.caseIdleCloseHours ?? null,
           contact: contact ? production.contactMode : null,
+          contactTemplates: contact ? production.contactTemplates === true : null,
           inspection: inspection ? { id: inspection.inspector.id, version: inspection.inspector.version, mode: inspection.mode, degradedReason: inspection.degradedReason } : null,
         },
       };

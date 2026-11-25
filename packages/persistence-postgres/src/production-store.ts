@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { PlatformError, RUN_FAILURE_HANDOFF_REASONS, sha256Hex } from '@r4/contracts';
+import { PlatformError, RUN_FAILURE_HANDOFF_REASONS, fingerprint, sha256Hex } from '@r4/contracts';
 import {
   conversationLockKey,
   statusAfterEvidence,
@@ -25,6 +25,7 @@ import {
   type NewPlatformNotice,
   type OutboundRecord,
   type OutboundStatus,
+  type OutboundTemplate,
   type ProductionAttention,
   type ProductionMetrics,
   type ProductionStore,
@@ -476,10 +477,10 @@ export class PostgresProductionStore implements ProductionStore {
       if (!binding) throw new PlatformError('precondition', 'task_not_channel_bound', 'the task is not bound to a channel conversation');
       const textSha = sha256Hex(command.text);
       const inserted = (await c.query<Row>(
-        `insert into outbound_messages (outbound_id, origin, notice_key, task_id, binding_id, channel, idempotency_key, content_sha256, body, status, profile, correlation_id)
-         values ($1, 'platform', $2, $3, $4, $5, $6, $7, $8, 'pending', $9, $10)
+        `insert into outbound_messages (outbound_id, origin, notice_key, task_id, binding_id, channel, idempotency_key, content_sha256, body, status, profile, correlation_id, template)
+         values ($1, 'platform', $2, $3, $4, $5, $6, $7, $8, 'pending', $9, $10, $11)
          on conflict (task_id, notice_key) where notice_key is not null do nothing returning *`,
-        [randomUUID(), command.noticeKey, command.taskId, binding.binding_id, binding.channel, `r4-notice:${sha256Hex(`${command.taskId}|${command.noticeKey}`).slice(0, 40)}`, textSha, command.text, binding.profile, command.correlationId],
+        [randomUUID(), command.noticeKey, command.taskId, binding.binding_id, binding.channel, `r4-notice:${sha256Hex(`${command.taskId}|${command.noticeKey}`).slice(0, 40)}`, textSha, command.text, binding.profile, command.correlationId, command.template ? JSON.stringify(command.template) : null],
       )).rows[0];
       if (inserted) {
         if (document) {
@@ -489,7 +490,7 @@ export class PostgresProductionStore implements ProductionStore {
       }
       const existing = (await c.query<Row>(`select * from outbound_messages where task_id = $1 and notice_key = $2`, [command.taskId, command.noticeKey])).rows[0]!;
       const existingDocument = (await c.query<Row>('select sha256 from outbound_documents where outbound_id = $1', [existing.outbound_id])).rows[0];
-      if (existing.content_sha256 !== textSha || (existingDocument?.sha256 ?? null) !== (document?.sha256 ?? null)) throw new PlatformError('conflict', 'idempotency_key_reused', 'noticeKey was already used for a different notice');
+      if (existing.content_sha256 !== textSha || (existingDocument?.sha256 ?? null) !== (document?.sha256 ?? null) || fingerprint(existing.template ?? null) !== fingerprint(command.template ?? null)) throw new PlatformError('conflict', 'idempotency_key_reused', 'noticeKey was already used for a different notice');
       return { record: outboundFromRow(existing), replayed: true };
     });
   }
@@ -571,6 +572,7 @@ export class PostgresProductionStore implements ProductionStore {
         windowOpen,
         ...(handoffPending === undefined ? {} : { handoffPending }),
         ...(notice ? { notice } : {}),
+        ...(notice && row.template ? { template: true } : {}),
       });
       if (decision.kind === 'hold') {
         const held = (await c.query<Row>(
@@ -607,7 +609,7 @@ export class PostgresProductionStore implements ProductionStore {
       await c.query('insert into outbound_delivery_attempts (outbound_id, attempt, lease_generation, owner) values ($1, $2, $3, $4)', [outbound.outboundId, claimed.attempts, claimed.lease_generation, command.owner]);
       const record = outboundFromRow(claimed);
       return {
-        kind: 'dispatch', outbound: record, accountRef: binding.accountRef, recipientRef: binding.recipientRef, text, document,
+        kind: 'dispatch', outbound: record, accountRef: binding.accountRef, recipientRef: binding.recipientRef, text, document, template: (row.template as OutboundTemplate | null) ?? null,
         token: { outboundId: record.outboundId, owner: command.owner, generation: record.leaseGeneration, attempt: record.attempts },
       };
     });

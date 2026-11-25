@@ -145,6 +145,8 @@ export class OutboundDeliveryRuntime {
     if (!adapter) {
       // Nothing left the process: definitely not sent.
       result = refused('no_channel_adapter');
+    } else if (claim.template && !adapter.supportsTemplates) {
+      result = refused('template_unsupported');
     } else if (document && !adapter.supportsDocuments) {
       result = refused('document_unsupported');
     } else if (document && createHash('sha256').update(document.bytes).digest('hex') !== document.sha256) {
@@ -153,7 +155,7 @@ export class OutboundDeliveryRuntime {
     } else {
       try {
         result = await adapter.submit(
-          { outboundId: claim.outbound.outboundId, idempotencyKey: claim.outbound.idempotencyKey, accountRef: claim.accountRef, recipientRef: claim.recipientRef, text: claim.text, attempt: claim.token.attempt, origin: claim.outbound.origin, ...(claim.outbound.authorName ? { authorName: claim.outbound.authorName } : {}), ...(document ? { document } : {}) },
+          { outboundId: claim.outbound.outboundId, idempotencyKey: claim.outbound.idempotencyKey, accountRef: claim.accountRef, recipientRef: claim.recipientRef, text: claim.text, attempt: claim.token.attempt, origin: claim.outbound.origin, ...(claim.outbound.authorName ? { authorName: claim.outbound.authorName } : {}), ...(document ? { document } : {}), ...(claim.template ? { template: claim.template } : {}) },
           { timeoutMs: config.outbound.providerTimeoutMs },
         );
       } catch {

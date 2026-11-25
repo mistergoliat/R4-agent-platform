@@ -1,5 +1,6 @@
 import { PlatformError } from '@r4/contracts';
 import { emitTelemetry, type StructuredLogger } from '@r4/observability';
+import type { OutboundTemplate } from './channel.js';
 import type { ProductionStore } from './ports.js';
 
 /**
@@ -27,11 +28,7 @@ export interface ContactRules {
   readonly freeTextWindowMs: number;
 }
 
-export interface ContactTemplate {
-  readonly name: string;
-  readonly language: string;
-  readonly parameters: readonly string[];
-}
+export type ContactTemplate = OutboundTemplate;
 
 /** One message a source wants to send now, if the gate lets it. */
 export interface ContactCandidate {
@@ -147,8 +144,8 @@ export interface ContactSweepResult {
 /**
  * (ADR-055 C1/C2) Takes the source's due candidates through the gate and records one decision per source reference.
  * `observe` decides and records, never enqueues. `active` enqueues free text as a platform notice (idempotent by its
- * key, before the decision, so a crash in between is a replay, never a second message); a template is always only observed
- * until the channel adapter sends templates (C2b). A waiting candidate is decided again on the next sweep, and dropped
+ * key, before the decision, so a crash in between is a replay, never a second message); a template is sent only with `templates` (C2b:
+ * the provider approved it), otherwise observed. A waiting candidate is decided again on the next sweep, and dropped
  * (with the rule that held it) once past its deadline.
  */
 export interface ContactSweepOptions {
@@ -157,6 +154,8 @@ export interface ContactSweepOptions {
   readonly source: ContactSource;
   readonly rules: ContactRules;
   readonly mode: ContactMode;
+  /** (C2b) Send templates too in `active` mode; otherwise they are only observed. */
+  readonly templates?: boolean;
   readonly logger: StructuredLogger;
 }
 
@@ -173,7 +172,7 @@ export class ContactSweep {
     const { now, candidates } = await source.due(limit);
     for (const c of candidates) {
       try {
-        const mode: ContactMode = c.template ? 'observe' : this.#o.mode;
+        const mode: ContactMode = c.template && this.#o.templates !== true ? 'observe' : this.#o.mode;
         const gate = decideContact({
           now,
           optedOut: await contacts.optedOut(c.channel, c.conversationKey),
@@ -188,7 +187,7 @@ export class ContactSweep {
         const rule = gate.outcome === 'send' && late ? 'deadline' : gate.rule;
         let outboundId: string | null = null;
         if (outcome === 'send' && mode === 'active') {
-          outboundId = (await store.createPlatformNotice({ taskId: c.taskId, noticeKey: c.noticeKey, text: c.text, correlationId: `contact:${c.sourceRef}` })).record.outboundId;
+          outboundId = (await store.createPlatformNotice({ taskId: c.taskId, noticeKey: c.noticeKey, text: c.text, correlationId: `contact:${c.sourceRef}`, ...(c.template ? { template: c.template } : {}) })).record.outboundId;
         }
         const recorded = await contacts.recordDecision({ sourceRef: c.sourceRef, purpose: c.purpose, channel: c.channel, conversationKey: c.conversationKey, taskId: c.taskId, mode, outcome, rule, rulesVersion: rules.version, text: c.text, template: c.template, outboundId });
         if (!recorded) continue;

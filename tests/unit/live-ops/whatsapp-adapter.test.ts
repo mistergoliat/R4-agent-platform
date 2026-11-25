@@ -68,6 +68,11 @@ describe('inbound: canonicalization', () => {
     expect(JSON.stringify(parsed)).not.toContain('Test Contact');
   });
 
+  it('(ADR-055 C2b) a tap on a template quick-reply button is the text of the button', () => {
+    const parsed = new WhatsAppInboundAdapter(config).parse(notification(PHONE, { messages: [{ id: 'wamid.btn', from: '56911112222', type: 'button', text: 'No me escriban' }] }));
+    expect(parsed.inbound[0]).toMatchObject({ providerEventId: 'wamid.btn', content: { kind: 'text', text: 'No me escriban' }, metadata: { messageType: 'button' } });
+  });
+
   it('never takes another business number (the production number stays with its owner) and reads metadata per change', () => {
     const foreign = new WhatsAppInboundAdapter(config).parse(notification('5550001', { messages: [{ id: 'wamid.x', from: '56911112222', text: 'hola' }] }));
     expect(foreign.inbound).toEqual([]);
@@ -100,6 +105,13 @@ describe('outbound: honest classification of one submission', () => {
     expect(r).toMatchObject({ outcome: 'accepted', httpStatus: 200 });
     expect(r.providerMessageId).toMatch(/^wamid\.fake\./);
     expect(provider.sends.at(-1)).toMatchObject({ phoneNumberId: PHONE, to: '56911112222', text: submission.text, authorized: true });
+  });
+
+  it('(ADR-055 C2b) a template: name, language and the body parameters in order, with no free text', async () => {
+    provider.script({ kind: 'accept' });
+    const r = await new WhatsAppOutboundAdapter(config).submit({ ...submission, text: 'Hola, tu cotización PC-1 sigue disponible', template: { name: 'seguimiento_cotizacion', language: 'es', parameters: ['PC-1', '03-12-2026'] } }, { timeoutMs: 2000 });
+    expect(r).toMatchObject({ outcome: 'accepted' });
+    expect(provider.sends.at(-1)).toMatchObject({ text: '', document: null, template: { name: 'seguimiento_cotizacion', language: 'es', parameters: ['PC-1', '03-12-2026'] } });
   });
 
   it('429 is definitely not sent (retryable, Retry-After honored)', async () => {

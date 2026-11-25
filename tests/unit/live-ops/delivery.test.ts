@@ -109,6 +109,16 @@ describe('delivery gate of a platform notice (R-4: a pack-rendered owner answer,
     expect(decideDispatch(notice({ windowOpen: false }), policy)).toEqual({ kind: 'cancel', reason: CANCEL_REASONS.windowClosed });
     expect(decideDispatch(notice({ supersededByNewerInput: true }), policy)).toEqual({ kind: 'dispatch' });
   });
+
+  it('(ADR-055 C2b) a template notice may write to a closed case outside the window; controls, a person and age still apply', () => {
+    const closed = { task: { status: 'cancelled', humanOwned: false }, binding: { status: 'closed' as const, autonomous: true, deniedNow: false }, windowOpen: false };
+    expect(decideDispatch(notice({ ...closed, template: true }), policy)).toEqual({ kind: 'dispatch' });
+    expect(decideDispatch(notice(closed), policy)).toEqual({ kind: 'cancel', reason: CANCEL_REASONS.taskTerminal });
+    expect(decideDispatch(notice({ ...closed, template: true, controls: { globalEnabled: false, channels: {}, version: 'v' } }), policy)).toEqual({ kind: 'hold', reason: DISPATCH_HOLD_REASONS.killSwitch });
+    expect(decideDispatch(notice({ ...closed, template: true, binding: { status: 'closed', autonomous: true, deniedNow: true } }), policy)).toEqual({ kind: 'hold', reason: DISPATCH_HOLD_REASONS.denied });
+    expect(decideDispatch(notice({ ...closed, template: true, task: { status: 'blocked', humanOwned: true } }), policy)).toEqual({ kind: 'cancel', reason: CANCEL_REASONS.supersededByOperator });
+    expect(decideDispatch(notice({ ...closed, template: true, createdAt: '2026-09-24T10:00:00.000Z' }), policy)).toEqual({ kind: 'cancel', reason: CANCEL_REASONS.expired });
+  });
 });
 
 describe('after a submission', () => {
