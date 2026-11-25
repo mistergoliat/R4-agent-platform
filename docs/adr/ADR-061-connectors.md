@@ -314,6 +314,18 @@ datos de clientes.
   teléfonos están escritos de muchas formas.
 - **El agente no promete fechas de entrega** con este conector: dice el estado y su fecha. Una fecha estimada necesita
   una regla del owner por transportista y región.
+- **Lectura interna «pedidos pagados desde T»** (acordada con el ADR-062 D6, que cierra oportunidades como ganadas):
+  - **Qué es:** una segunda lectura del mismo adapter, para la plataforma y no para el agente. No es una capacidad y
+    nunca llega al contexto de un modelo.
+  - **Qué entrega:** referencia, fecha de pago, total e id de cliente de cada pedido que pasó a un estado pagado
+    desde T. Se reconoce por el historial de estados, no por el estado actual.
+  - **Proyección y permisos propios:**
+    - la misma clave de solo lectura (`orders`, `order_histories`, `order_states`), sin otros recursos;
+    - la proyección de esta lectura, distinta de la del nivel 1;
+    - su propio tope de uso.
+  - **Dónde queda lo leído:** se guarda solo donde lo decide el ADR-062. Nunca entra a logs, eventos ni incidentes
+    con el total ni el id de cliente: el registro guarda cuántos pedidos leyó y si terminó bien.
+  - **Qué pasa si falla:** reintenta en la siguiente pasada desde el último T confirmado. Nunca salta un tramo.
 
 ## Core
 
