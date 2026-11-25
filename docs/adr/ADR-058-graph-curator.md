@@ -15,7 +15,10 @@
   - **G2b-2 en producción** (PR #150): calce físico y cuántas relaciones desbloquea cada dato faltante.
   - **Corrección de la reactivación en producción** (PR #152): un producto reactivado recupera sus relaciones.
   - **G4a en producción** (PR #153): el agente `graph-curator` clasifica lo que ninguna regla clasifica.
-  - **G4b implementado:** el agente revisa por lotes las relaciones sin revisar.
+  - **G4b en producción** (PR #154): el agente revisa por lotes las relaciones sin revisar. La corrección de la evidencia
+    «Categoría» y `graph:recheck` están en producción desde el 2026-11-25 (PR #158).
+  - **Decisiones 11 y 12 propuestas** (enmienda del 2026-11-25): conversar con el curador y una revisión que se
+    entienda. Fase G7, sin implementar.
   - Cada fase necesita autorización explícita del owner.
 - **Fecha:** 2026-11-23
 - **Mandato:** decisiones del owner del 2026-11-23:
@@ -220,6 +223,77 @@ volver a aprobar. Esto amplía «Fuera de alcance»: R4 guarda datos de producto
    para quien carga productos. Cuando la ficha ya trae el dato, el hecho queda como respaldo.
 5. **Implementación en una fase aparte**, después de la Decisión 9 (ver «Decisión 10 — implementación»).
 
+## Decisión 11 — Conversar con el curador (enmienda propuesta del 2026-11-25)
+
+Pedido del owner del 2026-11-25: «uno debería poder explicarle al curador también y que lo interprete, es un agente al
+final». Hoy a cada propuesta solo se le contesta Aprobar o Rechazar. El curador no se entera de por qué y vuelve a
+proponer lo mismo en casos parecidos.
+
+1. **«Explicar» en cada propuesta.** Además de Aprobar y Rechazar, la persona escribe con sus palabras lo que sabe.
+   Por ejemplo, ante «quitar: la Polea Alta/Remo reemplaza a la Polea de Muro»:
+   > «No, sí la reemplaza: las dos trabajan espalda con cable. Lo que no la reemplaza es una máquina de piernas.»
+2. **El curador lo interpreta como una tarea gobernada.** El tipo de tarea nuevo es `graph.interpret_explanation`. Recibe
+   la explicación, la propuesta y las propuestas abiertas parecidas (misma regla, mismos tipos de producto). Devuelve un
+   **plan** con tres partes, y todas esperan la confirmación de la persona:
+   - **esta propuesta:** aprobarla o rechazarla, según lo que la persona quiso decir;
+   - **casos parecidos:** qué otras propuestas abiertas resuelve igual, una por una y con el motivo. Ejemplo: «otras 6
+     de máquinas de cable para espalda»;
+   - **un criterio:** la regla general que la persona expresó, en una frase. Ejemplo: «Las máquinas de cable que
+     trabajan el mismo grupo muscular se reemplazan entre sí».
+3. **La persona confirma el plan con un clic, o lo corrige.** Puede confirmar todo, solo esta propuesta, o desmarcar
+   casos parecidos. Si el plan no es lo que quiso decir, vuelve a explicar. La explicación nunca cambia el grafo por sí
+   sola, y el plan tampoco. Se mantiene la Decisión 2: el agente solo propone.
+4. **Los criterios son conocimiento curado (ADR-052, Decisión 4).**
+   - Un criterio confirmado se guarda como una entrada de la base de conocimiento con el tema `grafo`. La fuente es
+     `graph-curator:explanation` y la referencia es la propuesta. Lleva quién lo dijo y cuándo.
+   - Pasa por los mismos estados (propuesto, verificado, firmado, retirado) y se retira desde la consola cuando deja de
+     valer.
+   - No hace falta una tabla nueva en Core: la base de conocimiento ya es genérica.
+5. **El curador usa los criterios firmados.**
+   - Las tareas de revisión y de clasificación reciben como entrada los criterios firmados del tema `grafo`.
+   - Cada veredicto que se apoya en un criterio lo cita, igual que cita la ficha. `checkReview` acepta esa evidencia
+     solo si el criterio existe y está firmado.
+   - Así no vuelve a proponer lo que la persona ya explicó.
+   - Estos criterios son del curador. Pesín no lee hoy la base de conocimiento; si algún día la lee, el tema `grafo`
+     queda fuera. Lo que el criterio cambia le llega a Pesín por el grafo firmado.
+6. **Qué se guarda y qué no.**
+   - Se guardan la explicación (en la nota de la decisión de la propuesta), el plan validado y el criterio.
+   - No se guarda el razonamiento del modelo (Constitución).
+   - La explicación es de un operador identificado (ADR-050). La salida del modelo no es confiable: el plan se valida
+     contra la lista de propuestas abiertas, y un caso parecido que no existe o no está abierto se descarta.
+7. **Costo y evaluación.**
+   - Interpretar es una llamada al modelo, de unos 10.000 tokens y menos de US$0,01. Lleva su propio tope diario,
+     aparte del tope por corrida de la Decisión 5.
+   - Las explicaciones confirmadas y corregidas forman el conjunto de regresión de la interpretación: un plan corregido
+     es un caso fallido.
+
+## Decisión 12 — Una revisión que se entienda (enmienda propuesta del 2026-11-25)
+
+Hallazgo del owner del 2026-11-25, después de la primera revisión del agente (G4b): las propuestas «están difíciles de
+interpretar, incluso para mí, que lo diseñé». Hay ~1.050 propuestas abiertas, con códigos de regla y áreas en vez de
+preguntas. La Decisión 4 cambia así:
+
+1. **Cada propuesta es una pregunta.** No se muestra «`AGENT_REMOVE_RELATION` · sub», sino:
+   > «Si un cliente busca la **Polea de Muro** y está agotada, ¿le ofrecerías la **Polea Alta/Remo**?»
+
+   Cada pregunta muestra la foto, el precio y el link de los dos productos, y tiene los botones **Sí**, **No** y
+   **Explicar** (Decisión 11). La pregunta sale de una plantilla por tipo de relación, en código y sin modelo, con las
+   etiquetas legibles del grafo.
+2. **El efecto, en palabras, antes de decidir.** Por ejemplo: «Si dices No, Pesín deja de ofrecerla como reemplazo».
+   También muestra la razón y la evidencia citada por el curador, con el dato de la ficha resaltado.
+3. **Separadas por cuánto importan:**
+   - **Cambian lo que hace Pesín:** quitar o agregar relaciones, reemplazos y tipos de producto. Van primero, de una en
+     una.
+   - **Trámite:** las confirmaciones (`mark_reviewed`), que no cambian lo que hace Pesín. Se muestran como bloque. La
+     consola muestra una muestra al azar y ofrece «Aprobar todas», con la Decisión 4.2.
+   - **Avisos sin cambio:** van a un resumen y no piden decisión.
+4. **Orden dentro de cada grupo:** primero los productos que más le consultan a Pesín, como en G4b.
+5. **Contadores que se entiendan:** «Te quedan 30 preguntas que cambian lo que hace Pesín» en vez de «1.051
+   propuestas».
+6. **La consola es de otra sesión.**
+   - R4 entrega en la API la pregunta, el efecto y el grupo ya armados, para que la consola solo los muestre.
+   - Así la plantilla vive en el paquete, con pruebas, y no se duplica.
+
 ## Privacidad y repositorio público
 
 - El grafo no tiene datos personales: son productos, fichas y relaciones públicas de la tienda.
@@ -238,6 +312,7 @@ volver a aprobar. Esto amplía «Fuera de alcance»: R4 guarda datos de producto
 | **G4** | Revisión por lotes de las propuestas sin firmar. El modelo clasifica lo que ninguna regla clasifica, siempre con evidencia | Sí, con tope |
 | **G5** | Las herramientas del chat web leen la versión firmada (junto con su paso a `main`) | No |
 | **G6** | Consulta al responsable (Decisión 7): las dudas que el grafo no responde van al vendedor o al product manager, y su respuesta vuelve como propuesta. Depende de ADR-056 y del alta de los operadores | No |
+| **G7** | Conversar con el curador y revisión legible (Decisiones 11 y 12). **G7a**, R4: preguntas, efecto y grupos en la API, plantillas con pruebas, sin modelo. **G7b**, R4: «Explicar» → tarea `graph.interpret_explanation` → plan, y criterios en la base de conocimiento usados por las tareas. **G7c**, consola: la vista nueva, en la sesión de consola, con el contrato de G7a y G7b | G7b sí, con tope diario |
 
 ## G1 — implementación (2026-11-23)
 
@@ -633,3 +708,7 @@ Decisiones del owner del 2026-11-24:
      de ida y vuelta.
 2. **Quiénes son el vendedor y el product manager** que se dan de alta como operadores.
 3. ~~Día y hora de la corrida semanal~~: cerrada, domingo 22:00 (decisión 6).
+4. **Tope diario para interpretar explicaciones** (Decisión 11). Se propone US$0,25 por día, unas 25 explicaciones.
+5. **Quién firma un criterio.** Se propone que confirmar el plan ya lo deje firmado si quien explica tiene
+   `knowledge.sign` (hoy, el owner). Si no, el criterio queda verificado y espera la firma.
+6. **Orden de G7a y G7b.** Se propone G7a primero: hace legible lo que ya existe y no gasta en el modelo.
