@@ -26,8 +26,10 @@ export const norm = (s: string) => s.normalize('NFC').replace(/\s+/gu, ' ').trim
 export function sheetValue(sheet: ProductSheetView, field: string): string | null {
   const f = norm(field);
   if (f === 'nombre' || f === 'name') return sheet.name;
-  if (f === 'categoría' || f === 'categoria' || f === 'category') return sheet.category;
-  return sheet.specifications.find((s) => norm(s.name) === f)?.value ?? null;
+  const spec = sheet.specifications.find((s) => norm(s.name) === f)?.value ?? null;
+  // «Categoría» is both the store category and, on many sheets, a specification (e.g. «Olímpico»): either counts.
+  if (f === 'categoría' || f === 'categoria' || f === 'category') return [sheet.category, spec].filter((v) => v !== null).join(' | ') || null;
+  return spec;
 }
 
 /** The evaluation the agent's result must pass (also its regression check). */

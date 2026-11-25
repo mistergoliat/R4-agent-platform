@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyChanges, checkReview, productGraphSchema, revertChange, reviewTargets, type ProductSheetView } from '@r4-graph/curator';
+import { applyChanges, checkReview, productGraphSchema, proposalsFromReviews, revertChange, reviewTargets, type ProductSheetView } from '@r4-graph/curator';
 
 /**
  * ADR-058 G4b: the deterministic check every relation review of the graph-curator agent passes before it becomes a
@@ -38,6 +38,14 @@ describe('graph-curator relation review check (regression set)', () => {
     expect(check.refused[0]!.reason).toMatch(reason);
   });
 
+  it('«Categoría» matches the store category or the sheet specification of that name (prod 2026-11-25)', () => {
+    const olympic = new Map([...sheets, ['P3', sheet('P3', 'Disco Bumper 10kg', [['Categoría', 'Olímpico']])]]);
+    const cite = (value: string) => checkReview({ verdicts: [{ ...keep, evidence: [{ product: 'P3', field: 'Categoría', value }] }] }, relations, olympic);
+    expect(cite('Olímpico')).toMatchObject({ ok: true, refused: [] });
+    expect(cite('Barras')).toMatchObject({ ok: true, refused: [] });
+    expect(cite('Estándar')).toMatchObject({ ok: true, refused: [{ reason: expect.stringMatching(/does not appear in the sheet of P3/u) }] });
+  });
+
   it('refuses a second verdict for the same relation', () => {
     const check = checkReview({ verdicts: [keep, keep] }, relations, sheets);
     expect(check.ok && check.refused.map((r) => r.reason)).toEqual(['a second verdict for the same relation']);
@@ -69,6 +77,17 @@ describe('what the review takes, and what approving it does', () => {
       { anchor: 'P1', relations: [['ld', 'P1', 'P3']] },
       { anchor: 'P4', relations: [['st', 'P4', 'P2']] },
     ]);
+  });
+
+  it('a recheck turns stored results into the same proposals a run would (same fingerprints), without the model', async () => {
+    const stored = { status: 'completed', result: { data: { verdicts: [keep, remove] } } };
+    const { proposals, refused, counts, completed } = await proposalsFromReviews(graph, [
+      { hash: 'h1', taskId: 't1', anchor: 'P1', relations: [['ld', 'P1', 'P2'], ['ld', 'P1', 'P3']], ...stored },
+      { hash: 'h2', taskId: 't2', anchor: 'P4', relations: [['st', 'P4', 'P2']], status: 'blocked', result: null },
+    ], (k) => Promise.resolve(sheets.get(k)!));
+    expect({ refused, counts, completed }).toEqual({ refused: [{ relation: 'P4 (1)', reason: 'task blocked' }], counts: { keep: 1, remove: 1, unsure: 0 }, completed: 1 });
+    expect(proposals.map((p) => p.fingerprint)).toEqual(['inconsistency|AGENT_REMOVE_RELATION|P1|P2|ld', 'inconsistency|AGENT_CONFIRM_RELATIONS|P1|h1']);
+    expect(proposals[1]!.change).toEqual({ op: 'mark_reviewed', relations: [['ld', 'P1', 'P3']] });
   });
 
   it('mark_reviewed clears the marks and keeps the relations; undo brings the marks back', () => {
