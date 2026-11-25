@@ -214,6 +214,9 @@ política de despacho.
   - **Cómo se lee:** con una lectura interna de la plataforma sobre el mismo adapter de pedidos de ADR-061 (clave
     propia y de solo lectura). Trae los pedidos pagados desde una fecha: referencia, fecha de pago, total y cliente.
     Tiene su propia proyección y sus permisos. **Nunca se expone al modelo:** no es una capacidad de ningún agente.
+    «Pagado» sale del historial de estados y de una tabla explícita de estados pagados. Nunca sale de las marcas del
+    estado actual, porque en los estados propios de la tienda están mal configuradas (auditoría de estados,
+    2026-11-25).
     Es distinta de la consulta de estado por referencia que ADR-061 ofrece a los clientes.
 
   La comparación es determinista. Si es ambigua, el dueño la confirma.
