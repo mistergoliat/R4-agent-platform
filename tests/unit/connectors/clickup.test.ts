@@ -98,6 +98,32 @@ describe('ClickUp connector', () => {
     await expect(new ClickUpConnector(config, { fetch: timeout }).createQuestionTask({ questionId: 'p9', title: 't', markdown: '', priority: 'high' })).rejects.toMatchObject({ code: 'unknown' });
   });
 
+  it('reads a question task\'s comments oldest first, paging back, only after sinceMs', async () => {
+    const newest = Array.from({ length: 25 }, (_, i) => ({ id: `c${100 + i}`, comment_text: `msg ${100 + i}`, user: { id: 42 }, date: String(2000 + i) }));
+    const older = [{ id: 'c9', comment_text: 'viejo', user: { id: 7 }, date: '1500' }, { id: 'c8', comment_text: 'antiguo', user: { id: 42 }, date: '1000' }];
+    const { fetch, calls } = fake([
+      (c) => (c.url === '/task/mine1' ? { status: 200, body: task('mine1', 'r4-q-p2') } : undefined),
+      (c) => (c.url === '/task/mine1/comment' ? { status: 200, body: { comments: newest } } : undefined),
+      (c) => (c.url.startsWith('/task/mine1/comment?start=2000&start_id=c100') ? { status: 200, body: { comments: older } } : undefined),
+    ]);
+    const cu = new ClickUpConnector(config, { fetch });
+    const all = await cu.readComments('mine1');
+    expect(all).toHaveLength(27);
+    expect(all[0]).toEqual({ commentId: 'c8', userId: 42, text: 'antiguo', dateMs: 1000 });
+    expect(all.at(-1)!.commentId).toBe('c124');
+    const recent = await cu.readComments('mine1', { sinceMs: 2022 });
+    expect(recent.map((c) => c.commentId)).toEqual(['c123', 'c124']);
+    expect(calls.filter((c) => c.url.includes('start=')).length).toBe(1);
+  });
+
+  it('reads the options of the answer dropdown with their UUID and orderindex', async () => {
+    const { fetch } = fake([
+      (c) => (c.url === '/list/901100/field' ? { status: 200, body: { fields: [{ id: 'other', type_config: { options: [] } }, { id: '0a52c486-5f05-403b-b4fd-c512ff05131c', type: 'drop_down', type_config: { options: [{ id: 'u-si', name: 'Sí', orderindex: 0 }, { id: 'u-no', name: 'No', orderindex: 1 }] } }] } } : undefined),
+    ]);
+    expect(await new ClickUpConnector(config, { fetch }).readAnswerOptions()).toEqual([{ id: 'u-si', name: 'Sí', orderindex: 0 }, { id: 'u-no', name: 'No', orderindex: 1 }]);
+    await expect(new ClickUpConnector({ ...config, answerFieldId: null }, { fetch }).readAnswerOptions()).rejects.toMatchObject({ code: 'not_configured' });
+  });
+
   it('verifies webhook signatures on the raw body, failing closed', () => {
     const cu = new ClickUpConnector(config, { fetch: fake([]).fetch });
     const body = '{"event":"taskUpdated","task_id":"86abc","webhook_id":"w1"}';

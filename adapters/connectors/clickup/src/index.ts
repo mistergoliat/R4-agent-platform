@@ -164,6 +164,53 @@ export class ClickUpConnector {
     return out;
   }
 
+  /**
+   * The comments of an R4 question task, oldest first, optionally only those after `sinceMs`. ClickUp returns the 25
+   * most recent and pages backwards with `start` (a comment's date) and `start_id` (its id); at most 10 pages.
+   */
+  async readComments(taskId: string, options: { readonly sinceMs?: number } = {}): Promise<{ commentId: string; userId: number | null; text: string; dateMs: number }[]> {
+    await this.#own(taskId);
+    const out: { commentId: string; userId: number | null; text: string; dateMs: number }[] = [];
+    let cursor = '';
+    for (let page = 0; page < 10; page += 1) {
+      const res = await this.#call('GET', `/task/${taskId}/comment${cursor}`);
+      const comments: unknown[] = isObject(res) && Array.isArray(res.comments) ? res.comments : [];
+      let oldest: { id: string; date: number } | null = null;
+      let reachedSince = false;
+      for (const c of comments) {
+        if (!isObject(c)) continue;
+        const id = str(c.id);
+        const date = Number(str(c.date));
+        if (!id || !Number.isFinite(date)) continue;
+        if (!oldest || date < oldest.date) oldest = { id, date };
+        if (options.sinceMs !== undefined && date <= options.sinceMs) {
+          reachedSince = true;
+          continue;
+        }
+        const user = isObject(c.user) ? Number(str(c.user.id)) : NaN;
+        out.push({ commentId: id, userId: Number.isFinite(user) ? user : null, text: str(c.comment_text), dateMs: date });
+      }
+      if (reachedSince || comments.length < 25 || !oldest) break;
+      cursor = `?start=${oldest.date}&start_id=${encodeURIComponent(oldest.id)}`;
+    }
+    return out.sort((a, b) => a.dateMs - b.dateMs);
+  }
+
+  /**
+   * The options of the «Respuesta» dropdown: id (the UUID that setAnswerField takes), name and orderindex. A task read
+   * may report a dropdown's value as the option id or as its orderindex: match either. GET /list/{id}/field is the
+   * documented «Get List Custom Fields»; its exact shape is checked on the first real run.
+   */
+  async readAnswerOptions(): Promise<{ id: string; name: string; orderindex: number | null }[]> {
+    if (!this.#c.answerFieldId) throw new ClickUpError('not_configured', 'R4_CLICKUP_ANSWER_FIELD_ID is not set');
+    const res = await this.#call('GET', `/list/${this.#c.listId}/field`);
+    const fields: unknown[] = isObject(res) && Array.isArray(res.fields) ? res.fields : [];
+    const field: unknown = fields.find((f) => isObject(f) && f.id === this.#c.answerFieldId);
+    const config: unknown = isObject(field) ? field.type_config : null;
+    const options: unknown[] = isObject(config) && Array.isArray(config.options) ? config.options : [];
+    return options.flatMap((o) => (isObject(o) && str(o.id) ? [{ id: str(o.id), name: str(o.name), orderindex: Number.isFinite(Number(str(o.orderindex))) && str(o.orderindex) !== '' ? Number(str(o.orderindex)) : null }] : []));
+  }
+
   /** X-Signature of a webhook delivery: hex HMAC-SHA256 of the raw body with the webhook secret. Fails closed. */
   verifyWebhook(rawBody: string, signature: string | undefined): boolean {
     if (!this.#c.webhookSecret || !signature || !/^[0-9a-f]{64}$/i.test(signature)) return false;
