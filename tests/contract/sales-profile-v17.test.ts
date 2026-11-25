@@ -59,7 +59,7 @@ describe('A. @17 is @16 with catalog.get_product_context@2, a lane (and isolated
     expect(v17.capabilities).toEqual(SALES_PRODUCTION_PROFILE_V16.capabilities);
     expect(profileFingerprint(v17)).not.toBe(profileFingerprint(SALES_PRODUCTION_PROFILE_V16));
     expect(salesProductionAgentVersion(v17)).toBe(16);
-    expect([...SALES_VARIANT_AVAILABILITY_PROFILES]).toEqual(['sales-production@17', 'sales-production@18', 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23', 'sales-production@24', 'sales-production@25', 'sales-production@26', 'sales-web@19']);
+    expect([...SALES_VARIANT_AVAILABILITY_PROFILES]).toEqual(['sales-production@17', 'sales-production@18', 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23', 'sales-production@24', 'sales-production@25', 'sales-production@26', 'sales-web@19', 'sales-web@20']);
   });
 
   it('lane and canary only (never production, canary-only or gateway main); autonomous policy; Catalog V2; quote-lane ceilings', () => {
