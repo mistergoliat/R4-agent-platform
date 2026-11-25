@@ -1,8 +1,9 @@
 # ADR-061 — Conectores: cómo R4 y sus agentes se conectan con otras aplicaciones
 
 - **Identificador:** `R4-CONNECTORS-01`
-- **Estado:** **Propuesto. No implementado.** No autoriza código ni despliegues. Cada fase necesita autorización
-  explícita del owner.
+- **Estado:** **Aceptado como dirección** (owner, 2026-11-25: «solo fusionar el ADR»). **No implementado.** No
+  autoriza código ni despliegues. Las pantallas de la consola esperan la aprobación del lienzo «Consola R4», y las
+  frases de los estados del pedido esperan los cambios del owner. Cada fase necesita autorización explícita del owner.
 - **Fecha:** 2026-11-25
 - **Mandato:** owner, 2026-11-25: «explícame sobre los conectores, qué herramientas deberíamos incluir para que la
   plataforma y los agentes se puedan conectar a otras aplicaciones», y después: «arma el ADR de conectores».
