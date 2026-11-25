@@ -14,7 +14,8 @@
   - **G5b en producción** (PR #146): Pesín lee los hechos de la Decisión 10 como parte de la ficha.
   - **G2b-2 en producción** (PR #150): calce físico y cuántas relaciones desbloquea cada dato faltante.
   - **Corrección de la reactivación en producción** (PR #152): un producto reactivado recupera sus relaciones.
-  - **G4a implementado:** el agente `graph-curator` clasifica lo que ninguna regla clasifica.
+  - **G4a en producción** (PR #153): el agente `graph-curator` clasifica lo que ninguna regla clasifica.
+  - **G4b implementado:** el agente revisa por lotes las relaciones sin revisar.
   - Cada fase necesita autorización explícita del owner.
 - **Fecha:** 2026-11-23
 - **Mandato:** decisiones del owner del 2026-11-23:
@@ -545,6 +546,44 @@ Decisiones del owner del 2026-11-24:
      `R4_MODEL_MAX_REQUESTS_PER_MINUTE=2` y sin escrituras;
   4. un primer `graph:classify`.
 - **Queda para G4b:** revisar por lotes las 10.150 relaciones sin revisar.
+- **Primer lote en producción (2026-11-25):** solo 2 de los 839 productos activos no tenían tipo; las reglas ya
+  clasificaban el resto. Salieron 3 propuestas y ningún rechazo.
+
+## G4b — el agente revisa las relaciones sin revisar (2026-11-25)
+
+- **Agente `graph-curator` v2** (la v1 queda registrada: las definiciones no cambian). Agrega el tipo de tarea
+  `graph.review_relations`, sube el presupuesto a 60.000 tokens y la ventana de contexto a 24.000. La clasificación
+  sigue con 30.000 tokens por tarea.
+- **Una tarea = hasta 10 relaciones de un mismo producto.** Ese producto es, de los dos extremos, el que más le
+  consultan a Pesín; los grupos van en ese orden y después por cuántas relaciones tienen. La entrada trae cada relación
+  con su significado legible («Barra → Discos para cargarla → Disco»).
+- **Capacidad `graph.product_sheets`:** hasta 12 fichas en una lectura, así que revisar diez relaciones cuesta una
+  llamada al modelo y no once.
+- **Veredicto por relación:** `keep`, `remove` o `unsure`, con una razón y evidencia literal de la ficha del producto
+  que cita (a o b). `checkReview` verifica cada veredicto por separado:
+  - que sea de una relación de la tarea, y una sola vez;
+  - que `keep` y `remove` traigan evidencia;
+  - que cada evidencia sea de a o de b y aparezca en su ficha.
+
+  Un veredicto que no pasa se rechaza solo, con su motivo. Una forma inválida rechaza el resultado completo.
+- **Propuestas, todas para una persona:**
+  - `AGENT_REMOVE_RELATION`, una por relación (`remove_relation`);
+  - `AGENT_CONFIRM_RELATIONS`, una por tarea, con las relaciones confirmadas: el cambio nuevo `mark_reviewed` les
+    quita la marca «sin revisar» sin tocar las relaciones. Deshacerlo devuelve la marca.
+  - `unsure` no propone nada: la relación sigue marcada para una persona.
+- **No se paga dos veces:** las relaciones de una tarea de revisión terminada no vuelven al modelo, en ninguna
+  versión. La clave de idempotencia es el conjunto de relaciones, así que una corrida que dejó de esperar retoma sus
+  tareas sin duplicarlas.
+- **Tope de US$1 medido con lo gastado de verdad:** las tareas salen en olas (4 por defecto). Después de cada ola, la
+  corrida suma los tokens de entrada y de salida que la plataforma registró para sus tareas, con los precios del modelo
+  (`R4_GRAPH_MODEL_PRICE_IN_PER_M_USD`, `R4_GRAPH_MODEL_PRICE_OUT_PER_M_USD`). La ola siguiente sale solo si el tope
+  cubre la ola completa en el peor caso: cada tarea con todo su presupuesto, al precio mayor. Así el tope nunca se pasa.
+  En G4a, una clasificación real costó US$0,002, cerca de 4,5 veces menos que la estimación fija.
+- **A pedido:** `npm run graph:review -- [--wave 4] [--per-task 10] [--wait-min 60]` (hasta 180 minutos). Con un tope
+  de 2 llamadas por minuto, el worker hace cerca de una tarea por minuto, así que conviene subirlo para esta tarea.
+- **Evaluación:** los casos de `checkReview` son el conjunto de regresión (`tests/unit/graph-curator/review.test.ts`).
+  La integración `graph-curator-agent` prueba el ciclo con un modelo guionado: quita la relación citada, confirma la
+  otra, rechaza la evidencia inventada, no repite relaciones ya juzgadas y no parte si el tope no cubre una tarea.
 
 ## Fuera de alcance
 

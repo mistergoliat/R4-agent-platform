@@ -8,7 +8,7 @@ import { PostgresAgentDefinitionStore, PostgresArtifactFacts, PostgresArtifacts,
 import { TaskRuntime } from '@r4/task-runtime';
 import { productSheetView } from '../agent/capabilities.js';
 import { askedToPesin, runClassificationBatch, tasksWithinBudget } from '../agent/batch.js';
-import { loadGraphCuratorDefinition } from '../agent/definition.js';
+import { CLASSIFY_TOKENS_PER_TASK } from '../agent/definition.js';
 import { PRODUCT_GRAPH_KIND } from '../graph.js';
 
 /**
@@ -25,7 +25,7 @@ if (!url || !(price > 0)) {
   process.exit(2);
 }
 const capUsd = Number(process.env.R4_GRAPH_AGENT_BUDGET_USD ?? 1) || 1;
-const perTask = loadGraphCuratorDefinition().budgets.maxTokens ?? 30_000;
+const perTask = CLASSIFY_TOKENS_PER_TASK;
 // The US$ cap decides how many products this run classifies; --limit can only lower it.
 const limit = Math.min(Math.max(1, Number(values.limit ?? 100) || 100), tasksWithinBudget(capUsd, price, perTask));
 if (limit < 1) {

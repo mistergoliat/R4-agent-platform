@@ -4,7 +4,7 @@ import { OpenAICompatibleModelProvider, loadOpenAICompatibleConfig } from '@r4-a
 import { createLogger } from '@r4/observability';
 import { PostgresArtifactFacts, PostgresArtifacts, createPool } from '@r4/persistence-postgres';
 import { loadWorkerConfig, runWorkerProcess } from '@r4/worker';
-import { kindsCapability, productSheetCapability } from '../agent/capabilities.js';
+import { kindsCapability, productSheetCapability, productSheetsCapability } from '../agent/capabilities.js';
 import { kindVocabulary } from '../agent/classify.js';
 import { GRAPH_CURATOR_AGENT_ID, GRAPH_CURATOR_AGENT_VERSION } from '../agent/definition.js';
 import { PRODUCT_GRAPH_KIND } from '../graph.js';
@@ -26,7 +26,9 @@ const facts = new PostgresArtifactFacts(pool);
 const catalog = new HttpCatalogAdapter({ config: loadCatalogHttpConfig(process.env, { allowNetwork: true, source: 'v2' }), fetch: (u, init) => fetch(u, init) });
 
 const capabilities = new CapabilityRegistry();
-capabilities.register(productSheetCapability(catalog, async (key) => (await facts.current(PRODUCT_GRAPH_KIND, key)).map((f) => ({ subject: f.subject, field: f.field, value: f.value, recordedBy: f.recordedBy, recordedAt: f.recordedAt }))));
+const factsOf = async (key: string) => (await facts.current(PRODUCT_GRAPH_KIND, key)).map((f) => ({ subject: f.subject, field: f.field, value: f.value, recordedBy: f.recordedBy, recordedAt: f.recordedAt }));
+capabilities.register(productSheetCapability(catalog, factsOf));
+capabilities.register(productSheetsCapability(catalog, factsOf));
 capabilities.register(kindsCapability(async () => { const signed = await readSignedGraph(artifacts); return signed ? kindVocabulary(signed.graph) : { kinds: [] }; }));
 
 await runWorkerProcess(config, {

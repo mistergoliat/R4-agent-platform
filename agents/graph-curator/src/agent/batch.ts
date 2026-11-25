@@ -62,17 +62,8 @@ export async function runClassificationBatch(
     taskOf.set(key, view.task.taskId);
   }
 
-  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-  const deadline = Date.now() + input.waitMs;
   const done = new Map<string, { status: string; result: JsonObject | null }>();
-  while (done.size < taskOf.size && Date.now() < deadline) {
-    for (const [key, taskId] of taskOf) {
-      if (done.has(key)) continue;
-      const { task } = await deps.tasks.getTask(taskId);
-      if (FINISHED.has(task.status)) done.set(key, task);
-    }
-    if (done.size < taskOf.size) await sleep(input.pollMs ?? 5_000);
-  }
+  await waitForTasks(deps.tasks, taskOf, done, Date.now() + input.waitMs, deps.sleep, input.pollMs);
 
   const refused: { productKey: string; reason: string }[] = [];
   const proposals: NewArtifactProposal[] = [];
@@ -90,6 +81,21 @@ export async function runClassificationBatch(
   }
   const stored = await deps.artifacts.propose({ kind: PRODUCT_GRAPH_KIND, baseVersion: signed.version, source: `graph-curator-agent:${input.batchId}`, correlationId: `graph-classify-${input.batchId}`, proposals });
   return { batchId: input.batchId, targets: targets.length, completed, proposals: stored, refused, pending: [...taskOf.keys()].filter((k) => !done.has(k)) };
+}
+
+/** Waits until every task of `taskOf` (label → task id) is finished or the deadline passes; finished ones land in `done`. */
+export async function waitForTasks(
+  tasks: CuratorTasks, taskOf: ReadonlyMap<string, string>, done: Map<string, { status: string; result: JsonObject | null }>, deadline: number,
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise<void>((r) => setTimeout(r, ms)), pollMs = 5_000,
+): Promise<void> {
+  const open = () => [...taskOf.keys()].filter((k) => !done.has(k));
+  while (open().length && Date.now() < deadline) {
+    for (const key of open()) {
+      const { task } = await tasks.getTask(taskOf.get(key)!);
+      if (FINISHED.has(task.status)) done.set(key, task);
+    }
+    if (open().length) await sleep(pollMs);
+  }
 }
 
 /**
