@@ -85,16 +85,19 @@ describe('sales-web@20: @19 with the home-gym plan sized to the budget', () => {
   });
 });
 
-describe('definition sales-web v20 = v19 with the plan and the closing lines of the build changed', () => {
+describe('definition sales-web v20 = v19 with the plan, the end of the build and the closing set changed', () => {
   const v19 = loadSalesWebAgentDefinition(19);
   const v20 = loadSalesWebAgentDefinition(20);
   const l19 = v19.instructions.split('\n');
   const l20 = v20.instructions.split('\n');
 
-  it('exactly two lines change: the plan size and the end of the build', () => {
+  it('exactly three lines change: the plan size, the end of the build and the closing set', () => {
     expect(l20).toHaveLength(l19.length);
     const changed = l20.map((l, i) => (l === l19[i] ? null : i)).filter((i) => i !== null);
-    expect(changed).toHaveLength(2);
+    expect(changed).toHaveLength(3);
+    // F2 2026-11-25: the closing reply listed only the main pieces and sent the visitor back to earlier messages.
+    const closing = l20.find((l) => l.startsWith('- When the plan is done, reply with the whole chosen set'))!;
+    for (const must of ['the extra pieces and complements included', 'each on its own line with its card', 'never only the main pieces and never send them back to earlier messages', 'never add a piece they did not pick']) expect(closing).toContain(must);
     const plan = l20.find((l) => l.startsWith('- From the objective, space and budget'))!;
     for (const must of ['up to $1,5 millones, 3 to 5 pieces', '$1,5 a $4 millones, 5 to 8 pieces', '$4 a $8 millones or more, 7 to 10 pieces', 'after a rack always come barra and discos']) expect(plan).toContain(must);
     const end = l20.find((l) => l.startsWith('- When the plan is done, compare the set total'))!;
