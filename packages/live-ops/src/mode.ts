@@ -76,6 +76,11 @@ export const productionConfigSchema = z.strictObject({
    * exactly what it was before.
    */
   contactMode: z.enum(['observe', 'active']).optional(),
+  /**
+   * (ADR-055 C2b) With `contactMode: active`, templates are sent too (only once the provider approved them). Absent
+   * (R4_PROD_CONTACT_TEMPLATES unset or off): templates are only observed, and the configuration is exactly as before.
+   */
+  contactTemplates: z.literal(true).optional(),
 });
 export type ProductionConfig = z.infer<typeof productionConfigSchema>;
 
@@ -131,6 +136,7 @@ export function loadProductionConfig(env: Readonly<Record<string, string | undef
     priorConversationDays: int(env.R4_PROD_PRIOR_CONVERSATION_DAYS, 'R4_PROD_PRIOR_CONVERSATION_DAYS', 30),
     ...(idleHours === 0 ? {} : { caseIdleCloseHours: idleHours }),
     ...(contactMode === '' || contactMode === 'off' ? {} : { contactMode }),
+    ...(env.R4_PROD_CONTACT_TEMPLATES?.trim().toLowerCase() === 'on' ? { contactTemplates: true } : {}),
   });
   if (!parsed.success) throw new ProductionConfigError('invalid_production_config', `refusing to compose production:\n${z.prettifyError(parsed.error)}`);
   if (parsed.data.outbound.leaseMs <= parsed.data.outbound.providerTimeoutMs) {

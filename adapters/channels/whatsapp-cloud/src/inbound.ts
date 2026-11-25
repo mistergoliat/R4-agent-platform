@@ -117,6 +117,11 @@ export class WhatsAppInboundAdapter implements InboundChannelAdapter {
       if (!body) return { providerEventId: id, reason: 'empty_text' };
       return { ...base, content: { kind: 'text', text: body.slice(0, 8000) } };
     }
+    // (ADR-055 C2b) A tap on a template's quick-reply button arrives as `button`: its visible text is what the contact said.
+    if (type === 'button') {
+      const label = isObject(m.button) ? text(m.button.text) : null;
+      if (label) return { ...base, content: { kind: 'text', text: label.slice(0, 256) } };
+    }
     // (Inbound multimodal v1) Images and audio: only the media REFERENCE; the file is fetched later, and only if the
     // conversation's input starts autonomous work (ingress). An item without a usable reference stays unsupported.
     if (type === 'image' || type === 'audio' || type === 'sticker') {

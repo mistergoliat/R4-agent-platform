@@ -41,6 +41,7 @@ export class WhatsAppOutboundAdapter implements OutboundChannelAdapter {
   readonly contractRef = WHATSAPP_CLOUD_CONTRACT_REF;
   readonly customerWindowMs = WHATSAPP_CUSTOMER_WINDOW_MS;
   readonly supportsDocuments = true;
+  readonly supportsTemplates = true;
   readonly #config: WhatsAppCloudConfig;
   readonly #fetch: FetchLike;
 
@@ -56,6 +57,11 @@ export class WhatsAppOutboundAdapter implements OutboundChannelAdapter {
       return result({ outcome: 'rejected', providerMessageId: null, httpStatus: null, errorClass: 'foreign_business_number', errorCode: null, retryAfterMs: null });
     }
     let message: Json = { type: 'text', text: { preview_url: false, body: submission.text } };
+    // (ADR-055 C2b) An approved template: its body parameters, positional and plain text (Cloud API `template` message).
+    if (submission.template) {
+      const t = submission.template;
+      message = { type: 'template', template: { name: t.name, language: { code: t.language }, components: t.parameters.length > 0 ? [{ type: 'body', parameters: t.parameters.map((text) => ({ type: 'text', text })) }] : [] } };
+    }
     let timeoutMs = options.timeoutMs;
     if (submission.document) {
       const media = await this.#upload(submission.document, options.timeoutMs);

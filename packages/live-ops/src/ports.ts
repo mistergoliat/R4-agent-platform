@@ -1,5 +1,5 @@
 import type { AutonomyControlsState } from './autonomy.js';
-import type { OutboundDocument, ProviderStatusEvent } from './channel.js';
+import type { OutboundDocument, ProviderStatusEvent, OutboundTemplate } from './channel.js';
 import type { DispatchDecision, DispatchFacts, OutboundOrigin, OutboundStatus, SubmissionDisposition, SubmissionResult } from './delivery.js';
 import type { InboundInspector } from './inspection.js';
 
@@ -233,7 +233,7 @@ export interface DispatchToken {
 }
 
 export type DispatchClaim =
-  | { readonly kind: 'dispatch'; readonly outbound: OutboundRecord; readonly token: DispatchToken; readonly accountRef: string; readonly recipientRef: string; readonly text: string; readonly document: OutboundDocument | null }
+  | { readonly kind: 'dispatch'; readonly outbound: OutboundRecord; readonly token: DispatchToken; readonly accountRef: string; readonly recipientRef: string; readonly text: string; readonly document: OutboundDocument | null; readonly template: OutboundTemplate | null }
   | { readonly kind: 'held'; readonly outbound: OutboundRecord; readonly reason: string }
   | { readonly kind: 'cancelled'; readonly outbound: OutboundRecord; readonly reason: string };
 
@@ -281,6 +281,11 @@ export interface NewPlatformNotice {
    * The store checks the bytes against `sha256`; a replay must carry the same text and the same document.
    */
   readonly document?: OutboundDocument;
+  /**
+   * (ADR-055 C2b) Sent as this approved template; `text` is what it says. A template notice may ride on a closed case:
+   * the delivery gate does not ask for an open window, a live task or an open binding (see `decideDispatch`).
+   */
+  readonly template?: OutboundTemplate;
 }
 
 export interface ThreadEntry {

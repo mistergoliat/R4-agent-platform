@@ -75,12 +75,12 @@ describe('contact sweep', () => {
     };
     const store = {
       taskState: () => Promise.resolve({ humanOwned: options.humanOwned ?? false } as never),
-      createPlatformNotice: (n: { noticeKey: string }) => {
-        notices.push(n.noticeKey);
+      createPlatformNotice: (n: { noticeKey: string; template?: unknown }) => {
+        notices.push(n.template ? `${n.noticeKey}+template` : n.noticeKey);
         return Promise.resolve({ record: { outboundId: '00000000-0000-7000-8000-000000000001' } as never, replayed: false });
       },
     };
-    const sweep = (mode: 'observe' | 'active') => new ContactSweep({ store, contacts, source: { due: () => Promise.resolve({ now: options.now ?? NOON, candidates: c }) }, rules: RULES, mode, logger: createSilentLogger() });
+    const sweep = (mode: 'observe' | 'active', templates = false) => new ContactSweep({ templates, store, contacts, source: { due: () => Promise.resolve({ now: options.now ?? NOON, candidates: c }) }, rules: RULES, mode, logger: createSilentLogger() });
     return { decisions, notices, sweep };
   }
 
@@ -97,6 +97,13 @@ describe('contact sweep', () => {
     expect(await h.sweep('active').sweep()).toMatchObject({ sent: 1, observed: 1 });
     expect(h.notices).toEqual(['sales.followup-1:q1']);
     expect(h.decisions.map((d) => [d.mode, d.outboundId !== null])).toEqual([['active', true], ['observe', false]]);
+  });
+
+  it('(C2b) with templates on, active sends the template as a notice carrying it', async () => {
+    const h = harness([candidate({ sourceRef: 'sales.quote-followup:q2:2', noticeKey: 'sales.followup-2:q2', lastInboundAt: new Date(NOON.getTime() - 96 * H), template: { name: 'seguimiento_cotizacion', language: 'es', parameters: ['PC-1', '28-11-2026'] } })]);
+    expect(await h.sweep('active', true).sweep()).toMatchObject({ sent: 1, observed: 0 });
+    expect(h.notices).toEqual(['sales.followup-2:q2+template']);
+    expect(h.decisions[0]).toMatchObject({ mode: 'active', outcome: 'send', rule: 'allowed' });
   });
 
   it('a held candidate waits (no record) until its deadline, then is dropped with the rule that held it; an opt-out stops it', async () => {

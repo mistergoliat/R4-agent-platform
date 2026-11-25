@@ -233,7 +233,7 @@ o `descartado`), modo (`observe` o `active`) y el mensaje que salió, si salió.
 |---|---|---|
 | C1 | Compuerta, baja y registro; barrido con S1 y S2 en sombra; informe de la sombra por script de solo lectura (`ops/contact/report.sql`); la línea «Si no quieres que te escribamos, responde BAJA» en el mensaje de la cotización por WhatsApp | Despliegue autorizado |
 | C2a | S1 activo | Owner revisa la sombra y autoriza |
-| C2b | S2 activo | Plantilla aprobada por Meta, y autorización del owner |
+| C2b | S2 activo: el adaptador de WhatsApp envía plantillas, y un toque en un botón de plantilla llega como el texto del botón («No me escriban» es una baja). Se enciende con `R4_PROD_CONTACT_TEMPLATES=on` además de `R4_PROD_CONTACT_MODE=active`; sin esa variable, S2 queda solo registrado | Plantilla aprobada por Meta, y autorización del owner |
 
 La pantalla «Contacto con clientes» (Decisión 5) sigue la regla de la consola: primero se aprueba en el lienzo.
 

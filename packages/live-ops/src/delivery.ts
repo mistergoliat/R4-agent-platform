@@ -72,6 +72,8 @@ export interface DispatchFacts {
   readonly handoffPending?: boolean;
   /** Platform output only (R-4): a notice (noticeKey), not an ADR-041 fallback. */
   readonly notice?: boolean;
+  /** Platform notice only (ADR-055 C2b): it is sent as an approved template, which needs no open window. */
+  readonly template?: boolean;
 }
 
 export interface DispatchPolicy {
@@ -124,6 +126,8 @@ function decidePlatformDispatch(f: DispatchFacts, policy: DispatchPolicy): Dispa
   if (f.binding.deniedNow) return { kind: 'hold', reason: DISPATCH_HOLD_REASONS.denied };
   if (!f.binding.autonomous) return { kind: 'hold', reason: DISPATCH_HOLD_REASONS.rolloutExcluded };
   if (f.notice === true ? f.task.humanOwned : f.handoffPending !== true) return { kind: 'cancel', reason: CANCEL_REASONS.supersededByOperator };
+  // (ADR-055 C2b) A template writes to a contact whose case may have closed: it is the channel's way to do so.
+  if (f.notice === true && f.template === true) return Date.parse(f.now) - Date.parse(f.createdAt) > policy.maxAgeMs ? { kind: 'cancel', reason: CANCEL_REASONS.expired } : { kind: 'dispatch' };
   if (f.task.status === 'cancelled' || f.task.status === 'failed') return { kind: 'cancel', reason: CANCEL_REASONS.taskTerminal };
   if (f.binding.status === 'closed') return { kind: 'cancel', reason: CANCEL_REASONS.conversationClosed };
   if (Date.parse(f.now) - Date.parse(f.createdAt) > policy.maxAgeMs) return { kind: 'cancel', reason: CANCEL_REASONS.expired };

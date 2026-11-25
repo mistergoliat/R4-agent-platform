@@ -118,6 +118,16 @@ export interface OutboundDocument {
   readonly bytes: Uint8Array;
 }
 
+/**
+ * (ADR-055 C2b) A message template the provider approved (e.g. to write outside a free-text window): its name, language
+ * and the body's positional parameters. The platform never builds one from model output.
+ */
+export interface OutboundTemplate {
+  readonly name: string;
+  readonly language: string;
+  readonly parameters: readonly string[];
+}
+
 export interface OutboundSubmission {
   readonly outboundId: string;
   /** R4's durable idempotency key of this outbound (passed to the provider only if it documents one). */
@@ -133,6 +143,8 @@ export interface OutboundSubmission {
   readonly authorName?: string;
   /** Present only for a platform notice that carries a document (sent only by adapters with `supportsDocuments`). */
   readonly document?: OutboundDocument;
+  /** (ADR-055 C2b) Present only for a platform notice sent as a template (sent only by adapters with `supportsTemplates`); `text` is then what it says. */
+  readonly template?: OutboundTemplate;
 }
 
 export interface OutboundChannelAdapter {
@@ -145,6 +157,8 @@ export interface OutboundChannelAdapter {
   readonly customerWindowMs: number | null;
   /** True when `submit` sends `submission.document`; otherwise such an outbound is refused before any provider call. */
   readonly supportsDocuments?: boolean;
+  /** True when `submit` sends `submission.template`; otherwise such an outbound is refused before any provider call. */
+  readonly supportsTemplates?: boolean;
   /**
    * One submission. Must classify honestly: `unknown` whenever the request
    * may have reached the provider without a definitive answer. Must never

@@ -23,6 +23,8 @@ export interface FakeSend {
   readonly text: string;
   /** A document message: the uploaded media it names and the file name shown. */
   readonly document: { readonly mediaId: string; readonly filename: string } | null;
+  /** (ADR-055 C2b) A template message: its name, language code and body parameters, as sent. */
+  readonly template: { readonly name: string; readonly language: string; readonly parameters: readonly string[] } | null;
   readonly authorized: boolean;
   /** The wamid returned, when the fake accepted it (also for hang/drop: the fake "processed" it). */
   readonly providerMessageId: string | null;
@@ -132,7 +134,7 @@ export class FakeWhatsAppProvider {
       res.writeHead(404).end();
       return;
     }
-    const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { to?: string; text?: { body?: string }; document?: { id?: string; filename?: string; caption?: string }; status?: string; message_id?: string; typing_indicator?: { type?: string } };
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { to?: string; text?: { body?: string }; document?: { id?: string; filename?: string; caption?: string }; template?: { name?: string; language?: { code?: string }; components?: { type?: string; parameters?: { text?: string }[] }[] }; status?: string; message_id?: string; typing_indicator?: { type?: string } };
     if (body.status === 'read') {
       this.signals.push({ messageId: body.message_id ?? '', typing: body.typing_indicator?.type === 'text', authorized });
       res.writeHead(authorized ? 200 : 401, { 'content-type': 'application/json' }).end(JSON.stringify(authorized ? { success: true } : { error: { code: 190 } }));
@@ -142,7 +144,8 @@ export class FakeWhatsAppProvider {
     const processes = behaviour.kind === 'accept' || behaviour.kind === 'hang' || behaviour.kind === 'drop' || behaviour.kind === 'accept_without_id';
     const providerMessageId = authorized && processes ? `wamid.fake.${++this.#counter}` : null;
     const document = body.document ? { mediaId: body.document.id ?? '', filename: body.document.filename ?? '' } : null;
-    this.sends.push({ phoneNumberId: match[1]!, to: body.to ?? '', text: body.text?.body ?? body.document?.caption ?? '', document, authorized, providerMessageId });
+    const template = body.template ? { name: body.template.name ?? '', language: body.template.language?.code ?? '', parameters: (body.template.components ?? []).filter((c) => c.type === 'body').flatMap((c) => (c.parameters ?? []).map((p) => p.text ?? '')) } : null;
+    this.sends.push({ phoneNumberId: match[1]!, to: body.to ?? '', text: body.text?.body ?? body.document?.caption ?? '', document, template, authorized, providerMessageId });
     if (!authorized) {
       res.writeHead(401, { 'content-type': 'application/json' }).end(JSON.stringify({ error: { code: 190, message: 'invalid token' } }));
       return;
@@ -279,6 +282,8 @@ export function notification(phoneNumberId: string, items: { messages?: readonly
               contacts: (items.messages ?? []).map((m) => ({ profile: { name: 'Test Contact' }, wa_id: m.from })),
               messages: (items.messages ?? []).map((m) => {
                 const type = m.type ?? 'text';
+                // (ADR-055 C2b) A quick-reply button of a template: its visible text and payload.
+                if (type === 'button') return { from: m.from, id: m.id, timestamp: String(m.timestamp ?? now), type, button: { text: m.text ?? '', payload: m.text ?? '' } };
                 if (type === 'reaction') return { from: m.from, id: m.id, timestamp: String(m.timestamp ?? now), type, reaction: { message_id: m.reaction?.messageId ?? '', ...(m.reaction?.emoji ? { emoji: m.reaction.emoji } : {}) } };
                 if (type === 'unsupported') return { from: m.from, id: m.id, timestamp: String(m.timestamp ?? now), type, ...(m.unsupportedType ? { unsupported: { type: m.unsupportedType } } : {}), errors: [{ code: 131051, title: 'Message type unknown' }] };
                 return type === 'text'
