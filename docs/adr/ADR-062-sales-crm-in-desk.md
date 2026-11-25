@@ -421,6 +421,15 @@ política de despacho.
     pasar a un vendedor;
   - el límite de cotización autónoma de R4 (`R4_AUTONOMOUS_QUOTE_MAX_GROSS_CLP`) se ajusta a ese monto, con
     autorización propia.
+- **Motivos de pérdida:** se parte en QA con la lista propuesta (Decisión 5) y se ajusta con el equipo de ventas
+  antes de producción.
+- **Plazos:**
+  - una próxima acción no puede quedar a más de 3 días;
+  - cuando vence, se avisa al dueño;
+  - si sigue vencida 4 horas, se avisa al supervisor.
+- **Cliente de cabecera:** se siembra con el vendedor de las ventas SAP de los últimos 90 días, con la misma regla
+  de ADR-048. Lo más antiguo no crea vínculo.
+- **Clave compartida:** una clave que aparece en más de 3 cuentas no une sola; la revisa una persona.
 
 ## Decisiones abiertas del owner
 
@@ -428,8 +437,5 @@ política de despacho.
    ADR-048).
 2. La lista de RUT y códigos genéricos de «venta general». Va en la configuración de la mesa, no en este
    repositorio.
-3. El plazo máximo de una próxima acción y los plazos de escalamiento.
-4. La lista de motivos de pérdida.
-5. La retención de los datos personales de oportunidades perdidas.
-6. Si el historial de vendedores en SAP siembra el cliente de cabecera.
-7. El umbral N de clave compartida (propuesta: más de 3 cuentas).
+3. La lista final de motivos de pérdida, acordada con Ventas.
+4. La retención de los datos personales de oportunidades perdidas.
