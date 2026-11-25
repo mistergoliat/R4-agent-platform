@@ -147,6 +147,30 @@ Hechos verificados:
 - **Sistemas de registro (SAP, PrestaShop, Quote, Catalog):** siguen siendo los dueños. Pesín equipo los lee. Solo
   escribe en ellos a través de capacidades que ya existen y están gobernadas, como Quote.
 
+## Decisión 5b — Cambios de estado de pedidos: solo transiciones permitidas
+
+Una auditoría de solo lectura de los estados de pedidos de producción (180 días, solo cifras agregadas) encontró lo
+siguiente:
+
+- **Todos los cambios de estado logísticos son manuales**, hechos por unas 11 personas.
+- **Hay muchos retrocesos.** Casi la mitad de los «Entregado → Consolidando ruta» ocurren dentro de 10 minutos, es
+  decir, son clics equivocados. También hay retrocesos días después, y estados marcados dos veces.
+- **Los pedidos por courier casi nunca llegan a «Entregado».** Se quedan en «Entregado a Blue Express» o «Enviado».
+- **Las marcas de pagado, enviado y entregado de los estados propios están mal configuradas.**
+- **Los retiros en tienda se cierran con un estado de pago** porque no existe un estado «Retirado».
+
+Por eso:
+
+- **Pesín equipo solo propone transiciones permitidas** para el recorrido del pedido según su transportista: flota
+  propia, courier o retiro. La tabla de transiciones es configuración versionada del dueño del dato.
+- **Retroceder un estado pide confirmación y motivo.** Marcar dos veces el mismo estado no hace nada.
+- **«Pagado» y «entregado» nunca se deducen de las marcas del estado actual.** Se deducen del historial de estados y
+  de una tabla explícita de qué estado significa qué, igual que la lectura interna de pedidos pagados de ADR-061.
+- **El cierre de los pedidos por courier necesita una fuente de entrega.** Puede ser el seguimiento del courier o el
+  servicio de logística, o, en la flota propia, el reporte del despachador con foto.
+- **El estado «Retirado» lo crea el owner en la tienda.** Mientras no exista, Pesín equipo registra el retiro como
+  reporte y no lo cierra con un estado de pago.
+
 ## Decisión 6 — Puente de conocimiento
 
 - **Una consulta va a quien sabe.** Cuando Pesín de clientes consulta al equipo (ADR-056) y el motivo es técnico o de
