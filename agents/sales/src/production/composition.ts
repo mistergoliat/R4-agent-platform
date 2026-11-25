@@ -4,7 +4,7 @@ import type pg from 'pg';
 import type { Logger } from 'pino';
 import { DomainError, type CatalogPort, type CheckoutConsentSource, type CheckoutService, type QuoteV2Service, type ShippingService } from '@r4-adapters/domains';
 import { identityVerificationSchemaIsCurrent } from '@r4-adapters/identity-verification';
-import { WhatsAppInboundAdapter, WhatsAppMediaDownloader, WhatsAppOutboundAdapter, describeWhatsAppConfig, loadWhatsAppCloudConfig, type FetchLike, type WhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
+import { WHATSAPP_CHANNEL_ID, WhatsAppInboundAdapter, WhatsAppMediaDownloader, WhatsAppOutboundAdapter, describeWhatsAppConfig, loadWhatsAppCloudConfig, type FetchLike, type WhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
 import { WebInboundAdapter, WebOutboundAdapter, describeWebChannelConfig, loadWebChannelConfig, type WebFetch } from '@r4-adapters/web';
 import { CapabilityRegistry, type CapabilityRegistration } from '@r4/capability-runtime';
 import { systemClock, type Clock, type Principal } from '@r4/contracts';
@@ -72,6 +72,7 @@ import { SALES_QUOTE_DOCUMENT_PROFILES, SALES_QUOTE_LANE_V18_PROFILE_LABEL } fro
 import { SALES_F1_SHIPPING_PROFILES, SALES_INTENT_ACCEPTANCE_PROFILES } from './profile-v19.js';
 import { SALES_QUOTE_LANE_V21_PROFILE_LABEL } from './profile-v21.js';
 import { quoteDocumentDelivery } from '../capabilities/quote-document.js';
+import { SALES_CONTACT_RULES, SALES_OPT_OUT, SALES_QUOTE_OPT_OUT_LINE, salesQuoteFollowUpSource } from './contact.js';
 import { catalogDiscoverCapability } from '../capabilities/catalog-discover.js';
 import { catalogSetComplementsCapability } from '../capabilities/catalog-set-complements.js';
 import { catalogBuildStepCapability, catalogReplacementsCapability, type GraphSource } from '../capabilities/catalog-build-step.js';
@@ -290,7 +291,7 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
           if (isF1CanaryProfile(profile) || isQuoteLaneProfile(profile) || SALES_WEB_QUOTE_PROFILES.has(profileLabel(profile))) assertF1CanaryLimits(limits, profileLabel(profile));
           if (options.quoteParity) options.logger.info({ quoteParity: { profile: profileLabel(profile), fingerprint: options.quoteParity.fingerprint, items: options.quoteParity.items, maxAgeSeconds: options.quoteParity.maxAgeSeconds } }, 'sales quote parity evidence configured');
           if (capabilityAvailability(profile, AUTONOMOUS_QUOTE_CAPABILITY_IDS.quotePreview).available) capabilities.register(quotePreviewV3Capability({ store: sales, catalog, shipping: options.shipping, limits, now: () => clock.now(), parity: options.quoteParity ?? null, eligibility: salesCommercialEligibility(profile, options.promotionalQuotes === true), naturalAcceptance: SALES_INTENT_ACCEPTANCE_PROFILES.has(profileLabel(profile)), hideStockCounts: SALES_STOCK_COUNT_PROFILES.has(profileLabel(profile)) }));
-          if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV5Capability({ store: sales, quotes, catalog, shipping: options.shipping, limits, conversation: options.store, admission: controls, now: () => clock.now(), parity: options.quoteParity ?? null, eligibility: salesCommercialEligibility(profile, options.promotionalQuotes === true), documents: SALES_QUOTE_DOCUMENT_PROFILES.has(profileLabel(profile)) ? quoteDocumentDelivery(options.store, options.logger) : null, naturalAcceptance: SALES_INTENT_ACCEPTANCE_PROFILES.has(profileLabel(profile)) }));
+          if (capabilityAvailability(profile, CAPABILITY_IDS.quoteCreate).available) capabilities.registerWrite(quoteCreateV5Capability({ store: sales, quotes, catalog, shipping: options.shipping, limits, conversation: options.store, admission: controls, now: () => clock.now(), parity: options.quoteParity ?? null, eligibility: salesCommercialEligibility(profile, options.promotionalQuotes === true), documents: SALES_QUOTE_DOCUMENT_PROFILES.has(profileLabel(profile)) ? quoteDocumentDelivery(options.store, options.logger, config.contactMode && profile.channel.id === WHATSAPP_CHANNEL_ID ? SALES_QUOTE_OPT_OUT_LINE : null) : null, naturalAcceptance: SALES_INTENT_ACCEPTANCE_PROFILES.has(profileLabel(profile)) }));
           // (ADR-057 C4) The issued quote's PDF by email, through the same kill-switch-guarded Quote port.
           if (capabilityAvailability(profile, QUOTE_EMAIL_CAPABILITY_ID).available) capabilities.registerWrite(quoteEmailCapability({ store: sales, quotes, conversation: options.store }));
         } else {
@@ -483,6 +484,8 @@ export function composeSalesGateway(options: SalesGatewayOptions): { bindings: G
       humanRequestNotice: { text: () => salesHumanRequestNotice(now()), profiles: SALES_HUMAN_REQUEST_NOTICE_PROFILES },
       ...laneOf(lane),
       ...(media.perception ? { media: media.perception } : {}),
+      // (ADR-055) Opt-out words and quote follow-ups; used only while R4_PROD_CONTACT_MODE is observe or active.
+      ...(config.contactMode ? { contact: { rules: SALES_CONTACT_RULES, optOut: SALES_OPT_OUT, source: salesQuoteFollowUpSource(options.pool, config.contactMode) } } : {}),
       // (R4-J4-R4) v8 never runs without the inbound inspector, requested in full (ADR-040).
       ...(isCustomerIdentityProfile(profile) ? { inspection: salesGatewayInspection(profile, options.env, { transport: options.identityFetch, allowedHosts: options.allowedHosts }) } : {}),
     },
