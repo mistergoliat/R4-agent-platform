@@ -84,6 +84,8 @@
     "production:sales:gateway": "node agents/sales/dist/cli/production.js --gateway",
     "production:sales:worker": "node agents/sales/dist/cli/production.js --worker",
     "production:sales:web-gateway": "node agents/sales/dist/cli/production.js --web-gateway",
+    "production:sales:meta-gateway": "node agents/sales/dist/cli/production.js --meta-gateway",
+    "production:sales:meta-check": "node agents/sales/dist/cli/production.js --meta-check",
     "production:sales:control": "node agents/sales/dist/cli/production-control.js",
     "production:sales:bootstrap": "node agents/sales/dist/cli/production-bootstrap.js",
     "graph:import": "node agents/graph-curator/dist/cli/import.js",

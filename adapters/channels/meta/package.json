@@ -1,0 +1,21 @@
+{
+  "name": "@r4-adapters/meta",
+  "version": "0.0.0",
+  "private": true,
+  "description": "R4 channel adapter for Meta direct messages (ADR-060): Messenger (a Facebook Page) and Instagram Direct (the professional account linked to that Page), through the Page with Facebook Login. Signed webhooks in, honest Send API text out, an optional typing signal and a connection check. Pure transport: no agent, store or commerce semantics. Outside R4 Core.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@r4/live-ops": "*"
+  }
+}

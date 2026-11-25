@@ -877,7 +877,7 @@ export class PostgresProductionStore implements ProductionStore {
       [limit],
     );
     return r.rows.map((row) => ({
-      bindingId: row.binding_id as string, channel: row.channel as string, taskId: (row.task_id as string | null) ?? null, taskStatus: (row.task_status as string | null) ?? null,
+      bindingId: row.binding_id as string, channel: row.channel as string, accountRef: row.account_ref as string, taskId: (row.task_id as string | null) ?? null, taskStatus: (row.task_status as string | null) ?? null,
       bindingStatus: row.status as 'open' | 'closed', autonomy: row.autonomy as 'autonomous' | 'excluded', humanOwned: row.human_owned === true,
       lastInboundAt: isoOrNull(row.last_inbound_at), createdAt: iso(row.created_at),
       presence: row.presence ? { state: row.presence as 'present' | 'away', since: iso(row.presence_at) } : null,

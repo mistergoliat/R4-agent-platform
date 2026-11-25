@@ -21,7 +21,7 @@ export const SALES_QUOTE_LANE_V24_PROFILE_LABEL = 'sales-production@24';
  * Profiles whose worker makes every consultation non-pausing (ADR-056 D1), whatever the model wrote in `blocking`:
  * the L3 run 1 of @24 showed the model omitting it in 2 of 3 consultations (the conversation then paused).
  */
-export const SALES_NON_PAUSING_CONSULTATION_PROFILES: ReadonlySet<string> = new Set(['sales-web@17', 'sales-web@18', 'sales-web@19', 'sales-web@20', SALES_QUOTE_LANE_V24_PROFILE_LABEL, 'sales-production@25', 'sales-production@26']);
+export const SALES_NON_PAUSING_CONSULTATION_PROFILES: ReadonlySet<string> = new Set(['sales-facebook@1', 'sales-instagram@1', 'sales-web@17', 'sales-web@18', 'sales-web@19', 'sales-web@20', SALES_QUOTE_LANE_V24_PROFILE_LABEL, 'sales-production@25', 'sales-production@26']);
 
 /** What must be true before @24 is activated on the lane: what @23 requires, plus the consultation cases with the real model. */
 export const SALES_PRODUCTION_PROFILE_V24_GATE = Object.freeze([

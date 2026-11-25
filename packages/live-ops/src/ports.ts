@@ -296,6 +296,8 @@ export interface ThreadEntry {
 export interface ConversationSummary {
   readonly bindingId: string;
   readonly channel: string;
+  /** (ADR-060) The provider-side account the conversation is on (the business account of the channel): never personal data. */
+  readonly accountRef: string;
   readonly taskId: string | null;
   readonly taskStatus: string | null;
   readonly bindingStatus: 'open' | 'closed';

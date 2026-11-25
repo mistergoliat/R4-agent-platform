@@ -59,7 +59,7 @@ export interface ChannelIngressOptions {
    * Notified (synchronously, after the input is durable) when an inbound starts AUTONOMOUS work, e.g. for the
    * gateway's cosmetic working signal. Must not throw or block; its failures are ignored. Absent: nothing.
    */
-  readonly onAutonomousInput?: (input: { readonly channel: string; readonly accountRef: string; readonly providerEventId: string; readonly taskId: string }) => void;
+  readonly onAutonomousInput?: (input: { readonly channel: string; readonly accountRef: string; readonly conversationRef: string; readonly providerEventId: string; readonly taskId: string }) => void;
   /**
    * (Inbound multimodal v1) Perception of images and voice notes. Absent — or with an inspector composed, whose ADR-040
    * guarantees cover text only — a media item is exactly an `unsupported` one (held per profile, never downloaded).
@@ -433,7 +433,7 @@ export class ChannelIngress {
           emitTelemetry(logger, 'inbound.ingested', { channel: record.channel, inboundId: record.inboundId, taskId, inputId, taskCreated, disposition, correlationId: record.correlationId });
           if (disposition === 'autonomous' && this.#o.onAutonomousInput) {
             try {
-              this.#o.onAutonomousInput({ channel: record.channel, accountRef: record.accountRef, providerEventId: record.providerEventId, taskId });
+              this.#o.onAutonomousInput({ channel: record.channel, accountRef: record.accountRef, conversationRef: record.conversationRef, providerEventId: record.providerEventId, taskId });
             } catch {
               // Cosmetic hook: it never changes the outcome of an ingested input.
             }

@@ -13,6 +13,12 @@ umask 077
 : "${TARGET:?set TARGET=<full sha>}" "${PREV:?set PREV=<deployed short sha>}" "${LANE:?set LANE=<current lane profile>}" "${EXPECT_HEAD:?set EXPECT_HEAD=<core migration id>}"
 R=~/R4-agent-platform; C=~/.config/r4
 WORKERS="r4-scheduler r4-sales-worker r4-sales-worker-lane"; GATEWAY=r4-channel-gateway
+# Optional processes that share this database or this code tree, stopped and restarted only when they are running now:
+# the web chat (2026-11-23), the Meta channels (ADR-060) and the graph curator (ADR-058). They are left as found.
+running() { for p in "$@"; do [ "$(pm2 pid "$p" 2>/dev/null || echo 0)" -gt 0 ] 2>/dev/null && printf '%s ' "$p"; done; true; }
+WORKERS="$WORKERS $(running r4-web-qa-worker r4-instagram-worker r4-facebook-worker r4-graph-curator-worker)"
+GATEWAY="$GATEWAY $(running r4-web-qa-gateway r4-instagram-gateway r4-facebook-gateway)"
+echo "processes: $WORKERS| $GATEWAY"
 step() { echo "== $(date -u +%T) $*"; }
 envrun() { (cd "$R" && set -a && . "$C/production.env" && set +a && "$@"); }
 db() { docker exec r4-production-postgres psql -U r4_production -d r4_production -At -c "$1"; }
@@ -54,7 +60,7 @@ step "2. stop the workers, drain the outbound, stop the gateway, then the kill s
 for p in $WORKERS; do pm2 stop "$p" >/dev/null; done
 for _ in $(seq 1 30); do [ "$(db "select count(*) from outbound_messages where status in ('pending','dispatching')")" = 0 ] && break; sleep 2; done
 [ "$(db "select count(*) from outbound_messages where status in ('pending','dispatching')")" = 0 ] || { echo "outbound not drained: restarting workers"; for p in $WORKERS; do pm2 start "$p" >/dev/null; done; exit 1; }
-pm2 stop "$GATEWAY" >/dev/null
+for p in $GATEWAY; do pm2 stop "$p" >/dev/null; done
 envrun npm run -s production:sales:control -- autonomy off --reason "R4 $TARGET code deploy (owner-authorized); lane $LANE unchanged" > /dev/null 2>&1
 [ "$(autonomy)" = '"autonomy": "disabled"' ] || { echo "kill switch not engaged"; exit 1; }
 
@@ -81,7 +87,7 @@ fi
 sleep 15
 
 step "6. verify"
-pm2 jlist | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const want=["r4-channel-gateway","r4-sales-worker","r4-sales-worker-lane","r4-scheduler"];const r=JSON.parse(s).filter(p=>want.includes(p.name));for(const p of r)console.log(p.name,p.pm2_env.status);if(r.length!==4||r.some(p=>p.pm2_env.status!=="online"))process.exit(1)})'
+pm2 jlist | WANT="$WORKERS $GATEWAY" node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const want=process.env.WANT.split(/\s+/).filter(Boolean);const r=JSON.parse(s).filter(p=>want.includes(p.name));for(const p of r)console.log(p.name,p.pm2_env.status);if(r.length!==want.length||r.some(p=>p.pm2_env.status!=="online"))process.exit(1)})'
 curl -sf -m 5 127.0.0.1:8090/health >/dev/null && echo "gateway /health 200"
 for f in r4-sales-worker r4-sales-worker-lane; do tail -60 ~/.pm2/logs/$f-out.log | grep -oE '"compatibility":"[^"]*"' | tail -1 | sed "s/^/$f /"; done
 grep -E '^R4_PROD_LANE_PROFILE=' "$C/production.env"; grep -E '^R4_PROD_POLICY_PROFILE=' "$C/production-lane.env"

@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SALES_AGENT_DIR, SALES_MIGRATIONS_DIR, isSalesCandidateDefinition, loadSalesAgentDefinition } from '../definition.js';
 import { SALES_AGENT_ID, SALES_WEB_AGENT_ID } from '../ids.js';
+import { loadSalesMetaAgentDefinition, salesMetaAgentOf, salesMetaProfile } from './profile-meta.js';
 import { SALES_PRODUCTION_PROFILES, salesProductionAgentVersion, salesProductionProfile } from './profile-v8.js';
 import { SALES_LANE_PROFILES } from './profile-v15.js';
 import { loadSalesWebAgentDefinition, salesWebAgentVersion, salesWebProfile } from './profile-web.js';
@@ -57,13 +58,16 @@ export async function runProductionBootstrap(
     if (options.lane && !lane) throw new ProductionConfigError('invalid_production_config', `--lane requires R4_PROD_POLICY_PROFILE to be a Sales lane profile (${SALES_LANE_PROFILES.map(profileLabel).join(', ')})`);
     // (ADR-046) A web profile registers only its own sales-web definition, the same way (a directory holding just that file).
     const web = lane ? null : salesWebProfile(config.policyProfile);
-    if (!lane && !web && !salesProductionProfile(config.policyProfile)) {
+    // (ADR-060) Likewise a Meta profile registers only its own agent's definition (sales-instagram or sales-facebook).
+    const meta = lane || web ? null : salesMetaProfile(config.policyProfile);
+    const metaAgent = meta ? salesMetaAgentOf(meta) : null;
+    if (!lane && !web && !meta && !salesProductionProfile(config.policyProfile)) {
       throw new ProductionConfigError('invalid_production_config', `R4_PROD_POLICY_PROFILE=${config.policyProfile} is not a Sales production profile (${SALES_PRODUCTION_PROFILES.map(profileLabel).join(', ')})`);
     }
     const databaseUrl = env.R4_DATABASE_URL;
     if (!databaseUrl || !DATABASE_URL.test(databaseUrl)) throw new ProductionConfigError('production_config_incomplete', 'R4_DATABASE_URL (postgres://) of the production deployment is required');
     const level = env.R4_LOG_LEVEL === 'info' || env.R4_LOG_LEVEL === 'debug' ? env.R4_LOG_LEVEL : 'warn';
-    const laneDir = lane || web ? mkdtempSync(join(tmpdir(), 'r4-sales-lane-')) : null;
+    const laneDir = lane || web || meta ? mkdtempSync(join(tmpdir(), 'r4-sales-lane-')) : null;
     let report: Awaited<ReturnType<typeof registerAgentDefinitions>>;
     try {
       if (lane && laneDir) {
@@ -73,17 +77,18 @@ export async function runProductionBootstrap(
       }
       const webVersion = web ? salesWebAgentVersion(web) : null;
       if (webVersion !== null && laneDir) writeFileSync(join(laneDir, `${SALES_WEB_AGENT_ID}.v${webVersion}.agent.json`), JSON.stringify(loadSalesWebAgentDefinition(webVersion)));
+      if (metaAgent && laneDir) writeFileSync(join(laneDir, `${metaAgent.agentId}.v${metaAgent.version}.agent.json`), JSON.stringify(loadSalesMetaAgentDefinition(metaAgent.agentId, metaAgent.version)));
       report = await registerAgentDefinitions({
         databaseUrl,
         directory: laneDir ?? options.definitionsDir ?? SALES_AGENT_DIR,
-        agentIds: [web ? SALES_WEB_AGENT_ID : SALES_AGENT_ID],
+        agentIds: [web ? SALES_WEB_AGENT_ID : metaAgent ? metaAgent.agentId : SALES_AGENT_ID],
         migrationDirectories: [SALES_MIGRATIONS_DIR],
         logger: createLogger({ service: 'r4-production-bootstrap', level }),
       });
     } finally {
       if (laneDir) rmSync(laneDir, { recursive: true, force: true });
     }
-    io.out(`production Sales bootstrap${lane ? ` (lane ${profileLabel(lane)})` : web ? ` (web ${profileLabel(web)})` : ''}:`);
+    io.out(`production Sales bootstrap${lane ? ` (lane ${profileLabel(lane)})` : web ? ` (web ${profileLabel(web)})` : meta ? ` (meta ${profileLabel(meta)})` : ''}:`);
     if (report.registered.length > 0) io.out(`registered: ${report.registered.join(', ')}`);
     if (report.unchanged.length > 0) io.out(`unchanged: ${report.unchanged.join(', ')}`);
     return 0;
