@@ -13,7 +13,8 @@
     2026-11-24.
   - **G5b en producción** (PR #146): Pesín lee los hechos de la Decisión 10 como parte de la ficha.
   - **G2b-2 en producción** (PR #150): calce físico y cuántas relaciones desbloquea cada dato faltante.
-  - **Corrección de la reactivación implementada:** un producto reactivado recupera sus relaciones.
+  - **Corrección de la reactivación en producción** (PR #152): un producto reactivado recupera sus relaciones.
+  - **G4a implementado:** el agente `graph-curator` clasifica lo que ninguna regla clasifica.
   - Cada fase necesita autorización explícita del owner.
 - **Fecha:** 2026-11-23
 - **Mandato:** decisiones del owner del 2026-11-23:
@@ -496,6 +497,54 @@ sin perfiles quedaba olvidada.
 - **El cruce entre Catalog y el grafo** es por la clave del producto (el ID de PrestaShop, `P…`).
 - **Lo que el grafo no limita:** que el grafo diga «inactivo» solo afecta lo que Pesín sugiere a partir de otro
   producto (armar, complementos, «Lo reemplaza»). La búsqueda, Discover y la ficha se leen en vivo.
+
+## G4a — el agente clasifica lo que ninguna regla clasifica (2026-11-24)
+
+Decisiones del owner del 2026-11-24:
+- los lotes se ordenan por lo más consultado a Pesín, no por ventas, porque R4 no tiene datos de ventas;
+- el modelo primero clasifica productos y después revisa relaciones (G4b);
+- corre como un agente R4, con runs gobernados.
+
+- **Agente `graph-curator` v1:**
+  - es un archivo candidato `candidates/graph-curator.v1.candidate.json`, así que la API no lo registra sola; lo
+    registra `npm run graph:agent-bootstrap`;
+  - tipo de tarea `graph.classify_product` y ámbito `graph.read`;
+  - presupuesto de 30.000 tokens y 4 llamadas al modelo por tarea, sin escrituras ni delegación.
+- **Capacidades de solo lectura:**
+  - `graph.product_sheet`: la ficha de Catalog V2, con los hechos de la Decisión 10 para los campos que la tienda no
+    declara;
+  - `graph.kinds`: la lista cerrada de tipos que ya usa el grafo, con ejemplos.
+- **Worker propio** (`npm run graph:agent-worker`): atiende solo tareas de `graph-curator` (`servedAgents`), así que
+  nunca toma tareas de Pesín y Pesín no toma las suyas. Tiene su propia cuota del límite por minuto del modelo.
+- **El modelo nunca escribe:** termina con su clasificación en `result.data`. El curador (`npm run graph:classify`) la
+  verifica con `checkClassification` antes de proponer:
+  - el tipo debe estar en la lista cerrada;
+  - toda clasificación necesita evidencia;
+  - cada evidencia (campo y valor) tiene que aparecer en la ficha.
+
+  Lo que pasa la verificación se propone como `AGENT_KIND` (`set_kind`) y `AGENT_MUSCLES` (`set_muscles`), con la
+  evidencia citada, la confianza y la tarea, para que una persona lo apruebe. Lo que no pasa se rechaza con su motivo
+  y nunca se propone.
+- **Tope de US$1 por corrida** (decisión 3): la plataforma registra tokens, no dinero.
+  - El tope se convierte en número de tareas con el precio por millón de tokens del modelo
+    (`R4_GRAPH_MODEL_PRICE_PER_M_USD`, el mayor entre entrada y salida). Con GPT-6 Luna (US$0,10 / 0,50) caben 66
+    productos por corrida.
+  - Cada tarea recibe su presupuesto completo; no se acorta. Una tarea que igual se queda sin presupuesto queda
+    bloqueada y el lote la cuenta como rechazada.
+  - El mismo producto sobre la misma versión firmada es una sola tarea (clave de idempotencia): un lote repetido no
+    duplica tareas.
+- **Orden:** lo más consultado a Pesín en los últimos 90 días (lecturas de `catalog.get_product_context`), después lo
+  más relacionado.
+- **Evaluación:** `checkClassification` es la evaluación determinista de cada resultado, y sus casos son el conjunto de
+  regresión (`tests/unit/graph-curator/agent.test.ts`). La tasa de rechazo por regla se ve en la consola, por
+  decisión del owner.
+- **Puesta en producción** (con OK del owner):
+  1. desplegar;
+  2. `graph:agent-bootstrap`;
+  3. un proceso pm2 `r4-graph-curator-worker` con las variables del modelo y de Catalog V2, `R4_WORKER_ID` propio,
+     `R4_MODEL_MAX_REQUESTS_PER_MINUTE=2` y sin escrituras;
+  4. un primer `graph:classify`.
+- **Queda para G4b:** revisar por lotes las 10.150 relaciones sin revisar.
 
 ## Fuera de alcance
 

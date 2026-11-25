@@ -17,6 +17,27 @@
     },
     {
       "path": "../../adapters/domains/catalog/http"
+    },
+    {
+      "path": "../../packages/contracts"
+    },
+    {
+      "path": "../../packages/capability-runtime"
+    },
+    {
+      "path": "../../packages/task-runtime"
+    },
+    {
+      "path": "../../packages/agent-registry"
+    },
+    {
+      "path": "../../apps/api"
+    },
+    {
+      "path": "../../apps/worker"
+    },
+    {
+      "path": "../../adapters/models/openai-compatible"
     }
   ]
 }

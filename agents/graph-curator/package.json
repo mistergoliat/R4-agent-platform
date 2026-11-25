@@ -14,12 +14,20 @@
   },
   "files": [
     "dist",
-    "migrations"
+    "migrations",
+    "candidates"
   ],
   "dependencies": {
     "@r4-adapters/catalog-http": "*",
+    "@r4-adapters/openai-compatible": "*",
+    "@r4/agent-registry": "*",
+    "@r4/api": "*",
+    "@r4/capability-runtime": "*",
+    "@r4/contracts": "*",
     "@r4/observability": "*",
     "@r4/persistence-postgres": "*",
+    "@r4/task-runtime": "*",
+    "@r4/worker": "*",
     "zod": "^4.6.0"
   }
 }
