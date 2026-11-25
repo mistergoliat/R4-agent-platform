@@ -180,7 +180,7 @@ export async function readPlan(
  * becomes a knowledge entry, verified and signed when the person holds those scopes.
  */
 export async function confirmPlan(
-  deps: { readonly artifacts: Pick<PostgresArtifacts, 'current' | 'proposals' | 'propose' | 'decide'>; readonly tasks: CuratorTasks; readonly knowledge: Pick<PostgresKnowledge, 'propose' | 'transition'> },
+  deps: { readonly artifacts: Pick<PostgresArtifacts, 'current' | 'proposals' | 'propose' | 'decide'>; readonly tasks: CuratorTasks; readonly knowledge: Pick<PostgresKnowledge, 'list' | 'propose' | 'transition'> },
   input: { readonly taskId: string; readonly by: string; readonly scopes: readonly string[]; readonly onlyThis?: boolean; readonly correlationId: string },
 ): Promise<{ proposal: string; similar: number; changes: number; criterion: { id: string; state: string } | null }> {
   const { plan, violations, input: task } = await readPlan(deps, input.taskId);
@@ -208,7 +208,10 @@ export async function confirmPlan(
     changes = (await decide(mine, 'approved', note)).decided;
   }
   let criterion: { id: string; state: string } | null = null;
-  if (!input.onlyThis && plan.criterion) {
+  // A plan confirmed twice (a retried sync) keeps one criterion.
+  const already = plan.criterion ? (await deps.knowledge.list()).find((e) => e.topic === GRAPH_CRITERIA_TOPIC && e.statement === plan.criterion && e.sourceRef === task.proposalId && e.state !== 'retired') : undefined;
+  if (already) criterion = { id: already.entryId, state: already.state };
+  if (!input.onlyThis && plan.criterion && !already) {
     let entry = await deps.knowledge.propose({ topic: GRAPH_CRITERIA_TOPIC, statement: plan.criterion, source: 'graph-curator:explanation', sourceRef: task.proposalId, expiresAt: null }, input.by, input.correlationId);
     const operator = { humanRef: input.by, scopes: input.scopes };
     // Decision 11 / open decision 5: whoever explains and holds the scopes verifies and signs it by confirming.

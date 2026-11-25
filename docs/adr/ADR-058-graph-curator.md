@@ -841,6 +841,40 @@ propuso quitarlas.
   - integración `graph-explain`, con Postgres real y un modelo guionado: el caso del Jack Bar de punta a punta. Un plan
     inválido no se puede confirmar. El plan válido rechaza las dos propuestas a nombre del owner, cambia las relaciones
     a «Se usa junto con» y firma el criterio, y la versión siguiente las trae así.
+- **En producción desde el 2026-11-25** (PR #164, 4688cae): primer plan real del Jack Bar.
+  - Una explicación limitada a un caso cambió una sola relación y no guardó criterio.
+  - Con la explicación general, el plan cambió las 19 relaciones de `ld` a `rb` («Barras que apoyan en este rack»),
+    rechazó las 4 propuestas de quitar barras y guardó el criterio de los soportes tipo jack.
+  - El owner lo confirmó y firmó la versión 3.
+
+## G6-1 — el PM cura al curador en ClickUp: el flujo del curador (2026-11-25)
+
+- **`syncClickUp`** (`agents/graph-curator/src/agent/clickup.ts`) corre cada pocos minutos. No guarda estado propio: el
+  hilo de ClickUp es el estado, y los comentarios de R4 empiezan con «Curador R4:» y llevan una marca. En cada pasada:
+  1. **El campo Respuesta** del PM decide la propuesta a su nombre, según lo que «Sí» significa para esa pregunta. Por
+     ejemplo, Sí a «¿le ofrecerías B?» rechaza quitar el reemplazo. Después cierra la tarea con el efecto en palabras.
+  2. **Un comentario nuevo del PM** se interpreta con `graph:explain`, dentro del tope diario, y el plan se publica en el
+     hilo. Un «sí» exacto confirma el último plan a nombre del PM (`confirmPlan`).
+  3. **Lo que ya no está abierto en R4** se cierra: lo que se decidió en la consola o dejó de hacer falta.
+  4. **La lista se completa** hasta el tope con las preguntas `changes` más consultadas a Pesín, con prioridad normal y
+     vencimiento.
+- **Solo cuenta el PM.** Sus respuestas y comentarios valen, identificado por su id de usuario de ClickUp. Lo de
+  cualquier otra persona se ignora.
+- **Confirmar dos veces no duplica nada:** las decisiones ya tomadas se saltan, y el criterio igual de la misma
+  propuesta no se crea de nuevo.
+- **El conector** es `@r4-adapters/clickup` (ADR-061), de la sesión de conectores. El curador lo usa por la interfaz
+  `QuestionBoard`: crear, comentar, cerrar, leer la lista, leer los comentarios y leer las opciones del campo.
+- **Evaluación:** la integración `graph-clickup` usa Postgres real, un modelo guionado y un ClickUp simulado. Prueba:
+  - que crea las preguntas más consultadas hasta el tope, sin repetirlas;
+  - que el comentario de otra persona no hace nada;
+  - que el comentario del PM recibe su plan, y que «sí» lo confirma a su nombre y firma el criterio;
+  - que se cierra lo que se decidió en otra parte, y la pregunta siguiente entra;
+  - que el campo Respuesta es la decisión del PM.
+- **Pendiente (G6-2):**
+  - la tarea programada (`graph:clickup-sync`), cuando se fusione el conector;
+  - las consultas urgentes de Pesín y los datos que faltan, con prioridad alta y su respuesta como hecho;
+  - el webhook, para acelerar la lectura;
+  - la prueba real, con la lista, el token y el PM como operador.
 
 ## Fuera de alcance
 

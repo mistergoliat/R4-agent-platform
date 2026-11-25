@@ -18,3 +18,4 @@ export * from './agent/classify.js';
 export * from './agent/batch.js';
 export * from './agent/review.js';
 export * from './agent/explain.js';
+export * from './agent/clickup.js';
