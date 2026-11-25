@@ -70,6 +70,12 @@ export const productionConfigSchema = z.strictObject({
    * configuration (and its fingerprint) is exactly what it was before.
    */
   caseIdleCloseHours: z.int().min(1).max(720).optional(),
+  /**
+   * (ADR-055) Messages on the platform's own initiative: `observe` decides and records only; `active` sends. Absent
+   * (R4_PROD_CONTACT_MODE unset or off): no sweep, no opt-out handling, and the configuration (and its fingerprint) is
+   * exactly what it was before.
+   */
+  contactMode: z.enum(['observe', 'active']).optional(),
 });
 export type ProductionConfig = z.infer<typeof productionConfigSchema>;
 
@@ -108,6 +114,7 @@ export function loadProductionConfig(env: Readonly<Record<string, string | undef
   if (problems.length > 0) throw new ProductionConfigError('production_config_incomplete', `refusing to compose production:\n- ${problems.join('\n- ')}`);
   const percent = Number(env.R4_PROD_ROLLOUT_PERCENT);
   const idleHours = int(env.R4_PROD_CASE_IDLE_CLOSE_HOURS, 'R4_PROD_CASE_IDLE_CLOSE_HOURS', 0);
+  const contactMode = (env.R4_PROD_CONTACT_MODE ?? '').trim().toLowerCase();
   const parsed = productionConfigSchema.safeParse({
     mode: PRODUCTION_EXECUTION_MODE,
     policyProfile: env.R4_PROD_POLICY_PROFILE,
@@ -123,6 +130,7 @@ export function loadProductionConfig(env: Readonly<Record<string, string | undef
     },
     priorConversationDays: int(env.R4_PROD_PRIOR_CONVERSATION_DAYS, 'R4_PROD_PRIOR_CONVERSATION_DAYS', 30),
     ...(idleHours === 0 ? {} : { caseIdleCloseHours: idleHours }),
+    ...(contactMode === '' || contactMode === 'off' ? {} : { contactMode }),
   });
   if (!parsed.success) throw new ProductionConfigError('invalid_production_config', `refusing to compose production:\n${z.prettifyError(parsed.error)}`);
   if (parsed.data.outbound.leaseMs <= parsed.data.outbound.providerTimeoutMs) {

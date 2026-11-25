@@ -4,16 +4,20 @@ import type { Logger } from 'pino';
 import { PlatformError, systemClock, uuidV7Generator, type Clock, type IdGenerator } from '@r4/contracts';
 import { AgentRegistry } from '@r4/agent-registry';
 import { createLogger } from '@r4/observability';
-import { PostgresAgentDefinitionStore, PostgresExecutionStore, PostgresProductionStore, PostgresTaskRuntimeStore, PostgresWorkerPresenceStore, checkDatabaseReadiness, coreSchemaHead, createPool, migrationStatus, type Pool } from '@r4/persistence-postgres';
+import { PostgresAgentDefinitionStore, PostgresContactStore, PostgresExecutionStore, PostgresProductionStore, PostgresTaskRuntimeStore, PostgresWorkerPresenceStore, checkDatabaseReadiness, coreSchemaHead, createPool, migrationStatus, type Pool } from '@r4/persistence-postgres';
 import {
   AutonomyControls,
   CaseIdleCloser,
   ChannelIngress,
+  ContactSweep,
   DeliveryDispatcher,
   OutboundDeliveryRuntime,
   assertProductionMode,
   assertProductionProfile,
   profileLabel,
+  type ContactOptOut,
+  type ContactRules,
+  type ContactSource,
   type ConversationLane,
   type MediaPerception,
   type NoticeText,
@@ -47,6 +51,8 @@ export interface GatewayBindings {
   readonly lane?: ConversationLane;
   /** (Inbound multimodal v1) Image and voice-note perception (absent: media is held as unsupported, exactly as before). */
   readonly media?: { readonly perception: MediaPerception; readonly profiles: readonly string[] };
+  /** (ADR-055) The pack's contact rules, opt-out words and sources; used only when R4_PROD_CONTACT_MODE is observe or active. */
+  readonly contact?: { readonly rules: ContactRules; readonly optOut: ContactOptOut; readonly source: ContactSource };
 }
 
 export interface GatewayOverrides {
@@ -68,6 +74,8 @@ export interface GatewayPlatform {
   readonly workingSignals: WorkingSignals | null;
   /** (Case idle close) The idle-case sweep; null when R4_PROD_CASE_IDLE_CLOSE_HOURS is unset or 0 (off). */
   readonly idleClose: CaseIdleCloser | null;
+  /** (ADR-055) The contact sweep; null when R4_PROD_CONTACT_MODE is off or the pack composes no contact sources. */
+  readonly contact: ContactSweep | null;
   /** Starts the dispatcher (if configured), the unsettled-inbound resume timer and (when on) the idle-case sweep. */
   start(): void;
   /** Graceful: stop claiming, finish the submission in flight, close the server and connections. */
@@ -149,11 +157,16 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
     });
     const workingSignals = config.workingSignal ? new WorkingSignals({ adapters: bindings.outbound, store, logger }) : null;
     const idleClose = production.caseIdleCloseHours ? new CaseIdleCloser({ store, temporal, channel: profile.channel.id, idleForMs: production.caseIdleCloseHours * 3_600_000, logger }) : null;
+    const contacts = production.contactMode && bindings.contact ? new PostgresContactStore(pool) : null;
+    const contact = contacts && bindings.contact && production.contactMode
+      ? new ContactSweep({ store, contacts, source: bindings.contact.source, rules: bindings.contact.rules, mode: production.contactMode, logger })
+      : null;
     const ingress = new ChannelIngress({
       store, tasks, temporal, controls, adapters: bindings.inbound, delivery, config: production, secrets: bindings.production.secrets, profile, taskFactory: bindings.taskFactory, ids, logger,
       ...(inspection ? { inspector: inspection.inspector } : {}),
       ...(bindings.lane ? { lane: bindings.lane } : {}),
       ...(bindings.media ? { media: bindings.media } : {}),
+      ...(contacts && bindings.contact ? { contact: { store: contacts, optOut: bindings.contact.optOut } } : {}),
       ...(workingSignals ? { onAutonomousInput: (input: Parameters<WorkingSignals['started']>[0]) => workingSignals.started(input) } : {}),
     });
     const presence = new PostgresWorkerPresenceStore(pool);
@@ -187,6 +200,7 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
           dispatcher: config.dispatch,
           workingSignal: workingSignals !== null,
           caseIdleCloseHours: production.caseIdleCloseHours ?? null,
+          contact: contact ? production.contactMode : null,
           inspection: inspection ? { id: inspection.inspector.id, version: inspection.inspector.version, mode: inspection.mode, degradedReason: inspection.degradedReason } : null,
         },
       };
@@ -229,9 +243,10 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
     let resumeTimer: NodeJS.Timeout | null = null;
     let signalTimer: NodeJS.Timeout | null = null;
     let idleTimer: NodeJS.Timeout | null = null;
+    let contactTimer: NodeJS.Timeout | null = null;
     let started = false;
     return {
-      app, pool, ingress, delivery, controls, logger, inspection, workingSignals, idleClose,
+      app, pool, ingress, delivery, controls, logger, inspection, workingSignals, idleClose, contact,
       start() {
         if (started) return;
         started = true;
@@ -252,10 +267,21 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
               .finally(() => (sweeping = false));
           }, IDLE_SWEEP_MS);
         }
+        if (contact) {
+          let deciding = false;
+          contactTimer = setInterval(() => {
+            if (deciding) return;
+            deciding = true;
+            contact.sweep()
+              .catch((error: unknown) => logger.warn({ err: error instanceof Error ? error.message : String(error) }, 'contact sweep failed'))
+              .finally(() => (deciding = false));
+          }, IDLE_SWEEP_MS);
+        }
       },
       async close() {
         if (resumeTimer) clearInterval(resumeTimer);
         if (idleTimer) clearInterval(idleTimer);
+        if (contactTimer) clearInterval(contactTimer);
         if (signalTimer) clearInterval(signalTimer);
         if (started && config.dispatch) await dispatcher.stop();
         await inspection?.stop();

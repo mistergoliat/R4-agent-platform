@@ -6,6 +6,7 @@ import { canonicalInboundSchema, type CanonicalInbound, type HeaderBag, type Inb
 import type { AutonomyControls } from './controls.js';
 import type { ProductionConfig, ProductionSecrets } from './mode.js';
 import type { InboundInspector } from './inspection.js';
+import { isOptOut, type ContactOptOut, type ContactStore } from './contact.js';
 import { mediaRefContent, parseMediaRefContent, parseReactionRefContent, reactionRefContent, type MediaKind, type MediaPerception } from './media.js';
 import { IDLE_TIMEOUT } from './idle-close.js';
 import type { OutboundDeliveryRuntime } from './outbound.js';
@@ -68,6 +69,12 @@ export interface ChannelIngressOptions {
    * of `profiles` (every other profile keeps holding media exactly as before).
    */
   readonly media?: { readonly perception: MediaPerception; readonly profiles: readonly string[] };
+  /**
+   * (ADR-055 rule 1) Opt-out words, decided here without the model. A text equal to one is recorded as the contact's
+   * opt-out. In a live case no person owns, the input is recorded without waking the agent and the fixed confirmation
+   * is sent; in a new case the agent receives the pack's frame instead of the words. Absent: exactly as before.
+   */
+  readonly contact?: { readonly store: ContactStore; readonly optOut: ContactOptOut };
 }
 
 interface ServedProfile {
@@ -342,7 +349,10 @@ export class ChannelIngress {
     let mediaText: string | null = media && parseMediaRefContent(record.content) === null ? record.content
       : unsupportedRow && record.content !== unsupportedContentMarker(record.contentType ?? '') && parseReactionRefContent(record.content) === null ? record.content : null;
     let decidedHere = false;
+    const contact = this.#o.contact;
+    const optOut = contact !== undefined && record.contentKind === 'text' && isOptOut(contact.optOut, record.content);
     try {
+      if (optOut) await contact.store.recordOptOut({ channel: record.channel, conversationKey: record.conversationKey, source: 'contact_keyword', inboundId: record.inboundId });
       for (let attempt = 0; ; attempt += 1) {
         let binding = await store.findOpenBinding(record.channel, record.conversationKey);
         if (binding?.taskId) {
@@ -401,7 +411,9 @@ export class ChannelIngress {
           mediaText = await this.#mediaText(record, binding, hold !== undefined, served.label);
           decidedHere = true;
         }
-        const input = { externalKey: record.providerEventId, content: mediaText ?? record.content, sourceRef: `channel:${record.channel}`, occurredAt: record.occurredAt };
+        // A new case opened by an opt-out: the agent confirms it from the pack's frame (the words stay on the inbound row).
+        const framed = optOut && !hold && !binding.taskId ? contact.optOut.frame : null;
+        const input = { externalKey: record.providerEventId, content: framed ?? mediaText ?? record.content, sourceRef: `channel:${record.channel}`, occurredAt: record.occurredAt };
         // The provider identity is a provisional participant reference; the address itself never becomes a principal.
         const actor: Principal = { kind: 'user', ref: `${record.channel}:${record.conversationKey.slice(0, 32)}` };
         try {
@@ -409,6 +421,7 @@ export class ChannelIngress {
           let inputId: string;
           let taskCreated = false;
           let held: boolean;
+          let quiet = false;
           if (!binding.taskId) {
             const result = await temporal.createTaskWithInput(tasks, {
               request: taskFactory.request({ bindingId: binding.bindingId, channel: binding.channel }),
@@ -422,13 +435,16 @@ export class ChannelIngress {
             taskCreated = !result.taskReplayed;
           } else {
             const state = await store.taskState(binding.taskId);
-            const result = await temporal.submitInput(binding.taskId, input, actor, record.correlationId, hold && !state?.humanOwned ? { hold } : {});
+            quiet = optOut && !hold && !state?.humanOwned;
+            const result = await temporal.submitInput(binding.taskId, input, actor, record.correlationId, quiet ? { quiet } : hold && !state?.humanOwned ? { hold } : {});
             ({ inputId, held } = result);
             taskId = binding.taskId;
           }
           const humanOwned = (await store.taskState(taskId))?.humanOwned ?? false;
-          const disposition = held && hold ? `held:${hold.reason}` : humanOwned ? 'human_owned' : hold ? `held:${hold.reason}` : 'autonomous';
+          const disposition = quiet ? 'opt_out' : held && hold ? `held:${hold.reason}` : humanOwned ? 'human_owned' : hold ? `held:${hold.reason}` : 'autonomous';
           await store.touchBinding(binding.bindingId, record.occurredAt);
+          // Idempotent by its key: a resumed inbound replays the same notice.
+          if (quiet) await store.createPlatformNotice({ taskId, noticeKey: `contact.opt-out:${record.inboundId}`, text: contact!.optOut.confirmation, correlationId: record.correlationId });
           await store.settleInbound(record.inboundId, { status: 'ingested', bindingId: binding.bindingId, taskId, inputId, disposition });
           emitTelemetry(logger, 'inbound.ingested', { channel: record.channel, inboundId: record.inboundId, taskId, inputId, taskCreated, disposition, correlationId: record.correlationId });
           if (disposition === 'autonomous' && this.#o.onAutonomousInput) {
