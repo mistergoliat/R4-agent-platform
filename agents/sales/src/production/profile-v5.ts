@@ -106,7 +106,7 @@ export const SALES_META_DESK_ACTION_POLICY: ActionPolicyConfigurationInput = Obj
  * autonomous action policy): @5 (quote.create@3, model-attested request), @6 (R4-J3E-B: quote.create@4,
  * customer confirmation read from the conversation) and @7 (R4-J3E-C1: quote.create@5, the exact Sales-rendered offer).
  */
-export const SALES_AUTONOMOUS_QUOTE_PROFILES: ReadonlySet<string> = new Set(['sales-production@5', 'sales-production@6', 'sales-production@7', 'sales-production@8', 'sales-production@12', 'sales-production@14', 'sales-production@15', 'sales-production@16', 'sales-production@17', 'sales-production@18', 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23', 'sales-production@24', 'sales-production@25', 'sales-production@26', 'sales-production@27', 'sales-web@19', 'sales-web@20', 'sales-web@21']);
+export const SALES_AUTONOMOUS_QUOTE_PROFILES: ReadonlySet<string> = new Set(['sales-production@5', 'sales-production@6', 'sales-production@7', 'sales-production@8', 'sales-production@12', 'sales-production@14', 'sales-production@15', 'sales-production@16', 'sales-production@17', 'sales-production@18', 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23', 'sales-production@24', 'sales-production@25', 'sales-production@26', 'sales-production@27', 'sales-production@28', 'sales-web@19', 'sales-web@20', 'sales-web@21', 'sales-web@22']);
 
 export function isAutonomousQuoteProfile(profile: ProductionProfile): boolean {
   return SALES_AUTONOMOUS_QUOTE_PROFILES.has(profileLabel(profile));

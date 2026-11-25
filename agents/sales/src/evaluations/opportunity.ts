@@ -1,4 +1,4 @@
-import type { DeskOpportunityInput } from '../capabilities/desk-opportunity.js';
+import type { DeskOpportunityInput, DeskOpportunityInputV2, DeskSignal } from '../capabilities/desk-opportunity.js';
 
 /**
  * (ADR-062 O1) Evaluation of desk.opportunity.record: does Pesín record an opportunity when it should, and with which
@@ -14,6 +14,11 @@ import type { DeskOpportunityInput } from '../capabilities/desk-opportunity.js';
  *   3. npm run build && npm run eval:sales -- --opportunity predictions.json [--channel whatsapp]
  *      (--channel scores only that channel's cases; without it, every case).
  * The owner sets the accuracy threshold of the gate.
+ *
+ * (desk.opportunity.record@2) An opportunity exists only without intent sin_intencion: a record with intent
+ * sin_intencion counts as "no opportunity". A case may also say which no-intent reason a @2 record must carry
+ * (noIntent: scored as noIntentReason, so run it on the @2 profiles sales-web@22 / sales-production@28) and which
+ * platform signals the conversation must produce at least (signals: scored against the recorded body's signals).
  */
 export type OpportunityLabel = Pick<DeskOpportunityInput, 'trigger' | 'intent' | 'segment' | 'complexity'>;
 export const OPPORTUNITY_FIELDS = ['trigger', 'intent', 'segment', 'complexity'] as const;
@@ -29,7 +34,14 @@ export interface OpportunityCase {
   readonly visitor: readonly string[];
   /** null = no opportunity must be recorded (a pure question without buying intent). */
   readonly expected: OpportunityLabel | null;
+  /** (@2) Without an opportunity: the reason a sin_intencion record must carry. */
+  readonly noIntent?: NonNullable<DeskOpportunityInputV2['noIntentReason']>;
+  /** (@2) The signals the platform must compute at least for this conversation. */
+  readonly signals?: readonly DeskSignal[];
 }
+
+/** What a predictions file holds per case: the recorded model input, plus (@2) the body's signals. */
+export type OpportunityPrediction = Partial<Pick<DeskOpportunityInputV2, 'trigger' | 'intent' | 'segment' | 'complexity' | 'noIntentReason'>> & { readonly signals?: readonly string[] };
 
 const L = (trigger: OpportunityLabel['trigger'], intent: OpportunityLabel['intent'], segment: OpportunityLabel['segment'], complexity: OpportunityLabel['complexity']): OpportunityLabel => ({ trigger, intent, segment, complexity });
 
@@ -77,6 +89,25 @@ export const OPPORTUNITY_LABELED_SET: readonly OpportunityCase[] = Object.freeze
   { id: 'opp-fb-02-compra', channel: 'facebook', visitor: ['¿Tienen discos bumper de 10 kg?', 'Perfecto, los compro en la web. Gracias'], expected: L('conversacion', 'compra', 'persona', 'estandar') },
   { id: 'opp-fb-03-municipalidad', channel: 'facebook', visitor: ['Le escribo de la oficina de deportes de la municipalidad', 'Queremos máquinas de ejercicio para una plaza, ¿pueden cotizar con orden de compra?'], expected: L('consulta', 'cotizacion', 'institucional', 'proyecto') },
   { id: 'opp-fb-04-faq-despacho', channel: 'facebook', visitor: ['¿Hacen envíos a Punta Arenas?'], expected: null },
+  // (@2) No buying intent, whatever words it uses: recorded (if at all) as sin_intencion with its reason, never an opportunity.
+  { id: 'opp-ni-01-cuento-taza', visitor: ['Cuéntame un cuento sobre la taza mug', 'Jajaja ya, chao'], expected: null, noIntent: 'broma' },
+  { id: 'opp-ni-02-kilo-papa', channel: 'whatsapp', visitor: ['¿A cuánto está el kilo de papa?'], expected: null, noIntent: 'fuera_de_alcance' },
+  { id: 'opp-ni-03-q-pasa-choro', channel: 'whatsapp', visitor: ['q pasa choro'], expected: null, noIntent: 'casual' },
+  { id: 'opp-ni-04-hola-solo', channel: 'instagram', visitor: ['Holaaa', 'Nada, solo saludar 👋'], expected: null, noIntent: 'casual' },
+  { id: 'opp-ni-05-prueba', visitor: ['prueba', 'test 123, ¿funciona esto?'], expected: null, noIntent: 'prueba' },
+  { id: 'opp-ni-06-eres-bot', channel: 'facebook', visitor: ['¿Eres un bot? A ver, dime cuánto es 2 + 2', 'Ok, solo probaba'], expected: null, noIntent: 'prueba' },
+  { id: 'opp-ni-07-spam-cripto', channel: 'whatsapp', visitor: ['Gana dinero invirtiendo en cripto desde tu casa, escríbeme y te explico'], expected: null, noIntent: 'spam' },
+  { id: 'opp-ni-08-spam-seo', channel: 'facebook', visitor: ['Hola, ofrecemos servicios de posicionamiento web y seguidores para su página'], expected: null, noIntent: 'spam' },
+  { id: 'opp-ni-09-chiste-mancuerna', channel: 'instagram', visitor: ['¿Las mancuernas también levantan el ánimo? 😂', 'Era broma, buen día'], expected: null, noIntent: 'broma' },
+  { id: 'opp-ni-10-poema', visitor: ['Escríbeme un poema de amor para mi polola', 'Ya, entonces nada'], expected: null, noIntent: 'fuera_de_alcance' },
+  { id: 'opp-ni-11-tecnica-pesomuerto', channel: 'whatsapp', visitor: ['¿El peso muerto se hace con la espalda recta o un poco curva?', 'Gracias, era solo eso'], expected: null, noIntent: 'duda_tecnica' },
+  { id: 'opp-ni-12-calorias', channel: 'instagram', visitor: ['¿Cuántas calorías se queman en 30 minutos de bici estática?'], expected: null, noIntent: 'duda_tecnica' },
+  { id: 'opp-ni-13-gracias', visitor: ['Gracias por todo', 'Chao'], expected: null, noIntent: 'casual' },
+  // (@2) Positives whose conversation leaves concrete platform signals.
+  { id: 'opp-sg-01-cotiza-despacho', channel: 'whatsapp', visitor: ['Quiero cotizar 2 kettlebells de 16 kg', 'Con despacho a La Florida', 'Sí, emítela'], expected: L('cotizacion', 'cotizacion', 'persona', 'estandar'), signals: ['cotizacion', 'propuesta', 'despacho'] },
+  { id: 'opp-sg-02-web-cotiza', visitor: ['Quiero cotizar una barra olímpica y 60 kg en discos', 'Sin despacho, mándamela por correo', 'Sí'], expected: L('cotizacion', 'cotizacion', 'persona', 'estandar'), signals: ['cotizacion', 'propuesta'] },
+  { id: 'opp-sg-03-traspaso', channel: 'whatsapp', visitor: ['Necesito equipar un gimnasio de un hotel', 'Prefiero que me atienda una persona'], expected: L('traspaso', 'cotizacion', 'empresa', 'proyecto'), signals: ['traspaso'] },
+  { id: 'opp-sg-04-producto-compra', channel: 'facebook', visitor: ['¿Qué medidas tiene el banco plano que publicaron?', 'Perfecto, lo compro hoy en la web'], expected: L('conversacion', 'compra', 'persona', 'estandar'), signals: ['producto'] },
 ] satisfies OpportunityCase[]);
 
 export interface FieldScore {
@@ -91,6 +122,10 @@ export interface OpportunityScore {
   readonly record: FieldScore;
   /** Each field over the cases that must record (no record counts as wrong). */
   readonly fields: Readonly<Record<(typeof OPPORTUNITY_FIELDS)[number], FieldScore>>;
+  /** (@2) Over the cases with a noIntent label: a sin_intencion record with that reason. */
+  readonly noIntentReason: FieldScore;
+  /** (@2) Over the cases with signals: every expected signal is in the recorded body. */
+  readonly signals: FieldScore;
   readonly misses: readonly { readonly caseId: string; readonly field: string; readonly expected: string | null; readonly predicted: string | null }[];
 }
 
@@ -101,15 +136,29 @@ export function opportunityCasesOf(channel: OpportunityChannel, set: readonly Op
   return set.filter((c) => (c.channel ?? 'web') === channel);
 }
 
-/** Per-field accuracy of recorded inputs against the labeled set. A case missing from the predictions counts as "not recorded". */
-export function scoreOpportunityRecords(predictions: Readonly<Record<string, Partial<OpportunityLabel> | null | undefined>>, set: readonly OpportunityCase[] = OPPORTUNITY_LABELED_SET): OpportunityScore {
+/**
+ * Per-field accuracy of recorded inputs against the labeled set. A case missing from the predictions counts as "not
+ * recorded"; a record with intent sin_intencion counts as "no opportunity".
+ */
+export function scoreOpportunityRecords(predictions: Readonly<Record<string, OpportunityPrediction | null | undefined>>, set: readonly OpportunityCase[] = OPPORTUNITY_LABELED_SET): OpportunityScore {
   const misses: { caseId: string; field: string; expected: string | null; predicted: string | null }[] = [];
   let recordCorrect = 0;
+  let reasonCorrect = 0;
+  let signalsCorrect = 0;
   const correct = { trigger: 0, intent: 0, segment: 0, complexity: 0 };
   for (const c of set) {
     const predicted = predictions[c.id] ?? null;
-    if ((predicted === null) === (c.expected === null)) recordCorrect++;
-    else misses.push({ caseId: c.id, field: 'record', expected: c.expected ? 'yes' : 'no', predicted: predicted ? 'yes' : 'no' });
+    const opportunity = predicted !== null && predicted.intent !== 'sin_intencion';
+    if (opportunity === (c.expected !== null)) recordCorrect++;
+    else misses.push({ caseId: c.id, field: 'record', expected: c.expected ? 'yes' : 'no', predicted: opportunity ? 'yes' : 'no' });
+    if (c.noIntent) {
+      if (predicted?.intent === 'sin_intencion' && predicted.noIntentReason === c.noIntent) reasonCorrect++;
+      else misses.push({ caseId: c.id, field: 'noIntentReason', expected: c.noIntent, predicted: predicted?.noIntentReason ?? null });
+    }
+    if (c.signals) {
+      if (c.signals.every((s) => predicted?.signals?.includes(s))) signalsCorrect++;
+      else misses.push({ caseId: c.id, field: 'signals', expected: c.signals.join(','), predicted: predicted?.signals?.join(',') ?? null });
+    }
     if (!c.expected) continue;
     for (const field of OPPORTUNITY_FIELDS) {
       if (predicted?.[field] === c.expected[field]) correct[field]++;
@@ -121,6 +170,8 @@ export function scoreOpportunityRecords(predictions: Readonly<Record<string, Par
     cases: set.length,
     record: score(recordCorrect, set.length),
     fields: { trigger: score(correct.trigger, positives), intent: score(correct.intent, positives), segment: score(correct.segment, positives), complexity: score(correct.complexity, positives) },
+    noIntentReason: score(reasonCorrect, set.filter((c) => c.noIntent).length),
+    signals: score(signalsCorrect, set.filter((c) => c.signals).length),
     misses,
   };
 }

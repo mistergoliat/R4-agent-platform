@@ -3,7 +3,7 @@ import { runGatewayProcess, loadGatewayConfig } from '@r4/channel-gateway';
 import { stableJson } from '@r4/evaluation';
 import { gitState, secretsFromEnv, writeArtifacts } from '@r4/evaluator';
 import { createLogger } from '@r4/observability';
-import { PostgresArtifactFacts, PostgresArtifacts, PostgresProductionStore, createPool } from '@r4/persistence-postgres';
+import { PostgresArtifactFacts, PostgresArtifacts, PostgresObservationStore, PostgresProductionStore, createPool } from '@r4/persistence-postgres';
 import {
   assertProductionComposition,
   capabilityAvailability,
@@ -192,11 +192,12 @@ function deskOf(production: ReturnType<typeof loadProductionConfig>) {
 function composition() {
   const planOnly = () => Promise.reject(new Error('plan only'));
   const noStore = { readControls: planOnly, bindingByTask: planOnly, taskState: planOnly, thread: planOnly } as never;
+  const taskObservations = { listByTask: planOnly };
   const production = loadProductionConfig(process.env);
   const catalog = productionCatalog(production);
   const shipping = productionShipping(production);
   const quotes = productionQuotes(production);
-  return composeSalesProductionWorker({ pool: { query: () => Promise.reject(new Error('plan only')) } as never, store: noStore, production, modelProvider: { providerId: 'plan', invoke: () => Promise.reject(new Error('plan only')) }, logger: createLogger({ service: 'plan', level: 'silent' }), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), catalogDescriptiveWindowMs: loadCatalogDescriptiveWindowMs(process.env), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production), ...deskOf(production) });
+  return composeSalesProductionWorker({ pool: { query: () => Promise.reject(new Error('plan only')) } as never, store: noStore, production, modelProvider: { providerId: 'plan', invoke: () => Promise.reject(new Error('plan only')) }, logger: createLogger({ service: 'plan', level: 'silent' }), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), catalogDescriptiveWindowMs: loadCatalogDescriptiveWindowMs(process.env), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production), ...deskOf(production), taskObservations });
 }
 
 /** (ADR-046) A web worker reports what it reads to the store chat, through the same signed edge as its replies. */
@@ -385,7 +386,7 @@ async function worker(production: ReturnType<typeof loadProductionConfig>): Prom
   const storeGraph = isSalesWebProfile(workerProfile(production)) ? (await SignedStoreGraph.load(signedStoreGraphRead(pool), logger))?.start() ?? null : null;
   // (ADR-058 G5b) Facts answered in R4 for products: part of each product sheet Pesín reads (WhatsApp and web).
   const productFacts = catalog ? (await ProductFactsSource.load(productFactsRead(pool), logger)).start() : null;
-  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...(storeGraph ? { storeGraph } : {}), ...(productFacts ? { productFacts } : {}), ...webProgressOf(production, pool), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production, logger), ...deskOf(production), quoteRecovery: loadQuoteRecovery(process.env) , catalogDescriptiveWindowMs: loadCatalogDescriptiveWindowMs(process.env) });
+  const composed = composeSalesProductionWorker({ pool, store: new PostgresProductionStore(pool), production, modelProvider: model.provider, logger, ...(storeGraph ? { storeGraph } : {}), ...(productFacts ? { productFacts } : {}), ...webProgressOf(production, pool), ...(catalog ? { catalog } : {}), ...discoverOf(production, catalog), ...(shipping ? { shipping } : {}), ...(quotes ? { quotes } : {}), ...autonomousLimits(production), ...customerOf(production), ...checkoutOf(production, logger), ...deskOf(production), taskObservations: new PostgresObservationStore(pool), quoteRecovery: loadQuoteRecovery(process.env) , catalogDescriptiveWindowMs: loadCatalogDescriptiveWindowMs(process.env) });
   await assertSalesProductionPrerequisites(workerProfile(production), pool);
   // (M3) What the operator needs to see from the logs: whether the quote-recovery source was composed, and the promotional-quotes switch.
   const features = { quoteRecovery: composed.bindings.contextSources?.some((s) => s.id === QUOTE_RECOVERY_SOURCE_ID) === true, promotionalQuotes: loadPromotionalQuotes(process.env) };
