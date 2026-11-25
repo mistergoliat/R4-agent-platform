@@ -26,6 +26,8 @@ export const graphChangeSchema = z.discriminatedUnion('op', [
   z.strictObject({ op: z.literal('set_kind'), key, kind: z.string().min(1).max(60) }),
   // G2b-2: declared physical fits the graph lacks ([area, a, b]: view[a]['area:a'] ∋ b).
   z.strictObject({ op: z.literal('add_relations'), relations: z.array(z.tuple([z.string().regex(/^[a-z]{1,8}$/u), key, key])).min(1).max(200) }),
+  // G4b: unreviewed relations the graph-curator agent confirmed with cited evidence; approving clears their mark.
+  z.strictObject({ op: z.literal('mark_reviewed'), relations: z.array(z.tuple([z.string().regex(/^[a-z]{1,8}$/u), key, key])).min(1).max(50) }),
 ]);
 export type GraphChange = z.infer<typeof graphChangeSchema>;
 type GraphMuscles = (typeof MUSCLE_GROUPS)[number][];
@@ -97,6 +99,11 @@ export function applyChanges(graph: ProductGraph, changes: readonly GraphChange[
     }
     if (c.op === 'add_relations') {
       for (const [area, a, b] of c.relations) link(area, a, b);
+      continue;
+    }
+    if (c.op === 'mark_reviewed') {
+      const done = new Set(c.relations.map((r) => r.join('|')));
+      g.unreviewed = g.unreviewed.filter((r) => !done.has(r.join('|')));
       continue;
     }
     if (c.op === 'set_kind') {

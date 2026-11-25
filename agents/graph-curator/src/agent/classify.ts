@@ -20,10 +20,10 @@ export type ClassificationCheck =
   | { readonly ok: true; readonly classification: Classification }
   | { readonly ok: false; readonly violations: readonly string[] };
 
-const norm = (s: string) => s.normalize('NFC').replace(/\s+/gu, ' ').trim().toLowerCase();
+export const norm = (s: string) => s.normalize('NFC').replace(/\s+/gu, ' ').trim().toLowerCase();
 
 /** Where a cited field's value lives in the sheet the agent read (the same view the capability returned). */
-function sheetValue(sheet: ProductSheetView, field: string): string | null {
+export function sheetValue(sheet: ProductSheetView, field: string): string | null {
   const f = norm(field);
   if (f === 'nombre' || f === 'name') return sheet.name;
   if (f === 'categoría' || f === 'categoria' || f === 'category') return sheet.category;

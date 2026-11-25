@@ -48,6 +48,12 @@ export function revertChange(current: ProductGraph, base: ProductGraph, change: 
     }
     return productGraphSchema.parse(g);
   }
+  if (change.op === 'mark_reviewed') {
+    // The marks come back for the relations still published.
+    const back = base.unreviewed.filter((t) => change.relations.some((r) => r.join() === t.join()) && g.view[t[1]]?.[`${t[0]}:a`]?.includes(t[2]));
+    g.unreviewed.push(...back.filter((t) => !g.unreviewed.some((x) => x.join() === t.join())));
+    return productGraphSchema.parse(g);
+  }
   if (change.op === 'remove_relation') {
     for (const [directed, other] of relationsOf(base, change.a)) if (other === change.b && directed.startsWith(`${change.area}:`)) link(directed, change.a, change.b);
     const back = base.unreviewed.filter(([ar, a, b]) => ar === change.area && ((a === change.a && b === change.b) || (a === change.b && b === change.a)));
