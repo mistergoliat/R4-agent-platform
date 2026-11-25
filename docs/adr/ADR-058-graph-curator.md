@@ -19,8 +19,8 @@
     «Categoría» y `graph:recheck` están en producción desde el 2026-11-25 (PR #158).
   - **Decisiones 11 y 12 aceptadas** (enmienda del 2026-11-25, PR #160; owner: «apruebo el ADR y parte con G7a»):
     conversar con el curador y una revisión que se entienda. G7a autorizada; G7b y G7c esperan su autorización.
-  - **Decisión 13 propuesta** (enmienda del 2026-11-25): el product manager pregunta y responde en ClickUp. Fase G6, sin
-    implementar.
+  - **Decisión 13 aceptada** (enmienda del 2026-11-25, PR #163; owner: «apruebo el #163»): el product manager pregunta
+    y responde en ClickUp. Fase G6 sin implementar; espera las decisiones 7 y 8 y su autorización.
   - Cada fase necesita autorización explícita del owner.
 - **Fecha:** 2026-11-23
 - **Mandato:** decisiones del owner del 2026-11-23:
@@ -296,7 +296,7 @@ preguntas. La Decisión 4 cambia así:
    - R4 entrega en la API la pregunta, el efecto y el grupo ya armados, para que la consola solo los muestre.
    - Así la plantilla vive en el paquete, con pruebas, y no se duplica.
 
-## Decisión 13 — El product manager responde en ClickUp (enmienda propuesta del 2026-11-25)
+## Decisión 13 — El product manager responde en ClickUp (enmienda del 2026-11-25)
 
 Pedido del owner del 2026-11-25: «el curador se debería poder comunicar con el PM a través de ClickUp, esa es la
 plataforma que utilizan». Cierra la decisión abierta 1 con la opción de ida y vuelta: el PM pregunta y responde en
@@ -769,8 +769,8 @@ Decisiones del owner del 2026-11-24:
 
 ## Decisiones abiertas (owner)
 
-1. ~~Cómo le llega la consulta al product manager~~: se propone cerrarla con la ida y vuelta por ClickUp (Decisión 13,
-   pedido del owner del 2026-11-25).
+1. ~~Cómo le llega la consulta al product manager~~: cerrada, ida y vuelta por ClickUp (Decisión 13, owner,
+   2026-11-25).
 2. **Quiénes son el vendedor y el product manager** que se dan de alta como operadores, y el usuario de ClickUp del PM.
 3. ~~Día y hora de la corrida semanal~~: cerrada, domingo 22:00 (decisión 6).
 4. **Tope diario para interpretar explicaciones** (Decisión 11). Se propone US$0,25 por día, unas 25 explicaciones.
