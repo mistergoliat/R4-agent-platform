@@ -109,7 +109,8 @@ export function deskContactRef(key: string, channel: string, recipientRef: strin
 /**
  * (@2) The buying signals of a conversation, from its recorded observations only (deterministic; the model cannot add
  * one): cotizacion = quote.preview read or quote.create applied; propuesta = sales.workspace.update applied with
- * products in the selection; despacho = shipping.quote for a commune; producto = catalog.get_product_context read;
+ * products in the selection, or (owner 2026-11-25) a home-gym build step (catalog.build_step) that returned options or
+ * already holds chosen products; despacho = shipping.quote for a commune; producto = catalog.get_product_context read;
  * traspaso = the record is the handoff's. Ordered as DESK_SIGNALS.
  */
 export function deskSignalsOf(observations: readonly Pick<Observation, 'source' | 'outcome' | 'payload'>[], trigger: DeskOpportunityInput['trigger']): DeskSignal[] {
@@ -119,6 +120,7 @@ export function deskSignalsOf(observations: readonly Pick<Observation, 'source' 
   const found = new Set<DeskSignal>();
   if (read('quote.preview').length > 0 || applied('quote.create').length > 0) found.add('cotizacion');
   if (applied('sales.workspace.update').some((o) => { const selection = field(o.payload, 'result', 'selection'); return Array.isArray(selection) && selection.length > 0; })) found.add('propuesta');
+  if (read('catalog.build_step').some((o) => { const options = field(o.payload, 'options'); const total = field(o.payload, 'selectedTotalClp'); return (Array.isArray(options) && options.length > 0) || (typeof total === 'number' && total > 0); })) found.add('propuesta');
   if (read('shipping.quote').some((o) => { const commune = field(o.payload, 'destination', 'communeId'); return typeof commune === 'string' && commune !== ''; })) found.add('despacho');
   if (read('catalog.get_product_context').length > 0) found.add('producto');
   if (trigger === 'traspaso') found.add('traspaso');

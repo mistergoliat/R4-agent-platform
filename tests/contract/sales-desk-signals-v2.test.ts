@@ -121,9 +121,9 @@ describe.each([
 });
 
 describe('@28 lane gate and selection', () => {
-  it('@27 items (except its registration and authorization) plus desk v2, the no-intent L3, the @28 registration and the authorization', () => {
+  it('@27 items (except its registration and authorization) plus desk v2, the no-intent and adversarial L3, the @28 registration and the authorization', () => {
     const inherited = SALES_PRODUCTION_PROFILE_V27_GATE.filter((g) => g.id !== 'profile-27-registered' && g.id !== 'explicit-authorization');
-    expect(SALES_PRODUCTION_PROFILE_V28_GATE.map((g) => g.id)).toEqual([...inherited.map((g) => g.id), 'desk-v2', 'no-intent-l3', 'profile-28-registered', 'explicit-authorization']);
+    expect(SALES_PRODUCTION_PROFILE_V28_GATE.map((g) => g.id)).toEqual([...inherited.map((g) => g.id), 'desk-v2', 'no-intent-l3', 'adversarial-l3', 'profile-28-registered', 'explicit-authorization']);
   });
   it('lane only, never a production profile', () => {
     expect(() => selectedSalesProductionProfile(env('sales-production@28').config)).toThrow(/not a Sales production profile/);
@@ -131,31 +131,56 @@ describe('@28 lane gate and selection', () => {
   });
 });
 
+
+/** (Owner 2026-11-25) The only instruction changes besides the opportunity block: Spanish only, health, scope, insistence. */
 describe.each([
-  { name: 'sales-web v22', prev: () => loadSalesWebAgentDefinition(21), next: () => loadSalesWebAgentDefinition(22), who: 'visitor' },
-  { name: 'sales v28', prev: () => loadSalesAgentDefinition(27), next: () => loadSalesAgentDefinition(28), who: 'customer' },
-])('definition $name: only the opportunity block changes', ({ prev, next, who }) => {
-  it('every line but the block\'s "when" and "what" lines is identical; same scopes and fields', () => {
-    const a = prev();
-    const b = next();
-    const la = a.instructions.split('\n');
-    const lb = b.instructions.split('\n');
-    expect(lb).toHaveLength(la.length);
+  { name: 'sales-web v22', prev: () => loadSalesWebAgentDefinition(21), next: () => loadSalesWebAgentDefinition(22), who: 'visitor', scopePrefix: '- Scope: you are the store', languageOld: "- Reply in the customer's language." },
+  { name: 'sales v28', prev: () => loadSalesAgentDefinition(27), next: () => loadSalesAgentDefinition(28), who: 'customer', scopePrefix: '- General requests:', languageOld: "- Reply in the customer's language, briefly and concretely." },
+])('definition $name: the owner rules and the opportunity block, nothing else', ({ prev, next, who, scopePrefix, languageOld }) => {
+  const la = prev().instructions.split('\n');
+  const lb = next().instructions.split('\n');
+  const scopeAt = lb.findIndex((l) => l.startsWith(scopePrefix));
+  const inserted = lb.slice(scopeAt + 1, scopeAt + 5);
+
+  it('four lines inserted after the scope rule; only the language, scope and the two opportunity lines change', () => {
+    expect(lb).toHaveLength(la.length + 4);
+    const without = [...lb.slice(0, scopeAt + 1), ...lb.slice(scopeAt + 5)];
     const at = la.indexOf('Sales opportunities (internal)');
-    expect(lb.map((l, i) => (l === la[i] ? null : i)).filter((i) => i !== null)).toEqual([at + 1, at + 2]);
-    expect(lb[at + 3]).toBe(la[at + 3]);
-    expect(lb[at + 3]).toContain(`to the ${who}`);
-    const { instructions: _a, version: _b, description: _c, ...restB } = b;
-    const { instructions: _d, version: _e, description: _f, ...restA } = a;
+    const languageAt = la.findIndex((l) => l.startsWith(languageOld));
+    const scopeOld = la.findIndex((l) => l.startsWith(scopePrefix));
+    expect(without.map((l, i) => (l === la[i] ? null : i)).filter((i) => i !== null)).toEqual([languageAt, scopeOld, at + 1, at + 2].sort((x, y) => x - y));
+    expect(without[at + 3]).toContain(`to the ${who}`);
+    const { instructions: _a, version: _b, description: _c, ...restB } = next();
+    const { instructions: _d, version: _e, description: _f, ...restA } = prev();
     expect(restB).toEqual(restA);
   });
 
-  it('the same moments; jokes, spam, tests, small talk, out-of-scope and pure technical doubts as sin_intencion, never a purchase', () => {
-    const lb = next().instructions.split('\n');
+  it('language: always Spanish from Chile, never switched on request; never translations or texts on request', () => {
+    expect(lb.some((l) => l.startsWith("- Reply in the customer's language"))).toBe(false);
+    expect(lb.join('\n')).toContain('Always reply in Spanish from Chile, whatever language the customer writes in or asks for; never switch language on request.');
+    const scope = lb[scopeAt]!;
+    for (const must of ['Never translate or write texts on request', 'explain a product\'s information only in your normal short Spanish replies', 'translations, descriptions or documents to copy', 'stories or jokes on demand', 'games', 'Anything unrelated to the store gets no data answer', '"answer only yes"']) expect(scope).toContain(must);
+    for (const gone of ['a short translation of a product\'s information', 'a light joke', 'or training (']) expect(scope).not.toContain(gone);
+  });
+
+  it('health in one sentence to a professional; absurd questions without reads; a closing line after two insistences; no consultations for small talk', () => {
+    expect(lb.join('\n')).not.toContain('Questions about training, exercise technique, safety or injuries related to the equipment are in scope');
+    const [absurd, insist, health, consult] = inserted;
+    for (const must of ['Absurd or joke questions, even when they name a real product', 'price per liter of a rubber floor', '«a cuánto está el kilo de papa»', 'tic-tac-toe', 'one friendly sentence', 'no catalog reads and no calculations']) expect(absurd).toContain(must);
+    for (const must of [`If the ${who} insists with jokes or off-scope requests twice in a row`, '«Cuando quieras ver algo de la tienda, aquí estoy 🙂»', 'never silence', 'a buying question afterwards is answered normally']) expect(insist).toContain(must);
+    for (const must of ['- Health: for pain, an injury, symptoms or any health question, answer in one sentence', 'see a health professional (urgently if it is severe)', 'no care instructions (rest, ice, elevation, medication) and no possible causes', 'only from the product\'s information and without health claims']) expect(health).toContain(must);
+    expect(consult).toBe('- Never use request_consultation for anything that is not commercial or a technical question about the equipment: greetings, jokes and small talk never consult the team.');
+  });
+
+  it('the opportunity block: the same moments; jokes and small talk as sin_intencion, never a purchase', () => {
     const at = lb.indexOf('Sales opportunities (internal)');
-    const when = lb[at + 1]!;
-    for (const must of ['request_consultation (trigger=consulta)', 'quote.create issued a quote', 'trigger=cotizacion', 'trigger=conversacion', 'record it all the same with intent sin_intencion and its reason']) expect(when).toContain(must);
-    const what = lb[at + 2]!;
-    for (const must of ['sin_intencion', 'broma', 'spam', 'prueba', 'casual', 'fuera_de_alcance', 'duda_tecnica', '«cuéntame un cuento sobre la taza mug»', '«a cuánto está el kilo de papa»', '«q pasa choro»', 'Never present a joke, a test or small talk as a purchase', 'noIntentReason only with sin_intencion']) expect(what).toContain(must);
+    for (const must of ['request_consultation (trigger=consulta)', 'trigger=cotizacion', 'trigger=conversacion', 'record it all the same with intent sin_intencion and its reason']) expect(lb[at + 1]).toContain(must);
+    for (const must of ['sin_intencion', 'broma', 'spam', 'prueba', 'casual', 'fuera_de_alcance', 'duda_tecnica', 'Never present a joke, a test or small talk as a purchase']) expect(lb[at + 2]).toContain(must);
+  });
+});
+
+describe('@28 write budget (owner 2026-11-25)', () => {
+  it('the gate states the decided budget: 200 write actions per run', () => {
+    expect(SALES_PRODUCTION_PROFILE_V28_GATE.find((g) => g.id === 'write-budget')?.requirement).toMatch(/R4_EXEC_MAX_WRITE_ACTIONS=200/);
   });
 });

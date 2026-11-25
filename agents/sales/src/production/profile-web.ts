@@ -238,12 +238,12 @@ export const SALES_WEB_PROFILE_V21: ProductionProfile = Object.freeze({
  * (ADR-062, owner 2026-11-25: an opportunity only with a concrete buying signal) sales-web@21 with
  * desk.opportunity.record@2 instead of @1 (SALES_DESK_SIGNALS_PROFILES): the no-intent classification, the buying
  * signals the platform computes from the conversation and the opaque contactRef. Pinned to definition v22 = v21 with
- * only the opportunity block changed. Everything else is @21's.
+ * the opportunity block changed and the owner rules of 2026-11-25 (Spanish only, health, scope, insistence). Everything else is @21's.
  */
 export const SALES_WEB_PROFILE_V22: ProductionProfile = Object.freeze({
   ...SALES_WEB_PROFILE_V21,
   version: 22,
-  description: 'sales-web@21 with desk.opportunity.record@2: jokes, spam, tests and small talk recorded as without intent; the platform adds the buying signals of the conversation and an opaque contact reference; never shown to the visitor.',
+  description: 'sales-web@21 with desk.opportunity.record@2 (jokes, spam, tests and small talk recorded as without intent; the platform adds the buying signals and an opaque contact reference) and the owner rules of 2026-11-25: Spanish only, health questions to a professional, absurd questions in one sentence, a closing line after two insistences, no consultations for small talk.',
 } satisfies ProductionProfile);
 
 export const SALES_WEB_QUOTE_PROFILES: ReadonlySet<string> = new Set(['sales-web@19', 'sales-web@20', 'sales-web@21', 'sales-web@22']);

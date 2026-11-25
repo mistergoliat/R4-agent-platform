@@ -147,6 +147,14 @@ describe('deskSignalsOf: only what this conversation recorded', () => {
     expect(deskSignalsOf([applied('quote.create')], 'cotizacion')).toEqual(['cotizacion']);
   });
 
+  it('(owner 2026-11-25) a web home-gym build step with options or chosen products is a propuesta; an empty step is not', () => {
+    const step = (payload: unknown) => read('catalog.build_step', payload);
+    expect(deskSignalsOf([step({ options: [{ productKey: 'P1' }], selectedTotalClp: 0 })], 'conversacion')).toEqual(['propuesta']);
+    expect(deskSignalsOf([step({ options: [], selectedTotalClp: 189_990 })], 'conversacion')).toEqual(['propuesta']);
+    expect(deskSignalsOf([step({ options: [], selectedTotalClp: 0 })], 'conversacion')).toEqual([]);
+    expect(deskSignalsOf([read('catalog.build_step', { options: [{ productKey: 'P1' }] }, 'failed')], 'conversacion')).toEqual([]);
+  });
+
   it('nothing for failed or rejected observations, an empty selection, a read posing as a write, or other capabilities', () => {
     const none = [
       read('quote.preview', {}, 'failed'),
