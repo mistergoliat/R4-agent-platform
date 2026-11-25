@@ -113,14 +113,14 @@ describe('the two Meta agents', () => {
 
   it('are isolated: never WhatsApp or web profiles, never selectable by their gateways; a Meta gateway takes no other profile', async () => {
     const labels = SALES_META_PROFILES.map(profileLabel);
-    expect(labels).toEqual(['sales-instagram@1', 'sales-facebook@1']);
+    expect(labels).toEqual(['sales-instagram@1', 'sales-facebook@1', 'sales-instagram@2', 'sales-facebook@2']);
     for (const label of labels) {
       expect([...SALES_PRODUCTION_PROFILES, ...SALES_LANE_PROFILES, ...SALES_WEB_PROFILES].map(profileLabel)).not.toContain(label);
       expect(() => selectedSalesProductionProfile(production(label).config, { lane: true })).toThrow(/not a Sales production profile/);
       expect(() => composeSalesGateway({ pool: noPool, production: production(label), env: metaEnv })).toThrow(/not a Sales production profile/);
       expect(() => composeSalesWebGateway({ pool: noPool, production: production(label), env: {} })).toThrow(/not a Sales web profile/);
     }
-    for (const other of ['sales-production@26', 'sales-web@20']) expect(() => composeSalesMetaGateway({ pool: noPool, production: production(other), env: metaEnv })).toThrow(/not a Sales Meta profile/);
+    for (const other of ['sales-production@26', 'sales-production@27', 'sales-web@20']) expect(() => composeSalesMetaGateway({ pool: noPool, production: production(other), env: metaEnv })).toThrow(/not a Sales Meta profile/);
     expect(() => composeSalesMetaGateway({ pool: noPool, production: production('sales-instagram@1'), env: { ...metaEnv, R4_META_INSTAGRAM_ACCOUNT_ID: '' } })).toThrow(/R4_META_INSTAGRAM_ACCOUNT_ID is missing/);
     expect(composeSalesMetaGateway({ pool: noPool, production: production('sales-facebook@1'), env: { ...metaEnv, R4_META_INSTAGRAM_ACCOUNT_ID: '' } }).bindings.inbound[0]!.channel).toBe('facebook');
     const loaded = await loadAgentDefinitionsFromDirectory(SALES_AGENT_DIR);

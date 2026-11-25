@@ -7,17 +7,24 @@ import type { DeskOpportunityInput } from '../capabilities/desk-opportunity.js';
  *
  * The scorer reads RECORDED inputs (what the model passed to desk.opportunity.record in each conversation); it never
  * calls a model. How to run it (the O1 gate, ADR-062 Fases):
- *   1. In web QA on sales-web@21, play each case's visitor turns as one conversation.
+ *   1. On each channel's QA profile (web sales-web@21, WhatsApp sales-production@27, Instagram sales-instagram@2,
+ *      Facebook sales-facebook@2), play each case of that channel (OpportunityCase.channel) as one conversation.
  *   2. Write predictions.json: { "<case id>": <the first desk.opportunity.record input of that conversation> | null }
  *      (from the action receipts of each conversation, or the QA desk's opportunities).
- *   3. npm run build && npm run eval:sales -- --opportunity predictions.json
+ *   3. npm run build && npm run eval:sales -- --opportunity predictions.json [--channel whatsapp]
+ *      (--channel scores only that channel's cases; without it, every case).
  * The owner sets the accuracy threshold of the gate.
  */
 export type OpportunityLabel = Pick<DeskOpportunityInput, 'trigger' | 'intent' | 'segment' | 'complexity'>;
 export const OPPORTUNITY_FIELDS = ['trigger', 'intent', 'segment', 'complexity'] as const;
 
+export const OPPORTUNITY_CHANNELS = ['web', 'whatsapp', 'instagram', 'facebook'] as const;
+export type OpportunityChannel = (typeof OPPORTUNITY_CHANNELS)[number];
+
 export interface OpportunityCase {
   readonly id: string;
+  /** Where the conversation is played; absent = the web chat. */
+  readonly channel?: OpportunityChannel;
   /** Visitor turns, in order; the moment Pesín records is implied by the expected trigger. */
   readonly visitor: readonly string[];
   /** null = no opportunity must be recorded (a pure question without buying intent). */
@@ -52,6 +59,24 @@ export const OPPORTUNITY_LABELED_SET: readonly OpportunityCase[] = Object.freeze
   { id: 'opp-23-faq-entrenamiento', visitor: ['¿Cuántas series debería hacer para ganar masa muscular?'], expected: null },
   { id: 'opp-24-faq-tienda-fisica', visitor: ['¿Tienen tienda física en Santiago?'], expected: null },
   { id: 'opp-25-solo-mirando', visitor: ['Hola', 'Solo estoy mirando, gracias'], expected: null },
+  // WhatsApp (sales-production@27): quotes and handoffs exist here.
+  { id: 'opp-wa-01-cotizacion', channel: 'whatsapp', visitor: ['Hola, quiero cotizar una bicicleta de spinning', 'Con despacho a Ñuñoa', 'Sí, dale, emítela'], expected: L('cotizacion', 'cotizacion', 'persona', 'estandar') },
+  { id: 'opp-wa-02-traspaso-limite', channel: 'whatsapp', visitor: ['Necesito 3 trotadoras y 2 elípticas para el gimnasio de mi condominio', 'Cotízamelo todo con despacho', 'Sí, conéctame con una persona del equipo'], expected: L('traspaso', 'cotizacion', 'desconocido', 'proyecto') },
+  { id: 'opp-wa-03-traspaso-pide-persona', channel: 'whatsapp', visitor: ['Quiero comprar un rack y una barra olímpica', 'Prefiero hablar con una persona, ¿me pueden atender?'], expected: L('traspaso', 'compra', 'persona', 'estandar') },
+  { id: 'opp-wa-04-mayorista', channel: 'whatsapp', visitor: ['Buenas, somos distribuidores en el norte', '¿Qué precio por volumen tienen para 40 kettlebells?'], expected: L('consulta', 'cotizacion', 'mayorista', 'estandar') },
+  { id: 'opp-wa-05-postventa', channel: 'whatsapp', visitor: ['Hola, compré un banco y me llegó sin los pernos', '¿Cómo lo soluciono?'], expected: L('consulta', 'postventa', 'persona', 'estandar') },
+  { id: 'opp-wa-06-institucional', channel: 'whatsapp', visitor: ['Escribo de una universidad, vamos a renovar el gimnasio de estudiantes', 'Será por licitación pública, ¿ustedes participan?'], expected: L('consulta', 'cotizacion', 'institucional', 'proyecto') },
+  { id: 'opp-wa-07-faq', channel: 'whatsapp', visitor: ['¿Hasta qué hora atienden hoy?'], expected: null },
+  // Instagram (sales-instagram@2): no quote and no handoff.
+  { id: 'opp-ig-01-compra', channel: 'instagram', visitor: ['Vi en su historia unas bandas elásticas, ¿qué resistencias tienen?', 'Ya, me las compro, ¡gracias!'], expected: L('conversacion', 'compra', 'persona', 'estandar') },
+  { id: 'opp-ig-02-estudio-proyecto', channel: 'instagram', visitor: ['Soy coach y voy a abrir un estudio de pilates y funcional', '¿Me ayudan con todo el equipamiento? ¿Lo instalan?'], expected: L('consulta', 'compra', 'desconocido', 'proyecto') },
+  { id: 'opp-ig-03-tecnica', channel: 'instagram', visitor: ['¿Cómo hago bien una sentadilla búlgara?'], expected: null },
+  { id: 'opp-ig-04-servicio-tecnico', channel: 'instagram', visitor: ['Mi bici estática hace clic al pedalear', '¿Tienen servicio técnico?'], expected: L('consulta', 'servicio_tecnico', 'persona', 'estandar') },
+  // Facebook (sales-facebook@2): no quote and no handoff.
+  { id: 'opp-fb-01-empresa', channel: 'facebook', visitor: ['Hola, necesito 10 colchonetas para las pausas activas de la empresa', '¿Emiten factura?'], expected: L('consulta', 'compra', 'empresa', 'estandar') },
+  { id: 'opp-fb-02-compra', channel: 'facebook', visitor: ['¿Tienen discos bumper de 10 kg?', 'Perfecto, los compro en la web. Gracias'], expected: L('conversacion', 'compra', 'persona', 'estandar') },
+  { id: 'opp-fb-03-municipalidad', channel: 'facebook', visitor: ['Le escribo de la oficina de deportes de la municipalidad', 'Queremos máquinas de ejercicio para una plaza, ¿pueden cotizar con orden de compra?'], expected: L('consulta', 'cotizacion', 'institucional', 'proyecto') },
+  { id: 'opp-fb-04-faq-despacho', channel: 'facebook', visitor: ['¿Hacen envíos a Punta Arenas?'], expected: null },
 ] satisfies OpportunityCase[]);
 
 export interface FieldScore {
@@ -70,6 +95,11 @@ export interface OpportunityScore {
 }
 
 const score = (correct: number, total: number): FieldScore => ({ correct, total, accuracy: total === 0 ? 1 : correct / total });
+
+/** The cases played on one channel (a case without a channel is a web case). */
+export function opportunityCasesOf(channel: OpportunityChannel, set: readonly OpportunityCase[] = OPPORTUNITY_LABELED_SET): OpportunityCase[] {
+  return set.filter((c) => (c.channel ?? 'web') === channel);
+}
 
 /** Per-field accuracy of recorded inputs against the labeled set. A case missing from the predictions counts as "not recorded". */
 export function scoreOpportunityRecords(predictions: Readonly<Record<string, Partial<OpportunityLabel> | null | undefined>>, set: readonly OpportunityCase[] = OPPORTUNITY_LABELED_SET): OpportunityScore {

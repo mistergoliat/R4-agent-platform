@@ -24,6 +24,7 @@ export * from './profile-v23.js';
 export * from './profile-v24.js';
 export * from './profile-v25.js';
 export * from './profile-v26.js';
+export * from './profile-v27.js';
 export * from './profile-v15.js';
 export * from './shipping-plan.js';
 export * from './topology.js';
