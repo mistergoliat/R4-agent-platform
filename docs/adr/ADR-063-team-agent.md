@@ -198,7 +198,11 @@ Core.
   flujos existentes y del conector de pedidos (ADR-061).
 - **E3. Borradores y avisos.** Depende del CRM (ADR-062 O1).
 - **E4. Puente de conocimiento.**
-- **E5. Armado, mantención y bodega**, alimentando los flujos existentes.
+- **E5. Armado, mantención y bodega**, alimentando los flujos de n8n, que se mantienen (decisión del owner,
+  2026-11-25).
+  - **Primero se estandariza la información** de armados y mantenciones: máquina, código de servicio, estado,
+    fecha y responsable. Pesín equipo puede ayudar, porque cada reporte suyo ya llega con esos campos confirmados.
+  - **Reemplazar los flujos de n8n** se evalúa recién cuando los datos estén estandarizados, en un ADR propio.
 - **E6. Preguntas sobre datos para el supervisor**, con cifras agregadas y al final, por el riesgo de datos
   sensibles.
 
@@ -218,11 +222,15 @@ Core.
   Lanzamientos.
 - **El valor depende de la adopción.** Se mide igual que en ADR-062: reportes por semana y exhibición vigente.
 
+## Decisiones del owner (2026-11-25)
+
+- **El owner mantiene los flujos de n8n** de postventa y mantención de cardio.
+- **No se reemplazan todavía**, porque la información de armados y mantenciones aún no está completamente
+  estandarizada. Pesín equipo y los avisos de postventa los alimentan y conviven con ellos (fase E5).
+
 ## Decisiones abiertas del owner
 
-1. Quién mantiene los flujos de n8n de postventa y mantención de cardio, y si se reemplazan o se alimentan. Es la
-   misma pregunta del ADR de postventa. La recomendación compartida es reemplazarlos cuando los avisos de R4 estén
-   activos, manteniendo las mismas plantillas aprobadas.
+1. Qué campos forman el estándar de armados y mantenciones, y quién lo valida.
 2. Los roles iniciales y quién tiene cada uno.
 3. La vigencia de una exhibición confirmada (propuesta: 7 días).
 4. La retención de las fotos.
