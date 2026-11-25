@@ -4,13 +4,14 @@ import { AgentRegistry } from '@r4/agent-registry';
 import { HttpCatalogAdapter, loadCatalogHttpConfig } from '@r4-adapters/catalog-http';
 import { systemClock, uuidV7Generator } from '@r4/contracts';
 import { createLogger } from '@r4/observability';
-import { PostgresAgentDefinitionStore, PostgresArtifactFacts, PostgresArtifacts, PostgresTaskRuntimeStore, createPool } from '@r4/persistence-postgres';
+import { PostgresAgentDefinitionStore, PostgresArtifactFacts, PostgresArtifacts, PostgresKnowledge, PostgresTaskRuntimeStore, createPool } from '@r4/persistence-postgres';
 import { TaskRuntime } from '@r4/task-runtime';
 import { productSheetView } from '../agent/capabilities.js';
 import { askedToPesin, runClassificationBatch, tasksWithinBudget } from '../agent/batch.js';
 import { CLASSIFY_TOKENS_PER_TASK } from '../agent/definition.js';
 import { PRODUCT_GRAPH_KIND } from '../graph.js';
 import { presentOpenProposals } from '../present.js';
+import { signedGraphCriteria } from '../agent/explain.js';
 
 /**
  * `npm run graph:classify -- [--limit 20] [--wait-min 10]` (ADR-058 G4a): one batch of the graph-curator agent. Creates
@@ -45,6 +46,7 @@ try {
     tasks,
     sheet: async (key) => productSheetView(catalog, async (k) => (await facts.current(PRODUCT_GRAPH_KIND, k)).map((f) => ({ subject: f.subject, field: f.field, value: f.value, recordedBy: f.recordedBy, recordedAt: f.recordedAt })), key),
     asked: await askedToPesin(pool),
+    criteria: await signedGraphCriteria(new PostgresKnowledge(pool)),
   }, { batchId: randomUUID(), limit, maxTokensPerTask: perTask, waitMs: Math.min(30, Math.max(1, Number(values['wait-min'] ?? 10) || 10)) * 60_000 });
   // ADR-058 G7a: runs refresh evidence, so the open proposals get their question again (no model).
   const presented = await presentOpenProposals(new PostgresArtifacts(pool), await askedToPesin(pool)).catch((e: unknown) => ({ error: e instanceof Error ? e.message.slice(0, 200) : 'unexpected_failure' }));

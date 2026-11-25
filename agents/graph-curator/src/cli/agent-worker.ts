@@ -6,7 +6,7 @@ import { PostgresArtifactFacts, PostgresArtifacts, createPool } from '@r4/persis
 import { loadWorkerConfig, runWorkerProcess } from '@r4/worker';
 import { kindsCapability, productSheetCapability, productSheetsCapability } from '../agent/capabilities.js';
 import { kindVocabulary } from '../agent/classify.js';
-import { GRAPH_CURATOR_AGENT_ID, GRAPH_CURATOR_AGENT_VERSION } from '../agent/definition.js';
+import { GRAPH_CURATOR_AGENT_ID, GRAPH_CURATOR_AGENT_VERSION, GRAPH_CURATOR_SERVED_VERSIONS } from '../agent/definition.js';
 import { PRODUCT_GRAPH_KIND } from '../graph.js';
 import { readSignedGraph } from '../signed.js';
 
@@ -34,6 +34,6 @@ capabilities.register(kindsCapability(async () => { const signed = await readSig
 await runWorkerProcess(config, {
   modelProvider: new OpenAICompatibleModelProvider(model),
   capabilities,
-  servedAgents: [{ agentId: GRAPH_CURATOR_AGENT_ID, version: GRAPH_CURATOR_AGENT_VERSION }],
+  servedAgents: GRAPH_CURATOR_SERVED_VERSIONS.map((version) => ({ agentId: GRAPH_CURATOR_AGENT_ID, version })),
 });
 logger.info({ event: 'graph_curator.worker.started', agent: `${GRAPH_CURATOR_AGENT_ID}@${GRAPH_CURATOR_AGENT_VERSION}` }, 'graph-curator worker started');

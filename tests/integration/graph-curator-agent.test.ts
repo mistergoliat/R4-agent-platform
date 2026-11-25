@@ -111,7 +111,7 @@ describe('graph-curator agent classifies (ADR-058 G4a)', () => {
   it('classifies the products no rule classifies; proposes only what the sheet backs', async () => {
     const result = await runClassificationBatch(
       { artifacts, tasks, sheet: (key) => productSheetView(catalog, () => [], key), asked: new Map([['P2', 3]]), sleep: drive },
-      { batchId: 'b1', limit: 10, maxTokensPerTask: 30_000, waitMs: 60_000, pollMs: 100 },
+      { batchId: 'b1', limit: 10, maxTokensPerTask: 40_000, waitMs: 60_000, pollMs: 100 },
     );
     expect(result).toMatchObject({ targets: 2, completed: 2, pending: [] });
     expect(result.refused).toEqual([{ productKey: 'P2', reason: 'evidence field «Material» is not in the sheet' }]);
@@ -125,7 +125,7 @@ describe('graph-curator agent classifies (ADR-058 G4a)', () => {
 
   it('a second batch on the same signed version does not duplicate tasks (idempotency) and proposes nothing new', async () => {
     const before = await curatorTasks();
-    const again = await runClassificationBatch({ artifacts, tasks, sheet: (key) => productSheetView(catalog, () => [], key), asked: new Map(), sleep: drive }, { batchId: 'b2', limit: 10, maxTokensPerTask: 30_000, waitMs: 5_000, pollMs: 100 });
+    const again = await runClassificationBatch({ artifacts, tasks, sheet: (key) => productSheetView(catalog, () => [], key), asked: new Map(), sleep: drive }, { batchId: 'b2', limit: 10, maxTokensPerTask: 40_000, waitMs: 5_000, pollMs: 100 });
     expect(await curatorTasks()).toBe(before);
     expect(again.proposals).toMatchObject({ created: 0 });
   }, 60_000);

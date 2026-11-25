@@ -17,3 +17,4 @@ export * from './agent/capabilities.js';
 export * from './agent/classify.js';
 export * from './agent/batch.js';
 export * from './agent/review.js';
+export * from './agent/explain.js';

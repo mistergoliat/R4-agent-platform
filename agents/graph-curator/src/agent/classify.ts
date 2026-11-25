@@ -32,8 +32,11 @@ export function sheetValue(sheet: ProductSheetView, field: string): string | nul
   return spec;
 }
 
+/** ADR-058 Decision 11: a signed criterion cited as evidence: field «Criterio», value = its knowledge entry id. */
+export const isCriterionField = (field: string) => norm(field) === 'criterio';
+
 /** The evaluation the agent's result must pass (also its regression check). */
-export function checkClassification(data: unknown, sheet: ProductSheetView, vocabulary: ReadonlySet<string>): ClassificationCheck {
+export function checkClassification(data: unknown, sheet: ProductSheetView, vocabulary: ReadonlySet<string>, criteria: ReadonlySet<string> = new Set()): ClassificationCheck {
   const parsed = classificationSchema.safeParse(data);
   if (!parsed.success) return { ok: false, violations: [`shape: ${parsed.error.issues[0]?.path.join('.') || '(root)'} ${parsed.error.issues[0]?.message ?? ''}`.trim()] };
   const c = parsed.data;
@@ -42,6 +45,10 @@ export function checkClassification(data: unknown, sheet: ProductSheetView, voca
   if (c.kind !== null && !vocabulary.has(c.kind)) violations.push(`kind ${c.kind} is not in the closed list`);
   if ((c.kind !== null || c.muscles.length) && !c.evidence.length) violations.push('a classification without evidence');
   for (const e of c.evidence) {
+    if (isCriterionField(e.field)) {
+      if (!criteria.has(e.value.trim())) violations.push(`criterion ${e.value} is not a signed criterion of this task`);
+      continue;
+    }
     const value = sheetValue(sheet, e.field);
     if (value === null) violations.push(`evidence field «${e.field}» is not in the sheet`);
     else if (!norm(value).includes(norm(e.value))) violations.push(`evidence «${e.field}: ${e.value}» does not appear in the sheet`);

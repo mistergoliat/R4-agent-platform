@@ -37,6 +37,8 @@ export async function runClassificationBatch(
     readonly tasks: CuratorTasks;
     readonly sheet: (productKey: string) => Promise<ProductSheetView>;
     readonly asked: ReadonlyMap<string, number>;
+    /** The signed criteria (ADR-058 Decision 11) every task receives and may cite. */
+    readonly criteria?: readonly { readonly id: string; readonly statement: string }[];
     readonly sleep?: (ms: number) => Promise<void>;
   },
   input: { readonly batchId: string; readonly limit: number; readonly maxTokensPerTask: number; readonly waitMs: number; readonly pollMs?: number },
@@ -52,7 +54,7 @@ export async function runClassificationBatch(
       request: {
         taskType: TASK_CLASSIFY_PRODUCT, agentId: GRAPH_CURATOR_AGENT_ID, agentVersion: GRAPH_CURATOR_AGENT_VERSION,
         goal: { description: `Clasificar el producto ${key}: su tipo (de la lista cerrada) y sus grupos musculares, con evidencia literal de su ficha.` },
-        input: { productKey: key },
+        input: { productKey: key, criteria: (deps.criteria ?? []).map((c) => ({ id: c.id, statement: c.statement })) },
         budget: { maxTokens: input.maxTokensPerTask },
       },
       requestedBy, correlationId: `graph-classify-${input.batchId}-${key}`,
@@ -71,7 +73,7 @@ export async function runClassificationBatch(
   for (const [key, task] of done) {
     if (task.status !== 'completed') { refused.push({ productKey: key, reason: `task ${task.status}` }); continue; }
     completed++;
-    const check = checkClassification((task.result as { data?: unknown } | null)?.data, await deps.sheet(key), vocabulary);
+    const check = checkClassification((task.result as { data?: unknown } | null)?.data, await deps.sheet(key), vocabulary, new Set((deps.criteria ?? []).map((c) => c.id)));
     if (!check.ok) { refused.push({ productKey: key, reason: check.violations.join('; ').slice(0, 300) }); continue; }
     const c = check.classification;
     const name = signed.graph.products[key]?.n ?? key;

@@ -45,8 +45,10 @@ function questionOf(g: ProductGraph, change: GraphChange): Pick<Presentation, 'g
         return { group: 'changes', keys: [a, b], yes: 'reject', question: `Si un cliente busca ${q(g, a)} y está agotado, ¿le ofrecerías ${q(g, b)}?`,
           ifYes: `Pesín sigue ofreciendo ${q(g, b)} como reemplazo de ${q(g, a)}.`, ifNo: `Pesín deja de ofrecer ${q(g, b)} como reemplazo de ${q(g, a)}.` };
       }
-      return { group: 'changes', keys: [a, b], yes: 'reject', question: `Para ${q(g, a)}, ¿${q(g, b)} va en «${label(g, area)}»?`,
-        ifYes: 'La relación se mantiene.', ifNo: `Pesín deja de proponer ${q(g, b)} en «${label(g, area)}» de ${q(g, a)}.` };
+      // Owner 2026-11-25 (Deadlift Jack Bar): say what the graph claims, so a wrong type reads as wrong; a relation that
+      // is right but of another type is fixed with «Explicar» (G7b), not with No.
+      return { group: 'changes', keys: [a, b], yes: 'reject', question: `En el grafo, ${q(g, a)} tiene a ${q(g, b)} en «${label(g, area)}». ¿Está bien así?`,
+        ifYes: 'La relación se mantiene.', ifNo: `Se quita: Pesín deja de proponer ${q(g, b)} en «${label(g, area)}» de ${q(g, a)}. Si van juntos pero con otro tipo de relación, usa «Explicar».` };
     }
     case 'add_relations': {
       const [area, a] = change.relations[0]!;
@@ -78,6 +80,14 @@ function questionOf(g: ProductGraph, change: GraphChange): Pick<Presentation, 'g
       return { group: 'bulk', keys: [anchor, ...anchors.filter((k) => k !== anchor)], yes: 'approve',
         question: `El curador revisó ${n === 1 ? 'una relación' : `${n} relaciones`} de ${q(g, anchor)} y dice que ${n === 1 ? 'está bien' : 'están bien'}. ¿${n === 1 ? 'La das por revisada' : 'Las das por revisadas'}?`,
         ifYes: 'Quedan revisadas. Pesín ya las usa y sigue igual.', ifNo: 'Siguen marcadas sin revisar. Pesín las sigue usando.' };
+    }
+    case 'retype_relations': {
+      const as = [...new Set(change.relations.map(([a]) => a))];
+      const n = change.relations.length;
+      const of = as.length === 1 ? ` de ${q(g, as[0]!)}` : '';
+      return { group: 'changes', keys: [...as, ...change.relations.map(([, b]) => b)], yes: 'approve',
+        question: `¿Cambiamos ${n === 1 ? 'la relación' : `las ${n} relaciones`}${of} de «${label(g, change.from)}» a «${label(g, change.to)}»?`,
+        ifYes: `Pesín ${n === 1 ? 'la' : 'las'} usa como «${label(g, change.to)}».`, ifNo: `${n === 1 ? 'Queda' : 'Quedan'} como «${label(g, change.from)}».` };
     }
     case 'deactivate':
     case 'activate':

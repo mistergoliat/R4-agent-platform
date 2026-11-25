@@ -7,7 +7,7 @@ import { PRODUCT_GRAPH_KIND, type ProductGraph } from '../graph.js';
 import { readSignedGraph } from '../signed.js';
 import { waitForTasks, type CuratorTasks } from './batch.js';
 import type { ProductSheetView } from './capabilities.js';
-import { norm, sheetValue } from './classify.js';
+import { isCriterionField, norm, sheetValue } from './classify.js';
 import { GRAPH_CURATOR_AGENT_ID, GRAPH_CURATOR_AGENT_VERSION, TASK_REVIEW_RELATIONS } from './definition.js';
 
 /**
@@ -37,7 +37,7 @@ export type ReviewCheck =
  * each verdict stands alone: it must be about one of the task's relations, once, and keep/remove must cite data that
  * appears verbatim in the sheet of the product it names (a or b). Unsure needs nothing and proposes nothing.
  */
-export function checkReview(data: unknown, relations: readonly Relation[], sheets: ReadonlyMap<string, ProductSheetView>): ReviewCheck {
+export function checkReview(data: unknown, relations: readonly Relation[], sheets: ReadonlyMap<string, ProductSheetView>, criteria: ReadonlySet<string> = new Set()): ReviewCheck {
   const parsed = reviewSchema.safeParse(data);
   if (!parsed.success) return { ok: false, violations: [`shape: ${parsed.error.issues[0]?.path.join('.') || '(root)'} ${parsed.error.issues[0]?.message ?? ''}`.trim()] };
   const asked = new Set(relations.map(relationId));
@@ -51,6 +51,11 @@ export function checkReview(data: unknown, relations: readonly Relation[], sheet
     else if (seen.has(id)) why.push('a second verdict for the same relation');
     if (v.verdict !== 'unsure' && !v.evidence.length) why.push(`${v.verdict} without evidence`);
     for (const e of v.verdict === 'unsure' ? [] : v.evidence) {
+      if (isCriterionField(e.field)) {
+        if (e.product !== v.a && e.product !== v.b) why.push(`evidence from ${e.product}, which is not in the relation`);
+        else if (!criteria.has(e.value.trim())) why.push(`criterion ${e.value} is not a signed criterion of this task`);
+        continue;
+      }
       const sheet = e.product === v.a || e.product === v.b ? sheets.get(e.product) : undefined;
       const value = sheet?.found ? sheetValue(sheet, e.field) : null;
       if (!sheet) why.push(`evidence from ${e.product}, which is not in the relation`);
@@ -83,7 +88,7 @@ export function reviewTargets(g: ProductGraph, asked: ReadonlyMap<string, number
 }
 
 /** A finished review task: the relations it was asked about and what the platform recorded as its result. */
-export interface FinishedReview { readonly hash: string; readonly taskId: string; readonly anchor: string; readonly relations: readonly Relation[]; readonly status: string; readonly result: JsonObject | null }
+export interface FinishedReview { readonly hash: string; readonly taskId: string; readonly anchor: string; readonly relations: readonly Relation[]; readonly status: string; readonly result: JsonObject | null; readonly criteria?: readonly string[] }
 
 /** Checks each finished review against the sheets and turns the verdicts that pass into proposals (by fingerprint). */
 export async function proposalsFromReviews(g: ProductGraph, entries: readonly FinishedReview[], sheet: (productKey: string) => Promise<ProductSheetView>) {
@@ -97,7 +102,7 @@ export async function proposalsFromReviews(g: ProductGraph, entries: readonly Fi
     if (t.status !== 'completed') { refused.push({ relation: `${t.anchor} (${t.relations.length})`, reason: `task ${t.status}` }); continue; }
     completed++;
     for (const k of new Set(t.relations.flatMap(([, a, b]) => [a, b]))) await sheetOf(k);
-    const check = checkReview((t.result as { data?: unknown } | null)?.data, t.relations, sheets);
+    const check = checkReview((t.result as { data?: unknown } | null)?.data, t.relations, sheets, new Set(t.criteria ?? []));
     if (!check.ok) { refused.push({ relation: `${t.anchor} (${t.relations.length})`, reason: check.violations.join('; ').slice(0, 300) }); continue; }
     refused.push(...check.refused);
     const base = { taskId: t.taskId, source: `graph-curator agent v${GRAPH_CURATOR_AGENT_VERSION}` };
@@ -153,6 +158,8 @@ export async function runReviewBatch(
     readonly sheet: (productKey: string) => Promise<ProductSheetView>;
     readonly asked: ReadonlyMap<string, number>;
     readonly reviewed: ReadonlySet<string>;
+    /** The signed criteria (ADR-058 Decision 11) every task receives and may cite. */
+    readonly criteria?: readonly GraphCriterion[];
     readonly spent: (taskIds: readonly string[]) => Promise<{ readonly inputTokens: number; readonly outputTokens: number }>;
     readonly sleep?: (ms: number) => Promise<void>;
   },
@@ -169,7 +176,8 @@ export async function runReviewBatch(
   const worst = (input.maxTokensPerTask * Math.max(input.pricePerMillion.input, input.pricePerMillion.output)) / 1_000_000;
   const requestedBy: Principal = { kind: 'service', ref: 'graph-curator' };
   const deadline = Date.now() + input.waitMs;
-  const taskOf = new Map<string, { taskId: string; anchor: string; relations: Relation[] }>();
+  const taskOf = new Map<string, { taskId: string; anchor: string; relations: Relation[]; criteria: string[] }>();
+  const criteria = deps.criteria ?? [];
   const done = new Map<string, { status: string; result: JsonObject | null }>();
   let next = 0;
   let spentUsd = 0;
@@ -183,14 +191,14 @@ export async function runReviewBatch(
         request: {
           taskType: TASK_REVIEW_RELATIONS, agentId: GRAPH_CURATOR_AGENT_ID, agentVersion: GRAPH_CURATOR_AGENT_VERSION,
           goal: { description: `Revisar ${chunk.relations.length} relaciones sin revisar de ${shortName(g, chunk.anchor)} (${chunk.anchor}): keep, remove o unsure para cada una, con evidencia literal de las fichas.` },
-          input: { anchor: chunk.anchor, relations: chunk.relations.map(([area, a, b]) => ({ area, a, b, meaning: `${shortName(g, a)} → «${g.labels[`${area}:a`] ?? area}» → ${shortName(g, b)}` })) },
+          input: { anchor: chunk.anchor, relations: chunk.relations.map(([area, a, b]) => ({ area, a, b, meaning: `${shortName(g, a)} → «${g.labels[`${area}:a`] ?? area}» → ${shortName(g, b)}` })), criteria: criteria.map((c) => ({ id: c.id, statement: c.statement })) },
           budget: { maxTokens: input.maxTokensPerTask },
         },
         requestedBy, correlationId: `graph-review-${input.batchId}-${hash}`,
         // The same relations are one task: a run that stopped waiting resumes it, never pays for it twice.
         idempotencyKey: `graph-review-${hash}`,
       });
-      taskOf.set(hash, { taskId: view.task.taskId, anchor: chunk.anchor, relations: chunk.relations });
+      taskOf.set(hash, { taskId: view.task.taskId, anchor: chunk.anchor, relations: chunk.relations, criteria: criteria.map((c) => c.id) });
       wave.push(hash);
     }
     next += size;
@@ -243,10 +251,13 @@ export async function recheckReviews(
   return { batchId: input.batchId, rechecked: finished.length, completed, verdicts: counts, proposals: stored, refused };
 }
 
-export interface CompletedReview { readonly taskId: string; readonly anchor: string; readonly relations: readonly Relation[] }
+export interface CompletedReview { readonly taskId: string; readonly anchor: string; readonly relations: readonly Relation[]; readonly criteria?: readonly string[] }
+
+/** A criterion a person signed (ADR-058 Decision 11): the knowledge entry id and its statement. */
+export interface GraphCriterion { readonly id: string; readonly statement: string }
 
 /** The review tasks that completed (any graph version), oldest first, with the relations each was asked about. */
-export async function completedReviewTasks(pool: { query: (sql: string, values?: unknown[]) => Promise<{ rows: { task_id: string; anchor: string | null; r: { area: string; a: string; b: string }[] | null }[] }> }): Promise<CompletedReview[]> {
-  const res = await pool.query(`select task_id, input->>'anchor' as anchor, input->'relations' as r from agent_tasks where agent_id = $1 and task_type = $2 and status = 'completed' order by created_at`, [GRAPH_CURATOR_AGENT_ID, TASK_REVIEW_RELATIONS]);
-  return res.rows.filter((row) => row.anchor && row.r).map((row) => ({ taskId: row.task_id, anchor: row.anchor!, relations: row.r!.map((x): Relation => [x.area, x.a, x.b]) }));
+export async function completedReviewTasks(pool: { query: (sql: string, values?: unknown[]) => Promise<{ rows: { task_id: string; anchor: string | null; r: { area: string; a: string; b: string }[] | null; c?: { id: string }[] | null }[] }> }): Promise<CompletedReview[]> {
+  const res = await pool.query(`select task_id, input->>'anchor' as anchor, input->'relations' as r, input->'criteria' as c from agent_tasks where agent_id = $1 and task_type = $2 and status = 'completed' order by created_at`, [GRAPH_CURATOR_AGENT_ID, TASK_REVIEW_RELATIONS]);
+  return res.rows.filter((row) => row.anchor && row.r).map((row) => ({ taskId: row.task_id, anchor: row.anchor!, relations: row.r!.map((x): Relation => [x.area, x.a, x.b]), criteria: (row.c ?? []).map((x) => x.id) }));
 }
