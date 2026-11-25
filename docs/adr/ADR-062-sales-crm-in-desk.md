@@ -178,6 +178,12 @@ política de despacho.
   Los pools son las áreas de la mesa. Las áreas iniciales y sus integrantes son decisión del owner.
 - **Toma única.** Al tomar una oportunidad queda un evento con persona, fecha y hora. Otro vendedor puede verla,
   pero no puede tomarla sin que el dueño la suelte o la reasigne un supervisor.
+- **Tope por vendedor.** Un vendedor no puede tomar del pozo común si ya tiene el máximo de oportunidades abiertas.
+  - **Valor:** es configuración versionada de la mesa; el valor inicial es 15.
+  - **Excepciones:** las oportunidades que le llegan por su link, por ser cliente de cabecera o porque el cliente lo
+    pidió por nombre le siguen llegando aunque esté en el tope. Cuentan para el tope, pero no se bloquean.
+  - **Por qué:** así nadie acapara las mejores y las difíciles no quedan en el pozo.
+  - **Qué se mide:** el tiempo que cada oportunidad pasa en el pozo y quién toma qué.
 - **Pesín es dueño mientras atiende solo.** Lo deja de ser cuando una persona toma la oportunidad o cuando esta se
   cierra. Sus ventas se miden, pero no se acreditan a ninguna persona (ADR-059 Decisión 4; el fondo del equipo es
   la decisión abierta 1 de ADR-048).
@@ -199,8 +205,9 @@ política de despacho.
   - el cliente no respondió;
   - no califica;
   - otro, con nota.
-- **El silencio no cierra.** Si una cotización vence sin compra, el sistema le pregunta al dueño qué pasó. La
-  oportunidad no pasa sola a `perdida`.
+- **El silencio no cierra.** Lo que manda el seguimiento es la próxima acción, no el vencimiento de la cotización.
+  Las cotizaciones duran 60 minutos, así que un aviso por cada cotización vencida llenaría la bandeja sin sentido. La
+  oportunidad no pasa sola a `perdida`: la cierra el dueño con un motivo.
 - **Escalamiento:**
   - una próxima acción vencida aparece primero en «Hoy»;
   - pasado el plazo de escalamiento, le llega un aviso al dueño;
@@ -423,10 +430,15 @@ política de despacho.
     autorización propia.
 - **Motivos de pérdida:** se parte en QA con la lista propuesta (Decisión 5) y se ajusta con el equipo de ventas
   antes de producción.
-- **Plazos:**
-  - una próxima acción no puede quedar a más de 3 días;
+- **Plazos, según el pool:**
+  - en Ventas, una próxima acción no puede quedar a más de 3 días;
+  - en Mayoristas, Institucionales y en oportunidades de complejidad «proyecto», a más de 7 días, porque esas
+    decisiones toman semanas y el plan comercial pide seguimiento por segmento;
   - cuando vence, se avisa al dueño;
-  - si sigue vencida 4 horas, se avisa al supervisor.
+  - si sigue vencida 4 horas **de atención**, se avisa al supervisor. Las noches, domingos y feriados no cuentan;
+  - los valores son configuración versionada de la mesa.
+- **Tope por vendedor:** 15 oportunidades abiertas para tomar del pozo (Decisión 4).
+- **Sin aviso por cotización vencida:** el seguimiento lo manda la próxima acción (Decisión 5).
 - **Cliente de cabecera:** se siembra con el vendedor de las ventas SAP de los últimos 90 días, con la misma regla
   de ADR-048. Lo más antiguo no crea vínculo.
 - **Clave compartida:** una clave que aparece en más de 3 cuentas no une sola; la revisa una persona.
@@ -439,3 +451,6 @@ política de despacho.
    repositorio.
 3. La lista final de motivos de pérdida, acordada con Ventas.
 4. La retención de los datos personales de oportunidades perdidas.
+5. Por dónde le llegan los avisos al vendedor y al supervisor: notificación en la app Ventas, WhatsApp a su
+   celular o correo. Sin un canal, los plazos y escalamientos no los ve nadie a tiempo.
+6. A qué persona corresponde cada código de vendedor de SAP (hay 17), para sembrar el cliente de cabecera.
