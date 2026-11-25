@@ -21,7 +21,8 @@
     conversar con el curador y una revisión que se entienda. G7a en producción (PR #161). G7b autorizada (owner,
     2026-11-25) con el cambio de tipo de relación; G7c espera su autorización.
   - **Decisión 13 aceptada** (enmienda del 2026-11-25, PR #163; owner: «apruebo el #163»): el product manager pregunta
-    y responde en ClickUp. Fase G6 sin implementar; espera las decisiones 7 y 8 y su autorización.
+    y responde en ClickUp. G6 autorizada (owner, 2026-11-25: «que el curador cree tareas en ClickUp con sus preguntas»;
+    respuestas del PM y opción B). Falta la lista y el token para la prueba real.
   - Cada fase necesita autorización explícita del owner.
 - **Fecha:** 2026-11-23
 - **Mandato:** decisiones del owner del 2026-11-23:
@@ -318,16 +319,27 @@ ClickUp, sin entrar a la consola. La Decisión 7 y la fase G6 quedan así.
    - un campo **Respuesta** (Sí / No). Un dato que falta lleva un campo de texto.
 
    La plantilla es la misma de la Decisión 12 y está en código.
-2. **Cuántas a la vez.** Como máximo 10 tareas abiertas, primero las más consultadas a Pesín. Cuando el PM cierra una,
-   entra la siguiente, así que nunca se le llena la lista. Las consultas de Pesín (Decisión 7) van primero, porque hay
-   un cliente esperando. Si vencen según el ADR-056, la tarea se cierra con un aviso: «el cliente ya no espera; si lo
-   sabes, respóndelo igual para la próxima vez».
+2. **Solo lo prioritario, y en orden** (owner, 2026-11-25: «habría que darle tareas prioritarias»). La prioridad de
+   ClickUp sigue este orden:
+   1. **urgente:** las consultas de Pesín (Decisión 7), porque hay un cliente esperando;
+   2. **alta:** los datos que faltan, primero los que desbloquean más relaciones;
+   3. **normal:** las preguntas que cambian lo que hace Pesín (el grupo `changes` de la Decisión 12), primero las más
+      consultadas a Pesín.
+
+   El trámite (`bulk`) y los avisos nunca van a ClickUp: quedan en la consola.
+
+   Como máximo hay unas 10 tareas abiertas. Cuando el PM cierra una, entra la siguiente, así que la lista nunca se le
+   llena. Una consulta urgente entra aunque el tope esté lleno. Si una consulta vence según el ADR-056, la tarea se
+   cierra con un aviso: «el cliente ya no espera; si lo sabes, respóndelo igual para la próxima vez».
 3. **Cómo responde.**
    - **Cambia el campo Respuesta.** No interviene el modelo: R4 registra la decisión de la propuesta a nombre del PM,
      igual que si la hubiera tomado en la consola.
-   - **Escribe un comentario.** Es la conversación de la Decisión 11. El curador interpreta el comentario como una tarea
-     gobernada y contesta en el mismo hilo con su plan: esta pregunta, los casos parecidos y el criterio. El PM lo
-     confirma cambiando el campo. Un comentario nunca cambia el grafo por sí solo.
+   - **Escribe un comentario.** Es la conversación de la Decisión 11, y está desde el comienzo: G7b ya está en
+     producción, y el owner pidió el 2026-11-25 «que converse con el curador».
+     - El curador interpreta el comentario como una tarea gobernada (`graph:explain`) y contesta en el mismo hilo con su
+       plan: esta pregunta, los casos parecidos, los cambios de tipo de relación y el criterio.
+     - El PM confirma respondiendo «sí» o cambiando el campo, o corrige con otro comentario, que abre un plan nuevo.
+     - Solo confirman un «sí» exacto o el campo. Un comentario nunca cambia el grafo por sí solo.
    - **Responde un dato que falta**, por ejemplo «52 cm». Queda como un hecho con autor, fecha y la tarea de ClickUp
      como fuente (Decisión 10). Pesín lo lee en todos los canales.
 4. **R4 cierra la tarea solo.**
@@ -340,8 +352,14 @@ ClickUp, sin entrar a la consola. La Decisión 7 y la fase G6 quedan así.
    - ClickUp le recuerda con su propia fecha de vencimiento, una semana por defecto.
    - El owner ve en el resumen semanal cuántas preguntas esperan y desde cuándo.
    - Nada se aprueba solo por falta de respuesta.
-6. **La firma.** Lo que el PM aprueba entra en la próxima versión, y la versión la sigue firmando el owner (Decisión
-   4). Si el owner decide que el PM también firme, se le da `artifact.sign`.
+6. **El PM cura al curador; el owner firma las versiones** (owner, 2026-11-25: «el PM responde y literal él es el que
+   irá "curando" al curador»; opción B).
+   - El PM decide las preguntas, explica y deja criterios. Sus criterios quedan firmados a su nombre: se le dan
+     `artifact.curate`, `knowledge.curate` y `knowledge.sign`.
+   - Lo que el PM aprueba entra en la próxima versión, y esa versión la firma el owner en la consola (Decisión 4),
+     típicamente una vez por semana, después de ver lo que cambió.
+   - Más adelante, si el owner confía en el flujo, se le puede dar al PM `artifact.sign` para que sus decisiones lleguen
+     a Pesín el mismo día (opción A).
 7. **Cómo se conecta. Sigue el ADR-061 (conectores).**
    - **Escribir en ClickUp es código.** El adapter tiene idempotencia por pregunta, para que nunca haya dos tareas para
      lo mismo, recibo con el id de la tarea y conciliación (ADR-061, Decisión 6). Solo puede crear tareas, comentar,
@@ -380,7 +398,7 @@ ClickUp, sin entrar a la consola. La Decisión 7 y la fase G6 quedan así.
 | **G3** | Consola: propuestas, aprobación por lote y firma de versiones. Horario semanal | No |
 | **G4** | Revisión por lotes de las propuestas sin firmar. El modelo clasifica lo que ninguna regla clasifica, siempre con evidencia | Sí, con tope |
 | **G5** | Las herramientas del chat web leen la versión firmada (junto con su paso a `main`) | No |
-| **G6** | Consulta al responsable (Decisión 7), por ClickUp (Decisión 13). **G6a:** el adapter de escritura y la lista de hasta 10 tareas, que crea, cierra y responde con el campo Respuesta (sin modelo). **G6b:** el webhook entrante y la lectura de respaldo. **G6c:** los comentarios con la interpretación de G7b, y las consultas de Pesín. Depende de ADR-056, de la bóveda del ADR-061 (C1) y del alta del PM como operador | G6c sí, con el tope de G7b |
+| **G6** | Consulta al responsable (Decisión 7), por ClickUp (Decisión 13). El adapter `@r4-adapters/clickup`, la bóveda y la tarjeta de la consola los hace la sesión de conectores (ADR-061). El curador hace el flujo: qué preguntas salen y con qué prioridad, la plantilla, el campo y los comentarios con la interpretación de G7b, respuestas → decisiones, criterios y hechos, el cierre de las tareas y las consultas de Pesín. Depende de ADR-056 y del alta del PM como operador | Sí, para los comentarios, con el tope de G7b |
 | **G7** | Conversar con el curador y revisión legible (Decisiones 11 y 12). **G7a**, R4: preguntas, efecto y grupos en la API, plantillas con pruebas, sin modelo. **G7b**, R4: «Explicar» → tarea `graph.interpret_explanation` → plan, y criterios en la base de conocimiento usados por las tareas. **G7c**, consola: la vista nueva, en la sesión de consola, con el contrato de G7a y G7b | G7b sí, con tope diario |
 
 ## G1 — implementación (2026-11-23)
@@ -867,7 +885,8 @@ propuso quitarlas.
 
 1. ~~Cómo le llega la consulta al product manager~~: cerrada, ida y vuelta por ClickUp (Decisión 13, owner,
    2026-11-25).
-2. **Quiénes son el vendedor y el product manager** que se dan de alta como operadores, y el usuario de ClickUp del PM.
+2. **El vendedor y el usuario de ClickUp del PM.** El PM ya está definido (owner, 2026-11-25); su nombre no va en este
+   repositorio público y queda en la configuración. Falta el vendedor.
 3. ~~Día y hora de la corrida semanal~~: cerrada, domingo 22:00 (decisión 6).
 4. ~~Tope diario para interpretar explicaciones~~: cerrada, US$0,25 por día (owner, 2026-11-25, al autorizar G7b).
 5. ~~Quién firma un criterio~~: cerrada. Confirmar el plan lo deja firmado si quien explica tiene `knowledge.sign`
@@ -876,7 +895,9 @@ propuso quitarlas.
 7. **ClickUp (Decisión 13):**
    - el espacio o la carpeta donde va la lista «Curador del grafo»;
    - el token de la API y el secreto del webhook, que crea el owner y guarda en la bóveda;
-   - si el PM solo responde (se propone así) o también firma;
-   - el tope de tareas abiertas (se propone 10) y el vencimiento (se propone una semana).
-8. **Orden de G6 y G7b.** Se propone G6a y G6b primero: con el campo Sí / No, el PM ya responde sin modelo. Los
-   comentarios (G6c) llegan con G7b.
+   - ~~si el PM solo responde o también firma~~: cerrada, el PM cura y el owner firma las versiones (opción B, owner,
+     2026-11-25);
+   - ~~qué y cuánto le llega~~: cerrada, solo lo prioritario y en orden, unas 10 abiertas (owner, 2026-11-25). El
+     vencimiento propuesto es una semana.
+8. ~~Orden de G6 y G7b~~: cerrada. G7b ya está en producción, así que la conversación por comentarios va desde el
+   comienzo de G6 (owner, 2026-11-25: «la idea sería como que converse con el curador»).
