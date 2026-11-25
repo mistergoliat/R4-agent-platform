@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { DefaultModelGateway } from '@r4/model-gateway';
 import { createLogger } from '@r4/observability';
@@ -7,6 +8,7 @@ import { OpenAICompatibleModelProvider, describeModelConfig, loadOpenAICompatibl
 import { adminDatabaseUrl } from '../harness/database.js';
 import { HarnessTrajectoryProducer, SCRIPTED_MODEL_PROFILE, modelProfileFromDescription, referenceScenarioSet } from '../evaluations/corpus.js';
 import { evaluateFixtureCorpus, evaluateSalesSubject } from '../evaluations/run.js';
+import { scoreOpportunityRecords, type OpportunityLabel } from '../evaluations/opportunity.js';
 import { configuredModelProvider } from '../model.js';
 import { flag, loadLocalEnv, option, print } from './common.js';
 
@@ -28,11 +30,22 @@ import { flag, loadLocalEnv, option, print } from './common.js';
  *                      credentials it says so and does nothing.
  *   --scenario ID[,ID] scenarios for --scripted / --live
  *   --no-judge         skip semantic evaluators (they are reported as skipped)
+ *   --opportunity FILE (ADR-062 O1) only: score the recorded desk.opportunity.record
+ *                      inputs in FILE against the labeled set (evaluations/opportunity.ts)
+ *                      and print per-field accuracy. No model, no network.
  *
  * Artifacts: artifacts/evaluations/<timestamp>/ (git-ignored), one directory
  * per evaluation run plus index.json. Never secrets, never reasoning text.
  */
 async function main(): Promise<void> {
+  const predictions = option('opportunity');
+  if (predictions) {
+    const result = scoreOpportunityRecords(JSON.parse(readFileSync(predictions, 'utf8')) as Record<string, OpportunityLabel | null>);
+    print(`opportunity classification, ${result.cases} cases`);
+    for (const [field, s] of [['record', result.record], ...Object.entries(result.fields)] as const) print(`  ${field}: ${s.correct}/${s.total} (${(s.accuracy * 100).toFixed(1)} %)`);
+    for (const m of result.misses) print(`  miss ${m.caseId} ${m.field}: expected ${m.expected}, recorded ${m.predicted}`);
+    return;
+  }
   loadLocalEnv();
   const git = gitState();
   const repro = { gitSha: git.sha, gitDirty: git.dirty };

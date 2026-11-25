@@ -1,4 +1,5 @@
 import { QUOTE_EMAIL_CAPABILITY_ID, quoteEmailCapability } from '../capabilities/quote-email.js';
+import { DESK_DOMAIN, DESK_OPPORTUNITY_CAPABILITY_ID, deskOpportunityCapability, type DeskIngestConfig } from '../capabilities/desk-opportunity.js';
 import type pg from 'pg';
 import type { Logger } from 'pino';
 import { DomainError, type CatalogPort, type CheckoutConsentSource, type CheckoutService, type QuoteV2Service, type ShippingService } from '@r4-adapters/domains';
@@ -148,6 +149,8 @@ export interface SalesProductionWorkerOptions {
   readonly checkout?: CheckoutService & { readonly bindingKind: string };
   /** (R4 Checkout, R-3) Where the purchase-consent artifact comes from; required by @15. Sandbox only: SandboxConsentDirectory (R4 never signs). */
   readonly checkoutConsent?: CheckoutConsentSource;
+  /** (ADR-062 O1) The sales desk ingest (loadDeskIngestConfig: R4_DESK_INGEST_URL, R4_DESK_INGEST_KEY); required when the profile records opportunities (sales-web@21). */
+  readonly deskIngest?: DeskIngestConfig & { readonly fetch?: (url: string, init: RequestInit) => Promise<Response> };
   /** (R4-J4-R4) The R4_CUSTOMER_* configuration of the worker; required when the selected profile composes Customer and identity verification (v8). */
   readonly customer?: {
     readonly env: Readonly<Record<string, string | undefined>>;
@@ -177,6 +180,9 @@ export interface SalesProductionWorker {
   readonly report: ProductionCompositionReport;
   readonly controls: AutonomyControls;
 }
+
+/** (ADR-062 O1) The channels the sales desk ingest accepts (its contract). */
+const DESK_CHANNELS: readonly string[] = Object.freeze(['whatsapp', 'web', 'instagram', 'facebook']);
 
 /**
  * Production composition of the Sales worker (R4-I). Same pack, same
@@ -311,6 +317,12 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
     capabilities.registerWrite(checkoutRequestLinkCapability(deps));
     capabilities.register(checkoutPurchaseStatusCapability(deps));
   }
+  // (ADR-062 O1) The sales desk ingest: a profile that declares desk.opportunity.record never composes without it.
+  const deskReal = capabilityAvailability(profile, DESK_OPPORTUNITY_CAPABILITY_ID).available;
+  if (deskReal) {
+    if (!options.deskIngest) throw new Error(`refusing production composition: ${profileLabel(profile)} records opportunities in the sales desk but no desk ingest was configured (R4_DESK_INGEST_URL, R4_DESK_INGEST_KEY)`);
+    capabilities.registerWrite(deskOpportunityCapability({ desk: options.deskIngest, store: sales, quotes: quoteReal ? options.quotes! : null, bindings: options.store, profileChannel: profile.channel.id, channels: DESK_CHANNELS, ...(options.deskIngest.fetch ? { fetch: options.deskIngest.fetch } : {}) }));
+  }
   // (R4-J4-R4) v8: the Customer reads and the identity verification; every other profile leaves Customer UNAVAILABLE.
   const customerIdentity = isCustomerIdentityProfile(profile);
   if (customerIdentity) composeCustomerIdentity(profile, options, capabilities);
@@ -324,6 +336,7 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
       ...(quoteReal ? [{ domain: SALES_DOMAINS.quote, bindingKind: 'real' as const }] : []),
       ...(customerIdentity ? [{ domain: SALES_DOMAINS.customer, bindingKind: 'real' as const }, { domain: SALES_DOMAINS.identity, bindingKind: 'real' as const }] : []),
       ...(checkoutReal ? [{ domain: SALES_DOMAINS.checkout, bindingKind: 'real' as const }] : []),
+      ...(deskReal ? [{ domain: DESK_DOMAIN, bindingKind: 'real' as const }] : []),
     ],
     capabilities.list().map((c) => c.capabilityId),
   );
