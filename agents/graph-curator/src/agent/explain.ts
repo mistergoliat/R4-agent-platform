@@ -7,9 +7,9 @@ import { graphChangeSchema, type GraphChange } from '../changes.js';
 import { PRODUCT_GRAPH_KIND, type ProductGraph } from '../graph.js';
 import { presentProposal } from '../present.js';
 import { readSignedGraph } from '../signed.js';
-import type { CuratorTasks } from './batch.js';
+import { waitForTasks, type CuratorTasks } from './batch.js';
 import { GRAPH_CRITERIA_TOPIC, GRAPH_CURATOR_AGENT_ID, GRAPH_CURATOR_AGENT_VERSION, TASK_INTERPRET_EXPLANATION } from './definition.js';
-import type { GraphCriterion } from './review.js';
+import { tokensSpent, type GraphCriterion } from './review.js';
 
 /**
  * ADR-058 Decision 11 (G7b): a person explains, in their own words, something about an open proposal. The curator
@@ -180,7 +180,7 @@ export async function readPlan(
  * becomes a knowledge entry, verified and signed when the person holds those scopes.
  */
 export async function confirmPlan(
-  deps: { readonly artifacts: Pick<PostgresArtifacts, 'current' | 'proposals' | 'propose' | 'decide'>; readonly tasks: CuratorTasks; readonly knowledge: Pick<PostgresKnowledge, 'propose' | 'transition'> },
+  deps: { readonly artifacts: Pick<PostgresArtifacts, 'current' | 'proposals' | 'propose' | 'decide'>; readonly tasks: CuratorTasks; readonly knowledge: Pick<PostgresKnowledge, 'list' | 'propose' | 'transition'> },
   input: { readonly taskId: string; readonly by: string; readonly scopes: readonly string[]; readonly onlyThis?: boolean; readonly correlationId: string },
 ): Promise<{ proposal: string; similar: number; changes: number; criterion: { id: string; state: string } | null }> {
   const { plan, violations, input: task } = await readPlan(deps, input.taskId);
@@ -208,7 +208,10 @@ export async function confirmPlan(
     changes = (await decide(mine, 'approved', note)).decided;
   }
   let criterion: { id: string; state: string } | null = null;
-  if (!input.onlyThis && plan.criterion) {
+  // A plan confirmed twice (a retried sync) keeps one criterion.
+  const already = plan.criterion ? (await deps.knowledge.list()).find((e) => e.topic === GRAPH_CRITERIA_TOPIC && e.statement === plan.criterion && e.sourceRef === task.proposalId && e.state !== 'retired') : undefined;
+  if (already) criterion = { id: already.entryId, state: already.state };
+  if (!input.onlyThis && plan.criterion && !already) {
     let entry = await deps.knowledge.propose({ topic: GRAPH_CRITERIA_TOPIC, statement: plan.criterion, source: 'graph-curator:explanation', sourceRef: task.proposalId, expiresAt: null }, input.by, input.correlationId);
     const operator = { humanRef: input.by, scopes: input.scopes };
     // Decision 11 / open decision 5: whoever explains and holds the scopes verifies and signs it by confirming.
@@ -217,4 +220,26 @@ export async function confirmPlan(
     criterion = { id: entry.entryId, state: entry.state };
   }
   return { proposal: plan.proposal, similar, changes, criterion };
+}
+
+/**
+ * Opens and waits for one interpretation within the daily cap (Decision 11; owner: US$0.25 a day). The cap counts what
+ * today's interpretations really used (recorded tokens × prices), plus this one at its worst; over it, refused.
+ */
+export async function explainWithinDailyCap(
+  deps: {
+    readonly pool: { query: (sql: string, values?: unknown[]) => Promise<{ rows: { task_id: string; i: number; o: number }[] }> };
+    readonly artifacts: Pick<PostgresArtifacts, 'current' | 'proposals'>; readonly tasks: CuratorTasks; readonly knowledge: Pick<PostgresKnowledge, 'list'>;
+    readonly sleep?: (ms: number) => Promise<void>;
+  },
+  input: { readonly proposalId: string; readonly explanation: string; readonly by: string; readonly price: { readonly input: number; readonly output: number }; readonly capUsd: number; readonly maxTokens: number; readonly waitMs: number },
+): Promise<{ taskId: string; similar: number; relations: number; spentTodayUsd: number }> {
+  const today = (await deps.pool.query(`select task_id from agent_tasks where agent_id = $1 and task_type = $2 and created_at >= current_date`, [GRAPH_CURATOR_AGENT_ID, TASK_INTERPRET_EXPLANATION])).rows.map((r) => r.task_id);
+  const used = await tokensSpent(deps.pool, today);
+  const spent = (used.inputTokens * input.price.input + used.outputTokens * input.price.output) / 1_000_000;
+  const worst = (input.maxTokens * Math.max(input.price.input, input.price.output)) / 1_000_000;
+  if (spent + worst > input.capUsd) throw new Error(`daily cap: US$${spent.toFixed(4)} used today of US$${input.capUsd}; this interpretation could take up to US$${worst.toFixed(4)}`);
+  const started = await startExplanation({ artifacts: deps.artifacts, tasks: deps.tasks, criteria: await signedGraphCriteria(deps.knowledge) }, { proposalId: input.proposalId, explanation: input.explanation, by: input.by, maxTokens: input.maxTokens });
+  await waitForTasks(deps.tasks, new Map([['plan', started.taskId]]), new Map(), Date.now() + input.waitMs, deps.sleep);
+  return { ...started, spentTodayUsd: Math.round(spent * 10_000) / 10_000 };
 }
