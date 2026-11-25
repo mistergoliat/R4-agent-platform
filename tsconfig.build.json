@@ -30,6 +30,7 @@
     { "path": "adapters/models/openai-compatible" },
     { "path": "adapters/channels/whatsapp-cloud" },
     { "path": "adapters/channels/web" },
+    { "path": "adapters/channels/meta" },
     { "path": "agents/sales" },
     { "path": "agents/graph-curator" }
   ]

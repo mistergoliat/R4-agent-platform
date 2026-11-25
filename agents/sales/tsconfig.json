@@ -88,6 +88,9 @@
       "path": "../../adapters/channels/web"
     },
     {
+      "path": "../../adapters/channels/meta"
+    },
+    {
       "path": "../../adapters/domains/identity/verification"
     }
   ]

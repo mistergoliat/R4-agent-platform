@@ -4,6 +4,7 @@ import type { OutboundChannelAdapter, ProductionStore } from '@r4/live-ops';
 export interface AutonomousInput {
   readonly channel: string;
   readonly accountRef: string;
+  readonly conversationRef?: string;
   readonly providerEventId: string;
   readonly taskId: string;
 }
@@ -80,7 +81,7 @@ export class WorkingSignals {
   async #send(entry: Pending): Promise<void> {
     const adapter = this.#o.adapters.find((a) => a.channel === entry.channel);
     if (!adapter?.signalWorking) return;
-    const ok = await adapter.signalWorking({ accountRef: entry.accountRef, providerEventId: entry.providerEventId }, { timeoutMs: this.#o.timeoutMs }).catch(() => false);
+    const ok = await adapter.signalWorking({ accountRef: entry.accountRef, providerEventId: entry.providerEventId, ...(entry.conversationRef ? { conversationRef: entry.conversationRef } : {}) }, { timeoutMs: this.#o.timeoutMs }).catch(() => false);
     this.#o.logger.debug({ event: 'working_signal.sent', channel: entry.channel, taskId: entry.taskId, ok }, 'working signal');
   }
 }

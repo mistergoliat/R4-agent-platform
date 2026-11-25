@@ -46,6 +46,7 @@ const alias = {
   '@r4-adapters/whatsapp-cloud/testing': src('./adapters/channels/whatsapp-cloud/src/testing.ts'),
   '@r4-adapters/whatsapp-cloud': src('./adapters/channels/whatsapp-cloud/src/index.ts'),
   '@r4-adapters/web': src('./adapters/channels/web/src/index.ts'),
+  '@r4-adapters/meta': src('./adapters/channels/meta/src/index.ts'),
   // R4-G: the Sales evaluator pack is a separate entry point (never loaded by the deployed agent). Listed first: aliases match by prefix.
   '@r4-sales/agent/evaluations': src('./agents/sales/src/evaluations/index.ts'),
   // R4-H: the Sales shadow corpus, bindings and executor (never loaded by the deployed agent).

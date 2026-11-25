@@ -2,6 +2,8 @@
 export const SALES_AGENT_ID = 'sales';
 /** (ADR-046) The same Sales pack, configured for the store website chat: its own definition line, never a `sales` version. */
 export const SALES_WEB_AGENT_ID = 'sales-web';
+/** (ADR-060) The same Sales pack in Meta direct messages (Messenger, Instagram): its own definition line. */
+export const SALES_SOCIAL_AGENT_ID = 'sales-social';
 export const SALES_TASK_TYPE = 'sales.conversation';
 
 export const CAPABILITY_IDS = {

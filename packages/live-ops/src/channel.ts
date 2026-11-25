@@ -156,5 +156,5 @@ export interface OutboundChannelAdapter {
    * (for example a read receipt and a typing indicator). It is never a message, never part of delivery state, never retried
    * by the platform. Resolves false on any failure; must not throw.
    */
-  signalWorking?(signal: { readonly accountRef: string; readonly providerEventId: string }, options: { readonly timeoutMs: number }): Promise<boolean>;
+  signalWorking?(signal: { readonly accountRef: string; readonly providerEventId: string; /** The conversation the inbound came from (a channel that addresses the indicator to the contact needs it). */ readonly conversationRef?: string }, options: { readonly timeoutMs: number }): Promise<boolean>;
 }
