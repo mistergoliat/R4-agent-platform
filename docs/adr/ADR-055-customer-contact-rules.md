@@ -126,7 +126,7 @@ En la consola, sección «Operar el día»:
 **Siguen abiertas:**
 1. De dónde sale el permiso de marketing en cada canal. Solo hace falta para `campana` (C4).
 2. Quién puede liberar un mensaje detenido: el supervisor, el owner o ambos. Hace falta cuando exista la pantalla.
-3. Si el mensaje de la cotización agrega la línea «Si no quieres que te escribamos, responde BAJA».
+3. ~~Si el mensaje de la cotización agrega la línea de baja.~~ **Decidido el 2026-11-25: sí.** Se agrega «Si no quieres que te escribamos, responde BAJA».
    - Meta pide que el cliente haya aceptado recibir mensajes que la empresa inicia.
    - La Ley 21.719 pide transparencia.
    - El cliente inició la conversación y pidió la cotización, pero esta línea deja explícito su permiso y le muestra
@@ -205,14 +205,15 @@ vencimiento.
 7. **Canal:** pasadas 24 h, WhatsApp solo acepta una plantilla.
 
 **Registro:** cada decisión guarda contacto, propósito, origen, regla, resultado (`enviar`, `detenido`, `en_espera`
-o `descartado`), modo (`sombra` o `activo`) y el mensaje que salió, si salió.
+o `descartado`), modo (`observe` o `active`) y el mensaje que salió, si salió.
 
 ### Dónde corre
 
 **El barrido:**
 - Corre en el channel gateway cada 60 s, como el cierre por inactividad.
-- Lo controla `R4_PROD_CONTACT_MODE=off|shadow|active`. Por defecto está en `off`.
-- En `shadow` decide y registra, sin encolar nada.
+- Lo controla `R4_PROD_CONTACT_MODE=off|observe|active`. Por defecto está en `off`.
+- La sombra se llama `observe` en el código, porque `shadow` ya es la ejecución en sombra de R4-H (ADR-027), un mecanismo distinto.
+- En `observe` decide y registra, sin encolar nada.
 
 **Qué pone cada parte:**
 - **Sales** aporta la fuente: las cotizaciones emitidas, unidas a su conversación, y el texto.
@@ -230,7 +231,7 @@ o `descartado`), modo (`sombra` o `activo`) y el mensaje que salió, si salió.
 
 | Paso | Qué | Gate |
 |---|---|---|
-| C1 | Compuerta, baja y registro; barrido con S1 y S2 en sombra; informe de la sombra por script de solo lectura | Despliegue autorizado |
+| C1 | Compuerta, baja y registro; barrido con S1 y S2 en sombra; informe de la sombra por script de solo lectura (`ops/contact/report.sql`); la línea «Si no quieres que te escribamos, responde BAJA» en el mensaje de la cotización por WhatsApp | Despliegue autorizado |
 | C2a | S1 activo | Owner revisa la sombra y autoriza |
 | C2b | S2 activo | Plantilla aprobada por Meta, y autorización del owner |
 
@@ -243,7 +244,7 @@ Se entrega junto con el código:
 - pruebas de la elección de S1 y S2: horario, vigencia, cliente que volvió a escribir, persona a cargo;
 - pruebas de la normalización de las bajas, incluidos los casos que no son baja;
 - prueba del cuerpo de la plantilla en el adaptador de WhatsApp;
-- prueba de que en `shadow` no se encola nada.
+- prueba de que en `observe` no se encola nada.
 
 ## Fuera de alcance
 
