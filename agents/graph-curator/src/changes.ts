@@ -28,6 +28,9 @@ export const graphChangeSchema = z.discriminatedUnion('op', [
   z.strictObject({ op: z.literal('add_relations'), relations: z.array(z.tuple([z.string().regex(/^[a-z]{1,8}$/u), key, key])).min(1).max(200) }),
   // G4b: unreviewed relations the graph-curator agent confirmed with cited evidence; approving clears their mark.
   z.strictObject({ op: z.literal('mark_reviewed'), relations: z.array(z.tuple([z.string().regex(/^[a-z]{1,8}$/u), key, key])).min(1).max(50) }),
+  // G7b (Decision 11): the relation is right but of another type ([a, b]: view[a]['from:a'] ∋ b becomes 'to'). A person
+  // decided them, so they also lose the «sin revisar» mark.
+  z.strictObject({ op: z.literal('retype_relations'), from: z.string().regex(/^[a-z]{1,8}$/u), to: z.string().regex(/^[a-z]{1,8}$/u), relations: z.array(z.tuple([key, key])).min(1).max(200) }),
 ]);
 export type GraphChange = z.infer<typeof graphChangeSchema>;
 type GraphMuscles = (typeof MUSCLE_GROUPS)[number][];
@@ -104,6 +107,17 @@ export function applyChanges(graph: ProductGraph, changes: readonly GraphChange[
     if (c.op === 'mark_reviewed') {
       const done = new Set(c.relations.map((r) => r.join('|')));
       g.unreviewed = g.unreviewed.filter((r) => !done.has(r.join('|')));
+      continue;
+    }
+    if (c.op === 'retype_relations') {
+      const only = new Set([c.from]);
+      for (const [a, b] of c.relations) {
+        if (!(g.view[a]?.[`${c.from}:a`] ?? []).includes(b)) continue; // only a relation that is there of type `from`
+        drop(a, b, only);
+        drop(b, a, only);
+        link(c.to, a, b);
+        g.unreviewed = g.unreviewed.filter(([ar, x, y]) => !(ar === c.from && x === a && y === b));
+      }
       continue;
     }
     if (c.op === 'set_kind') {

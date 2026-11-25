@@ -54,6 +54,26 @@ export function revertChange(current: ProductGraph, base: ProductGraph, change: 
     g.unreviewed.push(...back.filter((t) => !g.unreviewed.some((x) => x.join() === t.join())));
     return productGraphSchema.parse(g);
   }
+  if (change.op === 'retype_relations') {
+    // Each relation goes back to the type it had in the base, and the «sin revisar» mark it had comes back.
+    for (const [a, b] of change.relations) {
+      if (!(base.view[a]?.[`${change.from}:a`] ?? []).includes(b)) continue;
+      if (!(base.view[a]?.[`${change.to}:a`] ?? []).includes(b)) {
+        for (const [from, to, side] of [[a, b, 'a'], [b, a, 'b']] as const) {
+          const groups = g.view[from];
+          const list = groups?.[`${change.to}:${side}`];
+          if (!groups || !list) continue;
+          groups[`${change.to}:${side}`] = list.filter((k) => k !== to);
+          if (!groups[`${change.to}:${side}`]!.length) delete groups[`${change.to}:${side}`];
+          if (!Object.keys(groups).length) delete g.view[from];
+        }
+      }
+      link(`${change.from}:a`, a, b);
+      const mark = base.unreviewed.find(([ar, x, y]) => ar === change.from && x === a && y === b);
+      if (mark && !g.unreviewed.some((u) => u.join() === mark.join())) g.unreviewed.push(mark);
+    }
+    return productGraphSchema.parse(g);
+  }
   if (change.op === 'remove_relation') {
     for (const [directed, other] of relationsOf(base, change.a)) if (other === change.b && directed.startsWith(`${change.area}:`)) link(directed, change.a, change.b);
     const back = base.unreviewed.filter(([ar, a, b]) => ar === change.area && ((a === change.a && b === change.b) || (a === change.b && b === change.a)));

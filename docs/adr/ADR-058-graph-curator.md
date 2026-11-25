@@ -18,7 +18,8 @@
   - **G4b en producción** (PR #154): el agente revisa por lotes las relaciones sin revisar. La corrección de la evidencia
     «Categoría» y `graph:recheck` están en producción desde el 2026-11-25 (PR #158).
   - **Decisiones 11 y 12 aceptadas** (enmienda del 2026-11-25, PR #160; owner: «apruebo el ADR y parte con G7a»):
-    conversar con el curador y una revisión que se entienda. G7a autorizada; G7b y G7c esperan su autorización.
+    conversar con el curador y una revisión que se entienda. G7a en producción (PR #161). G7b autorizada (owner,
+    2026-11-25) con el cambio de tipo de relación; G7c espera su autorización.
   - **Decisión 13 aceptada** (enmienda del 2026-11-25, PR #163; owner: «apruebo el #163»): el product manager pregunta
     y responde en ClickUp. Fase G6 sin implementar; espera las decisiones 7 y 8 y su autorización.
   - Cada fase necesita autorización explícita del owner.
@@ -770,6 +771,59 @@ Decisiones del owner del 2026-11-24:
 - **Pendiente para G7c, la consola:** fotos y link a la tienda. El grafo no los tiene; la consola los puede pedir por
   `products[].key`.
 
+## G7b — explicarle al curador y cambiar el tipo de una relación (2026-11-25)
+
+Lo autorizó el owner el 2026-11-25 («autorizo G7b con el cambio de tipo»), a partir del caso del Deadlift Jack Bar.
+El grafo tenía sus 19 barras bajo «Discos para cargarla», y el curador, leyendo la etiqueta al pie de la letra,
+propuso quitarlas.
+
+- **Cambio nuevo `retype_relations`** (`from`, `to`, pares [a, b]): la relación está bien, pero es de otro tipo.
+  - Se mueve a `to` en los dos lados y se le quita la marca «sin revisar», porque la decidió una persona.
+  - Deshacerla la devuelve a `from` con su marca.
+  - Es idempotente: una relación que ya no está con el tipo `from` se ignora.
+- **Agente `graph-curator` v3:**
+  - tarea nueva `graph.interpret_explanation`;
+  - instrucciones para los criterios;
+  - el worker sirve la v2 y la v3, así una tarea creada antes de la actualización termina igual;
+  - la clasificación pasa a 40.000 tokens por tarea, porque las instrucciones son más largas.
+- **`npm run graph:explain -- --proposal <id> --text "…" --by <operatorRef>`** abre la tarea y muestra el plan.
+  - La entrada de la tarea trae:
+    - la explicación;
+    - la propuesta, con su pregunta;
+    - todas las relaciones de sus productos;
+    - las propuestas abiertas parecidas, con la misma regla y un producto en común;
+    - los tipos de relación del grafo;
+    - los criterios firmados.
+  - La misma explicación de la misma propuesta es una sola tarea.
+  - Tope de US$0,25 por día, medido con lo usado de verdad hoy, más la tarea nueva en su peor caso.
+- **`checkPlan`** rechaza el plan completo si encuentra cualquiera de estos casos:
+  - una propuesta parecida que no estaba en la tarea;
+  - un cambio que un plan no puede hacer (solo se permiten `retype_relations`, `remove_relation` y `add_relations`);
+  - una relación que no existe con ese tipo;
+  - un tipo que el grafo no tiene;
+  - una relación nueva fuera de los productos de la tarea.
+
+  Se vuelve a verificar al confirmar, contra el grafo y las propuestas abiertas de ese momento.
+- **`npm run graph:confirm -- --plan <id> --by <operatorRef> [--scopes knowledge.curate,knowledge.sign] [--only-this]`**:
+  - la propuesta y las parecidas se aprueban o rechazan a nombre de la persona, con la explicación como nota;
+  - los cambios nuevos quedan como propuestas `EXPLANATION` aprobadas por ella. Entran en la próxima versión, que se
+    sigue firmando en la consola;
+  - el criterio queda en la base de conocimiento, tema `grafo`. Lo verifica y firma quien confirma, si tiene esos
+    ámbitos.
+- **Los criterios firmados** entran a las tareas de revisión y de clasificación, y se citan como evidencia: campo
+  «Criterio», con el id como valor. `checkReview` y `checkClassification` aceptan solo un criterio que la tarea recibió.
+- **Pregunta de una relación que no es un reemplazo:** ahora dice lo que afirma el grafo: «En el grafo, A tiene a B en
+  «etiqueta». ¿Está bien así?». Si la persona responde No, la pregunta le recuerda que use «Explicar» cuando los
+  productos van juntos pero con otro tipo de relación.
+- **La consola (G7c)** llamará a esto por la API. Hasta entonces, `graph:explain` y `graph:confirm` son la vía del
+  operador, como `graph:undo`.
+- **Evaluación:**
+  - `tests/unit/graph-curator/explain.test.ts`: cambio de tipo y deshacer, el plan aceptado y cada rechazo, y los
+    criterios como evidencia;
+  - integración `graph-explain`, con Postgres real y un modelo guionado: el caso del Jack Bar de punta a punta. Un plan
+    inválido no se puede confirmar. El plan válido rechaza las dos propuestas a nombre del owner, cambia las relaciones
+    a «Se usa junto con» y firma el criterio, y la versión siguiente las trae así.
+
 ## Fuera de alcance
 
 - Escribir en Catalog o en PrestaShop, o corregir fichas. R4 sí guarda los datos que el responsable le responde
@@ -815,9 +869,9 @@ Decisiones del owner del 2026-11-24:
    2026-11-25).
 2. **Quiénes son el vendedor y el product manager** que se dan de alta como operadores, y el usuario de ClickUp del PM.
 3. ~~Día y hora de la corrida semanal~~: cerrada, domingo 22:00 (decisión 6).
-4. **Tope diario para interpretar explicaciones** (Decisión 11). Se propone US$0,25 por día, unas 25 explicaciones.
-5. **Quién firma un criterio.** Se propone que confirmar el plan ya lo deje firmado si quien explica tiene
-   `knowledge.sign` (hoy, el owner). Si no, el criterio queda verificado y espera la firma.
+4. ~~Tope diario para interpretar explicaciones~~: cerrada, US$0,25 por día (owner, 2026-11-25, al autorizar G7b).
+5. ~~Quién firma un criterio~~: cerrada. Confirmar el plan lo deja firmado si quien explica tiene `knowledge.sign`
+   (hoy, el owner). Si no, el criterio queda verificado y espera la firma (owner, 2026-11-25).
 6. ~~Orden de G7a y G7b~~: cerrada, G7a primero (owner, 2026-11-25).
 7. **ClickUp (Decisión 13):**
    - el espacio o la carpeta donde va la lista «Curador del grafo»;

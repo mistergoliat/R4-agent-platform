@@ -35,7 +35,7 @@ describe('a proposal as a question (G7a)', () => {
   });
 
   it('other relations use the readable label; adding relations asks about them all', () => {
-    expect(present({ op: 'remove_relation', area: 'ld', a: 'P3', b: 'P4' })).toMatchObject({ group: 'changes', yes: 'reject', question: 'Para «Barra Olímpica 20kg», ¿«Disco Bumper 10kg» va en «Discos para cargarla»?' });
+    expect(present({ op: 'remove_relation', area: 'ld', a: 'P3', b: 'P4' })).toMatchObject({ group: 'changes', yes: 'reject', question: 'En el grafo, «Barra Olímpica 20kg» tiene a «Disco Bumper 10kg» en «Discos para cargarla». ¿Está bien así?' });
     expect(present({ op: 'add_relations', relations: [['ld', 'P3', 'P4'], ['ld', 'P3', 'P5']] })).toMatchObject({
       group: 'changes', yes: 'approve', question: 'Para «Barra Olímpica 20kg», ¿van «Disco Bumper 10kg», «Disco Bumper 20kg» en «Discos para cargarla»?',
     });
