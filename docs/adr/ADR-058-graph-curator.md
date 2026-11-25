@@ -19,6 +19,8 @@
     «Categoría» y `graph:recheck` están en producción desde el 2026-11-25 (PR #158).
   - **Decisiones 11 y 12 aceptadas** (enmienda del 2026-11-25, PR #160; owner: «apruebo el ADR y parte con G7a»):
     conversar con el curador y una revisión que se entienda. G7a autorizada; G7b y G7c esperan su autorización.
+  - **Decisión 13 propuesta** (enmienda del 2026-11-25): el product manager pregunta y responde en ClickUp. Fase G6, sin
+    implementar.
   - Cada fase necesita autorización explícita del owner.
 - **Fecha:** 2026-11-23
 - **Mandato:** decisiones del owner del 2026-11-23:
@@ -294,6 +296,72 @@ preguntas. La Decisión 4 cambia así:
    - R4 entrega en la API la pregunta, el efecto y el grupo ya armados, para que la consola solo los muestre.
    - Así la plantilla vive en el paquete, con pruebas, y no se duplica.
 
+## Decisión 13 — El product manager responde en ClickUp (enmienda propuesta del 2026-11-25)
+
+Pedido del owner del 2026-11-25: «el curador se debería poder comunicar con el PM a través de ClickUp, esa es la
+plataforma que utilizan». Cierra la decisión abierta 1 con la opción de ida y vuelta: el PM pregunta y responde en
+ClickUp, sin entrar a la consola. La Decisión 7 y la fase G6 quedan así.
+
+1. **Qué le llega al PM.** R4 crea una tarea de ClickUp por cada pregunta, en una lista «Curador del grafo» asignada al
+   PM. Las preguntas son de tres tipos:
+   - **una propuesta del curador**, con el texto de la Decisión 12;
+   - **un dato que falta en una ficha** (Decisión 10). Por ejemplo: «¿Cuál es el largo de agarre de la Power Bar
+     20 kg?»;
+   - **una consulta técnica de Pesín** (Decisión 7), que el grafo no responde.
+
+   La tarea lleva:
+   - el título con la pregunta;
+   - en la descripción, los dos productos con su precio vigente y el link a la tienda, qué pasa si responde Sí o No,
+     por qué pregunta el curador y el dato citado;
+   - un link a la consola;
+   - un campo **Respuesta** (Sí / No). Un dato que falta lleva un campo de texto.
+
+   La plantilla es la misma de la Decisión 12 y está en código.
+2. **Cuántas a la vez.** Como máximo 10 tareas abiertas, primero las más consultadas a Pesín. Cuando el PM cierra una,
+   entra la siguiente, así que nunca se le llena la lista. Las consultas de Pesín (Decisión 7) van primero, porque hay
+   un cliente esperando. Si vencen según el ADR-056, la tarea se cierra con un aviso: «el cliente ya no espera; si lo
+   sabes, respóndelo igual para la próxima vez».
+3. **Cómo responde.**
+   - **Cambia el campo Respuesta.** No interviene el modelo: R4 registra la decisión de la propuesta a nombre del PM,
+     igual que si la hubiera tomado en la consola.
+   - **Escribe un comentario.** Es la conversación de la Decisión 11. El curador interpreta el comentario como una tarea
+     gobernada y contesta en el mismo hilo con su plan: esta pregunta, los casos parecidos y el criterio. El PM lo
+     confirma cambiando el campo. Un comentario nunca cambia el grafo por sí solo.
+   - **Responde un dato que falta**, por ejemplo «52 cm». Queda como un hecho con autor, fecha y la tarea de ClickUp
+     como fuente (Decisión 10). Pesín lo lee en todos los canales.
+4. **R4 cierra la tarea solo.**
+   - Si el PM respondió: «Listo, entra en la próxima versión del grafo».
+   - Si la pregunta dejó de hacer falta, porque la tienda corrigió la ficha o el aviso se cerró: «Ya no hace falta».
+   - Si alguien la decide en la consola, la tarea se cierra con esa decisión. Hay una sola respuesta por pregunta, la
+     primera que llega, y la otra vía la ve cerrada.
+5. **Si el PM no responde:**
+   - Pesín sigue con la versión firmada, como siempre.
+   - ClickUp le recuerda con su propia fecha de vencimiento, una semana por defecto.
+   - El owner ve en el resumen semanal cuántas preguntas esperan y desde cuándo.
+   - Nada se aprueba solo por falta de respuesta.
+6. **La firma.** Lo que el PM aprueba entra en la próxima versión, y la versión la sigue firmando el owner (Decisión
+   4). Si el owner decide que el PM también firme, se le da `artifact.sign`.
+7. **Cómo se conecta. Sigue el ADR-061 (conectores).**
+   - **Escribir en ClickUp es código.** El adapter tiene idempotencia por pregunta, para que nunca haya dos tareas para
+     lo mismo, recibo con el id de la tarea y conciliación (ADR-061, Decisión 6). Solo puede crear tareas, comentar,
+     cambiar el campo y cerrar, y solo en la lista configurada.
+   - **Leer la respuesta es un disparador entrante.** ClickUp avisa por webhook, R4 verifica la firma HMAC con el
+     secreto de la bóveda, valida el esquema y deduplica por el id del evento (ADR-061, Decisión 7).
+   - Si un webhook se pierde, una lectura de la lista cada 15 minutos lo recupera.
+   - El token de la API y el secreto del webhook los crea el owner y viven en la bóveda de la consola (ADR-061,
+     Decisión 2). Nunca están en el repositorio ni en un chat.
+   - Los detalles de la API de ClickUp se verifican contra su documentación al implementar: eventos, encabezado de la
+     firma, campos personalizados y límites de uso.
+8. **Quién puede responder.**
+   - Solo cuentan las respuestas de los usuarios de ClickUp dados de alta como operadores de R4. Cada usuario de
+     ClickUp se asocia a un operador con `artifact.curate` (ADR-050).
+   - Un comentario o un cambio de otra persona queda registrado y no decide nada.
+   - El texto de ClickUp es dato no confiable: lo que el modelo interpreta pasa por el plan y la confirmación de la
+     Decisión 11.
+9. **Qué sale de R4.** Solo datos de productos de la tienda: nombres, precios, fichas y la pregunta. Nunca
+   conversaciones ni datos de clientes. Una consulta de Pesín lleva la duda técnica, sin el nombre ni el teléfono del
+   cliente.
+
 ## Privacidad y repositorio público
 
 - El grafo no tiene datos personales: son productos, fichas y relaciones públicas de la tienda.
@@ -311,7 +379,7 @@ preguntas. La Decisión 4 cambia así:
 | **G3** | Consola: propuestas, aprobación por lote y firma de versiones. Horario semanal | No |
 | **G4** | Revisión por lotes de las propuestas sin firmar. El modelo clasifica lo que ninguna regla clasifica, siempre con evidencia | Sí, con tope |
 | **G5** | Las herramientas del chat web leen la versión firmada (junto con su paso a `main`) | No |
-| **G6** | Consulta al responsable (Decisión 7): las dudas que el grafo no responde van al vendedor o al product manager, y su respuesta vuelve como propuesta. Depende de ADR-056 y del alta de los operadores | No |
+| **G6** | Consulta al responsable (Decisión 7), por ClickUp (Decisión 13). **G6a:** el adapter de escritura y la lista de hasta 10 tareas, que crea, cierra y responde con el campo Respuesta (sin modelo). **G6b:** el webhook entrante y la lectura de respaldo. **G6c:** los comentarios con la interpretación de G7b, y las consultas de Pesín. Depende de ADR-056, de la bóveda del ADR-061 (C1) y del alta del PM como operador | G6c sí, con el tope de G7b |
 | **G7** | Conversar con el curador y revisión legible (Decisiones 11 y 12). **G7a**, R4: preguntas, efecto y grupos en la API, plantillas con pruebas, sin modelo. **G7b**, R4: «Explicar» → tarea `graph.interpret_explanation` → plan, y criterios en la base de conocimiento usados por las tareas. **G7c**, consola: la vista nueva, en la sesión de consola, con el contrato de G7a y G7b | G7b sí, con tope diario |
 
 ## G1 — implementación (2026-11-23)
@@ -701,14 +769,18 @@ Decisiones del owner del 2026-11-24:
 
 ## Decisiones abiertas (owner)
 
-1. **Cómo le llega la consulta al product manager**, que trabaja en ClickUp.
-   - Se propone que la pregunta y la respuesta vivan en R4: R4 crea una tarea en ClickUp como aviso, con un link para
-     responder en la mesa.
-   - La alternativa es que el PM responda en ClickUp y R4 lea la respuesta con un webhook. Esto exige una integración
-     de ida y vuelta.
-2. **Quiénes son el vendedor y el product manager** que se dan de alta como operadores.
+1. ~~Cómo le llega la consulta al product manager~~: se propone cerrarla con la ida y vuelta por ClickUp (Decisión 13,
+   pedido del owner del 2026-11-25).
+2. **Quiénes son el vendedor y el product manager** que se dan de alta como operadores, y el usuario de ClickUp del PM.
 3. ~~Día y hora de la corrida semanal~~: cerrada, domingo 22:00 (decisión 6).
 4. **Tope diario para interpretar explicaciones** (Decisión 11). Se propone US$0,25 por día, unas 25 explicaciones.
 5. **Quién firma un criterio.** Se propone que confirmar el plan ya lo deje firmado si quien explica tiene
    `knowledge.sign` (hoy, el owner). Si no, el criterio queda verificado y espera la firma.
 6. ~~Orden de G7a y G7b~~: cerrada, G7a primero (owner, 2026-11-25).
+7. **ClickUp (Decisión 13):**
+   - el espacio o la carpeta donde va la lista «Curador del grafo»;
+   - el token de la API y el secreto del webhook, que crea el owner y guarda en la bóveda;
+   - si el PM solo responde (se propone así) o también firma;
+   - el tope de tareas abiertas (se propone 10) y el vencimiento (se propone una semana).
+8. **Orden de G6 y G7b.** Se propone G6a y G6b primero: con el campo Sí / No, el PM ya responde sin modelo. Los
+   comentarios (G6c) llegan con G7b.
