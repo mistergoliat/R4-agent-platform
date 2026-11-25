@@ -1,18 +1,146 @@
 # ADR-048 — Mesa de ventas: servicio de dominio para derivar, asignar y atribuir conversaciones a vendedores
 
 - **Identificador:** `R4-SALES-DESK-01`
-- **Estado:** **Propuesto. No implementado.** Decisiones del owner del 2026-11-19 incorporadas. No autoriza código, despliegues ni cambios en Core. Cada fase y
-  cada cambio en Core listado abajo necesita autorización explícita del owner.
+- **Estado:** **En producción por partes.** La fase 1 está hecha y partes de la fase 2 están en producción, cada una
+  con autorización del owner. Los cambios en Core C-1 a C-4 no están implementados. La revisión 2 registra el estado
+  real. Lo pendiente sigue necesitando autorización explícita del owner, fase por fase y cambio por cambio.
 - **Fecha:** 2026-11-18
 - **Revisión 1 (2026-11-18):** cobertura cuando el vendedor dueño no está en turno (Decisión 3), protección por
   cotización y catálogo de casos de conflicto (Decisión 4), aviso no bloqueante en el chat web (Decisión 5) y
   evidencia de venta en el chat web (Decisión 8).
+- **Revisión 2 (2026-11-25):** qué está hecho y qué falta, qué decisiones cambiaron otros ADR (049, 050, 053, 055,
+  056, 057, 059, 060 y 062), qué significan las secciones apagadas de la consola y las brechas de seguridad que siguen
+  abiertas. También alinea el reparto con el plan comercial omnicanal del owner («Don Pesin · Plan Comercial
+  Omnicanal», 2026-11-24, fuera del repositorio): pools con autoasignación, sin comisiones por ahora, y metas por
+  vendedor medidas desde su onboarding. Pedido del owner del 2026-11-25. Ver la sección «Revisión 2».
 - **Mandato:** owner, 2026-11-18: diseñar una plataforma robusta que reemplace al proveedor de atención actual
   (menú de áreas y bandeja de agentes humanos) para WhatsApp y el chat web.
 - **Autoridad superior:** Constitución; PRD §17 (operador humano) y §19 (canales); ADR-029 (entrega gobernada);
   ADR-033 (identidad de operadores, OIDC); ADR-041 (avisos de plataforma ante fallas); ADR-042 (colaboración
   con el owner); ADR-045 (carril de conversación); ADR-046 (canal web); ADR-047 (cierre por inactividad);
   auditoría R4-I CRM/WhatsApp (D-1: número productivo).
+
+## Revisión 2 — estado al 2026-11-25
+
+El resto del documento se conserva como se decidió. Esta sección dice qué rige hoy. Si una decisión de abajo choca con
+un ADR posterior, rige el posterior, como indica la tabla de cambios.
+
+### Lo que está en producción
+
+- **La mesa de ventas** es un servicio propio, fuera de R4 Core y con base de datos propia (Decisión 1), en
+  producción desde el 2026-11-23. Su base guarda:
+  - vendedores con rol (`seller`, `supervisor` o `admin`);
+  - áreas y la relación vendedor ↔ área;
+  - disponibilidad;
+  - un registro append-only de asignaciones (`offered`, `accepted`, `declined`, `replied`, `released`, `withdrawn` y
+    `answered`). Es la base del libro de la Decisión 4, todavía sin atribución.
+- **La app Ventas** (Decisión 7) muestra la bandeja y los casos del vendedor, y «Pesín te consulta» (ADR-056). Permite
+  tomar, responder y soltar, y muestra si el visitante web sigue en el chat.
+- **Cada acción va a nombre de una persona.** Se firma con la identidad del operador (ADR-050), nunca con una cuenta
+  compartida (Decisión 2). El nombre de la persona llega al cliente desde el registro de operadores (Decisión 5,
+  implementada el 2026-11-20).
+- **CRM en la mesa** (ADR-062, en producción desde el 2026-11-25):
+  - oportunidades con dueño, estado, próxima acción y resultado;
+  - la pantalla «Oportunidades» de la consola;
+  - Pesín las registra en la mesa desde el chat web (`sales-web@21`) y desde WhatsApp (carril `@27`, en despliegue el
+    2026-11-25).
+- **Operadores:** desde el 2026-11-25, la consola invita y da de alta personas con sus ámbitos (sección «Operadores»).
+  Hoy el único operador que responde es el owner.
+
+### Lo que cambiaron otros ADR
+
+| Esta decisión | Lo que rige hoy |
+|---|---|
+| D3, regla 5 («nadie disponible»: el agente promete un plazo), y D6 (modelo lento → cola humana) | **ADR-056:** consultas al equipo sin pausar la conversación. El vencimiento es de 30 minutos en horario; fuera de él, la próxima apertura más 30 minutos, con tope en la ventana de WhatsApp. Si nadie responde, el cliente recibe un aviso |
+| D5: el chat web ofrece avisar por correo o WhatsApp, y la decisión abierta 3 | **ADR-057:** la conversación del chat web no se pierde al cerrar la ventana. El aviso por correo es su fase C5, que espera autorización |
+| D5: no se unen contactos entre canales hasta que exista CIA | **ADR-053:** un agente por canal. Los vínculos entre contactos y personas no necesitan CIA, y no hay inicio de sesión automático |
+| D5: los canales son WhatsApp y el chat web | Hay además **Instagram y Facebook** (ADR-060), cada uno con su agente y con la ventana de 24 horas de Meta |
+| D5: mensajes por iniciativa propia, fuera de 24 horas | **ADR-055** (propuesto): ventanas, plantillas y reglas de contacto |
+| D8 y la decisión abierta 8 (venta asistida y grupo de control) | **ADR-059** (aceptado el 2026-11-24): la venta de Pesín es una línea de la ficha del chat, pagada y que coincide, con un rescate de 7 días. La venta asistida se mide aparte y no da comisión. **No hay grupo de control** |
+| D7: roles OIDC `admin`, `supervisor` y `vendedor` | En R4, ámbitos por operador (ADR-050). En la mesa, los roles `seller`, `supervisor` y `admin` |
+| D3, regla 4 (oferta rotativa dentro del área, con SLA) | **ADR-062 y el plan comercial** (owner, 2026-11-25): cada pool tiene un **pozo común con autoasignación**. Quien toma la oportunidad queda como responsable único, con un tope de 15 abiertas por vendedor. Si nadie la toma en 10 minutos, la mesa avisa al dueño del pool y luego al supervisor |
+| Los pools | **Plan comercial:** cinco pools, que son las áreas de la mesa: ventas general, mayoristas, institucionales, postventa y servicio técnico. Pesín clasifica por intención, monto, segmento y complejidad. Lo que no resuelve dentro de su alcance va como solicitud al pool que corresponde |
+| D4: atribución y comisión | **Comisiones fuera de alcance por ahora:** el plan comercial no las define. Las **metas por vendedor** del plan se medirán desde el onboarding de los vendedores en la app Ventas (owner, 2026-11-25). Para eso basta el libro de quién tomó, quién cotizó y qué se pagó, sin reglas de comisión |
+
+### Los cambios en Core: ninguno está hecho
+
+| Cambio | Estado | ¿Lo pide el plan comercial? |
+|---|---|---|
+| **C-1.** Puerto de ruteo antes del agente | No existe | **No.** En el plan, Pesín atiende primero y clasifica cada conversación |
+| **C-2.** Referencia de entrada persistida | No existe | **No.** El plan no usa link ni QR personal por vendedor (regla 1) |
+| **C-3.** Motivo estructurado del traspaso | No existe; el traspaso lleva solo texto (ADR-062 lo confirma) | **Sí.** Es lo que manda cada solicitud al pool correcto. Por ejemplo, «≥ $1M o proyecto» va a ventas general y un distribuidor va a mayoristas |
+| **C-4.** Feed de eventos con cursor | Parcial: `/v1/events` lista hacia atrás, sin cursor hacia adelante | **Para medir las metas.** La mesa necesita el libro sin perder eventos desde el onboarding de los vendedores |
+
+**El reparto que rige es el del plan comercial:** pools por intención, pozo común y autoasignación.
+- Las reglas 1 a 3 de la Decisión 3 (link o QR, cliente de cabecera, «quiero hablar con fulano») quedan escritas
+  en ADR-062, pero el plan no las pide.
+- El **cliente de cabecera** sí sirve para la continuidad: si vuelve un cliente con una oportunidad abierta, la ve su
+  mismo responsable. Esto se resuelve en la mesa, sin C-1.
+- C-1 y C-2 quedan solo para cuando el owner quiera links personales.
+
+### La consola y la app Ventas
+
+- **En la consola, la sección se llama «Equipo de ventas»** (owner, 2026-11-25). Antes se llamaba «Mesa de ventas».
+  Desde ahí el owner o un supervisor administran al equipo que trabaja en la app Ventas:
+  - configuran pools, turnos, el tope por vendedor, los plazos y el tope de Pesín;
+  - vigilan los pozos y toman o reasignan lo que nadie toma;
+  - ven el embudo de oportunidades;
+  - miden las metas.
+- **La app Ventas** es donde atiende cada vendedor: toma de su pool, responde, suelta, ve sus oportunidades y «Mis
+  ventas». Los vendedores no entran a la consola.
+- **«Mesa de ventas»** sigue siendo el nombre del servicio de este ADR.
+
+### Las secciones apagadas de la consola
+
+La consola muestra cuatro secciones desactivadas con la marca «ADR-048». Están diseñadas en el lienzo de la consola,
+ya alineadas con el plan comercial, pero no construidas, porque dependen de lo que falta.
+
+| Sección | Qué será | Qué le falta |
+|---|---|---|
+| **En vivo** (Equipo de ventas) | El pozo de cada pool, lo que nadie ha tomado y su tiempo, y quién está disponible | C-3 para mandar al pool, y vendedores reales dados de alta |
+| **Reglas y equipo** (Equipo de ventas) | Vendedores, pools, turnos, tope por vendedor y plazo | Decisiones abiertas 2 y 5: quiénes son, en qué pools y quién supervisa |
+| **Atribución**, que pasa a llamarse **«Metas y ventas»** (Equipo de ventas) | El avance de cada vendedor y del equipo contra las metas del plan: quién tomó, quién cotizó y qué se pagó. Sin comisiones por ahora | El onboarding de los vendedores en la app Ventas, C-4 y ADR-059 para el chat web |
+| **Contacto con clientes** | Mensajes por iniciativa propia: avisos, seguimientos y plantillas | ADR-055, propuesto y no implementado |
+
+### Decisiones abiertas, al día
+
+- **Cerradas por otros ADR:**
+  - la 3, por ADR-057: correo, con su fase C5 pendiente;
+  - la 8, por ADR-059.
+- **Siguen abiertas:**
+  - la 1, comisiones y fondo de equipo: fuera de alcance por ahora, porque el plan comercial no las define;
+  - la 2, vendedores, pools y turnos, con el onboarding de los vendedores en la app Ventas;
+  - la 4, el repositorio de la mesa: la mesa está en un repositorio propio y en el mismo host. Falta confirmar que el
+    repositorio sea privado;
+  - la 5, quién supervisa el SLA;
+  - la 6 y la 7, los casos K-3 y K-9.
+- **La fase 3:** el proveedor actual es **Zenvia** y sigue en uso. El plan comercial lo retira en su fase 6
+  («omnicanalidad»), cuando se valide la continuidad. Mientras tanto aplica el bloqueante D-1, y la fecha del corte es
+  decisión del owner.
+- **Decisiones nuevas que trae el plan comercial (owner):**
+  - **Cupón de 10 % en la primera compra**, para quien muestra interés y no cierra. Choca con la decisión vigente de
+    no ofrecer descuentos. Pesín no lo ofrece hasta que el owner lo active y defina su vigencia y exclusiones.
+  - **Pesín vende hasta $1M por cotización.** Hay que alinear este tope con los límites de cotización que Pesín tiene
+    hoy.
+
+### Brechas de seguridad abiertas
+
+Las brechas **S-1 a S-3** del ADR-049 («Brechas de seguridad previas al despliegue productivo») siguen abiertas, y el
+owner las pospuso:
+- `r4-api`, y también gateway, workers y scheduler, usan el rol superusuario de la base de producción;
+- las llaves del webservice de PrestaShop no se limitan por orden.
+
+La mesa y la consola ya están en producción sobre esa base, así que estas brechas son un pendiente vigente, no un
+requisito futuro. Cerrarlas necesita la decisión del owner (ADR-049, decisión abierta 5).
+
+### Próximo paso recomendado
+
+1. **El onboarding de los vendedores en la app Ventas,** con sus pools. Desde ahí se miden las metas del plan.
+2. **C-3, el motivo estructurado del traspaso:** cada solicitud llega al pool correcto. Es un cambio genérico de Core,
+   con su propia autorización.
+3. **C-4, el feed con cursor,** para que el libro de atribución no pierda eventos.
+
+C-1 y C-2 no son necesarios para el plan comercial.
 
 ## Contexto
 

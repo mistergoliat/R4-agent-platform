@@ -16,3 +16,4 @@ export * from './knowledge.js';
 export * from './artifacts.js';
 export * from './facts.js';
 export * from './agent-drafts.js';
+export * from './contact-store.js';

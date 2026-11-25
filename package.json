@@ -20,6 +20,7 @@
     "adapters/domains/identity/verification",
     "adapters/models/*",
     "adapters/channels/*",
+    "adapters/connectors/*",
     "agents/sales",
     "agents/graph-curator"
   ],

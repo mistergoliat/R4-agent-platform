@@ -123,6 +123,11 @@ export interface PlatformHold {
 export interface SubmitInputOptions {
   /** (R4-I) Hold the task for humans before the input is recorded (no autonomous wake). */
   readonly hold?: PlatformHold;
+  /**
+   * (ADR-055) Record the input without waking the task: the platform already answered it (an opt-out). The input is
+   * durable conversation memory and the next input wakes the task as usual. Ignored with `hold`.
+   */
+  readonly quiet?: boolean;
 }
 
 export interface InputSubmissionResult {
@@ -586,7 +591,7 @@ export class TemporalRuntime implements RunFailureHandoff, TurnCompletionGuard {
     const hold = options.hold === undefined ? undefined : parsePlatformHold(options.hold);
     return this.write(async (uow, events) => {
       const task = await this.lockTask(uow, taskId);
-      return this.#submitInputWithin(uow, events, task, body, principal, correlationId, hold);
+      return this.#submitInputWithin(uow, events, task, body, principal, correlationId, hold, options.quiet === true);
     });
   }
 
@@ -617,7 +622,7 @@ export class TemporalRuntime implements RunFailureHandoff, TurnCompletionGuard {
     });
   }
 
-  async #submitInputWithin(uow: ExecutionUnitOfWork, events: PendingEvent[], locked: AgentTask, body: InputSubmission, principal: Principal, correlationId: string, hold: PlatformHold | undefined): Promise<InputSubmissionResult> {
+  async #submitInputWithin(uow: ExecutionUnitOfWork, events: PendingEvent[], locked: AgentTask, body: InputSubmission, principal: Principal, correlationId: string, hold: PlatformHold | undefined, quiet = false): Promise<InputSubmissionResult> {
     let task = locked;
     const taskId = task.taskId;
     const p = temporalOf(uow);
@@ -644,7 +649,7 @@ export class TemporalRuntime implements RunFailureHandoff, TurnCompletionGuard {
     }));
     await p.insertInput({ inputId, taskId, sourceRef: body.sourceRef, externalKey: body.externalKey, requestHash: hash, memoryEntryId, actorKind: principal.kind, actorRef: principal.ref, receivedAt: now, correlationId });
     await this.event(uow, task, inputId, 'task.input.received', now, events, { sourceRef: body.sourceRef });
-    const wait = await p.activeWait(taskId);
+    const wait = quiet && !held ? null : await p.activeWait(taskId);
     if (wait?.kind === 'WAIT_FOR_INPUT' || wait?.kind === 'WAIT_UNTIL') {
       const woken = await this.wakeWithin(uow, task, wait, 'input', now, events);
       if (woken.status === 'running') await this.cancelSchedulesWithin(uow, task, now, events, wait.waitId);

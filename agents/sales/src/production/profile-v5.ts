@@ -68,12 +68,45 @@ export const SALES_WEB_QUOTE_ACTION_POLICY: ActionPolicyConfigurationInput = Obj
   },
 } satisfies ActionPolicyConfigurationInput);
 
+/** (ADR-062 O1) sales-web@21: the web quote policy plus desk.opportunity.record (an internal record: autonomous, no identity needed). */
+export const SALES_WEB_DESK_ACTION_POLICY: ActionPolicyConfigurationInput = Object.freeze({
+  policyId: 'sales-web-quote-policy',
+  version: 2,
+  riskClasses: DEFAULT_ACTION_POLICY.riskClasses,
+  capabilities: {
+    ...SALES_WEB_QUOTE_ACTION_POLICY.capabilities,
+    'desk.opportunity.record': { autonomy: 'allow' },
+  },
+} satisfies ActionPolicyConfigurationInput);
+
+/** (ADR-062 O1) sales-production@27: the autonomous policy @26 runs plus desk.opportunity.record. */
+export const SALES_PRODUCTION_DESK_ACTION_POLICY: ActionPolicyConfigurationInput = Object.freeze({
+  policyId: 'sales-production-desk-policy',
+  version: 1,
+  riskClasses: SALES_PRODUCTION_AUTONOMOUS_ACTION_POLICY.riskClasses,
+  capabilities: {
+    ...SALES_PRODUCTION_AUTONOMOUS_ACTION_POLICY.capabilities,
+    'desk.opportunity.record': { autonomy: 'allow' },
+  },
+} satisfies ActionPolicyConfigurationInput);
+
+/** (ADR-062 O1) sales-instagram@2 and sales-facebook@2: the policy their v1 runs plus desk.opportunity.record. */
+export const SALES_META_DESK_ACTION_POLICY: ActionPolicyConfigurationInput = Object.freeze({
+  policyId: 'sales-meta-desk-policy',
+  version: 1,
+  riskClasses: SALES_PRODUCTION_ACTION_POLICY.riskClasses,
+  capabilities: {
+    ...SALES_PRODUCTION_ACTION_POLICY.capabilities,
+    'desk.opportunity.record': { autonomy: 'allow' },
+  },
+} satisfies ActionPolicyConfigurationInput);
+
 /**
  * Profiles whose quote issuance is autonomous (they compose quote.preview and workspace.update@2 and the
  * autonomous action policy): @5 (quote.create@3, model-attested request), @6 (R4-J3E-B: quote.create@4,
  * customer confirmation read from the conversation) and @7 (R4-J3E-C1: quote.create@5, the exact Sales-rendered offer).
  */
-export const SALES_AUTONOMOUS_QUOTE_PROFILES: ReadonlySet<string> = new Set(['sales-production@5', 'sales-production@6', 'sales-production@7', 'sales-production@8', 'sales-production@12', 'sales-production@14', 'sales-production@15', 'sales-production@16', 'sales-production@17', 'sales-production@18', 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23', 'sales-production@24', 'sales-production@25', 'sales-production@26', 'sales-web@19', 'sales-web@20']);
+export const SALES_AUTONOMOUS_QUOTE_PROFILES: ReadonlySet<string> = new Set(['sales-production@5', 'sales-production@6', 'sales-production@7', 'sales-production@8', 'sales-production@12', 'sales-production@14', 'sales-production@15', 'sales-production@16', 'sales-production@17', 'sales-production@18', 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23', 'sales-production@24', 'sales-production@25', 'sales-production@26', 'sales-production@27', 'sales-web@19', 'sales-web@20', 'sales-web@21']);
 
 export function isAutonomousQuoteProfile(profile: ProductionProfile): boolean {
   return SALES_AUTONOMOUS_QUOTE_PROFILES.has(profileLabel(profile));

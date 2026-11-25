@@ -137,6 +137,8 @@ export const TELEMETRY_EVENTS = [
   'conversation.binding.opened',
   'conversation.binding.closed',
   'conversation.idle_close.skipped',
+  'contact.decided',
+  'contact.failed',
   'outbound.created',
   'outbound.held',
   'outbound.cancelled',

@@ -20,9 +20,11 @@ export function chileDateTime(instant: string): { readonly date: string; readonl
   const parts = Object.fromEntries(new Intl.DateTimeFormat('es-CL', { timeZone: 'America/Santiago', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(instant)).map((p) => [p.type, p.value]));
   return { date: `${parts.day}-${parts.month}-${parts.year}`, time: `${parts.hour}:${parts.minute}` };
 }
-export const quoteDocumentCaption = (quoteNumber: string, validUntilExclusive: string) => {
+/** (ADR-055 rev. 1) `optOutLine`: the line that tells the contact how to stop messages on our own initiative. */
+export const quoteDocumentCaption = (quoteNumber: string, validUntilExclusive: string, optOutLine: string | null = null) => {
   const until = chileDateTime(validUntilExclusive);
-  return `Cotización N° ${quoteNumber} (PDF). Válida hasta el ${until.date} a las ${until.time} (hora de Chile).`;
+  return `Cotización N° ${quoteNumber} (PDF). Válida hasta el ${until.date} a las ${until.time} (hora de Chile).${optOutLine ? `
+${optOutLine}` : ''}`;
 };
 
 /**
@@ -32,14 +34,14 @@ export const quoteDocumentCaption = (quoteNumber: string, validUntilExclusive: s
  * without the file, its name or the recipient), leaves the quote untouched and is returned as false (the quote.create
  * result then says document.delivery = not_queued, so the agent never announces a PDF that will not come).
  */
-export function quoteDocumentDelivery(notices: QuoteDocumentNoticeSink, logger: StructuredLogger): QuoteDocumentDelivery {
+export function quoteDocumentDelivery(notices: QuoteDocumentNoticeSink, logger: StructuredLogger, optOutLine: string | null = null): QuoteDocumentDelivery {
   return {
     async queue(d) {
       try {
         const { replayed } = await notices.createPlatformNotice({
           taskId: d.taskId,
           noticeKey: quoteDocumentNoticeKey(d.quoteId),
-          text: quoteDocumentCaption(d.quoteNumber, d.validUntilExclusive),
+          text: quoteDocumentCaption(d.quoteNumber, d.validUntilExclusive, optOutLine),
           correlationId: d.correlationId,
           document: { contentType: 'application/pdf', filename: quoteDocumentFilename(d.quoteNumber), sha256: d.sha256, bytes: d.bytes },
         });

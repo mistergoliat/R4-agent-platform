@@ -53,6 +53,7 @@ import { SALES_PRODUCTION_PROFILE_V23 } from '../../production/profile-v23.js';
 import { SALES_PRODUCTION_PROFILE_V24 } from '../../production/profile-v24.js';
 import { SALES_PRODUCTION_PROFILE_V25 } from '../../production/profile-v25.js';
 import { SALES_PRODUCTION_PROFILE_V26 } from '../../production/profile-v26.js';
+import { SALES_PRODUCTION_PROFILE_V27 } from '../../production/profile-v27.js';
 import { isQuoteLaneProfile, isSalesLaneProfile } from '../../production/profile-v15.js';
 import type { CatalogDiscoverPort } from '@r4-adapters/catalog-http';
 import { openApprovalInspection } from '../approval-inspection.js';
@@ -67,7 +68,7 @@ export const CANARY_PROFILE: ProductionProfile = SALES_PRODUCTION_PROFILE_V4;
  * v7 (deterministic offer, R4-J3E-C1) and v8 (Customer and identity verification, R4-J4-R4; prepared for J4-R5, not run).
  * Never one a production worker runs today.
  */
-export const CANARY_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_PRODUCTION_PROFILE_V4, SALES_PRODUCTION_PROFILE_V5, SALES_PRODUCTION_PROFILE_V6, SALES_PRODUCTION_PROFILE_V7, SALES_PRODUCTION_PROFILE_V8, SALES_PRODUCTION_PROFILE_V12, SALES_PRODUCTION_PROFILE_V14, SALES_PRODUCTION_PROFILE_V16, SALES_PRODUCTION_PROFILE_V17, SALES_PRODUCTION_PROFILE_V18, SALES_PRODUCTION_PROFILE_V19, SALES_PRODUCTION_PROFILE_V20, SALES_PRODUCTION_PROFILE_V21, SALES_PRODUCTION_PROFILE_V22, SALES_PRODUCTION_PROFILE_V23, SALES_PRODUCTION_PROFILE_V24, SALES_PRODUCTION_PROFILE_V25, SALES_PRODUCTION_PROFILE_V26]);
+export const CANARY_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_PRODUCTION_PROFILE_V4, SALES_PRODUCTION_PROFILE_V5, SALES_PRODUCTION_PROFILE_V6, SALES_PRODUCTION_PROFILE_V7, SALES_PRODUCTION_PROFILE_V8, SALES_PRODUCTION_PROFILE_V12, SALES_PRODUCTION_PROFILE_V14, SALES_PRODUCTION_PROFILE_V16, SALES_PRODUCTION_PROFILE_V17, SALES_PRODUCTION_PROFILE_V18, SALES_PRODUCTION_PROFILE_V19, SALES_PRODUCTION_PROFILE_V20, SALES_PRODUCTION_PROFILE_V21, SALES_PRODUCTION_PROFILE_V22, SALES_PRODUCTION_PROFILE_V23, SALES_PRODUCTION_PROFILE_V24, SALES_PRODUCTION_PROFILE_V25, SALES_PRODUCTION_PROFILE_V26, SALES_PRODUCTION_PROFILE_V27]);
 
 const DATABASE_URL = /^postgres(ql)?:\/\//;
 
@@ -285,6 +286,8 @@ export interface CanaryRuntimeOptions {
   readonly isolationCheckMs?: number;
   /** (R4-J4-R4) Passed through to the worker composition. Only tests use it: loadCanaryEnvironment does not accept sales-production@8 (the J4-R5 canary is not built). */
   readonly customer?: SalesProductionWorkerOptions["customer"];
+  /** (ADR-062 O1) The desk ingest a profile that records opportunities (@27) requires; without it that profile refuses to compose. */
+  readonly deskIngest?: SalesProductionWorkerOptions["deskIngest"];
 }
 
 export interface CanaryRuntime {
@@ -332,7 +335,7 @@ export async function startCanaryRuntime(canary: CanaryEnvironment, options: Can
       await assertUninspectedCanaryAllowed(pool);
     }
     const store = new PostgresProductionStore(pool);
-    const composed = composeSalesProductionWorker({ canary: true, pool, store, production: canary.production, modelProvider: options.modelProvider, logger, catalog: options.catalog, ...(isSalesLaneProfile(canary.profile) && options.catalogDiscover ? { catalogDiscover: options.catalogDiscover } : {}), shipping: options.shipping, quotes: options.quotes, ...(canary.autonomousQuoteLimits ? { autonomousQuoteLimits: canary.autonomousQuoteLimits } : {}), ...(canary.quoteParity ? { quoteParity: canary.quoteParity } : {}), ...(canary.promotionalQuotes ? { promotionalQuotes: true } : {}), ...(canary.quoteRecovery ? { quoteRecovery: true } : {}), ...(options.customer ? { customer: { ...options.customer, allowedHosts: canary.testHosts } } : {}) });
+    const composed = composeSalesProductionWorker({ canary: true, pool, store, production: canary.production, modelProvider: options.modelProvider, logger, catalog: options.catalog, ...(isSalesLaneProfile(canary.profile) && options.catalogDiscover ? { catalogDiscover: options.catalogDiscover } : {}), shipping: options.shipping, quotes: options.quotes, ...(canary.autonomousQuoteLimits ? { autonomousQuoteLimits: canary.autonomousQuoteLimits } : {}), ...(canary.quoteParity ? { quoteParity: canary.quoteParity } : {}), ...(canary.promotionalQuotes ? { promotionalQuotes: true } : {}), ...(canary.quoteRecovery ? { quoteRecovery: true } : {}), ...(options.customer ? { customer: { ...options.customer, allowedHosts: canary.testHosts } } : {}), ...(options.deskIngest ? { deskIngest: options.deskIngest } : {}) });
     worker = await createWorkerPlatform(options.worker, { ...composed.bindings, admission: new CanaryAdmission(pool, composed.controls) }, { logger });
     scheduler = options.scheduler ? await createSchedulerPlatform(options.scheduler, { logger }) : null;
     const capture = new CaptureOutboundAdapter(typeof options.captureFile === 'string' ? options.captureFile : options.captureFile(canaryId));
