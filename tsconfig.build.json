@@ -31,6 +31,7 @@
     { "path": "adapters/channels/whatsapp-cloud" },
     { "path": "adapters/channels/web" },
     { "path": "adapters/channels/meta" },
+    { "path": "adapters/connectors/clickup" },
     { "path": "agents/sales" },
     { "path": "agents/graph-curator" }
   ]

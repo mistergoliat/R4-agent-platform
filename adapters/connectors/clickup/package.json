@@ -1,0 +1,18 @@
+{
+  "name": "@r4-adapters/clickup",
+  "version": "0.0.0",
+  "private": true,
+  "description": "R4 connector to ClickUp (ADR-061 D6, ADR-058 D13): one task per R4 question in one configured list, idempotent by tag, comments, the answer field, closing, list reads and webhook signature checks. Outside R4 Core; no dependencies.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ]
+}
