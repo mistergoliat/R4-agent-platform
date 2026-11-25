@@ -38,6 +38,9 @@
     },
     {
       "path": "../../adapters/models/openai-compatible"
+    },
+    {
+      "path": "../../adapters/connectors/clickup"
     }
   ]
 }

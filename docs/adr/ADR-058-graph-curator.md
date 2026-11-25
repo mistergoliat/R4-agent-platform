@@ -871,7 +871,10 @@ propuso quitarlas.
   - que se cierra lo que se decidió en otra parte, y la pregunta siguiente entra;
   - que el campo Respuesta es la decisión del PM.
 - **Pendiente (G6-2):**
-  - la tarea programada (`graph:clickup-sync`), cuando se fusione el conector;
+  - la tarea programada en pm2, que corre `npm run graph:clickup-sync` cada pocos minutos. El comando ya existe (usa
+    `@r4-adapters/clickup`, fusionado en el PR #166); se activa al desplegar, con la configuración de ClickUp en la bóveda,
+    el PM como operador (`R4_GRAPH_PM_OPERATOR_REF`, con sus ámbitos leídos del registro de operadores) y el link de la
+    consola;
   - las consultas urgentes de Pesín y los datos que faltan, con prioridad alta y su respuesta como hecho;
   - el webhook, para acelerar la lectura;
   - la prueba real, con la lista, el token y el PM como operador.

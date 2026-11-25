@@ -19,6 +19,7 @@
   ],
   "dependencies": {
     "@r4-adapters/catalog-http": "*",
+    "@r4-adapters/clickup": "*",
     "@r4-adapters/openai-compatible": "*",
     "@r4/agent-registry": "*",
     "@r4/api": "*",
