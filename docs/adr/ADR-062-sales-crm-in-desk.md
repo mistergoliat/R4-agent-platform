@@ -1,8 +1,8 @@
 # ADR-062 — CRM en la mesa de ventas: oportunidades con dueño, estado, próxima acción y resultado
 
 - **Identificador:** `R4-SALES-CRM-01`
-- **Estado:** **Propuesto. No implementado.** No autoriza código ni despliegues. Cada fase necesita autorización
-  explícita del owner.
+- **Estado:** **Aceptado** por el owner el 2026-11-25 («sí, merge del #159»). No autoriza código ni despliegues:
+  cada fase (O1 a O4) necesita autorización explícita del owner.
 - **Fecha:** 2026-11-25
 - **Mandato:** owner, 2026-11-25.
   - Revisó el plan comercial omnicanal (documento interno). Ese plan pide un CRM propio que centralice las
