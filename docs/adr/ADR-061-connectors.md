@@ -178,13 +178,78 @@ capacidad cuando está desplegada, y el owner decide en qué agente y con qué l
   - un corte automático tras errores seguidos: el conector queda «no disponible», el agente lo dice con honestidad y
     nunca inventa un dato.
 - **Apagar un conector es inmediato:** sus capacidades responden «no disponible» y la consola lo muestra.
-- **Pantalla «Conectores»** en Plataforma, junto a «Canales». Muestra:
-  - estado y dueño de cada conector;
-  - últimas llamadas, errores y gasto;
-  - el probador y el historial de versiones firmadas.
-
-  La salud de los conectores entra a «Salud de R4» y sus fallas a «Incidentes» (ADR-051).
+- **Desconectar borra la credencial** y apaga cada herramienta y disparador que la usaba. Nada queda conectado a
+  medias.
+- **Errores con códigos estables** que el agente y la consola entienden igual: `no_autorizado`, `sin_permiso`,
+  `no_encontrado`, `limite_de_uso`, `no_disponible`, `respuesta_invalida`.
 - **Auditoría:** cada firma, cambio de secreto, encendido y apagado queda con el operador firmado.
+
+## Decisión 9 — La pestaña «Conectores» de la consola
+
+El owner pidió una pestaña de conectores como la de productos del rubro. Se revisó la documentación pública de Nexor
+(docs.getnexor.ai, 2026-11-25). Se adoptan sus buenas prácticas, con dos diferencias a favor de la seguridad, que se
+marcan abajo.
+
+**Organización:**
+- **Una pestaña «Conectores»** en Plataforma, junto a «Canales», con tarjetas agrupadas por para qué sirven:
+  - Canales: los de ADR-046 y ADR-060, que enlazan a «Canales»;
+  - Tienda y pedidos: PrestaShop;
+  - Despacho: couriers;
+  - Documentos: Drive y Sheets;
+  - Avisos: Slack, correo, ntfy;
+  - Personalizados: HTTP, MCP y webhooks.
+- **Cada tarjeta dice en una línea qué cubre**, por ejemplo «Estado de pedidos por número». Cada herramienta lleva una
+  etiqueta: **«Lee»** o **«Puede cambiar datos»**. Un logo nunca promete un conector que no existe: los que no están
+  construidos dicen «Disponible más adelante».
+- **Estados de la tarjeta:**
+  - «Disponible»;
+  - «Conectado»;
+  - «Conectado, apagado»: se enciende ahí mismo, no se vuelve a conectar;
+  - **«Necesita atención»**: credencial vencida o rechazada, o el corte automático por errores;
+  - «Desconectado».
+
+**Credenciales:**
+- **Una credencial por conector,** que se muestra una sola vez al guardarla y después solo como «guardada» y su fecha.
+- **Para rotar,** se guarda la nueva, se prueba y recién entonces se revoca la anterior.
+- **Con OAuth,** cuando el proveedor lo ofrece (Google), el owner inicia sesión en la página del proveedor y R4 nunca
+  ve la contraseña.
+
+**Herramientas por agente:**
+- **Una herramienta agregada a un agente entra apagada.** Encenderla es explícito, y para un agente en producción es
+  una variante nueva (ADR-054).
+- **Mínimo privilegio por defecto. Diferencia con Nexor:** su autorización OAuth viene con todos los permisos marcados,
+  incluso los de borrar. En R4 vienen marcados **solo los de lectura**, y las escrituras no se pueden habilitar desde
+  la consola (Decisión 6).
+
+**Probar antes de usar:**
+- **«Probar conexión»** valida la credencial y los permisos.
+- **«Probar herramienta»** corre una llamada y muestra:
+  - la llamada hecha, sin el secreto;
+  - la respuesta;
+  - **lo que el agente leería después de la proyección**;
+  - lo que se descartó.
+- **Disparador entrante:** se crea con una prueba en seco y después se importa un lote pequeño antes del tráfico real.
+  Antes de encenderlo, la consola advierte que lo que llegue se atiende de inmediato.
+
+**Salud y actividad:**
+- **Por herramienta, agente y canal:** llamadas, correctas, fallidas, vacías y bloqueadas, la tasa de fallas y los
+  errores más frecuentes. Las problemáticas se ordenan primero.
+- **«Actividad reciente»** por conector: herramienta, agente, resultado y duración.
+- **Diferencia con Nexor:** las muestras de llamadas **nunca guardan datos personales**. Nexor guarda argumentos y
+  resultados recortados; R4 guarda solo la forma del resultado (campos y tamaños), nunca valores de clase `personal`
+  (Decisión 4).
+- **Avisos salientes:** cada destino tiene una salud con umbrales y un registro de entregas (intento, código,
+  duración), sin contenido:
+  - sano;
+  - degradado tras 5 fallas seguidas;
+  - fallando tras 20;
+  - deshabilitado tras 100.
+- La salud entra a «Salud de R4» y las fallas a «Incidentes» (ADR-051).
+
+**Límites de la plataforma:**
+- solo `https`;
+- un máximo de conectores conectados (20 al inicio);
+- quién puede abrir la pestaña: solo el owner, el operador de la consola (ADR-050).
 
 ## Primer conector: pedidos de PrestaShop
 
@@ -222,20 +287,31 @@ datos de clientes.
   Decisión 3.
 - **Clave de webservice propia** creada por el owner: solo `GET` sobre `orders`, `order_histories`, `order_states`,
   `order_carriers`, `carriers` y `addresses`. Va en la bóveda; si se rota, el conector sigue funcionando.
-- **Capacidad `orders.status`, solo en WhatsApp para empezar.** El cliente da la referencia del pedido. La plataforma
-  lo busca, compara el celular de la dirección de despacho (normalizado) con el número de WhatsApp de la conversación,
-  y **solo si coinciden** responde con la proyección:
-  - referencia y fecha del pedido;
-  - estado traducido por la tabla y fecha de ese estado;
-  - transportista o retiro.
+- **Qué se muestra depende de cuánto se validó** (owner, 2026-11-25: «con el número de pedido, lo mismo que hace
+  Starken», y para la página, la sesión del cliente):
 
-  Nunca muestra dirección, nombre, montos ni productos. Si no coincide, responde lo mismo que si el pedido no
-  existiera, sin decir por qué, para no confirmar que un pedido es de otra persona.
-- **«Mis pedidos» sin referencia** (buscar por teléfono) no se puede con el webservice, que filtra por valor exacto y
-  los teléfonos están escritos de muchas formas. Queda para una segunda etapa, con un endpoint de solo lectura firmado
-  en el módulo propio de la tienda (`pc_r4chat`).
-- **Web, Instagram y Facebook:** sin un teléfono verificado no hay sujeto. Ahí el agente explica cómo ver el pedido en
-  «Mi cuenta» de la tienda o deriva.
+  | Nivel | Validación | Canales | Qué se muestra |
+  |---|---|---|---|
+  | **1** | Solo la referencia del pedido, como el número de una orden de transporte | Todos | Estado traducido por la tabla, fecha de ese estado, y transportista o retiro. Nada más |
+  | **2** (más adelante) | Referencia + correo del comprador, como el seguimiento de pedidos de PrestaShop para quien no inicia sesión | Todos | El nivel 1, más los productos del pedido |
+  | **3** | Cliente con sesión iniciada en la tienda | Web | «Mis pedidos»: sus pedidos con estado, sin pedir la referencia |
+
+- **Nivel 1: capacidad `orders.status`.**
+  - **Por qué basta la referencia:** se genera al azar con 9 letras, así que no se puede adivinar ni recorrer como un
+    correlativo. Quien la tiene es porque se la dieron.
+  - **Proyección:** solo lo de la tabla de niveles. Nunca nombre, dirección, montos, productos ni teléfono.
+  - **Tope de intentos:** 5 por conversación por hora. Una referencia inexistente y una mal escrita reciben la misma
+    respuesta.
+  - Las consultas van al registro sin la referencia completa.
+- **Nivel 3: «mis pedidos» del cliente con sesión, armado por la tienda** (el mismo patrón que las fichas de producto
+  del ADR-046):
+  - el agente responde con la marca `[[mis-pedidos]]`;
+  - el módulo de la tienda (`pc_r4chat`) arma la tarjeta con la sesión del visitante, en su navegador. **R4 no ve
+    esos datos**;
+  - sin sesión, la tarjeta dice «Inicia sesión para ver tus pedidos», con el botón para hacerlo.
+- **WhatsApp, más adelante:** «mis pedidos» por coincidencia del celular del pedido con el número de la conversación.
+  Necesita un endpoint de solo lectura firmado en `pc_r4chat`, porque el webservice filtra por valor exacto y los
+  teléfonos están escritos de muchas formas.
 - **El agente no promete fechas de entrega** con este conector: dice el estado y su fecha. Una fecha estimada necesita
   una regla del owner por transportista y región.
 
@@ -255,8 +331,8 @@ Los adapters genéricos (`http-read`, `mcp`) y cada conector concreto viven fuer
 | Fase | Qué | Valor |
 |---|---|---|
 | C0 | Este ADR | Decisión |
-| C1 | Bóveda y pantalla «Conectores», generalizando «Canales» | Secretos de terceros sin tocar el servidor |
-| C2 | Conector de lectura declarativo + probador + firma. Primer uso: **estado del pedido y seguimiento del despacho** (con la Decisión 4) | La pregunta más común de postventa, sin derivar |
+| C1 | Bóveda y pestaña «Conectores» (Decisión 9), generalizando «Canales» | Secretos de terceros sin tocar el servidor |
+| C2 | Conector de PrestaShop (niveles 1 y 3), y luego el conector de lectura declarativo con su probador y firma | La pregunta más común de postventa, sin derivar |
 | C3 | Avisos salientes (webhooks firmados; ntfy como destino) | El equipo se entera donde trabaja |
 | C4 | Herramientas MCP de lectura (primero Google Drive / Sheets) | Documentos del equipo como fuente |
 | C5 | Disparadores entrantes | R4 reacciona a lo que pasa en otras apps |
@@ -265,13 +341,14 @@ Email (Gmail) es un **canal**, no un conector: va en su propio ADR, como el ADR-
 
 ## Decisiones abiertas del owner
 
-1. **Pedidos de PrestaShop** (sección «Primer conector»):
-   - si se aprueba el webservice como fuente, con una clave propia de solo lectura;
+1. **Pedidos de PrestaShop** (sección «Primer conector»). Ya decidido (2026-11-25): los niveles 1 y 3, y que la
+   pestaña «Conectores» sigue la Decisión 9. Queda abierto:
+   - la clave de webservice de solo lectura, que crea el owner;
    - la tabla estado → frase para el cliente;
    - dónde vive el seguimiento del courier: el servicio externo del módulo `ps_logistics`, o la API de Blue Express y
      Starken.
-2. **Identidad para datos personales:** si basta que el celular del pedido coincida con el número de WhatsApp (la
-   propuesta), o se exige la verificación del ADR-053.
+2. **Identidad para datos personales:** para el futuro «mis pedidos» por WhatsApp, si basta que el celular del pedido
+   coincida con el número de WhatsApp, o se exige la verificación del ADR-053.
 3. **Hosts y servidores MCP permitidos** al inicio.
 4. **Presupuestos por conector**, y si el gasto en llamadas de terceros se suma al tope mensual de modelo o va aparte.
 5. **Destinos de los avisos salientes** (Slack, correo, planilla) y si alguno puede llevar contenido de conversaciones.
