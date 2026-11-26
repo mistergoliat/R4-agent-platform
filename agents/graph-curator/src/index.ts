@@ -5,6 +5,7 @@ export * from './rules.js';
 export * from './catalog.js';
 export * from './run.js';
 export * from './present.js';
+export * from './once.js';
 export * from './changes.js';
 export * from './classify.js';
 export * from './additions.js';
