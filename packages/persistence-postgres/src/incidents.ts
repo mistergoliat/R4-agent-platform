@@ -9,8 +9,10 @@ import { iso, type Row } from './rows.js';
  * Never message text, contact data or reasoning: codes, counts, times and opaque task ids.
  */
 
-/** A conversation's last input without a reply accepted by the channel for this long is an incident. */
-export const UNANSWERED_AFTER_MS = 10 * 60_000;
+/** A conversation's last input without a reply accepted by the channel for this long is an incident (owner 2026-11-26: 4 min). */
+export const UNANSWERED_AFTER_MS = 4 * 60_000;
+/** (ADR-056 D5) A consultation no human answered within this SLA is an incident. */
+export const CONSULTATION_SLA_MS = 10 * 60_000;
 /** A reply turn slower than this is an incident. */
 export const SLOW_REPLY_MS = 60_000;
 export const MAX_EXAMPLE_TASKS = 5;
@@ -154,10 +156,10 @@ export class PostgresIncidents {
            from inbound_events i left join agent_tasks t on t.task_id = i.task_id
           where i.status in ('failed', 'rejected') and i.received_at >= ${since}
          union all
-         -- (ADR-056 D5) A consultation the agent asked that no human answered within the SLA (same 10 minutes).
-         select 'consultation_waiting', t.agent_id, t.agent_version, 'unanswered_over_${UNANSWERED_AFTER_MS / 60_000}_min', h.task_id, h.created_at
+         -- (ADR-056 D5) A consultation the agent asked that no human answered within its own SLA (10 minutes).
+         select 'consultation_waiting', t.agent_id, t.agent_version, 'unanswered_over_${CONSULTATION_SLA_MS / 60_000}_min', h.task_id, h.created_at
            from human_requests h join agent_tasks t on t.task_id = h.task_id
-          where h.kind = 'consultation' and h.status = 'requested' and h.created_at >= ${since} and h.created_at <= $2::timestamptz
+          where h.kind = 'consultation' and h.status = 'requested' and h.created_at >= ${since} and h.created_at <= $4::timestamptz
          union all
          select 'slow_reply', r.agent_id, r.agent_version, 'customer_turn_over_${SLOW_REPLY_MS / 1000}s', turns.task_id, turns.at
            from (${customerTurns(since)}) turns join agent_runs r on r.run_id = turns.run_id
@@ -168,7 +170,7 @@ export class PostgresIncidents {
        select detector, agent_id, agent_version, code, sum(n) as n, min(first_seen) as first_seen, max(last_seen) as last_seen,
               (array_agg(task_id::text order by last_seen desc) filter (where task_id is not null))[1:${MAX_EXAMPLE_TASKS}] as examples
          from per_task group by 1, 2, 3, 4`,
-      [new Date(now.getTime() - days * 86_400_000).toISOString(), new Date(now.getTime() - UNANSWERED_AFTER_MS).toISOString(), SLOW_REPLY_MS],
+      [new Date(now.getTime() - days * 86_400_000).toISOString(), new Date(now.getTime() - UNANSWERED_AFTER_MS).toISOString(), SLOW_REPLY_MS, new Date(now.getTime() - CONSULTATION_SLA_MS).toISOString()],
     );
     const incidents = groups.rows.map((g) => {
       const detector = g.detector as IncidentDetector;

@@ -39,6 +39,8 @@ interface View {
 let bed: LiveOpsTestbed;
 let now: Platform;
 let later: Platform;
+/** (owner 2026-11-26) Five minutes on: past the 4-minute «sin respuesta», not past the 10-minute consultation SLA. */
+let mid: Platform;
 const tasks: Record<string, string> = {};
 
 beforeAll(async () => {
@@ -100,11 +102,13 @@ beforeAll(async () => {
   now = await createPlatform(config, { logger: createSilentLogger() });
   // Eleven minutes from now: every waiting customer has been without a reply for more than ten.
   later = await createPlatform(config, { logger: createSilentLogger(), clock: { now: () => new Date(Date.now() + 11 * 60_000) } });
+  mid = await createPlatform(config, { logger: createSilentLogger(), clock: { now: () => new Date(Date.now() + 5 * 60_000) } });
 }, 120_000);
 
 afterAll(async () => {
   await now?.close();
   await later?.close();
+  await mid?.close();
   await bed?.close();
 });
 
@@ -164,7 +168,7 @@ describe('ADR-051 GET /v1/incidents', () => {
     expect(bySignature[INBOUND_SIGNATURE]).toMatchObject({ detector: 'inbound_problem', severity: 'info', agentId: null, agentVersion: null, code: 'foreign_business_number', count: 6, exampleTaskIds: [] });
     expect(bySignature[`inbound_problem:${at}:failed/incomplete_inbound_record`]).toMatchObject({ severity: 'high', count: 1, exampleTaskIds: [tasks.answered] });
     expect(bySignature[`slow_reply:${at}:customer_turn_over_60s`]).toMatchObject({ severity: 'medium', count: 1, exampleTaskIds: [tasks.answered] });
-    // Ten minutes have not passed: nobody is unanswered yet, and the consultation is not late yet.
+    // Four minutes have not passed: nobody is unanswered yet, and the consultation is not late yet.
     expect(find(v, 'customer_unanswered:')).toEqual([]);
     expect(find(v, 'consultation_waiting:')).toEqual([]);
 
@@ -187,13 +191,19 @@ describe('ADR-051 GET /v1/incidents', () => {
     expect(new Set(v.incidents.map((i) => i.detector))).toEqual(new Set(['customer_unanswered', 'run_failed', 'platform_handoff', 'step_error', 'outbound_problem', 'inbound_problem', 'slow_reply', 'consultation_waiting']));
   });
 
+  it('owner 2026-11-26: a customer is unanswered after 4 minutes, a consultation only after its 10-minute SLA', async () => {
+    const v = await view(mid);
+    expect(find(v, 'customer_unanswered:').length).toBeGreaterThan(0);
+    expect(find(v, 'consultation_waiting:')).toEqual([]);
+  });
+
   it('consultation_waiting after ten minutes: high, with the task as example, never the question text', async () => {
     const v = await view(later);
     expect(find(v, 'consultation_waiting:')).toEqual([expect.objectContaining({ severity: 'high', code: 'unanswered_over_10_min', count: 1, exampleTaskIds: [tasks.answered] })]);
     expect(JSON.stringify(v)).not.toMatch(/SECRETO-PREGUNTA/);
   });
 
-  it('customer_unanswered after ten minutes: only autonomous, unheld, unanswered customers; five newest examples', async () => {
+  it('customer_unanswered after four minutes: only autonomous, unheld, unanswered customers; five newest examples', async () => {
     const [group, ...others] = find(await view(later), 'customer_unanswered:');
     expect(others).toEqual([]);
     const waiting = WAITING.map((_, i) => tasks[`waiting${i}`]!);
