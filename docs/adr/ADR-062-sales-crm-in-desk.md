@@ -190,7 +190,7 @@ política de despacho.
 
 ## Decisión 5 — Estados y próxima acción obligatoria
 
-- **Cinco estados:** `nueva` → `en_gestion` → `cotizada` → `ganada` | `perdida`. Cambiar los nombres o agregar
+- **Cinco estados:** `nueva` → `en_gestion` → `cotizada` → `ganada` | `perdida`. Desde 2026-11-26 se suman `dormida` y el cierre «no era oportunidad» (ver «Decisiones del owner (2026-11-26)»). Cambiar los nombres o agregar
   estados es un cambio de configuración versionada, acordado con Ventas.
 - **Invariante: toda oportunidad abierta tiene dueño y próxima acción con fecha.** La API de la mesa rechaza guardar
   una oportunidad abierta sin próxima acción. Cuando se pueda, también lo impide una restricción de la base, no solo
@@ -442,6 +442,98 @@ política de despacho.
 - **Cliente de cabecera:** se siembra con el vendedor de las ventas SAP de los últimos 90 días, con la misma regla
   de ADR-048. Lo más antiguo no crea vínculo.
 - **Clave compartida:** una clave que aparece en más de 3 cuentas no une sola; la revisa una persona.
+
+## Decisiones del owner (2026-11-26): qué es oportunidad, el tablero y el regreso del cliente
+
+Esta revisión no cambia las decisiones anteriores: las precisa con lo que el owner decidió al revisar el tablero de
+oportunidades (lienzo de la consola, tableros «Tablero de oportunidades» y «Detalle de una oportunidad»).
+
+### Qué es una oportunidad (vigente desde 2026-11-25, `desk.opportunity.record@2`)
+
+- **Una oportunidad nace solo con evidencia de la plataforma.** Hacen falta dos condiciones:
+  - al menos una señal registrada en la conversación: cotización, propuesta, despacho, producto leído o traspaso;
+  - que Pesín no la califique «sin intención».
+
+  La palabra del modelo nunca basta.
+- **Lo que no es oportunidad se guarda para medir y nunca entra a «Hoy» ni al pozo.** Son dos casos:
+  - lo que Pesín califica «sin intención»: broma, spam, prueba, conversación casual, fuera de alcance o solo una duda
+    técnica;
+  - lo que no trae una señal concreta.
+- **«No era oportunidad» es un cierre aparte de `perdida`.** Lo marca una persona con su motivo, y no cuenta en las
+  cifras del CRM.
+- **Contactos de prueba:** sus oportunidades se ven marcadas «prueba» y nunca cuentan en las cifras.
+
+### Un sexto estado: `dormida`
+
+- **Cuándo se duerme:** una oportunidad abierta pasa a `dormida` tras **7 días sin mensaje del cliente** (14 en
+  complejidad «proyecto»).
+- **A cuáles aplica:** solo a las que lleva Pesín o a las que nadie tomó. La de un vendedor nunca se duerme: su
+  próxima acción vence y escala (Decisión 5).
+- **Sigue dormida.** No pasa sola a `perdida` ni a ningún otro estado. Esto mantiene «el silencio no cierra»
+  (Decisión 5): solo una persona la marca `perdida`, con motivo.
+- **No ocupa cupo:** no cuenta para el tope de 15 de nadie.
+- **Es candidata a seguimiento:**
+  - aparece en «Para contactar hoy» de los vendedores del pool;
+  - un vendedor puede tomarla para hacerle seguimiento;
+  - si el cliente vuelve, regresa a la columna donde estaba, con la marca «volvió».
+- **Los plazos son configuración versionada de la mesa**, igual que los de la Decisión 5.
+
+### El cliente que vuelve continúa la misma oportunidad
+
+- **Mismo contacto, misma oportunidad.** Si el contacto tiene una oportunidad abierta o dormida en el mismo pool, un
+  registro nuevo de Pesín la continúa. Vale aunque el registro venga de otra conversación y aunque el cliente
+  pregunte por otro producto: el producto se suma.
+- **Una cerrada no se reabre.** Si la oportunidad está `ganada` o `perdida` y el cliente vuelve, nace una nueva,
+  ligada a la anterior.
+- **Cómo se reconoce al mismo contacto:**
+  - con la referencia opaca `contactRef` que R4 manda en cada registro;
+  - en WhatsApp, por el número;
+  - en el chat web, solo si vuelve desde el mismo navegador o dejó un dato (ADR-065). Ahí no se promete.
+- **Una conversación cerrada no cierra la oportunidad.** El cierre por inactividad de 24 h (ADR-047) cierra la
+  conversación; la oportunidad sigue con sus reglas.
+- **Traspaso posterior:** si Pesín ya registró la oportunidad y después ocurre una de estas cosas, pasa al pozo:
+  - el cliente pide una persona;
+  - la conversación pasa a «proyecto»;
+  - una cotización supera $1.000.000.
+
+  Nunca se le quita a un vendedor. En producción desde 2026-11-26.
+
+### El tablero
+
+- **Columnas:**
+  - nueva;
+  - en gestión;
+  - cotizada, que puede mostrar «cotización vencida», con el monto solo como referencia;
+  - dormida;
+  - ganada, que distingue «verificado en la tienda» de «informado, sin verificar» (Decisión 6);
+  - perdida.
+
+  «No era oportunidad» no es columna.
+- **Quién lo ve:**
+  - la consola muestra todo;
+  - cada vendedor ve en la app Ventas su propio tablero: lo suyo, lo abierto sin dueño de sus pools (regla de
+    visibilidad de la mesa) y las dormidas de su pool.
+- **Arrastrar con reglas:**
+  - solo a una columna permitida por los cambios de estado de la mesa;
+  - a `perdida` pide el motivo;
+  - una de Pesín se toma antes de moverla;
+  - una cerrada no se mueve.
+- **Plazos reales, no relleno:** la tarjeta muestra lo que de verdad viene, por ejemplo «Esperando al cliente · se
+  duerme el dd-mm» o «Cotización vigente hasta hh:mm». Pesín no actúa a una hora fija: responde cuando el cliente
+  escribe.
+- **Horas:** en hora de Chile, con reloj de 24 h.
+- **Enlace a las conversaciones:** cada oportunidad enlaza a sus conversaciones. Las horas en 24 h y este enlace
+  están en producción desde 2026-11-26.
+
+### Construcción
+
+- **En la mesa:**
+  - el estado `dormida` y su barrido;
+  - la continuación por `contactRef`;
+  - arrastrar con reglas;
+  - el tablero en la consola y en la app Ventas.
+- **Qué necesita:** una migración de la mesa (0007) y autorización del owner para publicar.
+- **Qué no cambia:** R4 Core no cambia y no hay capacidad nueva.
 
 ## Decisiones abiertas del owner
 
