@@ -80,16 +80,19 @@ export class WhatsAppCallTranscriptAdapter implements InboundChannelAdapter {
     } catch {
       return { inbound: [], statuses: [], rejected: [{ providerEventId: null, reason: 'invalid_json' }] };
     }
-    if (!isObject(p) || typeof p.callId !== 'string' || !/^[A-Za-z0-9._=+/-]{8,512}$/.test(p.callId) || !Number.isInteger(p.turn) || (p.turn as number) < 1 || (p.turn as number) > 10_000) {
+    // `{ callId, event: "ended", from, occurredAt }`: the end of a call Don Pesín answered (owner decision 2026-11-26:
+    // the only thing the agent writes after a call is a short «¿te pude ayudar?»). A channel event, never content.
+    const ended = isObject(p) && p.event === 'ended';
+    if (!isObject(p) || typeof p.callId !== 'string' || !/^[A-Za-z0-9._=+/-]{8,512}$/.test(p.callId) || (!ended && (!Number.isInteger(p.turn) || (p.turn as number) < 1 || (p.turn as number) > 10_000))) {
       return { inbound: [], statuses: [], rejected: [{ providerEventId: null, reason: 'invalid_call_event' }] };
     }
     // The call id is Meta's (long, base64-like): its hash keeps the event identity short and stable.
-    const providerEventId = `call:${createHash('sha256').update(p.callId).digest('hex').slice(0, 32)}:${String(p.turn)}`;
+    const providerEventId = `call:${createHash('sha256').update(p.callId).digest('hex').slice(0, 32)}:${ended ? 'ended' : String(p.turn)}`;
     const from = normalizeWaId(p.from);
     const text = typeof p.text === 'string' ? p.text.trim() : '';
     const at = typeof p.occurredAt === 'string' ? new Date(p.occurredAt) : null;
     if (!from) return { inbound: [], statuses: [], rejected: [{ providerEventId, reason: 'missing_caller' }] };
-    if (text === '') return { inbound: [], statuses: [], rejected: [{ providerEventId, reason: 'empty_transcript' }] };
+    if (!ended && text === '') return { inbound: [], statuses: [], rejected: [{ providerEventId, reason: 'empty_transcript' }] };
     if (!at || Number.isNaN(at.getTime())) return { inbound: [], statuses: [], rejected: [{ providerEventId, reason: 'invalid_timestamp' }] };
     const inbound: CanonicalInbound = {
       channel: WHATSAPP_CHANNEL_ID,
@@ -98,8 +101,8 @@ export class WhatsAppCallTranscriptAdapter implements InboundChannelAdapter {
       senderRef: from,
       providerEventId,
       occurredAt: at.toISOString(),
-      content: { kind: 'transcript', text: text.slice(0, MAX_TEXT), source: 'call' },
-      metadata: { messageType: 'call_transcript', turn: p.turn as number },
+      content: ended ? { kind: 'unsupported', contentType: 'call-ended' } : { kind: 'transcript', text: text.slice(0, MAX_TEXT), source: 'call' },
+      metadata: ended ? { messageType: 'call_ended' } : { messageType: 'call_transcript', turn: p.turn as number },
     };
     return { inbound: [inbound], statuses: [], rejected: [] };
   }
