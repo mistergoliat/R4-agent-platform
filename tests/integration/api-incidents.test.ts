@@ -70,7 +70,7 @@ beforeAll(async () => {
   const relayStep = randomUUID();
   // The relayed reply has its own step (same run, a later iteration), like the step that relays a consultation answer.
   await bed.rows(
-    `insert into agent_run_steps select (jsonb_populate_record(null::agent_run_steps, to_jsonb(s) - 'invocation_id' - 'observation_id'
+    `insert into agent_run_steps select (jsonb_populate_record(null::agent_run_steps, to_jsonb(s) - 'invocation_id' - 'observation_id' - 'context_snapshot_id'
        || jsonb_build_object('step_id', $1::uuid, 'iteration', s.iteration + 1000, 'created_at', s.created_at + interval '2 minutes'))).*
        from agent_run_steps s join outbound_messages o on o.response_step_id = s.step_id where o.task_id = $2 and o.origin = 'agent' order by o.accepted_at limit 1`,
     [relayStep, tasks.answered],
