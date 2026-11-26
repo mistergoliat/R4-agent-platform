@@ -1,7 +1,7 @@
 # ADR-067 — Satisfacción del cliente: «¿Cómo te atendimos?» y «¿Te sirvió?»
 
 - **Identificador:** `R4-CSAT-01`
-- **Estado:** **Propuesto.** No autoriza código ni despliegues; cada fase necesita autorización del owner.
+- **Estado:** **Aceptado** por el owner el 2026-11-26 («aprobado el ADR-067, dale con las tres propuestas»). Autoriza construir la fase S1; los despliegues necesitan su propia autorización.
 - **Fecha:** 2026-11-26
 - **Mandato:** owner, 2026-11-26.
   - El plan comercial omnicanal (documento interno) pide medir la satisfacción del cliente junto con las conversiones y los tiempos.
@@ -29,9 +29,9 @@
 
 ## Decisión técnica
 
-### D0 — Qué es «se despide» en el chat web (decisión abierta del owner, número 3)
+### D0 — Qué es «se despide» en el chat web (owner, 2026-11-26)
 
-Propuesta: la tarjeta aparece en cualquiera de estos dos casos.
+La tarjeta aparece en cualquiera de estos dos casos.
 
 - **El cliente toca «Terminar conversación»** en el menú del chat.
 - **El cliente se despide por escrito.** Pesín responde y su respuesta lleva el marcador `[[despedida]]`, que el edge no muestra y que dispara la tarjeta. El peor caso de un marcador mal puesto es una tarjeta de más, una sola vez por conversación.
@@ -43,7 +43,7 @@ Cerrar el panel con la X **no** cuenta: cerrar no es irse.
 - **El evento:** el edge envía a R4 un evento nuevo `feedback`, firmado como los demás. Lleva:
   - `conversationRef`;
   - `scope`: `conversation` (la tarjeta) o `message` (un «¿Te sirvió?» sobre una respuesta concreta, con su `outboundId`);
-  - `value`: `bien`, `mas_o_menos` o `mal` para la tarjeta; `up` o `down` para el «¿Te sirvió?»;
+  - `value`: `shown` (la tarjeta se mostró), `bien`, `mas_o_menos` o `mal` para la tarjeta; `up` o `down` para el «¿Te sirvió?»;
   - `comment` opcional;
   - `occurredAt`.
 - **No entra a la conversación:** el adaptador web lo valida con una lista cerrada y lo entrega aparte, igual que la presencia (ADR-057 D3). Pesín no lo ve como un mensaje.
@@ -101,8 +101,8 @@ Cerrar el panel con la X **no** cuenta: cerrar no es irse.
 - Una tabla nueva en Core y un detector de incidentes más.
 - El edge cambia su contrato con R4, con un tipo de evento nuevo, así que sus despliegues se coordinan con los de R4.
 
-## Decisiones abiertas del owner
+## Decisiones del owner sobre las preguntas abiertas (2026-11-26)
 
-1. ¿Cuenta una conversación sin respuesta a la tarjeta como «no respondió»? Hoy solo se cuentan las respuestas.
-2. ¿Cuánto tiempo se guardan los comentarios? Se propone lo mismo que los mensajes de la conversación.
-3. Qué cuenta como «se despide» en el chat web (D0).
+1. **Una tarjeta mostrada y no respondida cuenta como «no respondió».** El edge envía `feedback` con `value: shown` al mostrarla. Una respuesta posterior la reemplaza (D2). Así la consola sabe qué porcentaje responde.
+2. **Los comentarios se guardan lo mismo que los mensajes de la conversación.**
+3. **«Se despide»** es lo descrito en D0.
