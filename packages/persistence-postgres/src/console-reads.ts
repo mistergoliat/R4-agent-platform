@@ -85,12 +85,15 @@ export interface PlatformEvent {
 /**
  * Reply latency (`metrics().latency.customerTurnMs`): an agent reply accepted by the channel, measured from
  * the newest task input the replying step could have seen. One row per reply accepted in [since, until] (no upper
- * bound without `until`).
+ * bound without `until`). Only the FIRST reply accepted after that input counts (owner 2026-11-26): a later one (a
+ * relayed consultation answer, a second message) is not the customer waiting, because they already had a reply.
  */
 export const customerTurns = (since: string, until?: string): string =>
-  `select o.accepted_at as at, o.task_id, s.run_id, extract(epoch from (o.accepted_at - (select max(i.received_at) from task_inputs i where i.task_id = o.task_id and i.received_at <= s.created_at))) * 1000 as ms
+  `select o.accepted_at as at, o.task_id, s.run_id, extract(epoch from (o.accepted_at - li.at)) * 1000 as ms
      from outbound_messages o join agent_run_steps s on s.step_id = o.response_step_id
-    where o.accepted_at >= ${since}${until ? ` and o.accepted_at <= ${until}` : ''}`;
+     cross join lateral (select max(i.received_at) as at from task_inputs i where i.task_id = o.task_id and i.received_at <= s.created_at) li
+    where o.accepted_at >= ${since}${until ? ` and o.accepted_at <= ${until}` : ''}
+      and not exists (select 1 from outbound_messages p where p.task_id = o.task_id and p.accepted_at >= li.at and p.accepted_at < o.accepted_at)`;
 
 const ms = (from: unknown, to: unknown): number | null => (from == null || to == null ? null : new Date(to as string).getTime() - new Date(from as string).getTime());
 const actor = (col: string) => `case when ${col} ~ '^[a-z][a-z0-9_.-]{0,63}:[0-9a-f]{32}$' then 'contact' when ${col} like '%@%' then 'redacted' else ${col} end`;
