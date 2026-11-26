@@ -96,7 +96,7 @@ describe('quote follow-up sweep (observe)', () => {
     // Saturday 10:05: 3 days after S1.
     await freezeTemporalClock(b.pool, new Date(LAST.getTime() + (19 + 72) * H));
     expect(await b.gateway.contact!.sweep()).toMatchObject({ observed: 1 });
-    expect((await decisions(b))[1]).toMatchObject({ source_ref: 'sales.quote-followup:0199aaaa-0000-7000-8000-000000000001:2', outcome: 'send', template: { name: 'seguimiento_cotizacion', language: 'es', parameters: ['PC-000900', '03-12-2026'] } });
+    expect((await decisions(b))[1]).toMatchObject({ source_ref: 'sales.quote-followup:0199aaaa-0000-7000-8000-000000000001:2', outcome: 'send', template: { name: 'seguimiento_cotizacion_v2', language: 'es', parameters: ['PC-000900'] } });
     expect((await outbound(b)).length).toBe(before);
   });
 

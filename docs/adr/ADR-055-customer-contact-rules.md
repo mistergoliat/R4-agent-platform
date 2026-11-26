@@ -131,7 +131,7 @@ En la consola, sección «Operar el día»:
    - La Ley 21.719 pide transparencia.
    - El cliente inició la conversación y pidió la cotización, pero esta línea deja explícito su permiso y le muestra
      cómo darse de baja.
-4. Quién crea la plantilla `seguimiento_cotizacion` en WhatsApp Manager. Meta la aprueba y le asigna la categoría.
+4. Quién crea la plantilla `seguimiento_cotizacion_v2` en WhatsApp Manager. Meta la aprueba y le asigna la categoría.
 5. Los feriados: hoy no están modelados, y el horario los trata como días hábiles.
 
 ## Revisión 1 — Diseño de C1 y C2: seguimiento de cotizaciones por WhatsApp
@@ -143,7 +143,7 @@ Aplica a una cotización emitida por el agente en WhatsApp, cuando el cliente no
 | Paso | Cuándo | Cómo sale |
 |---|---|---|
 | **S1** | En el primer momento dentro del horario entre las 18 h y las 23 h 30 desde el último mensaje del cliente | Texto fijo, con la ventana de 24 h todavía abierta, como aviso de plataforma sobre la tarea abierta (clave `sales.followup-1:<quoteId>`) |
-| **S2** | 3 días después de S1, o 4 días después de la cotización si S1 no salió. Siempre en el primer momento dentro del horario | La plantilla `seguimiento_cotizacion` de Meta, la única que se necesita |
+| **S2** | 3 días después de S1, o 4 días después de la cotización si S1 no salió. Siempre en el primer momento dentro del horario | La plantilla `seguimiento_cotizacion_v2` de Meta, la única que se necesita |
 
 **Reglas de la secuencia:**
 - S2 queda a 3 días de S1 para respetar el tope de 1 cada 3 días.
@@ -154,7 +154,6 @@ Aplica a una cotización emitida por el agente en WhatsApp, cuando el cliente no
 **La secuencia termina** cuando pasa cualquiera de estas cosas:
 - el cliente escribe: su mensaje abre un caso nuevo, que recuerda la cotización (lectura de cotizaciones de 30 días);
 - el cliente pide la baja;
-- la cotización vence antes del paso;
 - una persona toma la conversación;
 - salió S2. No hay un tercer intento.
 
@@ -164,12 +163,17 @@ El modelo no redacta estos mensajes en esta versión. Así no puede prometer nad
 habría salido. El PRD (§16) deja que el agente decida si contactar; eso queda para una versión siguiente, y la
 compuerta lo seguirá gobernando igual.
 
+- **Las cotizaciones valen 60 minutos** (verificado el 2026-11-26: las 12 de los 30 días anteriores). Por eso
+  ningún texto dice que la cotización sigue vigente: ofrecen **actualizarla** con los precios y el stock del día, y si
+  el cliente responde, el agente cotiza de nuevo (owner, 2026-11-26).
 - **S1:**
-  > Hola, ¿pudiste revisar la cotización {número}? Si te queda alguna duda sobre los productos o el despacho,
-  > escríbeme y lo vemos. La cotización vale hasta el {fecha}.
-- **S2:** la plantilla dice:
-  > Hola, te escribe Pesín de Pesas Chile. Tu cotización {{1}} sigue disponible hasta el {{2}}. ¿Te ayudo a terminar tu
-  > compra o a resolver alguna duda?
+  > Hola, ¿pudiste revisar la cotización {número}? Si quieres, la actualizo con los precios y el stock de hoy, o vemos
+  > cualquier duda del despacho.
+- **S2:** la plantilla `seguimiento_cotizacion_v2` (una sola variable) dice:
+  > Hola, te escribe Pesín de Pesas Chile. ¿Pudiste revisar tu cotización {{1}}? Si quieres, la actualizo con los precios
+  > y el stock de hoy o resolvemos cualquier duda.
+
+  La primera plantilla, `seguimiento_cotizacion`, quedó aprobada con una fecha de vigencia y no se usa.
 
   Tiene tres botones de respuesta rápida: «Sí, ayúdame», «Ya compré» y «No me escriban». Un botón llega como un
   mensaje con su texto:

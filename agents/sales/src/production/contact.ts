@@ -24,7 +24,8 @@ export const SALES_OPT_OUT: ContactOptOut = Object.freeze({
 /** (ADR-055 rev. 1) The line the quote's PDF caption gains on WhatsApp while the contact gate is composed. */
 export const SALES_QUOTE_OPT_OUT_LINE = 'Si no quieres que te escribamos, responde BAJA.';
 
-export const SALES_FOLLOW_UP_TEMPLATE = 'seguimiento_cotizacion';
+/** (owner 2026-11-26) v2: quotes are valid 60 minutes, so the template offers to refresh the quote and never states a validity. */
+export const SALES_FOLLOW_UP_TEMPLATE = 'seguimiento_cotizacion_v2';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -38,14 +39,14 @@ export const FOLLOW_UP_2_SLACK_MS = 2 * DAY;
 
 export const followUpSourceRef = (quoteId: string, step: 1 | 2) => `sales.quote-followup:${quoteId.toLowerCase()}:${step}`;
 
-/** The quote's last valid day (inclusive, Chile), YYYY-MM-DD → DD-MM-YYYY. */
-export const chileDate = (localDate: string) => localDate.split('-').reverse().join('-');
-
-export function followUpText(step: 1 | 2, quoteNumber: string, validThroughLocalDate: string): string {
-  const until = chileDate(validThroughLocalDate);
+/**
+ * (owner 2026-11-26) Quotes are valid 60 minutes: a follow-up never says the quote still holds. It offers to refresh it
+ * with today's prices and stock; if the contact answers, the agent quotes again.
+ */
+export function followUpText(step: 1 | 2, quoteNumber: string): string {
   return step === 1
-    ? `Hola, ¿pudiste revisar la cotización ${quoteNumber}? Si te queda alguna duda sobre los productos o el despacho, escríbeme y lo vemos. La cotización vale hasta el ${until}.`
-    : `Hola, te escribe Pesín de Pesas Chile. Tu cotización ${quoteNumber} sigue disponible hasta el ${until}. ¿Te ayudo a terminar tu compra o a resolver alguna duda?`;
+    ? `Hola, ¿pudiste revisar la cotización ${quoteNumber}? Si quieres, la actualizo con los precios y el stock de hoy, o vemos cualquier duda del despacho.`
+    : `Hola, te escribe Pesín de Pesas Chile. ¿Pudiste revisar tu cotización ${quoteNumber}? Si quieres, la actualizo con los precios y el stock de hoy o resolvemos cualquier duda.`;
 }
 
 /** What the source reads per conversation task: its latest issued quote and the facts the follow-up depends on. */
@@ -55,8 +56,6 @@ export interface QuoteFollowUpRow {
   readonly quoteId: string;
   readonly quoteNumber: string;
   readonly issuedAt: Date;
-  readonly validUntilExclusive: Date;
-  readonly validThroughLocalDate: string;
   readonly channel: string;
   readonly conversationKey: string;
   readonly bindingOpen: boolean;
@@ -72,7 +71,7 @@ export interface QuoteFollowUpRow {
 
 /**
  * The follow-ups due now, from the rows (pure). The sequence ends — no candidate — when the contact wrote after the
- * case went idle (that is a new conversation), the quote expired, or the case ended any other way (a person, a
+ * case went idle (that is a new conversation) or the case ended any other way (a person, a
  * completion). Opt-out, a person on the case, frequency and hours are the gate's, not this plan's.
  */
 export function planQuoteFollowUps(rows: readonly QuoteFollowUpRow[], mode: ContactMode): ContactCandidate[] {
@@ -80,12 +79,13 @@ export function planQuoteFollowUps(rows: readonly QuoteFollowUpRow[], mode: Cont
   for (const r of rows) {
     const now = r.now.getTime();
     const last = r.lastInboundAt?.getTime();
-    if (last === undefined || r.validUntilExclusive.getTime() <= now) continue;
+    // A quote is valid 60 minutes: an expired quote is the usual case, and the follow-up offers to refresh it.
+    if (last === undefined) continue;
     if ((r.contactLastInboundAt?.getTime() ?? last) > last) continue;
     const base = { purpose: 'seguimiento', channel: r.channel, conversationKey: r.conversationKey, taskId: r.taskId, lastInboundAt: r.lastInboundAt! };
     if (!r.s1) {
       if (r.bindingOpen && r.idleWaiting && now >= last + FOLLOW_UP_1_FROM_MS && now < last + 24 * HOUR) {
-        out.push({ ...base, sourceRef: followUpSourceRef(r.quoteId, 1), deadline: new Date(last + FOLLOW_UP_1_UNTIL_MS), text: followUpText(1, r.quoteNumber, r.validThroughLocalDate), template: null, noticeKey: `sales.followup-1:${r.quoteId.toLowerCase()}` });
+        out.push({ ...base, sourceRef: followUpSourceRef(r.quoteId, 1), deadline: new Date(last + FOLLOW_UP_1_UNTIL_MS), text: followUpText(1, r.quoteNumber), template: null, noticeKey: `sales.followup-1:${r.quoteId.toLowerCase()}` });
         continue;
       }
       if (now < last + 24 * HOUR) continue;
@@ -95,8 +95,8 @@ export function planQuoteFollowUps(rows: readonly QuoteFollowUpRow[], mode: Cont
     const due = s1Sent ? r.s1.at.getTime() + FOLLOW_UP_2_AFTER_S1_MS : r.issuedAt.getTime() + FOLLOW_UP_2_AFTER_QUOTE_MS;
     if (now < due) continue;
     out.push({
-      ...base, sourceRef: followUpSourceRef(r.quoteId, 2), deadline: new Date(due + FOLLOW_UP_2_SLACK_MS), text: followUpText(2, r.quoteNumber, r.validThroughLocalDate),
-      template: { name: SALES_FOLLOW_UP_TEMPLATE, language: 'es', parameters: [r.quoteNumber, chileDate(r.validThroughLocalDate)] }, noticeKey: `sales.followup-2:${r.quoteId.toLowerCase()}`,
+      ...base, sourceRef: followUpSourceRef(r.quoteId, 2), deadline: new Date(due + FOLLOW_UP_2_SLACK_MS), text: followUpText(2, r.quoteNumber),
+      template: { name: SALES_FOLLOW_UP_TEMPLATE, language: 'es', parameters: [r.quoteNumber] }, noticeKey: `sales.followup-2:${r.quoteId.toLowerCase()}`,
     });
   }
   return out;
@@ -110,12 +110,12 @@ export function salesQuoteFollowUpSource(pool: pg.Pool, mode: ContactMode, chann
   return {
     async due(limit) {
       const r = await pool.query<{
-        now: Date; task_id: string; quote_id: string; quote_number: string; issued_at: Date; valid_until_exclusive: Date; valid_through_local_date: string; channel: string; conversation_key: string;
+        now: Date; task_id: string; quote_id: string; quote_number: string; issued_at: Date; channel: string; conversation_key: string;
         binding_open: boolean; last_inbound_at: Date | null; contact_last_inbound_at: Date | null; idle_waiting: boolean; idle_closed: boolean;
         s1_at: Date | null; s1_outcome: string | null; s1_mode: string | null;
       }>(
         `with q as (
-           select distinct on (i.task_id) i.task_id, i.quote_id, i.quote_number, i.issued_at, i.valid_until_exclusive, to_char(i.valid_through_local_date, 'YYYY-MM-DD') as valid_through_local_date
+           select distinct on (i.task_id) i.task_id, i.quote_id, i.quote_number, i.issued_at
              from sales.quote_v2_issued i
             where i.issued_at > r4_now() - interval '10 days'
             order by i.task_id, i.issued_at desc
@@ -140,7 +140,7 @@ export function salesQuoteFollowUpSource(pool: pg.Pool, mode: ContactMode, chann
       );
       const now = r.rows[0]?.now ?? (await pool.query<{ now: Date }>('select r4_now() as now')).rows[0]!.now;
       const rows: QuoteFollowUpRow[] = r.rows.map((x) => ({
-        now: x.now, taskId: x.task_id, quoteId: x.quote_id, quoteNumber: x.quote_number, issuedAt: x.issued_at, validUntilExclusive: x.valid_until_exclusive, validThroughLocalDate: x.valid_through_local_date,
+        now: x.now, taskId: x.task_id, quoteId: x.quote_id, quoteNumber: x.quote_number, issuedAt: x.issued_at,
         channel: x.channel, conversationKey: x.conversation_key, bindingOpen: x.binding_open, lastInboundAt: x.last_inbound_at, contactLastInboundAt: x.contact_last_inbound_at,
         idleWaiting: x.idle_waiting, idleClosed: x.idle_closed, s1: x.s1_at ? { at: x.s1_at, outcome: x.s1_outcome!, mode: x.s1_mode! } : null,
       }));
