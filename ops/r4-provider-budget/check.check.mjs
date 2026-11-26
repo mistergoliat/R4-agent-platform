@@ -136,4 +136,77 @@ assert.deepEqual(snapshots[8].throttled, { waited: 2, refused: 1, waitMs: 5000 }
 assert.deepEqual(snapshots[10].failures, { insufficient_balance: 1, spend_limit_reached: 2, rate_limited: 1 });
 assert.doesNotMatch(raw + readFileSync(join(dir, 'state.json'), 'utf8'), /sk-test|SECRET-WEBHOOK/);
 server.close();
+
+// ---- OpenAI direct: the spend comes from the Costs API, read with the usage key (never the project key) ---------------
+{
+  const now = new Date(); const day = 86_400;
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) / 1000;
+  const bucket = (start, items) => ({ start_time: start, end_time: start + day, results: items.map(([line_item, value]) => ({ amount: { value, currency: 'usd' }, line_item })) });
+  // Yesterday US$1.00; today 2.30 on Luna and 0.09 on calls. Two pages, to exercise the paging.
+  const pages = { first: { data: [bucket(today - day, [['gpt-6-luna, cache writes', 1.0]])], has_more: true, next_page: 'p2' }, p2: { data: [bucket(today, [['gpt-6-luna, cache writes', 2.1], ['gpt-6-luna, output', 0.2], ['gpt-live-1.1', 0.09]])], has_more: false, next_page: null } };
+  let status = 200; const seen = [];
+  const costs = createServer((req, res) => {
+    seen.push({ url: req.url, auth: req.headers.authorization });
+    if (status !== 200) { res.writeHead(status).end('{"error":"no"}'); return; }
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(pages[new URL(req.url, 'http://x').searchParams.get('page') ?? 'first']));
+  });
+  await new Promise((r2) => costs.listen(0, '127.0.0.1', r2));
+  writeFileSync(join(dir, 'production.env'), 'R4_MODEL_BASE_URL=https://api.openai.com/v1\nR4_MODEL_API_KEY=sk-project-key\n');
+  writeFileSync(join(dir, 'usage.env'), 'R4_OPENAI_ADMIN_KEY=sk-usage-key\n');
+  let n = 0;
+  const openai = (name, extra = {}) => new Promise((resolve) => {
+    n += 1;
+    execFile(process.execPath, [fileURLToPath(new URL('./check.mjs', import.meta.url))], {
+      env: { PATH: process.env.PATH, HOME: dir, USERPROFILE: dir, PROVIDER_BUDGET_ENV: join(dir, 'none.env'), KEY_ENV_FILE: join(dir, 'production.env'), OPENAI_USAGE_KEY_FILE: join(dir, 'usage.env'),
+        OPENAI_COSTS_BASE_URL: `http://127.0.0.1:${costs.address().port}`, STATE_FILE: join(dir, `openai-state-${n}.json`), SNAPSHOTS_FILE: join(dir, 'openai-usage.jsonl'), LOG_FILES: log, ...extra },
+    }, (error, stdout) => {
+      process.stdout.write(`[openai: ${name}] exit ${error?.code ?? 0}: ${stdout}`);
+      assert.doesNotMatch(stdout, /sk-/);
+      resolve({ code: error?.code ?? 0, stdout });
+    });
+  });
+  writeFileSync(log, '');
+
+  // No threshold set: the spend is reported (today, week, month, today by model) and nothing is flagged.
+  r = await openai('no thresholds');
+  assert.equal(r.code, 0);
+  assert.match(r.stdout, /provider-budget OK \| budget – \| balance – \| today 2\.39 \| week 3\.39 \| month \d+\.\d\d \| today by model gpt-6-luna 2\.30, gpt-live-1\.1 0\.09 \|/);
+  assert.ok(seen.length >= 2 && seen.every((s) => s.auth === 'Bearer sk-usage-key'));
+  assert.ok(seen.some((s) => s.url.includes('page=p2')));
+  const snap = JSON.parse(readFileSync(join(dir, 'openai-usage.jsonl'), 'utf8').trim().split('\n').at(-1));
+  assert.equal(snap.provider, 'openai');
+  assert.deepEqual(snap.usageDailyByModelUsd, { 'gpt-6-luna': 2.3, 'gpt-live-1.1': 0.09 });
+
+  // Daily limits.
+  r = await openai('daily warning', { WARN_DAILY_SPEND_USD: '2' });
+  assert.equal(r.code, 1);
+  assert.match(r.stdout, /WARN: OpenAI spend today US\$ 2\.39 \(warning at US\$ 2\.00\)/);
+  r = await openai('daily limit', { WARN_DAILY_SPEND_USD: '1', CRIT_DAILY_SPEND_USD: '2' });
+  assert.equal(r.code, 2);
+  assert.match(r.stdout, /CRITICAL: OpenAI spend today US\$ 2\.39 \(limit US\$ 2\.00\)/);
+
+  // A calendar-month budget: plenty left = OK and shown; almost spent = CRITICAL.
+  r = await openai('monthly budget, healthy', { MONTHLY_BUDGET_USD: '1000' });
+  assert.equal(r.code, 0);
+  assert.match(r.stdout, /budget \d+\.\d\d\/1000\.00 monthly_budget/);
+  r = await openai('monthly budget, almost spent', { MONTHLY_BUDGET_USD: '2.45' });
+  assert.equal(r.code, 2);
+  assert.match(r.stdout, /CRITICAL: monthly budget US\$ /);
+
+  // A refusal for money in R4's logs stays CRITICAL with no threshold at all.
+  writeFileSync(log, failed('insufficient_balance'));
+  r = await openai('refused for balance');
+  assert.equal(r.code, 2);
+  writeFileSync(log, '');
+
+  // No usage key, or a Costs API that refuses: a warning each, never a silent OK nor a crash.
+  r = await openai('no usage key', { OPENAI_USAGE_KEY_FILE: join(dir, 'missing.env') });
+  assert.equal(r.code, 1);
+  assert.match(r.stdout, /WARN: OpenAI spend is not checked: no usage-read key/);
+  status = 403;
+  r = await openai('costs refused');
+  assert.equal(r.code, 1);
+  assert.match(r.stdout, /WARN: OpenAI costs unreadable \(HTTP 403\)/);
+  costs.close();
+}
 process.stdout.write('check.mjs self-check: OK\n');
