@@ -8,7 +8,7 @@ import { PostgresAgentDefinitionStore, PostgresArtifacts, PostgresKnowledge, Pos
 import { TaskRuntime } from '@r4/task-runtime';
 import {
   GRAPH_CURATOR_AGENT_ID, GRAPH_CURATOR_AGENT_VERSION, PRODUCT_GRAPH_KIND, PRODUCT_SHEETS_CAPABILITY_ID, R4_COMMENT_PREFIX,
-  importSignedGraph, loadGraphCuratorDefinition, migrateGraph, productSheetsCapability, signedGraphCriteria, startExplanation, syncClickUp,
+  importSignedGraph, isoWeek, loadGraphCuratorDefinition, migrateGraph, parseAnswers, productSheetsCapability, signedGraphCriteria, startExplanation, syncClickUp,
   waitForTasks, type ProductSheetPort, type QuestionBoard,
 } from '@r4-graph/curator';
 import { createMigratedTestDatabase, openPool, type TestDatabase } from '../support/database.js';
@@ -16,10 +16,10 @@ import { complete, contextOf, read } from '../support/decisions.js';
 import { startTestWorker, type TestWorker } from '../support/worker.js';
 
 /**
- * ADR-058 Decision 13 (G6): the PM curates the curator in ClickUp. A fake board stands in for the ClickUp connector
- * (`@r4-adapters/clickup`); the curator agent runs on a scripted model. The sync creates the most asked questions up to
- * the cap, records the Respuesta field as the PM's decision, turns a PM comment into a plan in the thread, confirms it
- * on «sí», ignores everyone else, and closes what is no longer open.
+ * ADR-058 Decision 13 (G6): the PM curates the curator in ONE ClickUp task a week (owner, 2026-11-25). A fake board
+ * stands in for the connector; the curator agent runs on a scripted model. The week’s task groups questions by product,
+ * numbered; «1 no, 2 sí, 3 no sé» answer without the model; «1: words» gets a plan that «1 sí» confirms; only the PM
+ * counts; the task closes when everything is answered; «no sé» goes to the console; other tasks are never touched.
  */
 let db: TestDatabase;
 let pool: Pool;
@@ -58,14 +58,15 @@ const script = (request: ModelRequest) => {
   });
 };
 
-/** A fake ClickUp list: tasks with a hidden question tag, an answer dropdown and comments. */
+
+/** A fake ClickUp list: tasks with a hidden question tag and comments (no custom fields, like the real list). */
 class FakeBoard implements QuestionBoard {
-  tasks: { taskId: string; questionId: string; closed: boolean; answer: string | null; priority: string; note?: string; comments: { commentId: string; userId: number | null; text: string; dateMs: number }[] }[] = [];
+  tasks: { taskId: string; questionId: string; closed: boolean; answer: string | null; priority: string; title?: string; markdown?: string; note?: string; comments: { commentId: string; userId: number | null; text: string; dateMs: number }[] }[] = [];
   #clock = 1_000;
-  createQuestionTask(input: { questionId: string; priority: string }) {
+  createQuestionTask(input: { questionId: string; title: string; markdown: string; priority: string }) {
     const found = this.tasks.find((t) => t.questionId === input.questionId);
     if (found) return Promise.resolve({ taskId: found.taskId, url: 'u', created: false });
-    const t = { taskId: `t${this.tasks.length + 1}`, questionId: input.questionId, closed: false, answer: null, priority: input.priority, comments: [] };
+    const t = { taskId: `t${this.tasks.length + 1}`, questionId: input.questionId, closed: false, answer: null, priority: input.priority, title: input.title, markdown: input.markdown, comments: [] };
     this.tasks.push(t);
     return Promise.resolve({ taskId: t.taskId, url: 'u', created: true });
   }
@@ -73,9 +74,9 @@ class FakeBoard implements QuestionBoard {
   closeTask(taskId: string, note?: string) { const t = this.task(taskId); t.closed = true; t.note = note ?? ''; return Promise.resolve(); }
   readList() { return Promise.resolve(this.tasks.map(({ taskId, questionId, closed, answer }) => ({ taskId, questionId, closed, answer }))); }
   readComments(taskId: string) { return Promise.resolve([...this.task(taskId).comments]); }
-  readAnswerOptions() { return Promise.resolve([{ id: 'opt-si', name: 'Sí', orderindex: 0 }, { id: 'opt-no', name: 'No', orderindex: 1 }]); }
   task(id: string) { return this.tasks.find((t) => t.taskId === id)!; }
   comment(taskId: string, userId: number | null, text: string) { this.task(taskId).comments.push({ commentId: `c${++this.#clock}`, userId, text, dateMs: this.#clock }); }
+  last(taskId: string) { return this.task(taskId).comments.at(-1)!.text; }
 }
 
 let removeP2: string;
@@ -113,6 +114,7 @@ afterAll(async () => {
 
 const drive = async () => { for (let i = 0; i < 5; i++) await worker.platform.worker.runOnce(); };
 const board = new FakeBoard();
+board.tasks.push({ taskId: 'foreign', questionId: 'prueba-curador', closed: false, answer: null, priority: 'normal', comments: [] });
 const deps = () => ({
   artifacts, tasks, knowledge, board,
   asked: new Map([['P1', 9], ['P4', 3]]),
@@ -122,48 +124,69 @@ const deps = () => ({
     return s.taskId;
   },
 });
-const cfg = { pmClickUpId: PM, pmRef: PM_REF, pmScopes: ['knowledge.curate', 'knowledge.sign'], maxOpen: 2, dueDays: 7, consoleUrl: 'https://consola.example/grafo' };
+const WEEK1 = new Date('2026-11-25T15:00:00Z');
+const WEEK2 = new Date('2026-12-02T15:00:00Z');
+const cfg = (now: Date) => ({ pmClickUpId: PM, pmRef: PM_REF, pmScopes: ['knowledge.curate', 'knowledge.sign'], maxItems: 10, dueDays: 7, consoleUrl: 'https://consola.example/grafo', now: () => now });
 const state = async (id: string) => (await artifacts.proposals(PRODUCT_GRAPH_KIND)).find((p) => p.proposalId === id)!;
+const digest = (week: string) => board.tasks.find((t) => t.questionId === `digest-${week}`)!;
 
-describe('the PM curates the curator in ClickUp (ADR-058 Decision 13)', () => {
-  it('creates the most asked questions up to the cap, never twice', async () => {
-    expect(await syncClickUp(deps(), cfg)).toMatchObject({ created: 2, open: 2, errors: [] });
-    expect(board.tasks.map((t) => t.questionId).sort()).toEqual([removeP2, removeP3].sort());
-    expect(await syncClickUp(deps(), cfg)).toMatchObject({ created: 0, open: 2 });
+describe('isoWeek and the answers parser', () => {
+  it('weeks and numbered answers', () => {
+    expect([isoWeek(WEEK1), isoWeek(WEEK2), isoWeek(new Date('2027-01-01T12:00:00Z'))]).toEqual(['2026-w48', '2026-w49', '2026-w53']);
+    expect(parseAnswers('1 no, 2 sí, 3 no sé', 3)).toEqual([{ n: 1, text: 'no' }, { n: 2, text: 'sí' }, { n: 3, text: 'no sé' }]);
+    expect(parseAnswers('1: es un soporte, va con todas las barras\n2 sí', 2)).toEqual([{ n: 1, text: 'es un soporte, va con todas las barras' }, { n: 2, text: 'sí' }]);
+    expect(parseAnswers('9 sí', 2)).toEqual([]);
+  });
+});
+
+describe('the PM curates the curator in ONE weekly ClickUp task (ADR-058 Decision 13)', () => {
+  it('opens the week’s task: one item per product, most asked first, never twice; other tasks are left alone', async () => {
+    expect(await syncClickUp(deps(), cfg(WEEK1))).toMatchObject({ week: '2026-w48', created: true, items: 2, errors: [] });
+    const t = digest('2026-w48');
+    expect(t.title).toBe('Curador del grafo · preguntas de la semana (2)');
+    expect(t.markdown).toContain('**1. En el grafo, «Deadlift Jack Bar» tiene a «Barra Olímpica 20kg Elite» en «Discos para cargarla». ¿Está bien así?** *(y 1 más del mismo producto');
+    expect(t.markdown).toContain('**2. Si un cliente busca «Prensa Inclinada 45°»');
+    expect(board.last(t.taskId)).toContain(`[r4-items:1=${removeP2},${removeP3};2=${removeSub}]`);
+    expect(await syncClickUp(deps(), cfg(WEEK1))).toMatchObject({ created: false, explained: 0, answered: 0 });
+    expect(board.tasks.filter((x) => x.questionId.startsWith('digest-'))).toHaveLength(1);
+    expect(board.task('foreign')).toMatchObject({ closed: false, comments: [] });
   });
 
-  it('a PM comment becomes a plan in the thread; a comment from someone else does nothing; «sí» confirms it in the PM’s name', async () => {
-    const t = board.tasks.find((x) => x.questionId === removeP2)!;
-    board.comment(t.taskId, OTHER, 'quítala no más');
-    expect(await syncClickUp(deps(), cfg)).toMatchObject({ explained: 0 });
-    board.comment(t.taskId, PM, 'Es un soporte donde se apoya la barra para cambiar los discos; vale para todas las barras');
-    expect(await syncClickUp(deps(), cfg)).toMatchObject({ explained: 1, errors: [] });
-    const plan = t.comments.at(-1)!.text;
-    expect(plan.startsWith(R4_COMMENT_PREFIX)).toBe(true);
-    expect(plan).toMatch(/\[r4-plan:[0-9a-f-]{36}\]/u);
-    expect(plan).toContain('Resuelvo igual 1 preguntas parecidas');
-    expect(await syncClickUp(deps(), cfg)).toMatchObject({ explained: 0, confirmed: 0 }); // nothing new: no second plan
-
-    board.comment(t.taskId, PM, 'Sí');
-    // The same pass frees a place, and the next most asked question (P4–P5) takes it.
-    expect(await syncClickUp(deps(), cfg)).toMatchObject({ confirmed: 1, created: 1, errors: [] });
-    expect([(await state(removeP2)).state, (await state(removeP2)).decidedBy, (await state(removeP3)).state]).toEqual(['rejected', PM_REF, 'rejected']);
-    expect(t.closed).toBe(true);
-    expect((await signedGraphCriteria(knowledge)).map((c) => c.statement)).toEqual(['Los soportes tipo jack sirven con barras olímpicas para apoyarlas.']);
+  it('«1: <words>, 2 sí» in one comment: a plan for item 1 and a decision for item 2; someone else’s comment does nothing', async () => {
+    const t = digest('2026-w48');
+    board.comment(t.taskId, OTHER, '1 no');
+    expect(await syncClickUp(deps(), cfg(WEEK1))).toMatchObject({ answered: 0, explained: 0 });
+    board.comment(t.taskId, PM, '1: es un soporte donde se apoya la barra para cambiar los discos, vale para todas las barras\n2 sí');
+    expect(await syncClickUp(deps(), cfg(WEEK1))).toMatchObject({ explained: 1, answered: 1, errors: [] });
+    const reply = board.last(t.taskId);
+    expect(reply.startsWith(R4_COMMENT_PREFIX)).toBe(true);
+    expect(reply).toMatch(/1 · No quito las barras.*\[r4-plan:[0-9a-f-]{36}:1\]/su);
+    expect(reply).toContain('[r4-done:2]');
+    expect([(await state(removeSub)).state, (await state(removeSub)).decidedBy]).toEqual(['rejected', PM_REF]); // «¿le ofrecerías…?» Sí → keep it
+    expect(t.closed).toBe(false);
   }, 90_000);
 
-  it('closes the task of a question decided elsewhere (P3, rejected by the plan as a similar one)', async () => {
-    const r = await syncClickUp(deps(), cfg);
-    expect(r).toMatchObject({ closed: 1, created: 0, errors: [] });
-    expect(board.tasks.find((x) => x.questionId === removeP3)!.closed).toBe(true);
-    expect(board.tasks.find((x) => x.questionId === removeSub)!.closed).toBe(false);
-  }, 60_000);
+  it('«1 sí» confirms item 1’s plan in the PM’s name; with everything answered, the week’s task closes', async () => {
+    const t = digest('2026-w48');
+    board.comment(t.taskId, PM, '1 sí');
+    expect(await syncClickUp(deps(), cfg(WEEK1))).toMatchObject({ confirmed: 1, closed: 1, errors: [] });
+    expect([(await state(removeP2)).state, (await state(removeP3)).state, (await state(removeP2)).decidedBy]).toEqual(['rejected', 'rejected', PM_REF]);
+    expect((await signedGraphCriteria(knowledge)).map((c) => c.statement)).toEqual(['Los soportes tipo jack sirven con barras olímpicas para apoyarlas.']);
+    expect(t.closed).toBe(true);
+  }, 90_000);
 
-  it('the Respuesta field is the PM’s decision, by what «Sí» means for that question', async () => {
-    const t = board.tasks.find((x) => x.questionId === removeSub)!;
-    t.answer = 'opt-si'; // «¿le ofrecerías la Dual Prensa Hack?» Sí → keep the replacement → reject the removal
-    expect(await syncClickUp(deps(), cfg)).toMatchObject({ answered: 1, errors: [] });
-    expect([(await state(removeSub)).state, (await state(removeSub)).decidedBy, t.closed]).toEqual(['rejected', PM_REF, true]);
-    expect(t.note).toContain('Pesín sigue ofreciendo «Dual Prensa Hack»');
-  }, 60_000);
+  it('next week: a new task with what is open; «no sé» sends it to the console and it does not come back', async () => {
+    await artifacts.propose({ kind: PRODUCT_GRAPH_KIND, baseVersion: 1, source: 'graph-curator-agent:b2', correlationId: 'c', proposals: [
+      { fingerprint: 'r|P5|P4', summary: 'quitar reemplazo', evidence: { rule: 'SUBSTITUTE_KIND_MISMATCH', reason: 'otra máquina' }, change: { op: 'remove_relation', area: 'sub', a: 'P5', b: 'P4' } },
+    ] });
+    const id = (await artifacts.proposals(PRODUCT_GRAPH_KIND, 'proposed')).find((p) => (p.change as { a: string }).a === 'P5')!.proposalId;
+    expect(await syncClickUp(deps(), cfg(WEEK2))).toMatchObject({ week: '2026-w49', created: true, items: 1 });
+    const t = digest('2026-w49');
+    board.comment(t.taskId, PM, 'no sé');
+    expect(await syncClickUp(deps(), cfg(WEEK2))).toMatchObject({ unsure: 1, closed: 1, errors: [] });
+    expect(board.last(t.taskId)).toContain(`[r4-unsure:${id}]`);
+    expect((await state(id)).state).toBe('proposed'); // still open: it waits in the console
+    expect(await syncClickUp(deps(), cfg(new Date('2026-12-09T15:00:00Z')))).toMatchObject({ created: false, items: 0 });
+    expect(board.task('foreign')).toMatchObject({ closed: false, comments: [] });
+  }, 90_000);
 });

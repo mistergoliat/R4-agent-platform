@@ -879,6 +879,38 @@ propuso quitarlas.
   - el webhook, para acelerar la lectura;
   - la prueba real, con la lista, el token y el PM como operador.
 
+## G6-1, cambio: una tarea por semana (2026-11-25)
+
+El owner revisó la primera prueba en la lista real, «Product Manager». Respondió «no sé» a la tarea de prueba y dijo: «no
+sé si tiene tanto sentido crear tanta tarea por cada una de las preguntas». Cambia así el punto 1 de la Decisión 13:
+
+- **Una tarea por semana** («Curador del grafo · preguntas de la semana (N)»), en lugar de una tarea por pregunta.
+  - Lleva hasta 10 ítems numerados. Cada ítem agrupa las preguntas abiertas de un mismo producto: por ejemplo, las 4 del
+    Jack Bar son un solo ítem, y la respuesta vale para todas.
+  - Los ítems salen del grupo `changes`, primero los productos más consultados a Pesín.
+  - El campo Respuesta ya no hace falta. La lista real no tiene campos propios.
+- **El PM responde por número en un comentario.**
+  - «1 no, 2 sí, 3 no sé» se lee sin el modelo.
+  - «1: es un soporte, va con todas las barras» es una explicación (Decisión 11). El curador contesta en el hilo con
+    su plan, y «1 sí» lo confirma.
+  - Ante un plan, «1 no» no aplica nada.
+- **«No sé»** deja esas preguntas abiertas en la consola, para el owner, y no vuelven a ClickUp.
+- **El curador responde una vez por pasada** con lo que hizo. La tarea se cierra sola cuando todo quedó respondido.
+  Una tarea de una semana pasada que sigue abierta se cierra, y lo pendiente pasa a la tarea de la semana nueva.
+- **Solo se tocan las tareas de R4:** las que llevan la etiqueta `r4-q-digest-<semana>`. La tarea de prueba y cualquier
+  otra tarea de la lista quedan como están.
+- **El estado vive en el hilo:**
+  - las referencias de los ítems ([r4-items]) van en el primer comentario del curador;
+  - cada plan ([r4-plan:<id>:<n>]), lo resuelto ([r4-done:<n>]) y cada «no sé» ([r4-unsure]) van en sus respuestas.
+- **Las consultas urgentes de Pesín** (G6-2) siguen como tareas propias y urgentes, porque hay un cliente esperando.
+- **Evaluación** (`graph-clickup`):
+  - la semana, con los ítems agrupados por producto y sin repetirse;
+  - una tarea ajena que no se toca;
+  - un comentario de otra persona que se ignora;
+  - «1: palabras» y «2 sí» en un mismo comentario;
+  - «1 sí» que confirma el plan, firma el criterio y cierra la semana;
+  - la semana siguiente, con un «no sé» que no vuelve.
+
 ## Fuera de alcance
 
 - Escribir en Catalog o en PrestaShop, o corregir fichas. R4 sí guarda los datos que el responsable le responde

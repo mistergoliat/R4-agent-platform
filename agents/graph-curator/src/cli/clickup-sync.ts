@@ -19,7 +19,7 @@ import { presentOpenProposals } from '../present.js';
  * - R4_CONSOLE_OPERATORS_FILE: where the PM's scopes are read (criteria are signed only with knowledge.sign);
  * - R4_GRAPH_CONSOLE_URL: the console page linked from each task;
  * - R4_GRAPH_MODEL_PRICE_IN/OUT_PER_M_USD and R4_GRAPH_EXPLAIN_DAILY_USD (default 0.25) for the comments;
- * - R4_GRAPH_CLICKUP_MAX_OPEN (default 10) and R4_GRAPH_CLICKUP_DUE_DAYS (default 7).
+ * - R4_GRAPH_CLICKUP_MAX_ITEMS (items in the week's task, default 10) and R4_GRAPH_CLICKUP_DUE_DAYS (default 7).
  */
 const env = process.env;
 const url = env.R4_DATABASE_URL;
@@ -55,7 +55,7 @@ try {
     artifacts, tasks, knowledge, board, asked,
     explain: async (proposalId, text) => (await explainWithinDailyCap({ pool, artifacts, tasks, knowledge }, { proposalId, explanation: text, by: pmRef, price, capUsd, maxTokens: INTERPRET_TOKENS_PER_TASK, waitMs: 5 * 60_000 })).taskId,
   }, {
-    pmClickUpId: config.assigneeId, pmRef, pmScopes: scopesOf(pmRef), maxOpen: bounded(env.R4_GRAPH_CLICKUP_MAX_OPEN, 10, 50),
+    pmClickUpId: config.assigneeId, pmRef, pmScopes: scopesOf(pmRef), maxItems: bounded(env.R4_GRAPH_CLICKUP_MAX_ITEMS, 10, 30),
     dueDays: bounded(env.R4_GRAPH_CLICKUP_DUE_DAYS, 7, 60), consoleUrl,
   });
   // Decisions change what is open: the console's questions follow (G7a).
