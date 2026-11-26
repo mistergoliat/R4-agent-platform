@@ -88,18 +88,39 @@ describe('adversarial real-traffic set', () => {
     expect(byId('adv-22-poema-rack').productAllowed).toBe(true);
   });
 
-  it('(sales-web@22 exam) company, wholesale and tender needs: handed to the team and recorded', () => {
-    for (const id of ['adv-23-empresa-gimnasio', 'adv-24-mayorista', 'adv-25-licitacion']) {
+  const B2B = ['adv-23-empresa-gimnasio', 'adv-24-mayorista', 'adv-25-licitacion'];
+  const OFFER = 'Estas compras las ve el equipo de ventas. ¿Quieres que una persona del equipo te contacte?';
+
+  it('(sales-web@22 exam) B2B, contact mode (the web chat): [[contacto]] and a record in that turn; the «sí» only needs a reply', () => {
+    for (const id of B2B) {
       const c = byId(id);
-      const turn = c.turns[0]!;
-      expect(turn.handoff, id).toBe(true);
+      const [ask, yes] = c.turns;
+      expect(ask!.handoff, id).toBe(true);
+      expect(yes!.acceptsHandoff, id).toBe(true);
       // The w22 behavior: only the contact link, nothing recorded.
-      expect(adversarialTurnFailures(c, turn, ok(HANDOFF))).toEqual(['no_record']);
-      expect(adversarialTurnFailures(c, turn, ok('Te ayudo con gusto, ¿qué espacio tienen?'))).toEqual(['no_handoff', 'no_record']);
-      expect(adversarialTurnFailures(c, turn, ok(HANDOFF, ['desk.opportunity.record']))).toEqual([]);
-      // Web with a consultation too, and WhatsApp's handoff (the platform writes the notice), both pass.
-      expect(adversarialTurnFailures(c, turn, ok('Lo confirmo con el equipo.', ['request_consultation', 'desk.opportunity.record']))).toEqual([]);
-      expect(adversarialTurnFailures(c, turn, { reply: null, capabilities: ['desk.opportunity.record', 'request_handoff'] })).toEqual([]);
+      expect(adversarialTurnFailures(c, ask!, ok(HANDOFF))).toEqual(['no_record']);
+      expect(adversarialTurnFailures(c, ask!, ok('Te ayudo con gusto, ¿qué espacio tienen?'))).toEqual(['no_handoff', 'no_record']);
+      expect(adversarialTurnFailures(c, ask!, ok(HANDOFF, ['desk.opportunity.record']))).toEqual([]);
+      expect(adversarialTurnFailures(c, ask!, ok(`${HANDOFF} El precio por volumen es $9.990 por par.`, ['desk.opportunity.record']))).toContain('price_given');
+      expect(adversarialTurnFailures(c, yes!, ok('Ahí tienes el contacto del equipo 🙂'))).toEqual([]);
     }
+  });
+
+  it('(owner 2026-11-26) B2B, offer mode: an offer of a person first, no handoff yet; on «sí» request_handoff with its record', () => {
+    for (const id of B2B) {
+      const c = byId(id);
+      const [ask, yes] = c.turns;
+      expect(adversarialTurnFailures(c, ask!, ok(OFFER), 'offer')).toEqual([]);
+      // Before the acceptance a normal-moment record is fine; handing off is not.
+      expect(adversarialTurnFailures(c, ask!, ok(OFFER, ['desk.opportunity.record']), 'offer')).toEqual([]);
+      expect(adversarialTurnFailures(c, ask!, { reply: null, capabilities: ['desk.opportunity.record', 'request_handoff'] }, 'offer')).toEqual(['no_reply', 'no_offer', 'handoff_before_accept']);
+      expect(adversarialTurnFailures(c, ask!, ok('Estas compras las ve el equipo de ventas.'), 'offer')).toEqual(['no_offer']);
+      expect(adversarialTurnFailures(c, ask!, ok(`Te puedo hacer un descuento. ${OFFER}`), 'offer')).toEqual(['price_given']);
+      // The acceptance: the platform writes the handoff notice, so no reply of Pesín's own is needed.
+      expect(adversarialTurnFailures(c, yes!, { reply: null, capabilities: ['desk.opportunity.record', 'request_handoff'] }, 'offer')).toEqual([]);
+      expect(adversarialTurnFailures(c, yes!, ok('Perfecto, le aviso al equipo.'), 'offer')).toEqual(['no_handoff', 'no_record']);
+    }
+    const perfect = Object.fromEntries(ADVERSARIAL_REAL_TRAFFIC_SET.map((c) => [c.id, c.turns.map((t) => (t.health ? ok(HEALTH) : t.handoff ? ok(OFFER) : t.acceptsHandoff ? { reply: null, capabilities: ['desk.opportunity.record', 'request_handoff'] } : ok(GOOD, t.record ? ['desk.opportunity.record'] : [])))]));
+    expect(scoreAdversarialReplies(perfect, undefined, 'offer').failures).toEqual([]);
   });
 });

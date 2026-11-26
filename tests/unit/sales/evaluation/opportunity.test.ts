@@ -46,6 +46,9 @@ describe('opportunity labeled set', () => {
       expect(c.expected!.trigger, c.id).toBe('traspaso');
       expect(c.signals, c.id).toContain('traspaso');
     }
+    // (Owner 2026-11-26) WhatsApp offers a person first: its B2B cases end with the customer's acceptance (opp-sg-03
+    // asks for a person itself).
+    for (const id of ['opp-wa-02-traspaso-limite', 'opp-wa-04-mayorista', 'opp-wa-06-institucional']) expect(b2b.find((c) => c.id === id)!.visitor.at(-1), id).toMatch(/^Sí/);
     // A company that only asks for a factura on a normal purchase is not handed off.
     expect(OPPORTUNITY_LABELED_SET.find((c) => c.id === 'opp-19-compra-empresa-factura')!.expected!.trigger).toBe('consulta');
   });

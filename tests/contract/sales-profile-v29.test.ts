@@ -103,9 +103,12 @@ describe.each([
 });
 
 describe('@29 lane gate and selection', () => {
-  it('@28 items (except its registration and authorization) plus the B2B handoff L3, the @29 registration and the authorization', () => {
+  it('@28 items (except its registration and authorization) plus the B2B handoff L3, the wholesale threshold, the @29 registration and the authorization', () => {
     const inherited = SALES_PRODUCTION_PROFILE_V28_GATE.filter((g) => g.id !== 'profile-28-registered' && g.id !== 'explicit-authorization');
-    expect(SALES_PRODUCTION_PROFILE_V29_GATE.map((g) => g.id)).toEqual([...inherited.map((g) => g.id), 'b2b-handoff-l3', 'profile-29-registered', 'explicit-authorization']);
+    expect(SALES_PRODUCTION_PROFILE_V29_GATE.map((g) => g.id)).toEqual([...inherited.map((g) => g.id), 'b2b-handoff-l3', 'umbral-mayorista', 'profile-29-registered', 'explicit-authorization']);
+    const req = (id: string) => SALES_PRODUCTION_PROFILE_V29_GATE.find((g) => g.id === id)!.requirement;
+    for (const must of ['offer first', 'only after the customer accepts, request_handoff', 'segment mayorista', 'institucional', '--handoff offer']) expect(req('b2b-handoff-l3')).toContain(must);
+    expect(req('umbral-mayorista')).toContain('[UMBRAL_MAYORISTA]');
   });
   it('lane only, never a production profile; first in the cohort lanes, @28 its rollback', () => {
     expect(() => selectedSalesProductionProfile(env('sales-production@29').config)).toThrow(/not a Sales production profile/);
@@ -135,15 +138,19 @@ describe.each([
     expect(restB).toEqual(restA);
   });
 
-  it('1. B2B: handed to a person and recorded with trigger=traspaso, segment and complexity proyecto', () => {
+  it('1. B2B: handed to a person and recorded with trigger=traspaso, segment mayorista / institucional, complexity proyecto', () => {
     const b2b = lb[b2bAt]!;
     for (const must of ['volume, distributor or wholesale prices', 'a tender', 'trigger=traspaso', 'complexity=proyecto when they equip a whole facility', 'only wants a factura for a normal purchase is not this']) expect(b2b).toContain(must);
+    // (Owner 2026-11-26) The segment routes the handoff to the Mayoristas or Institucionales pool; the threshold is the owner's.
+    for (const must of ['the segment is mayorista for volume, distributor or wholesale prices', 'counts as wholesale from [UMBRAL_MAYORISTA]', 'institucional for a public body, a municipality, a school, a university or a tender', 'never empresa for a wholesale or public buyer']) expect(b2b).toContain(must);
+    expect(next().instructions.split('[UMBRAL_MAYORISTA]')).toHaveLength(2);
     if (web) {
       expect(b2b).toContain('add [[contacto]] on its own line');
       expect(b2b).toContain('also open request_consultation in that turn (never for volume prices)');
       expect(line('- desk.opportunity.record: records')).toContain('with [[contacto]] (trigger=traspaso, instead of consulta in that turn)');
     } else {
-      expect(b2b).toContain('then use request_handoff in that same turn');
+      // (Owner 2026-11-26) Offer first; the handoff and its traspaso record only after the customer accepts.
+      for (const must of ['ask whether they want a person of the team to contact them', 'never state volume prices, discounts or special conditions yourself', 'Only after the customer accepts, record it with desk.opportunity.record and trigger=traspaso', 'then use request_handoff in that same turn', 'Until they accept, or if they decline, keep helping with the products and record it like any other buying intent']) expect(b2b).toContain(must);
       expect(b2b).not.toContain('[[contacto]]');
     }
   });

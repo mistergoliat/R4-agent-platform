@@ -10,7 +10,8 @@ import type { DeskOpportunityInput, DeskOpportunityInputV2, DeskSignal } from '.
  *   1. On each channel's QA profile (web sales-web@21, WhatsApp sales-production@27, Instagram sales-instagram@2,
  *      Facebook sales-facebook@2), play each case of that channel (OpportunityCase.channel) as one conversation.
  *   2. Write predictions.json: { "<case id>": <the first desk.opportunity.record input of that conversation that is an
- *      opportunity (intent other than sin_intencion), else its first record> | null }
+ *      opportunity (intent other than sin_intencion), else its first record; a conversation with a traspaso record is
+ *      scored by that record, the one that routes it> | null }
  *      (from the action receipts of each conversation, or the QA desk's opportunities).
  *   3. npm run build && npm run eval:sales -- --opportunity predictions.json [--channel whatsapp]
  *      (--channel scores only that channel's cases; without it, every case).
@@ -23,7 +24,10 @@ import type { DeskOpportunityInput, DeskOpportunityInputV2, DeskSignal } from '.
  *
  * (Owner 2026-11-25, sales-web@23 / sales-production@29) Company, wholesale, institutional and project needs are handed
  * to a person and recorded with trigger=traspaso (the handoff signal: what takes them to a person of the desk), on the
- * web with [[contacto]] and on WhatsApp with request_handoff. Instagram and Facebook have no handoff and keep consulta.
+ * web with [[contacto]] and on WhatsApp with request_handoff only after the customer accepts an offer of a person (owner
+ * 2026-11-26; the WhatsApp B2B cases end with that acceptance). The handoff record carries segment mayorista (volume
+ * prices) or institucional (public or educational bodies), which the desk routes to those pools. Instagram and Facebook
+ * have no handoff and keep consulta.
  */
 export type OpportunityLabel = Pick<DeskOpportunityInput, 'trigger' | 'intent' | 'segment' | 'complexity'>;
 export const OPPORTUNITY_FIELDS = ['trigger', 'intent', 'segment', 'complexity'] as const;
@@ -80,9 +84,9 @@ export const OPPORTUNITY_LABELED_SET: readonly OpportunityCase[] = Object.freeze
   { id: 'opp-wa-01-cotizacion', channel: 'whatsapp', visitor: ['Hola, quiero cotizar una bicicleta de spinning', 'Con despacho a Ñuñoa', 'Sí, dale, emítela'], expected: L('cotizacion', 'cotizacion', 'persona', 'estandar') },
   { id: 'opp-wa-02-traspaso-limite', channel: 'whatsapp', visitor: ['Necesito 3 trotadoras y 2 elípticas para el gimnasio de mi condominio', 'Cotízamelo todo con despacho', 'Sí, conéctame con una persona del equipo'], expected: L('traspaso', 'cotizacion', 'desconocido', 'proyecto'), signals: ['traspaso'] },
   { id: 'opp-wa-03-traspaso-pide-persona', channel: 'whatsapp', visitor: ['Quiero comprar un rack y una barra olímpica', 'Prefiero hablar con una persona, ¿me pueden atender?'], expected: L('traspaso', 'compra', 'persona', 'estandar') },
-  { id: 'opp-wa-04-mayorista', channel: 'whatsapp', visitor: ['Buenas, somos distribuidores en el norte', '¿Qué precio por volumen tienen para 40 kettlebells?'], expected: L('traspaso', 'cotizacion', 'mayorista', 'estandar'), signals: ['traspaso'] },
+  { id: 'opp-wa-04-mayorista', channel: 'whatsapp', visitor: ['Buenas, somos distribuidores en el norte', '¿Qué precio por volumen tienen para 40 kettlebells?', 'Sí, que me contacte una persona del equipo'], expected: L('traspaso', 'cotizacion', 'mayorista', 'estandar'), signals: ['traspaso'] },
   { id: 'opp-wa-05-postventa', channel: 'whatsapp', visitor: ['Hola, compré un banco y me llegó sin los pernos', '¿Cómo lo soluciono?'], expected: L('consulta', 'postventa', 'persona', 'estandar') },
-  { id: 'opp-wa-06-institucional', channel: 'whatsapp', visitor: ['Escribo de una universidad, vamos a renovar el gimnasio de estudiantes', 'Será por licitación pública, ¿ustedes participan?'], expected: L('traspaso', 'cotizacion', 'institucional', 'proyecto'), signals: ['traspaso'] },
+  { id: 'opp-wa-06-institucional', channel: 'whatsapp', visitor: ['Escribo de una universidad, vamos a renovar el gimnasio de estudiantes', 'Será por licitación pública, ¿ustedes participan?', 'Sí, por favor, que me contacte alguien'], expected: L('traspaso', 'cotizacion', 'institucional', 'proyecto'), signals: ['traspaso'] },
   { id: 'opp-wa-07-faq', channel: 'whatsapp', visitor: ['¿Hasta qué hora atienden hoy?'], expected: null },
   // Instagram (sales-instagram@2): no quote and no handoff.
   { id: 'opp-ig-01-compra', channel: 'instagram', visitor: ['Vi en su historia unas bandas elásticas, ¿qué resistencias tienen?', 'Ya, me las compro, ¡gracias!'], expected: L('conversacion', 'compra', 'persona', 'estandar') },

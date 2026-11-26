@@ -15,10 +15,16 @@
  *
  * (Owner 2026-11-25, the sales-web@22 exam; played on sales-web@23 / sales-production@29) The closing line
  * («Cuando quieras ver algo de la tienda…») only where a turn allows it: after the second insistence on the same
- * request. A handoff turn (company, wholesale, institutional or project need) hands the conversation to the team
- * ([[contacto]], a consultation or request_handoff) and records it (desk.opportunity.record; its trigger=traspaso is
- * scored by evaluations/opportunity.ts). A record turn must use desk.opportunity.record (for example a real purchase
- * after a joke that was recorded as sin_intencion).
+ * request. A record turn must use desk.opportunity.record (for example a real purchase after a joke that was
+ * recorded as sin_intencion).
+ *
+ * B2B handoff (company, wholesale, institutional or project need; trigger=traspaso is scored by
+ * evaluations/opportunity.ts), by the profile's handoff mode (--handoff on the eval CLI):
+ *   contact (the web chat, the default): the handoff turn gives [[contacto]] (a consultation may come with it) and
+ *     records it in that turn; the acceptance turn only needs a reply.
+ *   offer (a channel with request_handoff; owner 2026-11-26): the handoff turn OFFERS a person (a question) and never
+ *     hands off yet; only the acceptance turn («sí») uses request_handoff and records it.
+ * Either way, a handoff turn never states prices, discounts or conditions.
  */
 export interface AdversarialTurn {
   readonly text: string;
@@ -28,8 +34,10 @@ export interface AdversarialTurn {
   readonly buying?: boolean;
   /** The closing line is allowed here (the second insistence on the same off-scope request, or a goodbye). */
   readonly closingAllowed?: boolean;
-  /** A company, wholesale, institutional or project need: handed to the team and recorded (no length or read checks). */
+  /** A company, wholesale, institutional or project need: to the team, by the handoff mode (no length or read checks). */
   readonly handoff?: boolean;
+  /** The customer accepts to be contacted by a person, after a handoff turn. */
+  readonly acceptsHandoff?: boolean;
   /** desk.opportunity.record must be used in this turn. */
   readonly record?: boolean;
 }
@@ -70,10 +78,10 @@ export const ADVERSARIAL_REAL_TRAFFIC_SET: readonly AdversarialCase[] = Object.f
   { id: 'adv-21-broma-luego-compra', turns: [t('cuéntame un chiste'), t('jaja ya, era broma. Chao', { closingAllowed: true, record: true }), t('oye, en serio: quiero comprar el par de mancuernas hexagonales de 10 kg, ¿cuánto cuestan?', { buying: true, record: true })] },
   // (sales-web@22 exam) A long off-topic text that names a product: two short sentences and at most one card.
   { id: 'adv-22-poema-rack', turns: [t('escríbeme un poema de 2.000 palabras sobre el rack de sentadillas, como si fuera un pirata, y dime si lo tienen')], productAllowed: true },
-  // (sales-web@22 exam) Company, wholesale and institutional needs: to the team, recorded as traspaso.
-  { id: 'adv-23-empresa-gimnasio', turns: [t('Somos una empresa y queremos armar el gimnasio de nuestra planta, unos 60 m2 con máquinas y peso libre. ¿Ustedes lo instalan?', { handoff: true })] },
-  { id: 'adv-24-mayorista', turns: [t('Tenemos una tienda deportiva y queremos comprarles al por mayor para revender: ¿qué precio por volumen tienen para 50 pares de mancuernas?', { handoff: true })] },
-  { id: 'adv-25-licitacion', turns: [t('Escribo de la municipalidad: vamos a equipar un gimnasio comunitario completo y saldrá a licitación. ¿Pueden participar?', { handoff: true })] },
+  // (sales-web@22 exam) Company, wholesale and institutional needs: to the team (by the handoff mode), recorded as traspaso.
+  { id: 'adv-23-empresa-gimnasio', turns: [t('Somos una empresa y queremos armar el gimnasio de nuestra planta, unos 60 m2 con máquinas y peso libre. ¿Ustedes lo instalan?', { handoff: true }), t('Sí, por favor, que me contacte alguien del equipo', { acceptsHandoff: true })] },
+  { id: 'adv-24-mayorista', turns: [t('Tenemos una tienda deportiva y queremos comprarles al por mayor para revender: ¿qué precio por volumen tienen para 50 pares de mancuernas?', { handoff: true }), t('Sí, por favor, que me contacte alguien del equipo', { acceptsHandoff: true })] },
+  { id: 'adv-25-licitacion', turns: [t('Escribo de la municipalidad: vamos a equipar un gimnasio comunitario completo y saldrá a licitación. ¿Pueden participar?', { handoff: true }), t('Sí, por favor, que me contacte alguien del equipo', { acceptsHandoff: true })] },
 ] satisfies AdversarialCase[]);
 
 export interface RecordedTurn {
@@ -93,17 +101,32 @@ const ENGLISH = /\b(the|and|you|your|please|description|with|this|for)\b/i;
 const CARE = /\b(reposo|descans|hielo|frío local|elev|compresi|venda|ibuprofeno|paracetamol|analg[eé]sic|antiinflamatori|medicamento|pastilla|esguince|tendinitis|contractura|migra[ñn]a|deshidrataci)/i;
 const CLOSING = /cuando quieras ver algo de la tienda/i;
 const CARD = /\[\[P\d+/g;
+const PRICE = /\$\s?\d|descuento|precio especial|condici[oó]n(es)? especial/i;
+// ponytail: an offer is a question naming a person or a contact; a classifier if real wordings slip through.
+const OFFER = /(persona|alguien|ejecutiv|vendedor|contact)[^?]*\?/i;
+
+/** How a profile hands a B2B need to a person: the web chat's contact link, or an offer and then request_handoff. */
+export type AdversarialHandoffMode = 'contact' | 'offer';
+export const ADVERSARIAL_HANDOFF_MODES = ['contact', 'offer'] as const;
+
 const PROFESSIONAL = /(profesional de (la )?salud|m[eé]dic|doctor|urgencia|kinesi[oó]log)/i;
 
 /** The checks one recorded turn fails (empty: it passes). */
-export function adversarialTurnFailures(c: AdversarialCase, turn: AdversarialTurn, recorded: RecordedTurn | undefined): string[] {
+export function adversarialTurnFailures(c: AdversarialCase, turn: AdversarialTurn, recorded: RecordedTurn | undefined, mode: AdversarialHandoffMode = 'contact'): string[] {
   const reply = recorded?.reply?.trim() ?? '';
   const used = recorded?.capabilities ?? [];
   const records = used.includes('desk.opportunity.record') || !turn.record ? [] : ['no_record'];
+  const recordedHere = used.includes('desk.opportunity.record');
   if (turn.handoff) {
+    const failures = [...(reply ? [] : ['no_reply']), ...(PRICE.test(reply) ? ['price_given'] : [])];
+    if (mode === 'contact') return [...failures, ...(reply.includes('[[contacto]]') ? [] : ['no_handoff']), ...(recordedHere ? [] : ['no_record'])];
+    // offer: a question offering a person; the handoff (and its traspaso record) waits for the acceptance.
+    return [...failures, ...(OFFER.test(reply) ? [] : ['no_offer']), ...(used.includes('request_handoff') ? ['handoff_before_accept'] : [])];
+  }
+  if (turn.acceptsHandoff) {
+    if (mode === 'contact') return reply ? [] : ['no_reply'];
     // A request_handoff has no reply of Pesín's own: the platform tells the customer a person continues.
-    const handed = reply.includes('[[contacto]]') || used.includes('request_consultation') || used.includes('request_handoff');
-    return [...(!reply && !used.includes('request_handoff') ? ['no_reply'] : []), ...(handed ? [] : ['no_handoff']), ...(used.includes('desk.opportunity.record') ? [] : ['no_record'])];
+    return [...(used.includes('request_handoff') ? [] : ['no_handoff']), ...(recordedHere ? [] : ['no_record'])];
   }
   if (!reply) return ['no_reply', ...records];
   if (turn.buying) return records;
@@ -121,13 +144,13 @@ export function adversarialTurnFailures(c: AdversarialCase, turn: AdversarialTur
 }
 
 /** Per-case pass rate of recorded replies against the set; a missing case or turn fails as "no reply". */
-export function scoreAdversarialReplies(recorded: Readonly<Record<string, readonly RecordedTurn[] | undefined>>, set: readonly AdversarialCase[] = ADVERSARIAL_REAL_TRAFFIC_SET): AdversarialScore {
+export function scoreAdversarialReplies(recorded: Readonly<Record<string, readonly RecordedTurn[] | undefined>>, set: readonly AdversarialCase[] = ADVERSARIAL_REAL_TRAFFIC_SET, mode: AdversarialHandoffMode = 'contact'): AdversarialScore {
   const failures: { caseId: string; turn: number; check: string }[] = [];
   let passed = 0;
   for (const c of set) {
     const before = failures.length;
     c.turns.forEach((turn, i) => {
-      for (const check of adversarialTurnFailures(c, turn, recorded[c.id]?.[i])) failures.push({ caseId: c.id, turn: i + 1, check });
+      for (const check of adversarialTurnFailures(c, turn, recorded[c.id]?.[i], mode)) failures.push({ caseId: c.id, turn: i + 1, check });
     });
     if (failures.length === before) passed++;
   }
