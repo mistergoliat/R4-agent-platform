@@ -2,7 +2,7 @@ import { PlatformError, type HumanRequest } from '@r4/contracts';
 import type { TemporalRuntime } from '@r4/task-runtime';
 import { HOLD_REASONS, autonomyEnabledFor, type AutonomyControlsState } from './autonomy.js';
 import type { AutonomyControls } from './controls.js';
-import type { AutonomyControlRecord, ProductionStore } from './ports.js';
+import type { AutonomyControlRecord, ConversationMigration, ConversationMigrationResult, ProductionStore } from './ports.js';
 
 /**
  * The attribution of production administration: a trusted production-host
@@ -131,6 +131,18 @@ export class ProductionAdministration {
       statusReason: task.statusReason,
       conversation: binding ? { bindingId: binding.bindingId, channel: binding.channel, status: binding.status, autonomy: binding.autonomy, eligibilityReason: binding.eligibilityReason } : null,
     };
+  }
+
+  /**
+   * (Profile migration) After a new version of a channel's profile is deployed and its worker runs, the open
+   * conversations still on an earlier profile move onto it with their whole history (`ProductionStore.migrateConversations`).
+   * Without it, a conversation keeps its opening profile (ADR-045) and waits for a worker of that version, which may no
+   * longer run. Conversations with something in flight are reported as skipped: run it again later.
+   */
+  async migrateConversations(command: { readonly channel: string; readonly to: ConversationMigration['to']; readonly reason: string | undefined; readonly preview: boolean }): Promise<{ readonly migrated: number; readonly skipped: number; readonly conversations: readonly ConversationMigrationResult[] }> {
+    const note = requireReason(command.reason);
+    const conversations = await this.#store.migrateConversations({ channel: command.channel, to: command.to, actorRef: PRODUCTION_CONTROL_ACTOR, note, correlationId: this.#correlationId, preview: command.preview });
+    return { migrated: conversations.filter((c) => c.outcome !== 'skipped').length, skipped: conversations.filter((c) => c.outcome === 'skipped').length, conversations };
   }
 }
 

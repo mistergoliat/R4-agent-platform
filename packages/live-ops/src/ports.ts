@@ -451,6 +451,15 @@ export interface ProductionStore {
   cancelOutbound(command: { readonly outboundId: string; readonly humanRef: string; readonly reason: string; readonly correlationId: string }): Promise<OutboundRecord>;
   /** Cancels every pending agent outbound of the task (a human took over). */
   cancelPendingAgentOutbound(taskId: string, reason: string): Promise<number>;
+  /**
+   * (Profile migration) Moves the open conversations of `channel` that are not on `to` onto it: the binding's profile
+   * and its task's agent version change together, under the task lock, and the task keeps its whole history (the
+   * worker of the new version claims it, an unanswered input included). A conversation with something in flight is
+   * left for a later pass: a run holding its lease, an effect not settled, an approval pending. Only tasks of the same
+   * agent move; a task already ended is left (the ingress closes its binding). Recorded as `task.agent_migrated`.
+   * `preview`: decides and reports, changes nothing.
+   */
+  migrateConversations(command: ConversationMigration): Promise<ConversationMigrationResult[]>;
 
   // Read side.
   outbound(outboundId: string): Promise<OutboundRecord | null>;
@@ -472,4 +481,24 @@ export interface ProductionStore {
   recordPresence(conversationKey: string, state: 'present' | 'away', at: string): Promise<number>;
   attention(): Promise<ProductionAttention>;
   metrics(): Promise<ProductionMetrics>;
+}
+
+/** (Profile migration) Where the open conversations of a channel move: a profile and the agent version it runs. */
+export interface ConversationMigration {
+  readonly channel: string;
+  readonly to: { readonly profile: string; readonly profileFingerprint: string; readonly agentId: string; readonly agentVersion: number };
+  readonly actorRef: string;
+  readonly note: string;
+  readonly correlationId: string;
+  readonly preview: boolean;
+}
+
+export interface ConversationMigrationResult {
+  readonly bindingId: string;
+  readonly taskId: string | null;
+  readonly fromProfile: string;
+  readonly fromAgentVersion: number | null;
+  readonly outcome: 'migrated' | 'would_migrate' | 'skipped';
+  /** Why it was skipped: no_task, other_agent, task_ended, run_in_flight, effect_in_flight, approval_pending. */
+  readonly reason: string | null;
 }

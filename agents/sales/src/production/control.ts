@@ -7,6 +7,7 @@ import {
   type ProductionAdministration,
   declaredExecutionMode,
   loadProductionConfig,
+  profileFingerprint,
   profileLabel,
 } from '@r4/live-ops';
 import { createLogger } from '@r4/observability';
@@ -14,6 +15,7 @@ import { SALES_MIGRATIONS_DIR } from '../definition.js';
 import { SALES_PRODUCTION_PROFILES, salesProductionProfile } from './profile-v8.js';
 import { salesWebProfile } from './profile-web.js';
 import { salesMetaProfile } from './profile-meta.js';
+import { salesAgentOf } from './composition.js';
 import { APPROVAL_DECISION_BLOCKER, type ApprovalInspection, type OpenApprovalInspection } from './approvals.js';
 
 /**
@@ -43,6 +45,8 @@ export const CONTROL_USAGE = [
   '  holds list                               (tasks held because autonomy was disabled)',
   '  holds release --task <task-id> --reason "<reason>"   (one task; autonomy must be on)',
   '  tasks cancel --task <task-id> --reason "<reason>"    (retire one task; the next inbound re-evaluates rollout)',
+  '  conversations preview --channel <channel> --to <profile>                    (which open conversations would move; changes nothing)',
+  '  conversations migrate --channel <channel> --to <profile> --reason "<reason>"  (move open conversations onto a newer profile, history kept)',
   '  approvals list                           (open approval requests; read-only)',
   '  approvals show --request <request-id>    (exact validated arguments and hash; read-only)',
   '  approvals approve|reject --request <request-id> --reason "<reason>"   (REFUSED: needs a trusted human identity)',
@@ -54,6 +58,7 @@ export type ControlCommand =
   | { readonly kind: 'holds-list' }
   | { readonly kind: 'holds-release'; readonly taskId: string; readonly reason: string }
   | { readonly kind: 'tasks-cancel'; readonly taskId: string; readonly reason: string }
+  | { readonly kind: 'conversations-migrate'; readonly channel: string; readonly to: string; readonly reason: string; readonly preview: boolean }
   | { readonly kind: 'approvals-list' }
   | { readonly kind: 'approvals-show'; readonly requestId: string }
   | { readonly kind: 'approvals-decide'; readonly decision: 'approve' | 'reject'; readonly requestId: string };
@@ -96,6 +101,14 @@ export function parseControlCommand(argv: readonly string[]): ControlCommand {
   if (group === 'tasks' && verb === 'cancel') {
     const o = options(rest, ['task', 'reason']);
     return { kind: 'tasks-cancel', taskId: o.task!, reason: reasonOf(o.reason!) };
+  }
+  if (group === 'conversations' && verb === 'preview') {
+    const o = options(rest, ['channel', 'to']);
+    return { kind: 'conversations-migrate', channel: o.channel!, to: o.to!, reason: 'preview', preview: true };
+  }
+  if (group === 'conversations' && verb === 'migrate') {
+    const o = options(rest, ['channel', 'to', 'reason']);
+    return { kind: 'conversations-migrate', channel: o.channel!, to: o.to!, reason: reasonOf(o.reason!), preview: false };
   }
   if (group === 'approvals' && verb === 'list' && rest.length === 0) return { kind: 'approvals-list' };
   if (group === 'approvals' && verb === 'show') return { kind: 'approvals-show', requestId: options(rest, ['request']).request! };
@@ -225,6 +238,14 @@ async function execute(admin: ProductionAdministration, command: Exclude<Control
     case 'holds-release': {
       const r = await admin.releaseHold(command.taskId, command.reason);
       return { released: { taskId: r.taskId, requestId: r.request.requestId, status: r.request.status }, taskStatus: r.taskStatus, next: 'the normal worker claims the task when it is runnable; nothing was executed or sent' };
+    }
+    case 'conversations-migrate': {
+      // Any Sales profile (WhatsApp, lane, web, Meta): the target must be one this pack defines, on that channel.
+      const profile = salesProductionProfile(command.to) ?? salesWebProfile(command.to) ?? salesMetaProfile(command.to);
+      if (!profile) throw new ControlUsageError(`--to ${command.to} is not a Sales profile`);
+      if (profile.channel.id !== command.channel) throw new ControlUsageError(`--to ${command.to} runs on ${profile.channel.id}, not on ${command.channel}`);
+      const agent = salesAgentOf(profile);
+      return admin.migrateConversations({ channel: command.channel, to: { profile: profileLabel(profile), profileFingerprint: profileFingerprint(profile), agentId: agent.agentId, agentVersion: agent.version }, reason: command.reason, preview: command.preview });
     }
     case 'tasks-cancel': {
       const r = await admin.cancelTask(command.taskId, command.reason);
