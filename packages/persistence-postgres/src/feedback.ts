@@ -69,6 +69,8 @@ export class PostgresFeedback {
         select l.*,
                case when exists (select 1 from outbound_messages o where o.task_id = l.task_id and o.origin = 'operator' and o.status <> 'cancelled')
                       or exists (select 1 from human_requests h where h.task_id = l.task_id and h.kind = 'handoff' and h.human_ref is not null)
+                      -- (owner 2026-11-26) A person who answered Pesín's consultation also took part: «con una persona».
+                      or exists (select 1 from human_requests h where h.task_id = l.task_id and h.kind = 'consultation' and h.status = 'answered')
                     then 'person' else 'agent' end as answered_by
           from latest l where l.occurred_at >= $1::timestamptz)`;
     const groups = (await query<Row>(this.#pool, `${latest} select channel, answered_by, value, count(*)::int as n from win group by 1, 2, 3`, [since])).rows;

@@ -41,6 +41,13 @@ beforeAll(async () => {
   replyOfA = (await bed.rows<{ outbound_id: string }>(`select outbound_id from outbound_messages where task_id = $1 and origin = 'agent'`, [tasks[A]]))[0]!.outbound_id;
   // A person wrote in C's conversation.
   await bed.store.createOperatorOutbound({ outboundId: randomUUID(), taskId: tasks[C]!, text: 'Hola, soy del equipo.', humanRef: 'operator-1', authorName: null, responseKey: 'fb-person-1', correlationId: 'feedback-test' });
+  // (owner 2026-11-26) A person answered Pesín's consultation in D's conversation: that counts as «con una persona».
+  const [runD] = await bed.rows<{ run_id: string }>('select run_id from agent_runs where task_id = $1 limit 1', [tasks[D]]);
+  await bed.rows(
+    `insert into human_requests (request_id, task_id, run_id, kind, status, payload, created_at, updated_at, correlation_id)
+     values ($1, $2, $3, 'consultation', 'answered', $4::jsonb, clock_timestamp(), clock_timestamp(), 'feedback-test')`,
+    [randomUUID(), tasks[D], runD!.run_id, JSON.stringify({ question: '¿Hay stock en Maipú?', contextRefs: [] })],
+  );
   const config: ApiConfig = {
     databaseUrl: bed.db.url, host: '127.0.0.1', port: 0, logLevel: 'silent', agentDefinitionsDir: SALES_AGENT_DIR, dbPoolMax: 2,
     serviceReaderTokenSha256: createHash('sha256').update(TOKEN).digest('hex'), anonymousWrites: 'disabled',
@@ -106,13 +113,13 @@ describe('ADR-067 D3 GET /v1/feedback', () => {
     expect((await feedback('?days=31')).windowDays).toBe(31);
   });
 
-  it('totals per channel and per who answered (a person wrote in C), the unresolved count and the review list with the comment as data', async () => {
+  it('totals per channel and per who answered (a person wrote in C, a person answered a consultation in D), the unresolved count and the review list with the comment as data', async () => {
     const v = await feedback();
     expect(v.windowDays).toBe(7);
     expect(v.byChannel).toEqual([{ channel: 'whatsapp', unanswered: 1, bien: 2, mas_o_menos: 0, mal: 1, up: 0, down: 2 }]);
     expect(v.byAnsweredBy).toEqual([
-      { answeredBy: 'agent', unanswered: 1, bien: 1, mas_o_menos: 0, mal: 1, up: 0, down: 2 },
-      { answeredBy: 'person', unanswered: 0, bien: 1, mas_o_menos: 0, mal: 0, up: 0, down: 0 },
+      { answeredBy: 'agent', unanswered: 1, bien: 0, mas_o_menos: 0, mal: 1, up: 0, down: 2 },
+      { answeredBy: 'person', unanswered: 0, bien: 2, mas_o_menos: 0, mal: 0, up: 0, down: 0 },
     ]);
     expect(v.unresolved).toBe(1);
     expect(v.review).toEqual([
