@@ -9,6 +9,8 @@ import {
   type AutonomyControlsState,
   type ClaimOutboundCommand,
   type ConversationBindingRecord,
+  type ConversationMigration,
+  type ConversationMigrationResult,
   type ConversationSummary,
   type IdleConversation,
   type DeliveryAttemptRecord,
@@ -761,6 +763,38 @@ export class PostgresProductionStore implements ProductionStore {
   async cancelPendingAgentOutbound(taskId: string, reason: string): Promise<number> {
     const r = await query(this.#pool, `update outbound_messages set status = 'cancelled', cancel_reason = $2, hold_reason = null, next_attempt_at = null, updated_at = clock_timestamp() where task_id = $1 and origin = 'agent' and status = 'pending'`, [taskId, reason]);
     return r.rowCount ?? 0;
+  }
+
+  async migrateConversations(m: ConversationMigration): Promise<ConversationMigrationResult[]> {
+    const open = (await query<Row>(this.#pool, `select binding_id from channel_conversation_bindings where channel = $1 and status = 'open' and profile <> $2 order by created_at`, [m.channel, m.to.profile])).rows;
+    const out: ConversationMigrationResult[] = [];
+    for (const { binding_id: bindingId } of open) {
+      out.push(await withTransaction(this.#pool, async (c) => {
+        const b = (await c.query<Row>(`select binding_id, task_id, profile from channel_conversation_bindings where binding_id = $1 and status = 'open' and profile <> $2 for update`, [bindingId, m.to.profile])).rows[0];
+        const base = { bindingId: bindingId as string, taskId: (b?.task_id as string | null) ?? null, fromProfile: (b?.profile as string | undefined) ?? '', fromAgentVersion: null as number | null };
+        const skip = (reason: string, v: number | null = null): ConversationMigrationResult => ({ ...base, fromAgentVersion: v, outcome: 'skipped', reason });
+        if (!b) return skip('already_moved');
+        if (!b.task_id) return skip('no_task');
+        // The same lock as every input, claim and delivery: nothing changes the task between the checks and the move.
+        const t = (await c.query<Row>(`select task_id, agent_id, agent_version, status, lease_expires_at > clock_timestamp() as leased from agent_tasks where task_id = $1 for update`, [b.task_id])).rows[0]!;
+        const from = t.agent_version as number;
+        if (t.agent_id !== m.to.agentId) return skip('other_agent', from);
+        if (['completed', 'failed', 'cancelled'].includes(t.status as string) || (await c.query('select 1 from task_terminal_intents where task_id = $1', [b.task_id])).rowCount) return skip('task_ended', from);
+        if (t.leased === true) return skip('run_in_flight', from);
+        if ((await c.query(`select 1 from action_executions where task_id = $1 and status not in ('succeeded', 'rejected', 'failed') limit 1`, [b.task_id])).rowCount) return skip('effect_in_flight', from);
+        if ((await c.query(`select 1 from human_requests where task_id = $1 and kind = 'approval' and status in ('requested', 'approved') limit 1`, [b.task_id])).rowCount) return skip('approval_pending', from);
+        if (m.preview) return { ...base, fromAgentVersion: from, outcome: 'would_migrate', reason: null };
+        // The task's (agent_id, agent_version) foreign key refuses a definition that is not registered.
+        await c.query(`update agent_tasks set agent_version = $2, version = version + 1, updated_at = clock_timestamp() where task_id = $1`, [b.task_id, m.to.agentVersion]);
+        await c.query(`update channel_conversation_bindings set profile = $2, profile_fingerprint = $3 where binding_id = $1`, [bindingId, m.to.profile, m.to.profileFingerprint]);
+        await c.query(
+          `insert into temporal_events (event_id, task_id, entity_id, event_type, occurred_at, correlation_id, actor_ref, data) values ($1, $2, $2, 'task.agent_migrated', clock_timestamp(), $3, $4, $5)`,
+          [randomUUID(), b.task_id, m.correlationId, m.actorRef, JSON.stringify({ fromProfile: b.profile, toProfile: m.to.profile, fromAgentVersion: from, toAgentVersion: m.to.agentVersion, note: m.note })],
+        );
+        return { ...base, fromAgentVersion: from, outcome: 'migrated', reason: null };
+      }));
+    }
+    return out;
   }
 
   // ---------------------------------------------------------------------------

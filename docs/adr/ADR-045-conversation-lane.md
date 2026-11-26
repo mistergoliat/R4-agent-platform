@@ -171,3 +171,23 @@ configuración están cubiertos además por L2, L3 y L6 sobre `@13`: la forma en
 reclaman las tareas.
 
 Mutación manual «el carril no toma la cohorte»: fallan C1, C3, C4 y C5.
+
+## Revisión 2026-11-26 — Migrar conversaciones a la versión actual
+
+- **Problema:** una conversación conserva el perfil con que se abrió (decisión de este ADR). En el chat web la
+  conversación vive días en el navegador y la versión cambia seguido; al publicar `sales-web@22` y apagar el worker de
+  `@18`, una conversación abierta con `@18` recibió un mensaje que nadie respondió (2026-11-26), porque ningún worker
+  atiende esa versión. WhatsApp no lo sufre: el cierre por inactividad (ADR-047) termina las conversaciones viejas.
+- **Decisión (owner, 2026-11-26: «migrarlas a los nuevos workers»):** una operación de producción mueve las
+  conversaciones abiertas de un canal al perfil actual. Cambia en la misma transacción el perfil de la conversación y
+  la versión del agente de su tarea. La tarea conserva toda su historia, y el worker de la versión nueva la toma, con
+  el mensaje pendiente incluido. Queda registrada como `task.agent_migrated`.
+  - `production:sales:control conversations preview --channel <canal> --to <perfil>`: qué se movería, sin cambiar nada.
+  - `production:sales:control conversations migrate --channel <canal> --to <perfil> --reason "<motivo>"`.
+- **No se mueven:**
+  - lo que tiene algo en curso: un turno con su lease, un efecto sin resolver, una aprobación pendiente. Se mueve en
+    una pasada siguiente;
+  - tareas de otro agente;
+  - tareas ya terminadas.
+- **La regla de este ADR sigue valiendo** mientras el worker anterior corre: el rollback deja que ese worker termine lo
+  suyo. La migración se ejecuta después de que el worker nuevo está arriba, en cada publicación del canal.
