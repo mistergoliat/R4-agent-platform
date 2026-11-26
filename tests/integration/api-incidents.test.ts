@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createPlatform, type ApiConfig, type Platform } from '@r4/api';
 import { createSilentLogger } from '@r4/observability';
 import { SALES_AGENT_DIR } from '@r4-sales/agent';
-import { LiveOpsTestbed, invalid, say } from '../support/live-ops.js';
+import { CANARY_PHONE_ID, LiveOpsTestbed, invalid, keyOf, say } from '../support/live-ops.js';
 
 /**
  * ADR-051: incidents are deterministic SQL detectors over existing tables, grouped by signature, with a durable
@@ -108,6 +108,9 @@ beforeAll(async () => {
     [randomUUID(), tasks.answered, run!.run_id, JSON.stringify({ question: '¿Factura a 30 días? SECRETO-PREGUNTA', contextRefs: [], options: ['Sí', 'No'] })],
   );
 
+  // (ADR-067 D3) The answered customer rated the conversation «Mal», with a comment no incident may carry.
+  await bed.store.recordFeedback('whatsapp', keyOf(ANSWERED), { accountRef: CANARY_PHONE_ID, conversationRef: ANSWERED, eventId: 'evt-inc-rating-1', scope: 'conversation', value: 'mal', outboundId: null, comment: 'Pésimo SECRETO-COMENTARIO', occurredAt: new Date().toISOString() });
+
   const dir = mkdtempSync(join(tmpdir(), 'r4-incidents-it-'));
   const operatorsFile = join(dir, 'operators.json');
   writeFileSync(operatorsFile, JSON.stringify([{ issuer: ISS, subject: SUB, operatorRef: 'felipe', scopes: ['autonomy.control', 'incident.triage'] }]), { mode: 0o600 });
@@ -184,6 +187,7 @@ describe('ADR-051 GET /v1/incidents', () => {
     expect(bySignature[INBOUND_SIGNATURE]).toMatchObject({ detector: 'inbound_problem', severity: 'info', agentId: null, agentVersion: null, code: 'foreign_business_number', count: 6, exampleTaskIds: [] });
     expect(bySignature[`inbound_problem:${at}:failed/incomplete_inbound_record`]).toMatchObject({ severity: 'high', count: 1, exampleTaskIds: [tasks.answered] });
     expect(bySignature[`slow_reply:${at}:customer_turn_over_60s`]).toMatchObject({ severity: 'medium', count: 1, exampleTaskIds: [tasks.answered] });
+    expect(bySignature[`customer_rating_bad:${at}:rating_mal`]).toMatchObject({ severity: 'low', count: 1, exampleTaskIds: [tasks.answered] });
     // Four minutes have not passed: nobody is unanswered yet, and the consultation is not late yet.
     expect(find(v, 'customer_unanswered:')).toEqual([]);
     expect(find(v, 'consultation_waiting:')).toEqual([]);
@@ -204,7 +208,7 @@ describe('ADR-051 GET /v1/incidents', () => {
       const rank = order.indexOf(a.severity) - order.indexOf(b.severity);
       expect(rank < 0 || (rank === 0 && Date.parse(a.lastSeen) >= Date.parse(b.lastSeen)), `${a.signature} before ${b.signature}`).toBe(true);
     }
-    expect(new Set(v.incidents.map((i) => i.detector))).toEqual(new Set(['customer_unanswered', 'run_failed', 'platform_handoff', 'step_error', 'outbound_problem', 'inbound_problem', 'slow_reply', 'consultation_waiting']));
+    expect(new Set(v.incidents.map((i) => i.detector))).toEqual(new Set(['customer_unanswered', 'run_failed', 'platform_handoff', 'step_error', 'outbound_problem', 'inbound_problem', 'slow_reply', 'consultation_waiting', 'customer_rating_bad']));
   });
 
   it('owner 2026-11-26: a customer is unanswered after 4 minutes, a consultation only after its 10-minute SLA', async () => {

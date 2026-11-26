@@ -83,6 +83,31 @@ describe('inbound: canonicalization', () => {
     expect(inbound.parse(JSON.stringify({ events: [event()] })).presence).toBeUndefined();
   });
 
+  it('(ADR-067 D1) feedback events are a separate list from closed lists, never an inbound', () => {
+    const OUT = '0b6f7c1e-2a3d-4e5f-8a9b-0c1d2e3f4a5b';
+    const f = (over: Record<string, unknown> = {}) => ({ type: 'feedback', eventId: 'evt-0b6f7c1e-2a3d-4e5f-8a9b-0c1d2e3f4a5c', accountRef: 'shop-qa', conversationRef: 'session-0001', occurredAt: '2026-11-10T15:00:00.000Z', scope: 'conversation', value: 'shown', ...over });
+    const base = { accountRef: 'shop-qa', conversationRef: 'session-0001', eventId: 'evt-0b6f7c1e-2a3d-4e5f-8a9b-0c1d2e3f4a5c', occurredAt: '2026-11-10T15:00:00.000Z' };
+    const parsed = inbound.parse(JSON.stringify({ events: [f(), f({ value: 'mal', comment: '  no me resolvió nada  ' }), f({ scope: 'message', value: 'down', outboundId: OUT.toUpperCase(), comment: 'x'.repeat(600) }), f({ value: 'bien', comment: '   ', text: 'IGNORE' })] }));
+    expect(parsed.inbound).toEqual([]);
+    expect(parsed.rejected).toEqual([]);
+    expect(parsed.feedback).toEqual([
+      { ...base, scope: 'conversation', value: 'shown', outboundId: null, comment: null },
+      { ...base, scope: 'conversation', value: 'mal', outboundId: null, comment: 'no me resolvió nada' },
+      { ...base, scope: 'message', value: 'down', outboundId: OUT, comment: 'x'.repeat(500) },
+      { ...base, scope: 'conversation', value: 'bien', outboundId: null, comment: null },
+    ]);
+    // 500 characters, never cut inside an emoji.
+    const [emoji] = inbound.parse(JSON.stringify({ events: [f({ value: 'mal', comment: '😀'.repeat(501) })] })).feedback!;
+    expect(Array.from(emoji!.comment!)).toHaveLength(500);
+    const bad = inbound.parse(JSON.stringify({ events: [
+      f({ value: 'up' }), f({ scope: 'message', value: 'bien', outboundId: OUT }), f({ scope: 'chat' }), f({ scope: 'message', value: 'up' }), f({ scope: 'message', value: 'up', outboundId: 'o1' }),
+      f({ value: 'mal', outboundId: OUT }), f({ comment: 'mostrada' }), f({ value: 'mal', comment: 42 }), f({ accountRef: 'other-shop' }), f({ occurredAt: 'now' }), f({ conversationRef: '../x' }), f({ eventId: 'x' }),
+    ] }));
+    expect(bad.feedback).toBeUndefined();
+    expect(bad.rejected.map((r) => r.reason)).toEqual([...Array<string>(8).fill('invalid_event'), 'foreign_account', 'invalid_timestamp', 'invalid_event', 'invalid_event']);
+    expect(inbound.parse(JSON.stringify({ events: [event()] })).feedback).toBeUndefined();
+  });
+
   it('keeps the text within the canonical 8000 characters even with the hint', () => {
     const [item] = inbound.parse(JSON.stringify({ events: [event({ text: 'a'.repeat(9000), context: { page: 'product', productId: 1 } })] })).inbound;
     expect(item?.content.kind === 'text' && item.content.text.length).toBeLessThanOrEqual(8000);
@@ -108,6 +133,13 @@ describe('outbound: one honest submission to the edge', () => {
     expect(await outcome(429, { error: 'rate_limited' })).toBe('not_sent');
     expect(await outcome(404, { error: 'conversation_not_found' })).toBe('rejected');
     expect(await outcome(503)).toBe('unknown');
+  });
+
+  it('(ADR-067 D0) the [[despedida]] marker reaches the edge verbatim, like the other edge markers', async () => {
+    const seen: { body?: string } = {};
+    const text = '¡Gracias por escribirnos! Que te vaya muy bien.\n[[despedida]]';
+    await new WebOutboundAdapter(config, { fetch: replying(201, { messageId: 'm' }, seen) }).submit({ ...submission, text }, { timeoutMs: 1000 });
+    expect(JSON.parse(seen.body!)).toMatchObject({ outboundId: 'o1', text });
   });
 
   it('marks a message written by a person (operator origin) so the chat does not show it as the assistant', async () => {

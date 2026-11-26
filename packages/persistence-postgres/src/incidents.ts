@@ -1,6 +1,7 @@
 import type { Clock } from '@r4/contracts';
 import { query, withTransaction, type Pool } from './pool.js';
 import { customerTurns } from './console-reads.js';
+import { LATEST_FEEDBACK } from './feedback.js';
 import { iso, type Row } from './rows.js';
 
 /**
@@ -17,7 +18,7 @@ export const CONSULTATION_SLA_MS = 10 * 60_000;
 export const SLOW_REPLY_MS = 60_000;
 export const MAX_EXAMPLE_TASKS = 5;
 
-export const INCIDENT_DETECTORS = ['customer_unanswered', 'run_failed', 'platform_handoff', 'step_error', 'outbound_problem', 'inbound_problem', 'slow_reply', 'consultation_waiting'] as const;
+export const INCIDENT_DETECTORS = ['customer_unanswered', 'run_failed', 'platform_handoff', 'step_error', 'outbound_problem', 'inbound_problem', 'slow_reply', 'consultation_waiting', 'customer_rating_bad'] as const;
 export type IncidentDetector = (typeof INCIDENT_DETECTORS)[number];
 export const INCIDENT_SEVERITIES = ['critical', 'high', 'medium', 'low', 'info'] as const;
 export type IncidentSeverity = (typeof INCIDENT_SEVERITIES)[number];
@@ -84,6 +85,8 @@ export function incidentSeverity(detector: IncidentDetector, code: string): Inci
       return 'medium';
     case 'consultation_waiting':
       return 'high';
+    case 'customer_rating_bad':
+      return 'low';
   }
 }
 
@@ -163,7 +166,12 @@ export class PostgresIncidents {
          union all
          select 'slow_reply', r.agent_id, r.agent_version, 'customer_turn_over_${SLOW_REPLY_MS / 1000}s', turns.task_id, turns.at
            from (${customerTurns(since)}) turns join agent_runs r on r.run_id = turns.run_id
-          where turns.ms > $3::int),
+          where turns.ms > $3::int
+         union all
+         -- (ADR-067 D3) A conversation whose latest rating is «Mal». Never the comment.
+         select 'customer_rating_bad', t.agent_id, t.agent_version, 'rating_mal', f.task_id, f.occurred_at
+           from (${LATEST_FEEDBACK}) f join agent_tasks t on t.task_id = f.task_id
+          where f.scope = 'conversation' and f.value = 'mal' and f.occurred_at >= ${since}),
        per_task as (
          select detector, agent_id, agent_version, code, task_id, count(*) as n, min(at) as first_seen, max(at) as last_seen
            from occ group by 1, 2, 3, 4, 5)

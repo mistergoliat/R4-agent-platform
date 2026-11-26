@@ -8,6 +8,7 @@ import {
   type AutonomyControlRecord,
   type AutonomyControlsState,
   type ClaimOutboundCommand,
+  type ContactFeedbackEvent,
   type ConversationBindingRecord,
   type ConversationMigration,
   type ConversationMigrationResult,
@@ -924,6 +925,23 @@ export class PostgresProductionStore implements ProductionStore {
       `update channel_conversation_bindings set presence = $2, presence_at = $3::timestamptz
         where conversation_key = $1 and status = 'open' and (presence_at is null or presence_at < $3::timestamptz)`,
       [conversationKey, state, at],
+    );
+    return r.rowCount ?? 0;
+  }
+
+  async recordFeedback(channel: string, conversationKey: string, f: ContactFeedbackEvent): Promise<number> {
+    // The task: the rated reply's own (only when it belongs to this conversation), else the open binding, else the newest one.
+    const r = await query(
+      this.#pool,
+      `insert into customer_feedback (task_id, channel, scope, value, outbound_id, comment, event_id, occurred_at)
+       select coalesce(
+                (select o.task_id from outbound_messages o join channel_conversation_bindings b on b.binding_id = o.binding_id
+                  where o.outbound_id = $5::uuid and b.channel = $1 and b.conversation_key = $2),
+                (select b.task_id from channel_conversation_bindings b where b.channel = $1 and b.conversation_key = $2 and b.task_id is not null
+                  order by (b.status = 'open') desc, b.created_at desc limit 1)),
+              $1, $3, $4, $5::uuid, $6, $7, $8::timestamptz
+       on conflict (channel, event_id) do nothing`,
+      [channel, conversationKey, f.scope, f.value, f.outboundId, f.comment, f.eventId, f.occurredAt],
     );
     return r.rowCount ?? 0;
   }
