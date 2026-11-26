@@ -86,7 +86,7 @@ export interface PlatformEvent {
  * Reply latency (`metrics().latency.customerTurnMs`): an agent reply accepted by the channel, measured from
  * the newest task input the replying step could have seen. One row per reply accepted in [since, until] (no upper
  * bound without `until`). Only the FIRST reply accepted after that input counts (owner 2026-11-26): a later one (a
- * relayed consultation answer, a second message) is not the customer waiting, because they already had a reply.
+ * relayed consultation answer, a second message) is not the contact waiting, because they already had a reply.
  */
 export const customerTurns = (since: string, until?: string): string =>
   `select o.accepted_at as at, o.task_id, s.run_id, extract(epoch from (o.accepted_at - li.at)) * 1000 as ms
