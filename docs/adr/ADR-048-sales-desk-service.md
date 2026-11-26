@@ -43,8 +43,12 @@ Un supervisor que usa las dos herramientas se registraba dos veces, de dos forma
 1. **Una persona, un registro, una cuenta de Google.** Las altas, las bajas, los roles y las áreas se hacen solo en la
    consola, en «Personas y accesos» (antes «Operadores»), con la invitación que ya existe.
 2. **Al invitar se elige el acceso a cada herramienta, por separado:**
-   - **App Ventas:** vendedor, supervisor, administrador o no entra; y sus áreas, de entre las que existen en la mesa
-     (hoy: ventas, mayoristas, institucionales, postventa y servicio técnico). Un supervisor ve todas.
+   - **App Ventas:** vendedor, jefe de tienda, postventa, supervisor, administrador o no entra; sus áreas, de entre
+     las que existen en la mesa (hoy: ventas, mayoristas, institucionales, postventa y servicio técnico); y su tienda,
+     si trabaja en una. Un supervisor ve todas las áreas. Qué ve cada rol lo fija el lienzo «Ventas · quién ve qué»
+     (owner, 2026-11-26): el jefe de tienda vende y además supervisa a la gente de su tienda; postventa atiende los
+     casos de los pools postventa y servicio técnico, que son casos y no oportunidades (ADR-062); el administrador
+     puede «Ver como» otra persona, solo lectura.
    - **Consola:** no entra, solo lectura o administrador.
 3. **Aprobación:** el owner aprueba cada alta. Si la persona solo entra a la app Ventas, basta aprobar. Si además es
    administradora de la consola, se mantiene la confirmación escrita y el recorrido de bienvenida de ADR-050.
@@ -57,16 +61,19 @@ Un supervisor que usa las dos herramientas se registraba dos veces, de dos forma
      entero y de forma atómica.
    - La mesa lo concilia en sus tablas con su propio proceso, periódico y al desplegar.
 6. **Forma del archivo de personas:**
-   `{"version": 1, "updatedAt": "<ISO>", "people": [{"sub", "iss", "name", "operatorRef", "desk": {"role", "areas"} | null, "active"}]}`
+   `{"version": 1, "updatedAt": "<ISO>", "people": [{"sub", "iss", "name", "operatorRef", "desk": {"role", "areas", "storeId"?} | null, "active"}]}`
    - **`sub` e `iss`:** la identidad de Google. La mesa acepta solo `iss` de Google y un `sub` numérico.
    - **`operatorRef`:** estable por persona. Es lo que R4 registra como `oidc:<operatorRef>`, con el formato
      `^[a-z0-9][a-z0-9._-]{0,63}$`.
-   - **`desk`:** el rol `seller`, `supervisor` o `admin` y la lista de áreas; `null` si no entra a la app Ventas.
+   - **`desk`:** el rol (`seller`, `store_manager`, `aftersales`, `supervisor` o `admin`), la lista de áreas y,
+     opcional, `storeId`, la tienda donde trabaja (las tiendas son una tabla de la mesa, distinta de las áreas: un área
+     es un pool que cruza tiendas). `null` si no entra a la app Ventas. Un `store_manager` sin `storeId` no supervisa a
+     nadie hasta que se le asigne una tienda.
    - **El rol en la consola no va en este archivo:** sigue en el registro propio de la consola.
 7. **Conciliación en la mesa:**
    - La llave es `sub`.
-   - Conserva el identificador interno del vendedor y su disponibilidad, que es de la mesa. Actualiza nombre, rol y
-     áreas.
+   - Conserva el identificador interno del vendedor y su disponibilidad, que es de la mesa. Actualiza nombre, rol,
+     áreas y tienda. Una tienda que la mesa no conoce se ignora, igual que un área.
    - Quien falta en el archivo, tiene `active: false` o `desk: null` queda inactivo. Nunca se borra a nadie, así que
      su historial y sus ventas quedan.
    - Un área que la mesa no conoce se ignora y queda en el registro de la mesa; las áreas se crean en la mesa.
