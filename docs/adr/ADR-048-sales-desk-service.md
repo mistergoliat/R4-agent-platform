@@ -70,6 +70,9 @@ Un supervisor que usa las dos herramientas se registraba dos veces, de dos forma
    - Quien falta en el archivo, tiene `active: false` o `desk: null` queda inactivo. Nunca se borra a nadie, así que
      su historial y sus ventas quedan.
    - Un área que la mesa no conoce se ignora y queda en el registro de la mesa; las áreas se crean en la mesa.
+   - **Falla cerrada:** si el archivo falta, no se puede leer, trae una versión desconocida o no tiene ninguna
+     persona con acceso a la app Ventas, la conciliación no cambia nada y lo deja en el registro. Así una falla del
+     trabajo de la consola nunca deja inactivo al equipo entero.
 8. **Un solo escritor del archivo de operadores de la mesa en R4.** El trabajo del host de la consola escribe también
    el archivo de operadores de la mesa, a partir de las personas activas con acceso a la app Ventas, y reinicia
    `r4-api` una sola vez. Cuando eso funcione, el paso `sync-operators` sale del despliegue de la mesa, para que
