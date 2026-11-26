@@ -31,8 +31,8 @@ const sentTexts = (b: LiveOpsTestbed) => b.provider.sends.filter((s) => s.to ===
 const requests = (b: LiveOpsTestbed) => b.rows<{ kind: string; status: string }>(`select kind, status from human_requests order by created_at`);
 
 describe('an agent-opened human request never leaves the contact in silence (F-ADV-2)', { timeout: 90_000 }, () => {
-  it('the composition scopes the notice to the F1 quote lane candidates only (@17 and its successors @18 to @27)', () => {
-    expect(SALES_HUMAN_REQUEST_NOTICE_PROFILES).toEqual(['sales-production@17', 'sales-production@18', 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23', 'sales-production@24', 'sales-production@25', 'sales-production@26', 'sales-production@27']);
+  it('the composition scopes the notice to the F1 quote lane candidates only (@17 and its successors @18 to @28)', () => {
+    expect(SALES_HUMAN_REQUEST_NOTICE_PROFILES).toEqual(['sales-production@17', 'sales-production@18', 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23', 'sales-production@24', 'sales-production@25', 'sales-production@26', 'sales-production@27', 'sales-production@28']);
     // Fixed text: a pending person, no commercial effect or promise.
     expect(SALES_HUMAN_REQUEST_NOTICE_TEXT).not.toMatch(/cotizaci[oó]n|emit|confirm|pedido|pago|reserv|stock|disponib|precio|descuento/i);
   });
