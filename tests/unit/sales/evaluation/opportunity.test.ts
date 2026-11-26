@@ -33,10 +33,29 @@ describe('opportunity labeled set', () => {
     expect(ig.length).toBeGreaterThanOrEqual(3);
     expect(fb.length).toBeGreaterThanOrEqual(3);
     expect(wa.some((c) => c.expected?.trigger === 'traspaso')).toBe(true);
-    // The web chat and Meta never hand off; Meta never quotes.
-    for (const c of [...opportunityCasesOf('web'), ...ig, ...fb]) expect(c.expected?.trigger, c.id).not.toBe('traspaso');
+    // Meta never hands off and never quotes ((v23) the web chat hands B2B needs to the team with [[contacto]]).
+    for (const c of [...ig, ...fb]) expect(c.expected?.trigger, c.id).not.toBe('traspaso');
     for (const c of [...ig, ...fb]) expect(c.expected?.trigger, c.id).not.toBe('cotizacion');
     expect(opportunityCasesOf('web').length + wa.length + ig.length + fb.length).toBe(OPPORTUNITY_LABELED_SET.length);
+  });
+
+  it('(sales-web@23 / sales-production@29) web and WhatsApp wholesale, institutional and project needs are traspaso with the handoff signal', () => {
+    const b2b = [...opportunityCasesOf('web'), ...opportunityCasesOf('whatsapp')].filter((c) => c.expected && (c.expected.segment === 'mayorista' || c.expected.segment === 'institucional' || c.expected.complexity === 'proyecto'));
+    expect(b2b.length).toBeGreaterThanOrEqual(10);
+    for (const c of b2b) {
+      expect(c.expected!.trigger, c.id).toBe('traspaso');
+      expect(c.signals, c.id).toContain('traspaso');
+    }
+    // A company that only asks for a factura on a normal purchase is not handed off.
+    expect(OPPORTUNITY_LABELED_SET.find((c) => c.id === 'opp-19-compra-empresa-factura')!.expected!.trigger).toBe('consulta');
+  });
+
+  it('(sales-web@22 exam) a real purchase after a joke is an opportunity with a product signal', () => {
+    const c = OPPORTUNITY_LABELED_SET.find((x) => x.id === 'opp-ni-14-broma-luego-compra')!;
+    expect(c.expected).toEqual({ trigger: 'conversacion', intent: 'compra', segment: 'persona', complexity: 'estandar' });
+    expect(c.signals).toEqual(['producto']);
+    // The prediction is the conversation's first record that is an opportunity, not the joke's sin_intencion record.
+    expect(scoreOpportunityRecords({ [c.id]: { ...c.expected!, signals: ['producto'] } }, [c]).misses).toEqual([]);
   });
 });
 

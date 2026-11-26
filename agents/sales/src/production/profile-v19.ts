@@ -29,10 +29,10 @@ export const SALES_QUOTE_LANE_V19_PROFILE_LABEL = 'sales-production@19';
  * customer's intent as the agent interprets it (quote.preview@4 with offer template v2, quote.create@6 with the intent
  * guard) instead of the closed confirmation grammar. Every other control is unchanged. @17 and @18 keep the grammar.
  */
-export const SALES_INTENT_ACCEPTANCE_PROFILES: ReadonlySet<string> = new Set([SALES_QUOTE_LANE_V19_PROFILE_LABEL, 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23', 'sales-production@24', 'sales-production@25', 'sales-production@26', 'sales-production@27', 'sales-production@28', 'sales-web@19', 'sales-web@20', 'sales-web@21', 'sales-web@22']);
+export const SALES_INTENT_ACCEPTANCE_PROFILES: ReadonlySet<string> = new Set([SALES_QUOTE_LANE_V19_PROFILE_LABEL, 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23', 'sales-production@24', 'sales-production@25', 'sales-production@26', 'sales-production@27', 'sales-production@28', 'sales-production@29', 'sales-web@19', 'sales-web@20', 'sales-web@21', 'sales-web@22', 'sales-web@23']);
 
 /** (owner decision 2026-11-10) Profiles under F1-COMMERCIAL-POLICY-v2: delivery at the Shipping owner's price. */
-export const SALES_F1_SHIPPING_PROFILES: ReadonlySet<string> = new Set([SALES_QUOTE_LANE_V19_PROFILE_LABEL, 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23', 'sales-production@24', 'sales-production@25', 'sales-production@26', 'sales-production@27', 'sales-production@28', 'sales-web@19', 'sales-web@20', 'sales-web@21', 'sales-web@22']);
+export const SALES_F1_SHIPPING_PROFILES: ReadonlySet<string> = new Set([SALES_QUOTE_LANE_V19_PROFILE_LABEL, 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23', 'sales-production@24', 'sales-production@25', 'sales-production@26', 'sales-production@27', 'sales-production@28', 'sales-production@29', 'sales-web@19', 'sales-web@20', 'sales-web@21', 'sales-web@22', 'sales-web@23']);
 
 /** What must be true before @19 is activated on the lane: what @18 requires, plus the UX evaluation with the real model. */
 export const SALES_PRODUCTION_PROFILE_V19_GATE = Object.freeze([

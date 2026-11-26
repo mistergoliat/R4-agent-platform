@@ -170,3 +170,22 @@ describe('deskSignalsOf: only what this conversation recorded', () => {
     expect(deskSignalsOf([], 'consulta')).toEqual([]);
   });
 });
+
+describe('(sales-web@22 exam) a real purchase after a joke in the same conversation', () => {
+  it('a second record gets its own deterministic key and the signals seen by then; repeating it stays the same key', async () => {
+    const observations: Obs[] = [];
+    const { run, calls, sent } = setup({ observations });
+    expect(await run(JOKE)).toMatchObject({ status: 'applied' });
+    observations.push(read('catalog.get_product_context'));
+    expect(await run(INPUT)).toMatchObject({ status: 'applied' });
+    expect(await run(INPUT)).toMatchObject({ status: 'applied' });
+    expect(calls).toHaveLength(3);
+    const [joke, purchase, repeat] = [sent(0), sent(1), sent(2)];
+    expect(joke).toMatchObject({ classification: { intent: 'sin_intencion' }, signals: [] });
+    expect(purchase).toMatchObject({ classification: { intent: 'compra' }, signals: ['producto'] });
+    // The desk dedupes by key: two moments, two keys; the identical repeat is the same key (harmless).
+    expect(purchase.idempotencyKey).not.toBe(joke.idempotencyKey);
+    expect(repeat.idempotencyKey).toBe(purchase.idempotencyKey);
+    for (const body of [joke, purchase]) expect(body.idempotencyKey).toMatch(/^[A-Za-z0-9_:.-]{8,80}$/);
+  });
+});
