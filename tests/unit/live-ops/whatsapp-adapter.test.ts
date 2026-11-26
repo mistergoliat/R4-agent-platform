@@ -68,6 +68,19 @@ describe('inbound: canonicalization', () => {
     expect(JSON.stringify(parsed)).not.toContain('Test Contact');
   });
 
+  it('(ADR-068) the call permission reply Meta sends after a call is a channel event, not unsupported content; other interactive replies stay as before', () => {
+    const message = (id: string, interactive: Record<string, unknown>) => ({ id, from: '56911112222', timestamp: '1790000000', type: 'interactive', interactive });
+    const raw = JSON.stringify({ object: 'whatsapp_business_account', entry: [{ id: 'WABA', changes: [{ field: 'messages', value: { messaging_product: 'whatsapp', metadata: { phone_number_id: PHONE }, messages: [
+      message('wamid.perm', { type: 'call_permission_reply', call_permission_reply: { response: 'accept', is_permanent: false, expiration_timestamp: '1790604800', response_source: 'automatic' } }),
+      message('wamid.button', { type: 'button_reply', button_reply: { id: 'x', title: 'Sí' } }),
+    ] } }] }] });
+    const parsed = new WhatsAppInboundAdapter(config).parse(raw);
+    expect(parsed.inbound.map((i) => [i.providerEventId, i.content])).toEqual([
+      ['wamid.perm', { kind: 'unsupported', contentType: 'call-permission-reply' }],
+      ['wamid.button', { kind: 'unsupported', contentType: 'interactive' }],
+    ]);
+  });
+
   it('never takes another business number (the production number stays with its owner) and reads metadata per change', () => {
     const foreign = new WhatsAppInboundAdapter(config).parse(notification('5550001', { messages: [{ id: 'wamid.x', from: '56911112222', text: 'hola' }] }));
     expect(foreign.inbound).toEqual([]);

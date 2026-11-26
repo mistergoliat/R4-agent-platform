@@ -146,6 +146,11 @@ export class WhatsAppInboundAdapter implements InboundChannelAdapter {
       const sub = isObject(m.unsupported) && typeof m.unsupported.type === 'string' ? m.unsupported.type.toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 40) : null;
       return { ...base, content: { kind: 'unsupported', contentType: sub ? `unsupported.${sub}` : 'unsupported' } };
     }
+    // (ADR-068) The call permission reply Meta sends right after a call (callback permission on): a channel event the
+    // contact did not write, never content to answer. Observed in production 2026-11-26 as `interactive`.
+    if (type === 'interactive' && isObject(m.interactive) && m.interactive.type === 'call_permission_reply') {
+      return { ...base, content: { kind: 'unsupported', contentType: 'call-permission-reply' } };
+    }
     return { ...base, content: { kind: 'unsupported', contentType: type.replace(/_/g, '-') } };
   }
 

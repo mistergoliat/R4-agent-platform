@@ -252,7 +252,13 @@ const UNSUPPORTED_ES: Readonly<Record<string, string>> = {
   location: 'una ubicación', contacts: 'un contacto', interactive: 'una respuesta interactiva', button: 'un botón', order: 'un pedido desde el catálogo del canal',
 };
 /** Not a message from the customer: never answered with "I had a problem". */
-const EVENTS_ES: Readonly<Record<string, string>> = { reaction: 'reaccionó con un emoji a un mensaje anterior', system: 'generó un aviso del sistema del canal', 'request-welcome': 'abrió el chat sin escribir' };
+const EVENTS_ES: Readonly<Record<string, string>> = {
+  reaction: 'reaccionó con un emoji a un mensaje anterior',
+  system: 'generó un aviso del sistema del canal',
+  'request-welcome': 'abrió el chat sin escribir',
+  // (ADR-068) Sent by the channel itself when a call ends: the caller never wrote it.
+  'call-permission-reply': 'terminó una llamada, y el canal registró automáticamente si permite que lo llamemos de vuelta',
+};
 
 /** (Owner decision 2026-11-12) Content the composition cannot represent: the agent answers it; the conversation continues. */
 export function frameUnsupported(contentType: string, at: Date = new Date()): string {
