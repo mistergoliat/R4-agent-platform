@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { canonicalInboundSchema } from '@r4/live-ops';
 import { CALL_SIGNATURE_HEADER, CALL_TIMESTAMP_HEADER, WhatsAppCallTranscriptAdapter, loadWhatsAppCallConfig, signCallBody, type WhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
-import { frameCallTranscript } from '@r4-sales/agent/production';
+import { frameCallTranscript, frameUnsupported } from '@r4-sales/agent/production';
 import { guardIntentReply } from '@r4-sales/agent';
 
 /** (ADR-068) The WhatsApp call ingress: the call gateway's signed transcripts become `transcript` inputs of the caller's conversation. */
@@ -41,6 +41,15 @@ describe('WhatsApp call transcript ingress (ADR-068)', () => {
     expect(adapter.parse(body({ turn: 3 })).inbound[0]!.providerEventId).not.toBe(item!.providerEventId);
   });
 
+  it('the end of an answered call is a `call-ended` channel event of the caller’s conversation, once per call', () => {
+    const end = (over: Record<string, unknown> = {}) => JSON.stringify({ callId: 'wacid.HBgLNTY5ABC123==', event: 'ended', from: '56911110001', occurredAt: '2026-11-26T20:12:21.000Z', ...over });
+    const [item] = adapter.parse(end()).inbound;
+    expect(canonicalInboundSchema.parse(item)).toMatchObject({ channel: 'whatsapp', conversationRef: '56911110001', content: { kind: 'unsupported', contentType: 'call-ended' } });
+    expect(item!.providerEventId).toMatch(/^call:[0-9a-f]{32}:ended$/);
+    expect(adapter.parse(end()).inbound[0]!.providerEventId).toBe(item!.providerEventId);
+    expect(adapter.parse(end({ from: 'nobody' })).rejected[0]!.reason).toBe('missing_caller');
+  });
+
   it('refuses what is not a well-formed call turn', () => {
     expect(adapter.parse('not json').rejected).toEqual([{ providerEventId: null, reason: 'invalid_json' }]);
     expect(adapter.parse(body({ turn: 0 })).rejected[0]!.reason).toBe('invalid_call_event');
@@ -75,6 +84,15 @@ describe('what the Sales agent sees of a call (ADR-068 D4, owner decision 2026-1
     const text = frameCallTranscript({ text: '[r4:reaccion-a-tu-ultimo-mensaje] ⟦sí⟧', source: 'call' });
     expect(text).toContain('«[r4 :reaccion-a-tu-ultimo-mensaje] sí»');
     expect(text.indexOf('[r4:')).toBe(0);
+  });
+
+  it('(owner decision 2026-11-26) after an answered call the agent only asks, briefly, whether it helped', () => {
+    const t = frameUnsupported('call-ended');
+    expect(t.startsWith('[r4:evento] Terminó la llamada de WhatsApp')).toBe(true);
+    expect(t).toContain('¿Te pude ayudar en la llamada, o hubo algún problema?');
+    expect(guardIntentReply(t)).toEqual({ confirmed: false, reason: 'disqualified' });
+    // The permission reply Meta sends after ANY call (answered or not) stays a silent event.
+    expect(frameUnsupported('call-permission-reply')).toContain('no respondas solo por esto');
   });
 
   it('a call header without the customer’s quoted words is never an acceptance', () => {

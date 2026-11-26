@@ -262,6 +262,10 @@ const EVENTS_ES: Readonly<Record<string, string>> = {
 
 /** (Owner decision 2026-11-12) Content the composition cannot represent: the agent answers it; the conversation continues. */
 export function frameUnsupported(contentType: string, at: Date = new Date()): string {
+  // (ADR-068, owner decision 2026-11-26) After a call you answered, the only message is a short check that it helped.
+  if (contentType === 'call-ended') {
+    return `${MEDIA_TEXT_HEADERS.event} Terminó la llamada de WhatsApp en la que atendiste al cliente. Escríbele un solo mensaje breve preguntándole si lo pudiste ayudar o si hubo algún problema, por ejemplo: «¿Te pude ayudar en la llamada, o hubo algún problema?». No repitas lo que ya le dijiste ni agregues nada más. No es un mensaje del cliente ni una aceptación.`;
+  }
   if (Object.hasOwn(EVENTS_ES, contentType)) {
     return `${MEDIA_TEXT_HEADERS.event} El cliente ${EVENTS_ES[contentType]}. No es un mensaje nuevo ni una aceptación, y no hubo ningún problema: no respondas solo por esto; si no hay nada pendiente, espera su próximo mensaje.`;
   }

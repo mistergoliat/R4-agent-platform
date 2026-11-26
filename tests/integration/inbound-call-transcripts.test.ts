@@ -71,6 +71,23 @@ describe('WhatsApp calls into the same conversation (ADR-068)', { timeout: 60_00
     expect(next).toMatchObject({ status: 200, body: { ingested: 1 } });
   });
 
+  it('(owner decision 2026-11-26) the end of an answered call reaches the same conversation once, asking only whether it helped', async () => {
+    const send = async () => {
+      const raw = JSON.stringify({ callId: 'wacid.INTEGRATION_CALL_1', event: 'ended', from: CALLER, occurredAt: new Date().toISOString() });
+      const ts = String(Date.now());
+      const res = await bed.gateway.app.inject({ method: 'POST', url: '/v1/channels/whatsapp-call/webhook', payload: raw, headers: { 'content-type': 'application/json', [CALL_TIMESTAMP_HEADER]: ts, [CALL_SIGNATURE_HEADER]: signCallBody(SECRET, ts, raw) } });
+      return { status: res.statusCode, body: res.json() };
+    };
+    const res = await send();
+    expect(res).toMatchObject({ status: 200, body: { ingested: 1 } });
+    const landed = (res.body.landed as { taskId: string; inputId: string }[])[0]!;
+    const input = await inputOf(bed, landed.inputId);
+    expect(input.text).toContain('¿Te pude ayudar en la llamada, o hubo algún problema?');
+    const [row] = await bed.rows('select content_kind, content_type, disposition from inbound_events where input_id = $1', [landed.inputId]);
+    expect(row).toEqual({ content_kind: 'unsupported', content_type: 'call-ended', disposition: 'autonomous' });
+    expect(await send()).toMatchObject({ status: 200, body: { ingested: 0, duplicates: 1 } });
+  });
+
   it('a caller who never wrote gets a WhatsApp conversation opened by the call', async () => {
     const res = await callTurn(bed, 'wacid.INTEGRATION_CALL_2', 1, NEW_CALLER, 'hola, ¿hacen despacho a regiones?');
     expect(res).toMatchObject({ status: 200, body: { ingested: 1 } });
@@ -80,7 +97,7 @@ describe('WhatsApp calls into the same conversation (ADR-068)', { timeout: 60_00
 
   it('fails closed without the call gateway’s signature', async () => {
     expect((await callTurn(bed, 'wacid.INTEGRATION_CALL_3', 1, CALLER, 'hola', 'a-different-secret-of-32-characters!')).status).toBe(401);
-    expect(await bed.rows("select 1 from inbound_events where provider_event_id like 'call:%' and content_type <> 'transcript'")).toEqual([]);
+    expect(await bed.rows("select 1 from inbound_events where provider_event_id like 'call:%' and content_type not in ('transcript', 'call-ended')")).toEqual([]);
   });
 });
 
