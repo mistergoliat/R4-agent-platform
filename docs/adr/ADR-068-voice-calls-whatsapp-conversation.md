@@ -1,11 +1,13 @@
 # ADR-068 — Llamadas de WhatsApp: la voz conversa y R4 atiende lo comercial en la misma conversación
 
 - **Identificador:** `R4-VOICE-CALLS-01`
-- **Estado:** **Propuesto.**
+- **Estado:** **Aceptado** (merge del PR #192, 2026-11-26).
   - Decisión de forma del owner, 2026-11-26: «sí, vamos con esa forma, parte con el ADR». Se refiere a la llamada y
     el WhatsApp escrito como una sola conversación.
-  - Este ADR no autoriza despliegues. La fase V1 necesita la autorización explícita del owner para cambiar R4 en
-    producción.
+  - V1 autorizada por el owner el 2026-11-26: «sí, haz merge del #192 y parte con V1». Los despliegues en producción
+    siguen necesitando su OK explícito por SHA.
+  - **Revisión 1, mismo día:** decisión del owner sobre D4: «que acepte cotizaciones, para poder mandarlas por mail y
+    el whatsapp altiro».
 - **Fecha:** 2026-11-26
 - **Contexto previo:**
   - Discovery G0: `docs/architecture/R4_VOICE_G0_DISCOVERY.md`, PR #120.
@@ -86,24 +88,33 @@ El motor de voz la recibe como resultado de la delegación y la dice.
   igual, porque la tarea sigue.
 - **Interrupciones:** si el cliente interrumpe, se cancela el **audio**, nunca la tarea de R4.
 
-## Decisión 4 — Una frase dicha en la llamada no es una aceptación (V1)
+## Decisión 4 — Lo dicho en la llamada acepta como un texto escrito (revisión 1)
 
-La transcripción de la llamada no tiene confianza medida por palabra. Se trata como `[r4:nota-de-voz-sin-confianza]`:
-**contenido, nunca aceptación.**
+**Decisión del owner, 2026-11-26:** la llamada acepta cotizaciones, para que el PDF salga al WhatsApp en el acto. La
+revisión original (aceptación solo por chat) queda reemplazada.
 
-Don Pesín cotiza, presenta y prepara por voz. El paso que exige la aceptación del cliente (ADR-035) se confirma en el
-chat, con un «sí» escrito o una reacción a la oferta, que es la regla vigente. La voz lo dice así: «te dejé la
-cotización en el WhatsApp; respóndeme ahí con un sí y te la emito».
-
-Esto se revisa con datos reales de V1 (decisión abierta 1).
+- **Regla:** lo que el cliente dice en la llamada pasa por la **misma guardia de intención** que un «sí» escrito
+  (ADR-035, `guardIntentReply`). Nunca acepta si hay pregunta, negación, duda o pedido de cambio. `quote.create`
+  aplica todos sus controles de siempre: la oferta presentada, los topes F1 y la idempotencia.
+- **Errores de transcripción:** la transcripción puede equivocarse.
+  - La marca `[r4:llamada]` le dice al agente que, si la aceptación no es clara o la transcripción parece equivocada
+    (otro producto, otra cantidad), pregunte antes de emitir.
+  - La oferta presentada queda escrita en el chat.
+  - Una cotización no compromete dinero: el pago sigue su propio flujo.
+- **Lo que no cambia:** la marca sin las palabras del cliente nunca acepta. Las palabras del cliente nunca pueden
+  traer una cabecera de plataforma propia.
+- **Voz:** delega también la aceptación, con las palabras del cliente, y nunca dice que una cotización quedó emitida
+  si R4 no lo confirmó.
+- **Correo:** enviar la cotización por correo (`quote.email@1`) hoy está solo en el perfil web. Llevarlo a WhatsApp es
+  una versión nueva del perfil del carril, evaluada, y queda fuera de esta revisión.
 
 ## Decisión 5 — Activación y alcance
 
 - **V1:**
   - Solo para la lista de permitidos de `r4-voice`. Hoy es el owner; sus conversaciones van por el carril.
-  - Una versión nueva de la definición del carril incluye la marca `[r4:llamada]` y estas reglas: respuestas cortas,
-    nada que obligue a escribir durante la llamada salvo la aceptación. Se evalúa antes de activarla, como toda
-    versión.
+  - Las reglas para el agente (respuestas cortas, aceptación con la misma guardia) viajan en la marca
+    `[r4:llamada]`, igual que las de las notas de voz.
+  - Si el L3 muestra que hacen falta en la definición, se hace una versión nueva del carril, evaluada.
   - El resto de los llamantes sigue igual que hoy: su llamada suena sin contestar.
 - **Apagado:**
   - El archivo kill de `r4-voice` ignora llamadas nuevas y corta las activas.
@@ -124,9 +135,9 @@ Esto se revisa con datos reales de V1 (decisión abierta 1).
 
 | Fase | Contenido | Estado |
 |---|---|---|
-| V1 | Adaptador firmado de transcripciones en R4, lectura de la respuesta, delegación en `r4-voice`, auditoría de cifras, definición del carril con `[r4:llamada]`; solo la lista de permitidos | Necesita autorización del owner |
+| V1 | Adaptador firmado de transcripciones en R4, lectura de la respuesta, delegación en `r4-voice`, auditoría de cifras, marca `[r4:llamada]`, aceptación hablada (D4 rev. 1); solo la lista de permitidos | Autorizada; despliegue con OK por SHA |
 | V2 | Llamantes reales con despliegue gradual, aviso de privacidad, métricas por llamada (espera, delegaciones, auditoría) | Propuesta |
-| V3 | Aceptación hablada, si los datos de V1 la justifican | Propuesta |
+| V3 | Cotización por correo desde WhatsApp (`quote.email` en el perfil del carril) | Propuesta |
 
 ## Evaluación (va con la implementación)
 
@@ -135,17 +146,22 @@ Esto se revisa con datos reales de V1 (decisión abierta 1).
   - La misma identidad de evento produce una sola entrada.
   - La marca siempre está presente.
   - Nunca se aceptan números fuera del canal firmado.
-- **Guardia de intención:** una entrada `[r4:llamada]` nunca cuenta como aceptación.
+- **Guardia de intención:**
+  - Una entrada `[r4:llamada]` se juzga igual que el mismo texto escrito: lo que se rechaza por escrito se rechaza
+    en la llamada.
+  - La marca sin las palabras del cliente nunca acepta.
 - **`r4-voice`:**
   - Delega solo transcripciones finales.
   - Se mantiene dentro del tope de espera.
   - La auditoría detecta una cifra sin respaldo.
-- **L3:** una llamada real del owner. La cotización llega al WhatsApp, la voz dice las mismas cifras, la aceptación
-  por chat emite la cotización y la auditoría queda limpia.
+- **L3:** una llamada real del owner.
+  - La oferta llega al WhatsApp y la voz dice las mismas cifras.
+  - Un «sí» dicho en la llamada emite la cotización, y el PDF llega al WhatsApp.
+  - La auditoría queda limpia.
 
 ## Decisiones abiertas del owner
 
-1. Si alguna vez una frase dicha en la llamada podrá aceptar (V3), y con qué prueba.
+1. ~~Si una frase dicha en la llamada podrá aceptar.~~ Resuelta el 2026-11-26: sí (D4, revisión 1).
 2. El tope de espera en línea (propuesto 90 s).
 3. Qué dice la voz cuando R4 pasa la conversación a una persona: «un vendedor te escribirá», o en el futuro
    transferir el audio a la mesa (G5 del discovery).
@@ -166,4 +182,5 @@ Esto se revisa con datos reales de V1 (decisión abierta 1).
 - **Negativas:**
   - El cliente espera en línea lo que dura un turno de R4.
   - La conversación escrita recibe entradas que el cliente no escribió (marcadas).
-  - La aceptación exige un paso en el chat.
+  - Un error de transcripción podría llegar a una aceptación. Lo frenan la guardia, la pregunta del agente cuando hay
+    duda y la oferta escrita en el chat.
