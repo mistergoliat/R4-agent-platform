@@ -18,6 +18,13 @@
 //                                   WARN_THROTTLED waits (sustained saturation: the split or the provider limit is too small)
 // Per-model activity needs a management key and is not read.
 //
+// OpenAI's own API (R4_MODEL_BASE_URL on api.openai.com) has no budget an ordinary key can read. There the spend comes
+// from the Costs API with a separate key that holds the usage-read scope (R4_OPENAI_ADMIN_KEY in OPENAI_USAGE_KEY_FILE,
+// default ~/.config/r4/secrets/openai-admin.env): today's spend (UTC day), the last 7 days, the month to date and
+// today's spend by model. It reports with a lag of minutes to hours. Thresholds are optional and nothing is flagged
+// without them: MONTHLY_BUDGET_USD (then the budget percentages and days-left rules above apply to the calendar month)
+// and WARN_DAILY_SPEND_USD / CRIT_DAILY_SPEND_USD. Refusals for money in R4's logs stay CRITICAL either way.
+//
 // Thresholds live in an env file (default ~/.config/r4/provider-budget.env; see provider-budget.env.example), so they
 // change without touching code. The API key is read from R4_MODEL_API_KEY in KEY_ENV_FILE and is never printed, nor is
 // the webhook URL. Exit code: 0 OK, 1 WARN, 2 CRITICAL.
@@ -36,6 +43,8 @@ const T = {
   warnRateLimited: num('WARN_RATE_LIMITED', 5), critRateLimited: num('CRIT_RATE_LIMITED', 50),
   warnProviderErrors: num('WARN_PROVIDER_ERRORS', 3), warnThrottled: num('WARN_THROTTLED', 30),
   windowMinutes: num('CHECK_WINDOW_MINUTES', 60), alertRepeatMinutes: num('ALERT_REPEAT_MINUTES', 180),
+  // OpenAI direct only; null = not set, nothing is flagged for it.
+  monthlyBudgetUsd: num('MONTHLY_BUDGET_USD', null), warnDailySpendUsd: num('WARN_DAILY_SPEND_USD', null), critDailySpendUsd: num('CRIT_DAILY_SPEND_USD', null),
 };
 const keyEnv = envFile(cfg.KEY_ENV_FILE ?? join(home, '.config/r4/production.env'));
 const apiKey = cfg.PROVIDER_API_KEY ?? keyEnv.R4_MODEL_API_KEY;
@@ -57,7 +66,56 @@ async function get(path) {
 
 const now = new Date();
 const snapshot = { at: now.toISOString() };
+
+/** OpenAI direct: spend from the Costs API (daily buckets by line item), read with the usage key. */
+async function openAiSpend() {
+  snapshot.provider = 'openai';
+  const usageKey = cfg.OPENAI_USAGE_KEY ?? envFile(cfg.OPENAI_USAGE_KEY_FILE ?? join(home, '.config/r4/secrets/openai-admin.env')).R4_OPENAI_ADMIN_KEY;
+  if (!usageKey) return flag('WARN', 'OpenAI spend is not checked: no usage-read key (R4_OPENAI_ADMIN_KEY in OPENAI_USAGE_KEY_FILE)');
+  const day = 86_400_000;
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+  const from = Math.min(monthStart, today - 6 * day);
+  const costsUrl = (cfg.OPENAI_COSTS_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/+$/, '');
+  const buckets = [];
+  try {
+    let page = null;
+    for (let i = 0; i < 6; i++) { // 6 pages of 31 daily buckets is far more than a month plus a week
+      const response = await fetch(`${costsUrl}/organization/costs?start_time=${from / 1000}&bucket_width=1d&group_by=line_item&limit=31${page ? `&page=${encodeURIComponent(page)}` : ''}`, { headers: { authorization: `Bearer ${usageKey}` }, signal: AbortSignal.timeout(15_000) });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const body = await response.json();
+      buckets.push(...(body.data ?? []));
+      if (!body.has_more || !body.next_page) break;
+      page = body.next_page;
+    }
+  } catch (error) {
+    return flag('WARN', `OpenAI costs unreadable (${error.name === 'Error' ? error.message : error.name})`); // never a body: it could echo the key
+  }
+  const spend = (since, until = Infinity) => buckets.filter((b) => b.start_time * 1000 >= since && b.start_time * 1000 < until).reduce((s, b) => s + (b.results ?? []).reduce((x, r) => x + Number(r.amount?.value ?? 0), 0), 0);
+  const byModel = {};
+  for (const b of buckets.filter((x) => x.start_time * 1000 >= today)) for (const r of b.results ?? []) { const model = String(r.line_item ?? 'other').split(',')[0].trim(); byModel[model] = Math.round(((byModel[model] ?? 0) + Number(r.amount?.value ?? 0)) * 1e4) / 1e4; }
+  const week = spend(today - 6 * day);
+  Object.assign(snapshot, { usageDailyUsd: spend(today), usageWeeklyUsd: week, usageMonthlyUsd: spend(monthStart), usageDailyByModelUsd: byModel });
+  snapshot.burnUsdPerDay = Math.max(snapshot.usageDailyUsd, week / 7);
+  const text = `OpenAI spend today ${usd(snapshot.usageDailyUsd)}`;
+  if (T.critDailySpendUsd !== null && snapshot.usageDailyUsd >= T.critDailySpendUsd) flag('CRITICAL', `${text} (limit ${usd(T.critDailySpendUsd)})`);
+  else if (T.warnDailySpendUsd !== null && snapshot.usageDailyUsd >= T.warnDailySpendUsd) flag('WARN', `${text} (warning at ${usd(T.warnDailySpendUsd)})`);
+  if (T.monthlyBudgetUsd !== null && T.monthlyBudgetUsd > 0) {
+    const remaining = T.monthlyBudgetUsd - snapshot.usageMonthlyUsd; const pct = (100 * remaining) / T.monthlyBudgetUsd;
+    const daysLeft = snapshot.burnUsdPerDay > 0 ? Math.max(0, remaining) / snapshot.burnUsdPerDay : null;
+    const resetsAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    const daysToReset = (resetsAt.getTime() - now.getTime()) / day;
+    const short = (limit) => daysLeft !== null && daysLeft < limit && daysLeft < daysToReset;
+    const line = `monthly budget ${usd(remaining)} of ${usd(T.monthlyBudgetUsd)} left (${pct.toFixed(0)} %)${daysLeft === null ? '' : `, about ${daysLeft.toFixed(1)} days at ${usd(snapshot.burnUsdPerDay)}/day`}, resets ${resetsAt.toISOString().slice(0, 10)}`;
+    if (pct <= T.critBudgetRemainingPct || short(T.critDaysLeft)) flag('CRITICAL', line);
+    else if (pct <= T.warnBudgetRemainingPct || short(T.warnDaysLeft)) flag('WARN', line);
+    snapshot.effectiveBudgetScope = 'monthly_budget';
+    snapshot.budgets = [{ scope: 'monthly_budget', limitUsd: T.monthlyBudgetUsd, spendUsd: snapshot.usageMonthlyUsd, remainingUsd: remaining, remainingPct: pct, daysLeft, resetsAt: resetsAt.toISOString() }];
+  }
+}
+
 if (!apiKey) flag('CRITICAL', 'no provider API key found (R4_MODEL_API_KEY in KEY_ENV_FILE)');
+else if (!cfg.PROVIDER_BASE_URL && /(^|\/\/|\.)api\.openai\.com(\/|$)/.test(baseUrl)) await openAiSpend();
 else if (!cfg.PROVIDER_BASE_URL && !/openrouter\.ai/.test(baseUrl)) flag('WARN', `provider ${new URL(baseUrl).host} is not OpenRouter: balance and budget are not checked`);
 else {
   const [credits, key] = await Promise.allSettled([get('/credits'), get('/key')]);
@@ -137,7 +195,9 @@ const info = findings.filter(([level]) => level === 'INFO').map(([, text]) => ` 
 const budget = snapshot.budgets?.find((b) => b.scope === snapshot.effectiveBudgetScope) ?? snapshot.budgets?.[0];
 const summary = `${now.toISOString()} provider-budget ${status}${alerting.length ? `: ${alerting.map(([, text]) => text).join('; ')}` : ''}${info}`
   + ` | budget ${budget ? `${budget.remainingUsd.toFixed(2)}/${budget.limitUsd.toFixed(2)} ${budget.scope}` : '–'} | balance ${snapshot.balanceUsd?.toFixed(2) ?? '–'}`
-  + ` | today ${snapshot.usageDailyUsd?.toFixed(2) ?? '–'} | week ${snapshot.usageWeeklyUsd?.toFixed(2) ?? '–'} | failures ${JSON.stringify(failures)} | throttled ${throttled.waited}+${throttled.refused}`;
+  + ` | today ${snapshot.usageDailyUsd?.toFixed(2) ?? '–'} | week ${snapshot.usageWeeklyUsd?.toFixed(2) ?? '–'}`
+  + (snapshot.provider === 'openai' && snapshot.usageMonthlyUsd !== undefined ? ` | month ${snapshot.usageMonthlyUsd.toFixed(2)} | today by model ${Object.entries(snapshot.usageDailyByModelUsd).filter(([, v]) => v >= 0.005).map(([k, v]) => `${k} ${v.toFixed(2)}`).join(', ') || '–'}` : '')
+  + ` | failures ${JSON.stringify(failures)} | throttled ${throttled.waited}+${throttled.refused}`;
 process.stdout.write(`${summary}\n`);
 
 mkdirSync(dirname(snapshotsFile), { recursive: true });
