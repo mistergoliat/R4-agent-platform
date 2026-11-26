@@ -247,15 +247,16 @@ export const SALES_WEB_PROFILE_V22: ProductionProfile = Object.freeze({
 } satisfies ProductionProfile);
 
 /**
- * (Owner 2026-11-25, the sales-web@22 exam) sales-web@22 pinned to definition v23 = v22 with four instruction changes:
- * company, wholesale, institutional and project needs handed to the team ([[contacto]]) and recorded with
- * trigger=traspaso; the closing line only after the second insistence; a new record when real buying intent follows a
- * sin_intencion record; off-topic replies in at most two short sentences and one card. Everything else is @22's.
+ * (Owner 2026-11-25/26, the sales-web@22 exam) sales-web@22 pinned to definition v23 = v22 with five instruction changes:
+ * a volume or special-price request gets a notice to the wholesale sellers (no prices or discounts) and a record with
+ * trigger=traspaso and segment=mayorista; the closing line only after the second insistence; a new record when real
+ * buying intent follows a sin_intencion record; off-topic replies in at most two short sentences and one card; a real
+ * goodbye ends with [[despedida]] (the chat then asks how we did). Everything else is @22's.
  */
 export const SALES_WEB_PROFILE_V23: ProductionProfile = Object.freeze({
   ...SALES_WEB_PROFILE_V22,
   version: 23,
-  description: 'sales-web@22 pinned to definition v23: B2B and project needs handed to the team and recorded as traspaso, the closing line only after two insistences, a new record when real buying intent follows a joke, off-topic replies in two short sentences.',
+  description: 'sales-web@22 pinned to definition v23: volume-price requests noticed to the wholesale sellers and recorded as traspaso with segment mayorista, the closing line only after two insistences, a new record when real buying intent follows a joke, off-topic replies in two short sentences, [[despedida]] on a real goodbye.',
 } satisfies ProductionProfile);
 
 export const SALES_WEB_QUOTE_PROFILES: ReadonlySet<string> = new Set(['sales-web@19', 'sales-web@20', 'sales-web@21', 'sales-web@22', 'sales-web@23']);

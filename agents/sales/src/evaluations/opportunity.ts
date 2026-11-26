@@ -22,12 +22,10 @@ import type { DeskOpportunityInput, DeskOpportunityInputV2, DeskSignal } from '.
  * (noIntent: scored as noIntentReason, so run it on the @2 profiles sales-web@22 / sales-production@28) and which
  * platform signals the conversation must produce at least (signals: scored against the recorded body's signals).
  *
- * (Owner 2026-11-25, sales-web@23 / sales-production@29) Company, wholesale, institutional and project needs are handed
- * to a person and recorded with trigger=traspaso (the handoff signal: what takes them to a person of the desk), on the
- * web with [[contacto]] and on WhatsApp with request_handoff only after the customer accepts an offer of a person (owner
- * 2026-11-26; the WhatsApp B2B cases end with that acceptance). The handoff record carries segment mayorista (volume
- * prices) or institucional (public or educational bodies), which the desk routes to those pools. Instagram and Facebook
- * have no handoff and keep consulta.
+ * (Owner 2026-11-26, sales-web@23 / sales-production@29) There are no volume discounts: a request for a discount or a
+ * special price for volume (a reseller, a store, an institution, a gym or a distributor) gets a notice to the wholesale
+ * sellers and a record with trigger=traspaso and segment=mayorista (the handoff signal; the desk routes it to the
+ * Mayoristas pool), never request_handoff. Every other company, institutional or project need follows the normal flows.
  */
 export type OpportunityLabel = Pick<DeskOpportunityInput, 'trigger' | 'intent' | 'segment' | 'complexity'>;
 export const OPPORTUNITY_FIELDS = ['trigger', 'intent', 'segment', 'complexity'] as const;
@@ -58,13 +56,13 @@ export const OPPORTUNITY_LABELED_SET: readonly OpportunityCase[] = Object.freeze
   { id: 'opp-01-compra-persona', visitor: ['Hola, busco unas mancuernas ajustables para entrenar en mi depa', 'Me gustan las de 24 kg, ¿llegan a Maipú?', 'Perfecto, las agrego al carro. ¡Gracias!'], expected: L('conversacion', 'compra', 'persona', 'estandar') },
   { id: 'opp-02-cotizacion-persona', visitor: ['Quiero un banco ajustable y 40 kg en discos', '¿Me puedes mandar una cotización formal por correo?', 'Sin despacho. Sí, emítela'], expected: L('cotizacion', 'cotizacion', 'persona', 'estandar') },
   { id: 'opp-03-cotizacion-empresa', visitor: ['Necesito dos kettlebells de 12 kg y una colchoneta para la oficina', 'Es para la empresa, necesito cotización formal para pedir la factura', 'Con despacho a Providencia. Dale, emítela'], expected: L('cotizacion', 'cotizacion', 'empresa', 'estandar') },
-  { id: 'opp-04-empresa-proyecto', visitor: ['Somos una empresa y queremos armar un gimnasio para los trabajadores en nuestra planta', 'Serían unos 60 m2, con máquinas y peso libre. ¿Ustedes lo instalan? Facturamos con el RUT de la empresa'], expected: L('traspaso', 'cotizacion', 'empresa', 'proyecto'), signals: ['traspaso'] },
+  { id: 'opp-04-empresa-proyecto', visitor: ['Somos una empresa y queremos armar un gimnasio para los trabajadores en nuestra planta', 'Serían unos 60 m2, con máquinas y peso libre. ¿Ustedes lo instalan? Facturamos con el RUT de la empresa'], expected: L('consulta', 'cotizacion', 'empresa', 'proyecto') },
   { id: 'opp-05-mayorista-compra', visitor: ['Hola, tenemos una tienda deportiva en regiones y queremos comprar al por mayor para revender', 'Nos interesan 50 pares de mancuernas hexagonales. ¿Qué precio por volumen tienen?'], expected: L('traspaso', 'compra', 'mayorista', 'estandar'), signals: ['traspaso'] },
   { id: 'opp-06-mayorista-cotizacion', visitor: ['Somos distribuidores, precio por volumen para 30 balones medicinales', 'Necesitamos la cotización con precio mayorista'], expected: L('traspaso', 'cotizacion', 'mayorista', 'estandar'), signals: ['traspaso'] },
-  { id: 'opp-07-institucional-proyecto', visitor: ['Escribo del departamento de deportes de la municipalidad', 'Vamos a equipar un gimnasio comunitario completo y saldrá a licitación. ¿Ustedes pueden participar?'], expected: L('traspaso', 'cotizacion', 'institucional', 'proyecto'), signals: ['traspaso'] },
-  { id: 'opp-08-institucional-compra', visitor: ['Soy profesora de un colegio, necesitamos 20 colchonetas para educación física', '¿Aceptan orden de compra del colegio?'], expected: L('traspaso', 'compra', 'institucional', 'estandar'), signals: ['traspaso'] },
-  { id: 'opp-09-proyecto-desconocido', visitor: ['Voy a abrir un estudio de entrenamiento funcional de 80 m2 y necesito equiparlo completo', '¿Ustedes hacen el diseño de la sala y el armado?'], expected: L('traspaso', 'compra', 'desconocido', 'proyecto'), signals: ['traspaso'] },
-  { id: 'opp-10-box-empresa-proyecto', visitor: ['Estamos abriendo un box de CrossFit, necesitamos racks, barras y discos para 10 atletas', 'Todo con factura a nombre de la sociedad. ¿Nos arman una propuesta completa?'], expected: L('traspaso', 'cotizacion', 'empresa', 'proyecto'), signals: ['traspaso'] },
+  { id: 'opp-07-institucional-proyecto', visitor: ['Escribo del departamento de deportes de la municipalidad', 'Vamos a equipar un gimnasio comunitario completo y saldrá a licitación. ¿Ustedes pueden participar?'], expected: L('consulta', 'cotizacion', 'institucional', 'proyecto') },
+  { id: 'opp-08-institucional-compra', visitor: ['Soy profesora de un colegio, necesitamos 20 colchonetas para educación física', '¿Aceptan orden de compra del colegio?'], expected: L('consulta', 'compra', 'institucional', 'estandar') },
+  { id: 'opp-09-proyecto-desconocido', visitor: ['Voy a abrir un estudio de entrenamiento funcional de 80 m2 y necesito equiparlo completo', '¿Ustedes hacen el diseño de la sala y el armado?'], expected: L('consulta', 'compra', 'desconocido', 'proyecto') },
+  { id: 'opp-10-box-empresa-proyecto', visitor: ['Estamos abriendo un box de CrossFit, necesitamos racks, barras y discos para 10 atletas', 'Todo con factura a nombre de la sociedad. ¿Nos arman una propuesta completa?'], expected: L('consulta', 'cotizacion', 'empresa', 'proyecto') },
   { id: 'opp-11-postventa-despacho', visitor: ['Compré una trotadora la semana pasada y todavía no llega', 'El pedido ya está pagado, ¿me pueden decir qué pasó?'], expected: L('consulta', 'postventa', 'persona', 'estandar') },
   { id: 'opp-12-postventa-cambio', visitor: ['La barra que me llegó ayer viene con la rosca dañada', 'Quiero cambiarla por otra'], expected: L('consulta', 'postventa', 'persona', 'estandar') },
   { id: 'opp-13-servicio-tecnico', visitor: ['Mi elíptica hace un ruido raro cuando pedaleo', '¿Ustedes hacen mantención o reparación?'], expected: L('consulta', 'servicio_tecnico', 'persona', 'estandar') },
@@ -74,7 +72,9 @@ export const OPPORTUNITY_LABELED_SET: readonly OpportunityCase[] = Object.freeze
   { id: 'opp-17-home-gym-carro', visitor: ['Armar mi gimnasio en casa', 'Una pieza, 2 × 2 m', 'Hasta $500 mil', 'Bajar de peso', 'Menor precio', 'Listo, lo agrego todo al carro. Gracias, chao'], expected: L('conversacion', 'compra', 'persona', 'estandar'), signals: ['propuesta'] },
   { id: 'opp-18-compra-consulta-instalacion', visitor: ['Quiero comprar este rack para mi casa', '¿Se puede anclar a un piso de madera?'], expected: L('consulta', 'compra', 'persona', 'estandar') },
   { id: 'opp-19-compra-empresa-factura', visitor: ['Necesito 6 discos de 20 kg', '¿Puedo pedir factura a nombre de mi empresa?'], expected: L('consulta', 'compra', 'empresa', 'estandar') },
-  { id: 'opp-20-condominio-proyecto', visitor: ['Soy de la administración de un edificio y queremos equipar la sala de gimnasio común', '¿Nos pueden asesorar con qué máquinas poner y cotizar todo?'], expected: L('traspaso', 'cotizacion', 'desconocido', 'proyecto'), signals: ['traspaso'] },
+  // (Owner 2026-11-26) Volume or special prices from an institution or a gym are wholesale too: traspaso, segment mayorista.
+  { id: 'opp-26-colegio-volumen', visitor: ['Escribo de un colegio, ¿tienen precio especial por volumen si compramos 40 colchonetas?'], expected: L('traspaso', 'compra', 'mayorista', 'estandar'), signals: ['traspaso'] },
+  { id: 'opp-20-condominio-proyecto', visitor: ['Soy de la administración de un edificio y queremos equipar la sala de gimnasio común', '¿Nos pueden asesorar con qué máquinas poner y cotizar todo?'], expected: L('consulta', 'cotizacion', 'desconocido', 'proyecto') },
   { id: 'opp-21-faq-horario', visitor: ['¿Cuál es el horario de atención?'], expected: null },
   { id: 'opp-22-faq-despacho', visitor: ['¿Cuánto se demora más o menos el despacho a regiones?'], expected: null },
   { id: 'opp-23-faq-entrenamiento', visitor: ['¿Cuántas series debería hacer para ganar masa muscular?'], expected: null },
@@ -82,11 +82,12 @@ export const OPPORTUNITY_LABELED_SET: readonly OpportunityCase[] = Object.freeze
   { id: 'opp-25-solo-mirando', visitor: ['Hola', 'Solo estoy mirando, gracias'], expected: null },
   // WhatsApp (sales-production@27): quotes and handoffs exist here.
   { id: 'opp-wa-01-cotizacion', channel: 'whatsapp', visitor: ['Hola, quiero cotizar una bicicleta de spinning', 'Con despacho a Ñuñoa', 'Sí, dale, emítela'], expected: L('cotizacion', 'cotizacion', 'persona', 'estandar') },
-  { id: 'opp-wa-02-traspaso-limite', channel: 'whatsapp', visitor: ['Necesito 3 trotadoras y 2 elípticas para el gimnasio de mi condominio', 'Cotízamelo todo con despacho', 'Sí, conéctame con una persona del equipo'], expected: L('traspaso', 'cotizacion', 'desconocido', 'proyecto'), signals: ['traspaso'] },
+  { id: 'opp-wa-02-traspaso-limite', channel: 'whatsapp', visitor: ['Necesito 3 trotadoras y 2 elípticas para el gimnasio de mi condominio', 'Cotízamelo todo con despacho', 'Sí, conéctame con una persona del equipo'], expected: L('traspaso', 'cotizacion', 'desconocido', 'proyecto') },
   { id: 'opp-wa-03-traspaso-pide-persona', channel: 'whatsapp', visitor: ['Quiero comprar un rack y una barra olímpica', 'Prefiero hablar con una persona, ¿me pueden atender?'], expected: L('traspaso', 'compra', 'persona', 'estandar') },
-  { id: 'opp-wa-04-mayorista', channel: 'whatsapp', visitor: ['Buenas, somos distribuidores en el norte', '¿Qué precio por volumen tienen para 40 kettlebells?', 'Sí, que me contacte una persona del equipo'], expected: L('traspaso', 'cotizacion', 'mayorista', 'estandar'), signals: ['traspaso'] },
+  { id: 'opp-wa-04-mayorista', channel: 'whatsapp', visitor: ['Buenas, somos distribuidores en el norte', '¿Qué precio por volumen tienen para 40 kettlebells?'], expected: L('traspaso', 'cotizacion', 'mayorista', 'estandar'), signals: ['traspaso'] },
   { id: 'opp-wa-05-postventa', channel: 'whatsapp', visitor: ['Hola, compré un banco y me llegó sin los pernos', '¿Cómo lo soluciono?'], expected: L('consulta', 'postventa', 'persona', 'estandar') },
-  { id: 'opp-wa-06-institucional', channel: 'whatsapp', visitor: ['Escribo de una universidad, vamos a renovar el gimnasio de estudiantes', 'Será por licitación pública, ¿ustedes participan?', 'Sí, por favor, que me contacte alguien'], expected: L('traspaso', 'cotizacion', 'institucional', 'proyecto'), signals: ['traspaso'] },
+  { id: 'opp-wa-06-institucional', channel: 'whatsapp', visitor: ['Escribo de una universidad, vamos a renovar el gimnasio de estudiantes', 'Será por licitación pública, ¿ustedes participan?'], expected: L('consulta', 'cotizacion', 'institucional', 'proyecto') },
+  { id: 'opp-wa-08-gimnasio-volumen', channel: 'whatsapp', visitor: ['Tengo un gimnasio y quiero 15 kettlebells de 16 kg, ¿me hacen descuento por cantidad?'], expected: L('traspaso', 'compra', 'mayorista', 'estandar'), signals: ['traspaso'] },
   { id: 'opp-wa-07-faq', channel: 'whatsapp', visitor: ['¿Hasta qué hora atienden hoy?'], expected: null },
   // Instagram (sales-instagram@2): no quote and no handoff.
   { id: 'opp-ig-01-compra', channel: 'instagram', visitor: ['Vi en su historia unas bandas elásticas, ¿qué resistencias tienen?', 'Ya, me las compro, ¡gracias!'], expected: L('conversacion', 'compra', 'persona', 'estandar') },

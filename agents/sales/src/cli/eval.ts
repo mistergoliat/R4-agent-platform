@@ -8,7 +8,7 @@ import { OpenAICompatibleModelProvider, describeModelConfig, loadOpenAICompatibl
 import { adminDatabaseUrl } from '../harness/database.js';
 import { HarnessTrajectoryProducer, SCRIPTED_MODEL_PROFILE, modelProfileFromDescription, referenceScenarioSet } from '../evaluations/corpus.js';
 import { evaluateFixtureCorpus, evaluateSalesSubject } from '../evaluations/run.js';
-import { ADVERSARIAL_HANDOFF_MODES, scoreAdversarialReplies, type AdversarialHandoffMode, type RecordedTurn } from '../evaluations/adversarial.js';
+import { scoreAdversarialReplies, type RecordedTurn } from '../evaluations/adversarial.js';
 import { OPPORTUNITY_CHANNELS, OPPORTUNITY_LABELED_SET, opportunityCasesOf, scoreOpportunityRecords, type OpportunityChannel, type OpportunityPrediction } from '../evaluations/opportunity.js';
 import { configuredModelProvider } from '../model.js';
 import { flag, loadLocalEnv, option, print } from './common.js';
@@ -38,8 +38,8 @@ import { flag, loadLocalEnv, option, print } from './common.js';
  *                      (one of OPPORTUNITY_CHANNELS).
  *   --adversarial FILE score recorded replies against the real-traffic adversarial set
  *                      (evaluations/adversarial.ts); exit 1 unless every case passes.
- *   --handoff MODE     with --adversarial: how the profile hands a B2B need to a person, contact (the web
- *                      chat, default) or offer (an offer first, request_handoff on acceptance).
+ *   --lane             with --adversarial: the replies come from the messaging lane profile, not the
+ *                      web chat; the web-only cases ([[despedida]]) are skipped.
  *
  * Artifacts: artifacts/evaluations/<timestamp>/ (git-ignored), one directory
  * per evaluation run plus index.json. Never secrets, never reasoning text.
@@ -58,10 +58,9 @@ async function main(): Promise<void> {
   }
   const replies = option('adversarial');
   if (replies) {
-    const mode = option('handoff') ?? 'contact';
-    if (!(ADVERSARIAL_HANDOFF_MODES as readonly string[]).includes(mode)) throw new Error(`--handoff must be one of ${ADVERSARIAL_HANDOFF_MODES.join(', ')}`);
-    const result = scoreAdversarialReplies(JSON.parse(readFileSync(replies, 'utf8')) as Record<string, RecordedTurn[]>, undefined, mode as AdversarialHandoffMode);
-    print(`adversarial real-traffic set (handoff ${mode}): ${result.passed}/${result.cases} cases pass`);
+    const lane = flag('lane');
+    const result = scoreAdversarialReplies(JSON.parse(readFileSync(replies, 'utf8')) as Record<string, RecordedTurn[]>, undefined, { web: !lane });
+    print(`adversarial real-traffic set${lane ? ' (lane)' : ''}: ${result.passed}/${result.cases} cases pass`);
     for (const f of result.failures) print(`  fail ${f.caseId} turn ${f.turn}: ${f.check}`);
     if (result.passed < result.cases) process.exit(1);
     return;

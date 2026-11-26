@@ -33,24 +33,24 @@ describe('opportunity labeled set', () => {
     expect(ig.length).toBeGreaterThanOrEqual(3);
     expect(fb.length).toBeGreaterThanOrEqual(3);
     expect(wa.some((c) => c.expected?.trigger === 'traspaso')).toBe(true);
-    // Meta never hands off and never quotes ((v23) the web chat hands B2B needs to the team with [[contacto]]).
+    // Meta never hands off and never quotes ((v23) the web chat records the wholesale-sellers notice as traspaso).
     for (const c of [...ig, ...fb]) expect(c.expected?.trigger, c.id).not.toBe('traspaso');
     for (const c of [...ig, ...fb]) expect(c.expected?.trigger, c.id).not.toBe('cotizacion');
     expect(opportunityCasesOf('web').length + wa.length + ig.length + fb.length).toBe(OPPORTUNITY_LABELED_SET.length);
   });
 
-  it('(sales-web@23 / sales-production@29) web and WhatsApp wholesale, institutional and project needs are traspaso with the handoff signal', () => {
-    const b2b = [...opportunityCasesOf('web'), ...opportunityCasesOf('whatsapp')].filter((c) => c.expected && (c.expected.segment === 'mayorista' || c.expected.segment === 'institucional' || c.expected.complexity === 'proyecto'));
-    expect(b2b.length).toBeGreaterThanOrEqual(10);
-    for (const c of b2b) {
+  it('(owner 2026-11-26) web and WhatsApp volume-price requests are traspaso, segment mayorista, with the handoff signal; other B2B needs keep the normal flows', () => {
+    const webWa = [...opportunityCasesOf('web'), ...opportunityCasesOf('whatsapp')];
+    const volume = webWa.filter((c) => c.expected?.segment === 'mayorista');
+    // A reseller, a distributor, a school and a gym asking for volume prices: all mayorista.
+    expect(volume.map((c) => c.id).sort()).toEqual(['opp-05-mayorista-compra', 'opp-06-mayorista-cotizacion', 'opp-26-colegio-volumen', 'opp-wa-04-mayorista', 'opp-wa-08-gimnasio-volumen']);
+    for (const c of volume) {
       expect(c.expected!.trigger, c.id).toBe('traspaso');
-      expect(c.signals, c.id).toContain('traspaso');
+      expect(c.signals, c.id).toEqual(['traspaso']);
+      expect(c.visitor.join(' '), c.id).toMatch(/volumen|por mayor|por cantidad|mayorista/i);
     }
-    // (Owner 2026-11-26) WhatsApp offers a person first: its B2B cases end with the customer's acceptance (opp-sg-03
-    // asks for a person itself).
-    for (const id of ['opp-wa-02-traspaso-limite', 'opp-wa-04-mayorista', 'opp-wa-06-institucional']) expect(b2b.find((c) => c.id === id)!.visitor.at(-1), id).toMatch(/^Sí/);
-    // A company that only asks for a factura on a normal purchase is not handed off.
-    expect(OPPORTUNITY_LABELED_SET.find((c) => c.id === 'opp-19-compra-empresa-factura')!.expected!.trigger).toBe('consulta');
+    // No volume price asked: a tender, a school's purchase order, a whole facility or a factura follow the normal flows.
+    for (const id of ['opp-04-empresa-proyecto', 'opp-07-institucional-proyecto', 'opp-08-institucional-compra', 'opp-10-box-empresa-proyecto', 'opp-19-compra-empresa-factura', 'opp-wa-06-institucional']) expect(OPPORTUNITY_LABELED_SET.find((c) => c.id === id)!.expected!.trigger, id).toBe('consulta');
   });
 
   it('(sales-web@22 exam) a real purchase after a joke is an opportunity with a product signal', () => {
