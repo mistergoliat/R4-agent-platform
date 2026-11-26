@@ -29,6 +29,15 @@
 
 ## Decisión técnica
 
+### D0 — Qué es «se despide» en el chat web (decisión abierta del owner, número 3)
+
+Propuesta: la tarjeta aparece en cualquiera de estos dos casos.
+
+- **El cliente toca «Terminar conversación»** en el menú del chat.
+- **El cliente se despide por escrito.** Pesín responde y su respuesta lleva el marcador `[[despedida]]`, que el edge no muestra y que dispara la tarjeta. El peor caso de un marcador mal puesto es una tarjeta de más, una sola vez por conversación.
+
+Cerrar el panel con la X **no** cuenta: cerrar no es irse.
+
 ### D1 — La valoración es un evento del canal, no un mensaje
 
 - **El evento:** el edge envía a R4 un evento nuevo `feedback`, firmado como los demás. Lleva:
@@ -48,7 +57,9 @@
 
 - **Tabla en R4 Core:** `customer_feedback`, con `task_id`, `channel`, `scope`, `value`, `comment`, `outbound_id` opcional, `at` e idempotencia por `eventId`.
 - **Por qué en Core:** «Evaluación» y «Observación» son primitivas de Core según AGENTS.md. La valoración de una conversación es genérica: no hay concepto de ventas en ella.
-- **Una valoración por conversación y alcance:** una nueva reemplaza a la anterior, así que cuenta la última; el historial se conserva.
+- **Una valoración por conversación y alcance:**
+  - el edge envía una sola por conversación y una por respuesta; cada una lleva su `eventId`, y un reenvío con el mismo `eventId` se ignora;
+  - si aun así llega otra para la misma conversación (o la misma respuesta), R4 se queda con la última, y el historial se conserva.
 - **Quién atendió:** se lee de la conversación (Pesín solo o una persona), no del evento.
 
 ### D3 — Incidente y lectura
@@ -94,3 +105,4 @@
 
 1. ¿Cuenta una conversación sin respuesta a la tarjeta como «no respondió»? Hoy solo se cuentan las respuestas.
 2. ¿Cuánto tiempo se guardan los comentarios? Se propone lo mismo que los mensajes de la conversación.
+3. Qué cuenta como «se despide» en el chat web (D0).
