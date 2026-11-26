@@ -4,6 +4,7 @@ import type { JsonObject, Principal } from '@r4/contracts';
 import type { NewArtifactProposal, PostgresArtifacts } from '@r4/persistence-postgres';
 import type { Relation } from '../additions.js';
 import { PRODUCT_GRAPH_KIND, type ProductGraph } from '../graph.js';
+import { proposeOnce } from '../once.js';
 import { readSignedGraph } from '../signed.js';
 import { waitForTasks, type CuratorTasks } from './batch.js';
 import type { ProductSheetView } from './capabilities.js';
@@ -153,7 +154,7 @@ const cut = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` 
  */
 export async function runReviewBatch(
   deps: {
-    readonly artifacts: Pick<PostgresArtifacts, 'current' | 'propose'>;
+    readonly artifacts: Pick<PostgresArtifacts, 'current' | 'propose' | 'proposals'>;
     readonly tasks: CuratorTasks;
     readonly sheet: (productKey: string) => Promise<ProductSheetView>;
     readonly asked: ReadonlyMap<string, number>;
@@ -208,7 +209,7 @@ export async function runReviewBatch(
 
   const finished: FinishedReview[] = [...done].map(([hash, task]) => ({ hash, ...taskOf.get(hash)!, ...task }));
   const { proposals, refused, counts, completed } = await proposalsFromReviews(g, finished, deps.sheet);
-  const stored = await deps.artifacts.propose({ kind: PRODUCT_GRAPH_KIND, baseVersion: signed.version, source: `graph-curator-agent:${input.batchId}`, correlationId: `graph-review-${input.batchId}`, proposals });
+  const { stored } = await proposeOnce(deps.artifacts, { kind: PRODUCT_GRAPH_KIND, baseVersion: signed.version, source: `graph-curator-agent:${input.batchId}`, correlationId: `graph-review-${input.batchId}`, proposals });
   return {
     batchId: input.batchId, tasks: taskOf.size, remaining: chunks.length - next, completed, verdicts: counts, proposals: stored, refused,
     pending: [...taskOf].filter(([h]) => !done.has(h)).map(([, t]) => t.taskId), spentUsd: Math.round(spentUsd * 10_000) / 10_000,
@@ -234,7 +235,7 @@ export async function tokensSpent(pool: { query: (sql: string, values?: unknown[
  * Used after the evaluation was corrected (2026-11-25: a sheet's own «Categoría» specification was refused).
  */
 export async function recheckReviews(
-  deps: { readonly artifacts: Pick<PostgresArtifacts, 'current' | 'propose'>; readonly tasks: CuratorTasks; readonly sheet: (productKey: string) => Promise<ProductSheetView> },
+  deps: { readonly artifacts: Pick<PostgresArtifacts, 'current' | 'propose' | 'proposals'>; readonly tasks: CuratorTasks; readonly sheet: (productKey: string) => Promise<ProductSheetView> },
   input: { readonly batchId: string; readonly reviews: readonly CompletedReview[] },
 ): Promise<Omit<ReviewBatchResult, 'tasks' | 'remaining' | 'pending' | 'spentUsd'> & { readonly rechecked: number }> {
   const signed = await readSignedGraph(deps.artifacts);
@@ -247,7 +248,7 @@ export async function recheckReviews(
     if (task.status === 'completed') finished.push({ ...r, hash, status: task.status, result: task.result });
   }
   const { proposals, refused, counts, completed } = await proposalsFromReviews(signed.graph, finished, deps.sheet);
-  const stored = await deps.artifacts.propose({ kind: PRODUCT_GRAPH_KIND, baseVersion: signed.version, source: `graph-curator-agent:recheck:${input.batchId}`, correlationId: `graph-recheck-${input.batchId}`, proposals });
+  const { stored } = await proposeOnce(deps.artifacts, { kind: PRODUCT_GRAPH_KIND, baseVersion: signed.version, source: `graph-curator-agent:recheck:${input.batchId}`, correlationId: `graph-recheck-${input.batchId}`, proposals });
   return { batchId: input.batchId, rechecked: finished.length, completed, verdicts: counts, proposals: stored, refused };
 }
 

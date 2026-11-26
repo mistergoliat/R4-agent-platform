@@ -6,6 +6,7 @@ import type { Relation } from '../additions.js';
 import { graphChangeSchema, type GraphChange } from '../changes.js';
 import { PRODUCT_GRAPH_KIND, type ProductGraph } from '../graph.js';
 import { presentProposal } from '../present.js';
+import { proposeOnce } from '../once.js';
 import { readSignedGraph } from '../signed.js';
 import { waitForTasks, type CuratorTasks } from './batch.js';
 import { GRAPH_CRITERIA_TOPIC, GRAPH_CURATOR_AGENT_ID, GRAPH_CURATOR_AGENT_VERSION, TASK_INTERPRET_EXPLANATION } from './definition.js';
@@ -203,8 +204,9 @@ export async function confirmPlan(
       change,
     }));
     const source = `${EXPLAIN_SOURCE}:${input.taskId}`;
-    await deps.artifacts.propose({ kind: PRODUCT_GRAPH_KIND, baseVersion: signed.version, source, correlationId: input.correlationId, proposals: fresh });
-    const mine = (await deps.artifacts.proposals(PRODUCT_GRAPH_KIND, 'proposed')).filter((p) => p.source === source).map((p) => p.proposalId);
+    // A change another open proposal already asks is not proposed twice: that one is approved instead.
+    const { twins } = await proposeOnce(deps.artifacts, { kind: PRODUCT_GRAPH_KIND, baseVersion: signed.version, source, correlationId: input.correlationId, proposals: fresh });
+    const mine = [...(await deps.artifacts.proposals(PRODUCT_GRAPH_KIND, 'proposed')).filter((p) => p.source === source).map((p) => p.proposalId), ...twins];
     changes = (await decide(mine, 'approved', note)).decided;
   }
   let criterion: { id: string; state: string } | null = null;

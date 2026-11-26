@@ -115,7 +115,7 @@ export function presentProposal(g: ProductGraph, p: Pick<ArtifactProposal, 'summ
 }
 
 /** JSON with sorted keys: Postgres jsonb does not keep key order, so a stored presentation compares by content. */
-const canonical = (v: unknown): string =>
+export const canonical = (v: unknown): string =>
   JSON.stringify(v, (_k, x: unknown) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => a.localeCompare(b))) : x));
 
 /**
