@@ -123,6 +123,14 @@ describe('reaction → offer binding (locateConfirmation, @19 intent guard)', ()
 });
 
 describe('what the channel cannot deliver', () => {
+  it('(ADR-068) the call permission reply after a call is an event: never «I could not see what you sent», never an acceptance', () => {
+    const t = frameUnsupported('call-permission-reply');
+    expect(t.startsWith('[r4:evento] El cliente terminó una llamada')).toBe(true);
+    expect(t).toContain('no respondas solo por esto');
+    expect(t).not.toMatch(/no se pudo|no pude|problema al/);
+    expect(guardIntentReply(t)).toEqual({ confirmed: false, reason: 'disqualified' });
+  });
+
   it('a view-once photo: ask for it from the gallery or Fotos', () => {
     expect(frameUnsupported('unsupported.view_once')).toContain('vuelva a enviar como foto normal, eligiéndola desde su galería o la app Fotos');
     expect(frameUnsupported('unsupported')).toContain('pídele que la envíe como foto normal desde su galería o la app Fotos');
