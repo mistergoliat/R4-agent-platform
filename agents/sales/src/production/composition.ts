@@ -4,7 +4,7 @@ import type pg from 'pg';
 import type { Logger } from 'pino';
 import { DomainError, type CatalogPort, type CheckoutConsentSource, type CheckoutService, type QuoteV2Service, type ShippingService } from '@r4-adapters/domains';
 import { identityVerificationSchemaIsCurrent } from '@r4-adapters/identity-verification';
-import { WHATSAPP_CHANNEL_ID, WhatsAppInboundAdapter, WhatsAppMediaDownloader, WhatsAppOutboundAdapter, describeWhatsAppConfig, loadWhatsAppCloudConfig, type FetchLike, type WhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
+import { WHATSAPP_CHANNEL_ID, WhatsAppCallTranscriptAdapter, WhatsAppInboundAdapter, WhatsAppMediaDownloader, loadWhatsAppCallConfig, WhatsAppOutboundAdapter, describeWhatsAppConfig, loadWhatsAppCloudConfig, type FetchLike, type WhatsAppCloudConfig } from '@r4-adapters/whatsapp-cloud';
 import { WebInboundAdapter, WebOutboundAdapter, describeWebChannelConfig, loadWebChannelConfig, type WebFetch } from '@r4-adapters/web';
 import { CapabilityRegistry, type CapabilityRegistration } from '@r4/capability-runtime';
 import { systemClock, type Clock, type Principal } from '@r4/contracts';
@@ -478,13 +478,16 @@ export function composeSalesGateway(options: SalesGatewayOptions): { bindings: G
   const whatsapp = loadWhatsAppCloudConfig(options.env, { allowNetwork: config.allowNetwork });
   const now = options.now ?? (() => new Date());
   const media = salesMediaPerception(options.env, whatsapp, config.allowNetwork, isCustomerIdentityProfile(profile), now);
+  // (ADR-068) The call gateway's ingress: only with R4_WHATSAPP_CALL_SECRET; its transcripts are framed only where media
+  // perception is composed for the conversation's profile (elsewhere they are unsupported content, as before).
+  const call = loadWhatsAppCallConfig(options.env, whatsapp);
   return {
     whatsapp,
-    describe: { ...describeWhatsAppConfig(whatsapp), ...media.describe },
+    describe: { ...describeWhatsAppConfig(whatsapp), ...media.describe, callIngress: call !== null },
     bindings: {
       production: options.production,
       profile,
-      inbound: [new WhatsAppInboundAdapter(whatsapp)],
+      inbound: [new WhatsAppInboundAdapter(whatsapp), ...(call ? [new WhatsAppCallTranscriptAdapter(call)] : [])],
       outbound: [new WhatsAppOutboundAdapter(whatsapp, options.fetch ? { fetch: options.fetch } : {})],
       taskFactory: salesConversationTaskFactory(options.pool, salesProductionAgentVersion(profile)),
       // (Owner decision 2026-11-12) Worded by the team's service hours at the moment each notice is created.

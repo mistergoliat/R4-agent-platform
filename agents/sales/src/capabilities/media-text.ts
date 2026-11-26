@@ -11,6 +11,8 @@ export const MEDIA_TEXT_HEADERS = Object.freeze({
   audioUnmeasured: '[r4:nota-de-voz-sin-confianza]',
   /** A forwarded or attached audio file (not recorded by the customer): content, never an acceptance. */
   audioForwarded: '[r4:audio-reenviado]',
+  /** (ADR-068) What the customer said in a call on the conversation's channel: read like a typed reply by the intent guard (D4, owner decision 2026-11-26). */
+  call: '[r4:llamada]',
   unavailable: '[r4:adjunto-no-procesado]',
   /** A reaction or a channel system event: not a message from the customer, never an acceptance. */
   event: '[r4:evento]',

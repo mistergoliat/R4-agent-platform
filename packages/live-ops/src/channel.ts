@@ -30,6 +30,11 @@ export const canonicalInboundSchema = z.strictObject({
     /** A reaction to an earlier message: the emoji (null = the reaction was removed) and the provider id of that message. */
     z.strictObject({ kind: z.literal('reaction'), emoji: z.string().min(1).max(16).nullable(), targetProviderMessageId: ref }),
     /**
+     * (ADR-068) What the contact said in a call on this channel, as transcribed by the channel's call gateway. It is never
+     * an ordinary typed text: the pack frames it (MediaPerception.frameTranscript); without that, it is unsupported content.
+     */
+    z.strictObject({ kind: z.literal('transcript'), text: z.string().trim().min(1).max(4000), source: z.enum(['call']) }),
+    /**
      * (Inbound multimodal v1) An image or audio the contact sent: only the provider's REFERENCE, never the bytes. It is
      * downloaded and perceived only for autonomous work (media.ts); otherwise it is held exactly like `unsupported`.
      */
@@ -123,6 +128,16 @@ export interface InboundChannelAdapter {
    * inspector then never takes `senderRef === conversationRef` as proof of a direct sender.
    */
   readonly directConversations?: boolean;
+  /**
+   * (ADR-068) A second ingress for the same channel (e.g. its call gateway), served at
+   * `/v1/channels/<route>/webhook`. Absent: the channel's own provider ingress, at its channel id.
+   */
+  readonly route?: string;
+  /**
+   * (ADR-068) Only for a trusted internal provider: the webhook answer lists the task and input each item landed on,
+   * so the provider can read the reply. Never set for an external provider.
+   */
+  readonly returnsOutcomes?: boolean;
   /** Provider subscription handshake (if the provider has one). */
   verifySubscription(query: Readonly<Record<string, string | undefined>>): { readonly ok: true; readonly body: string } | { readonly ok: false; readonly status: number; readonly reason: string };
   /** Authenticity of a notification, on the raw body exactly as received. Fails closed. */
