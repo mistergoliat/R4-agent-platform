@@ -88,7 +88,7 @@ export class OpenAICompatibleModelProvider implements ModelProvider {
       ...config.extraBody,
       model: config.model,
       messages,
-      ...(maxTokens === null ? {} : { max_tokens: maxTokens }),
+      ...(maxTokens === null ? {} : { [config.outputLimitParam ?? 'max_tokens']: maxTokens }),
       stream: false,
       ...(config.temperature === null ? {} : { temperature: config.temperature }),
       ...(config.responseFormat === 'json_object' && request.outputContract.kind === 'json' ? { response_format: { type: 'json_object' } } : {}),
