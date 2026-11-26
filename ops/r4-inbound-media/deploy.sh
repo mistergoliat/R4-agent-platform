@@ -17,7 +17,7 @@ WORKERS="r4-scheduler r4-sales-worker-lane"; GATEWAY=r4-channel-gateway
 # Optional processes that share this database or this code tree, stopped and restarted only when they are running now:
 # the web chat (2026-11-23), the Meta channels (ADR-060) and the graph curator (ADR-058). They are left as found.
 running() { for p in "$@"; do [ "$(pm2 pid "$p" 2>/dev/null || echo 0)" -gt 0 ] 2>/dev/null && printf '%s ' "$p"; done; true; }
-WORKERS="$WORKERS $(running r4-sales-worker r4-web-qa-worker r4-instagram-worker r4-facebook-worker r4-graph-curator-worker)"
+WORKERS="$WORKERS $(running r4-sales-worker r4-web-qa-worker r4-web-qa-worker-2 r4-web-qa-worker-3 r4-instagram-worker r4-facebook-worker r4-graph-curator-worker)"
 GATEWAY="$GATEWAY $(running r4-web-qa-gateway r4-instagram-gateway r4-facebook-gateway)"
 echo "processes: $WORKERS| $GATEWAY"
 step() { echo "== $(date -u +%T) $*"; }
