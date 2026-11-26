@@ -81,11 +81,36 @@ export interface ContactPresenceEvent {
   readonly occurredAt: string;
 }
 
+/**
+ * (ADR-067 D1) The contact rated the conversation (`conversation`: the card was `shown`, then `bien`, `mas_o_menos`
+ * or `mal`) or one reply (`message`: `up` or `down`, with that reply's outbound id). An Evaluation signal of the
+ * channel, never an input: the agent never sees it. The comment is the contact's own text: untrusted data.
+ */
+export const FEEDBACK_VALUES = { conversation: ['shown', 'bien', 'mas_o_menos', 'mal'], message: ['up', 'down'] } as const;
+export const FEEDBACK_COMMENT_MAX = 500;
+export type FeedbackScope = keyof typeof FEEDBACK_VALUES;
+export type FeedbackValue = (typeof FEEDBACK_VALUES)[FeedbackScope][number];
+
+export interface ContactFeedbackEvent {
+  readonly accountRef: string;
+  readonly conversationRef: string;
+  /** The provider's event id: a re-delivery with the same id is ignored. */
+  readonly eventId: string;
+  readonly scope: FeedbackScope;
+  readonly value: FeedbackValue;
+  /** Required for `message` (the rated reply), null for `conversation`. */
+  readonly outboundId: string | null;
+  /** Trimmed, at most FEEDBACK_COMMENT_MAX characters; null when absent or empty. */
+  readonly comment: string | null;
+  readonly occurredAt: string;
+}
+
 export interface ParsedNotification {
   readonly inbound: readonly CanonicalInbound[];
   readonly statuses: readonly ProviderStatusEvent[];
   readonly rejected: readonly RejectedInbound[];
   readonly presence?: readonly ContactPresenceEvent[];
+  readonly feedback?: readonly ContactFeedbackEvent[];
 }
 
 export type HeaderBag = Readonly<Record<string, string | undefined>>;

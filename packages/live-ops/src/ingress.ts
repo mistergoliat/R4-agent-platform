@@ -211,7 +211,12 @@ export class ChannelIngress {
     for (const p of parsed.presence ?? []) {
       presence += await this.#o.store.recordPresence(conversationKey(this.#o.secrets.identityHashKey, channel, p.accountRef, p.conversationRef), p.state, p.occurredAt);
     }
-    return { status: 200, body: { ok: true, ...results, ...(parsed.presence ? { presence } : {}) } };
+    // (ADR-067 D1) A rating is an Evaluation signal of the channel, never an input: nothing wakes, the agent never sees it.
+    let feedback = 0;
+    for (const f of parsed.feedback ?? []) {
+      feedback += await this.#o.store.recordFeedback(channel, conversationKey(this.#o.secrets.identityHashKey, channel, f.accountRef, f.conversationRef), f);
+    }
+    return { status: 200, body: { ok: true, ...results, ...(parsed.presence ? { presence } : {}), ...(parsed.feedback ? { feedback } : {}) } };
   }
 
   /** Canonical inbound → durable input. Idempotent by the provider event identity. */

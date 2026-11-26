@@ -162,6 +162,25 @@ describe('web channel: edge → web gateway → sales-web@1 → edge', () => {
     expect(await inbound([{ ...presence('evt-pres-0006', 'away', at(3000)), conversationRef: 'session-9999' }])).toMatchObject({ body: { presence: 0 } });
   });
 
+  it('(ADR-067 D1) feedback: the edge\'s rating lands on the conversation\'s task, never as an input; a re-delivery is ignored', async () => {
+    const inputsBefore = (await pool.query('select 1 from task_inputs')).rowCount;
+    const [task] = (await pool.query<{ task_id: string }>('select task_id from agent_tasks')).rows;
+    const outboundId = String(delivered[0]!.body.outboundId);
+    const fb = (eventId: string, over: Record<string, unknown>) => ({ type: 'feedback', eventId, accountRef: 'shop-test', conversationRef: 'session-0001', occurredAt: new Date().toISOString(), scope: 'conversation', value: 'shown', ...over });
+    expect(await inbound([fb('evt-fb-0001', {})])).toMatchObject({ status: 200, body: { feedback: 1, ingested: 0 } });
+    expect(await inbound([fb('evt-fb-0002', { value: 'mal', comment: 'No me sirvió' })])).toMatchObject({ body: { feedback: 1 } });
+    expect(await inbound([fb('evt-fb-0003', { scope: 'message', value: 'down', outboundId })])).toMatchObject({ body: { feedback: 1 } });
+    expect(await inbound([fb('evt-fb-0002', { value: 'mal', comment: 'No me sirvió' })])).toMatchObject({ body: { feedback: 0 } });
+    expect(await inbound([fb('evt-fb-0004', { value: 'excelente' })])).toMatchObject({ body: { rejected: 1 } });
+    const rows = (await pool.query('select task_id, channel, scope, value, outbound_id, comment from customer_feedback order by occurred_at, received_at')).rows;
+    expect(rows).toEqual([
+      { task_id: task!.task_id, channel: 'web', scope: 'conversation', value: 'shown', outbound_id: null, comment: null },
+      { task_id: task!.task_id, channel: 'web', scope: 'conversation', value: 'mal', outbound_id: null, comment: 'No me sirvió' },
+      { task_id: task!.task_id, channel: 'web', scope: 'message', value: 'down', outbound_id: outboundId, comment: null },
+    ]);
+    expect((await pool.query('select 1 from task_inputs')).rowCount).toBe(inputsBefore);
+  });
+
   it('a repeated event is a duplicate (no new input); a forged or stale signature is refused before anything is stored', async () => {
     const inputsBefore = (await pool.query('select 1 from task_inputs')).rowCount;
     expect(await inbound([message('evt-web-0001', '¿tiene stock esta barra?')])).toMatchObject({ status: 200, body: { duplicates: 1, ingested: 0 } });

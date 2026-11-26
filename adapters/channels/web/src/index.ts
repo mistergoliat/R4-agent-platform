@@ -1,7 +1,10 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { FEEDBACK_COMMENT_MAX, FEEDBACK_VALUES } from '@r4/live-ops';
 import type {
   CanonicalInbound,
+  ContactFeedbackEvent,
   ContactPresenceEvent,
+  FeedbackValue,
   HeaderBag,
   InboundChannelAdapter,
   OutboundChannelAdapter,
@@ -31,6 +34,7 @@ export const WEB_PROGRESS_STEPS = ['search', 'discover', 'product', 'shipping', 
 export type WebProgressStep = (typeof WEB_PROGRESS_STEPS)[number];
 const SLUG = /^[a-z][a-z0-9.-]{0,63}$/;
 const REF = /^[A-Za-z0-9_-]{8,128}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const BEFORE_SEND = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ENETUNREACH', 'EHOSTUNREACH', 'UND_ERR_CONNECT_TIMEOUT']);
 
 export interface WebChannelConfig {
@@ -152,6 +156,7 @@ export class WebInboundAdapter implements InboundChannelAdapter {
     const inbound: CanonicalInbound[] = [];
     const rejected: RejectedInbound[] = [];
     const presence: ContactPresenceEvent[] = [];
+    const feedback: ContactFeedbackEvent[] = [];
     let payload: unknown;
     try {
       payload = JSON.parse(rawBody);
@@ -177,6 +182,20 @@ export class WebInboundAdapter implements InboundChannelAdapter {
         else presence.push({ accountRef: this.#config.accountRef, conversationRef: e.conversationRef, state: e.state, occurredAt: occurred.toISOString() });
         continue;
       }
+      // (ADR-067 D1) A rating of the conversation or of one reply: closed lists, delivered apart, never an input.
+      if (e.type === 'feedback') {
+        const scope = e.scope === 'conversation' || e.scope === 'message' ? e.scope : null;
+        const value = scope && (FEEDBACK_VALUES[scope] as readonly unknown[]).includes(e.value) ? (e.value as FeedbackValue) : null;
+        // A reply is rated by its outbound id (a UUID); the conversation card carries none.
+        const outboundOk = scope === 'message' ? typeof e.outboundId === 'string' && UUID.test(e.outboundId) : e.outboundId == null;
+        // Optional customer text, trimmed and cut to 500 characters (never mid code point). The bare «shown» card has none.
+        const commentOk = e.comment == null || (typeof e.comment === 'string' && (value !== 'shown' || !e.comment.trim()));
+        const comment = typeof e.comment === 'string' ? Array.from(e.comment.trim()).slice(0, FEEDBACK_COMMENT_MAX).join('') || null : null;
+        if (typeof e.conversationRef !== 'string' || !REF.test(e.conversationRef) || !scope || !value || !outboundOk || !commentOk) rejected.push({ providerEventId: id, reason: 'invalid_event' });
+        else if (!occurred || Number.isNaN(occurred.getTime())) rejected.push({ providerEventId: id, reason: 'invalid_timestamp' });
+        else feedback.push({ accountRef: this.#config.accountRef, conversationRef: e.conversationRef, eventId: id, scope, value, outboundId: scope === 'message' ? (e.outboundId as string).toLowerCase() : null, comment, occurredAt: occurred.toISOString() });
+        continue;
+      }
       const text = typeof e.text === 'string' ? e.text.trim() : '';
       if (e.type !== 'message' || typeof e.conversationRef !== 'string' || !REF.test(e.conversationRef)) rejected.push({ providerEventId: id, reason: 'invalid_event' });
       else if (!occurred || Number.isNaN(occurred.getTime())) rejected.push({ providerEventId: id, reason: 'invalid_timestamp' });
@@ -190,7 +209,7 @@ export class WebInboundAdapter implements InboundChannelAdapter {
         });
       }
     }
-    return { inbound, statuses: [], rejected, ...(presence.length ? { presence } : {}) };
+    return { inbound, statuses: [], rejected, ...(presence.length ? { presence } : {}), ...(feedback.length ? { feedback } : {}) };
   }
 }
 
@@ -201,6 +220,9 @@ export type WebFetch = (url: string, init: { method: string; headers: Record<str
  * deduplicates by R4's idempotency key, so a retried `not_sent` never doubles a message.
  *   2xx + messageId → accepted · 2xx without → unknown · 429 → not_sent · 400/401/403/404 → rejected
  *   5xx / other → unknown · connection refused/DNS → not_sent · timeout / reset after connect → unknown
+ * The text goes verbatim, with the edge's markers on their own lines for the edge to render or act on and never show:
+ * [[contacto]], [[nueva-conversacion]], [[opciones: A | B]], product keys like [[P1651]] and (ADR-067 D0) [[despedida]],
+ * which shows the «¿Cómo te atendimos?» card.
  */
 export class WebOutboundAdapter implements OutboundChannelAdapter {
   readonly channel = WEB_CHANNEL_ID;
