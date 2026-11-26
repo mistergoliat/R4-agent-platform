@@ -153,6 +153,15 @@ clave** contra **su propio archivo de operadores**:
   la mesa), para revocar cada uno por separado.
 - **Revocación de la mesa:** quitar sus dos variables (o su hash de lector) y reiniciar `r4-api`.
 
+## Enmienda 2 (2026-11-26) — Quién escribe el archivo de operadores de la mesa (ADR-048, revisión 3)
+
+- Con el registro único de personas, el archivo de operadores de la mesa lo escribe el trabajo del host de la
+  consola, no la mesa. Lo arma a partir de las personas activas con acceso a la app Ventas.
+- Hay un solo escritor y un solo reinicio de `r4-api`. El paso `sync-operators` de la mesa se retira cuando esto esté
+  en producción.
+- Los dos archivos siguen separados y el tope de la mesa no cambia: solo `handoff.manage` y `consultation.answer`.
+- Las claves, el formato del archivo y sus reglas (Decisión 2) tampoco cambian.
+
 ## Consecuencias
 
 - La consola puede hacer toda escritura de operador que R4 ya expone, con atribución `oidc:<operatorRef>`.

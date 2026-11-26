@@ -13,12 +13,85 @@
   abiertas. También alinea el reparto con el plan comercial omnicanal del owner («Don Pesin · Plan Comercial
   Omnicanal», 2026-11-24, fuera del repositorio): pools con autoasignación, sin comisiones por ahora, y metas por
   vendedor medidas desde su onboarding. Pedido del owner del 2026-11-25. Ver la sección «Revisión 2».
+- **Revisión 3 (2026-11-26):** un solo registro de personas. Cada persona se da de alta una vez, en la consola, por
+  invitación, y ahí se elige a qué entra: la consola, la app Ventas o ambas. La mesa deja de dar altas. Canvas
+  «Consola R4» aprobado por el owner el 2026-11-26 («aprobado el canvas, dale con la ADR-048»). Ver la sección
+  «Revisión 3».
 - **Mandato:** owner, 2026-11-18: diseñar una plataforma robusta que reemplace al proveedor de atención actual
   (menú de áreas y bandeja de agentes humanos) para WhatsApp y el chat web.
 - **Autoridad superior:** Constitución; PRD §17 (operador humano) y §19 (canales); ADR-029 (entrega gobernada);
   ADR-033 (identidad de operadores, OIDC); ADR-041 (avisos de plataforma ante fallas); ADR-042 (colaboración
   con el owner); ADR-045 (carril de conversación); ADR-046 (canal web); ADR-047 (cierre por inactividad);
   auditoría R4-I CRM/WhatsApp (D-1: número productivo).
+
+## Revisión 3 — un solo registro de personas (2026-11-26)
+
+### Problema
+
+Hasta ahora había dos altas distintas para las mismas personas:
+
+- **La app Ventas** daba de alta en su pantalla Equipo. La persona intentaba entrar, la app le mostraba su número de
+  Google, un administrador lo copiaba a mano y alguien con acceso al servidor corría `sync-operators` para que R4 la
+  reconociera. Hasta entonces, R4 rechazaba lo que hacía.
+- **La consola** daba de alta por invitación: un link de un solo uso, ligado a una cuenta de Google, con recorrido de
+  bienvenida y aprobación del owner (ADR-050).
+
+Un supervisor que usa las dos herramientas se registraba dos veces, de dos formas.
+
+### Decisión
+
+1. **Una persona, un registro, una cuenta de Google.** Las altas, las bajas, los roles y las áreas se hacen solo en la
+   consola, en «Personas y accesos» (antes «Operadores»), con la invitación que ya existe.
+2. **Al invitar se elige el acceso a cada herramienta, por separado:**
+   - **App Ventas:** vendedor, supervisor, administrador o no entra; y sus áreas, de entre las que existen en la mesa
+     (hoy: ventas, mayoristas, institucionales, postventa y servicio técnico). Un supervisor ve todas.
+   - **Consola:** no entra, solo lectura o administrador.
+3. **Aprobación:** el owner aprueba cada alta. Si la persona solo entra a la app Ventas, basta aprobar. Si además es
+   administradora de la consola, se mantiene la confirmación escrita y el recorrido de bienvenida de ADR-050.
+4. **Los permisos siguen separados.** Un registro de personas no es una lista de permisos única: cada herramienta
+   firma con su clave y su archivo de operadores (ADR-050, enmienda 1). Un vendedor nunca obtiene acceso a la consola
+   por estar en la app Ventas. El tope de la mesa en R4 (`handoff.manage` y `consultation.answer`) no cambia.
+5. **La consola nunca escribe las tablas de la mesa.** El servicio de la mesa sigue siendo dueño de sus datos
+   (Decisión 1):
+   - Un trabajo del host de la consola escribe un archivo de personas, fuera de Git y con modo 0600. Lo escribe
+     entero y de forma atómica.
+   - La mesa lo concilia en sus tablas con su propio proceso, periódico y al desplegar.
+6. **Forma del archivo de personas:**
+   `{"version": 1, "updatedAt": "<ISO>", "people": [{"sub", "iss", "name", "operatorRef", "desk": {"role", "areas"} | null, "active"}]}`
+   - **`sub` e `iss`:** la identidad de Google. La mesa acepta solo `iss` de Google y un `sub` numérico.
+   - **`operatorRef`:** estable por persona. Es lo que R4 registra como `oidc:<operatorRef>`, con el formato
+     `^[a-z0-9][a-z0-9._-]{0,63}$`.
+   - **`desk`:** el rol `seller`, `supervisor` o `admin` y la lista de áreas; `null` si no entra a la app Ventas.
+   - **El rol en la consola no va en este archivo:** sigue en el registro propio de la consola.
+7. **Conciliación en la mesa:**
+   - La llave es `sub`.
+   - Conserva el identificador interno del vendedor y su disponibilidad, que es de la mesa. Actualiza nombre, rol y
+     áreas.
+   - Quien falta en el archivo, tiene `active: false` o `desk: null` queda inactivo. Nunca se borra a nadie, así que
+     su historial y sus ventas quedan.
+   - Un área que la mesa no conoce se ignora y queda en el registro de la mesa; las áreas se crean en la mesa.
+8. **Un solo escritor del archivo de operadores de la mesa en R4.** El trabajo del host de la consola escribe también
+   el archivo de operadores de la mesa, a partir de las personas activas con acceso a la app Ventas, y reinicia
+   `r4-api` una sola vez. Cuando eso funcione, el paso `sync-operators` sale del despliegue de la mesa, para que
+   nunca escriban los dos.
+9. **La pantalla Equipo de la app Ventas** queda para ver al equipo, sus roles y sus áreas, y para la disponibilidad y
+   el tope de casos, que siguen siendo de la mesa. Deja de tener el alta con número de Google.
+10. **Suspender** a alguien en la consola le corta ambos accesos en su siguiente acción.
+
+### Reparto y orden
+
+1. **Consola (e6):** «Personas y accesos», la invitación con acceso por herramienta, el archivo de personas y la
+   escritura del archivo de operadores de la mesa en el trabajo del host.
+2. **Mesa (c0):** la conciliación desde el archivo, Equipo en solo lectura para las altas y quitar `sync-operators` del
+   despliegue cuando el trabajo de la consola esté en producción.
+3. Cada despliegue necesita la autorización del owner. Las personas que hoy están en la mesa se cargan una vez en el
+   registro de la consola, con el mismo `sub` y el mismo `operatorRef`, antes de quitar `sync-operators`, para que
+   nadie pierda el acceso.
+
+### Lo que no cambia
+
+R4 Core no cambia. El contrato de la aserción firmada, los topes por firmante y la identidad `oidc:<operatorRef>` de
+ADR-050 siguen igual. Las reglas de asignación, cobertura y atribución de este ADR tampoco cambian.
 
 ## Revisión 2 — estado al 2026-11-25
 
