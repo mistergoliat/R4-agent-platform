@@ -66,7 +66,20 @@ describe('ChatCompletionsImageDescriber', () => {
     const sent = JSON.parse(f.calls[0]!.body as string);
     expect(sent.messages[1].content[0].image_url.url).toBe('data:image/png;base64,AQID');
     expect(sent.response_format).toEqual({ type: 'json_object' });
+    expect(sent.max_tokens).toBe(1500);
     expect(f.calls[0]!.url).toBe('http://127.0.0.1:9/chat/completions');
+  });
+
+  it('sends the ceiling as max_completion_tokens when R4_PERCEPTION_VISION_OUTPUT_LIMIT_PARAM says so (OpenAI direct refuses max_tokens)', async () => {
+    const env = { R4_MEDIA_PERCEPTION: 'enabled', R4_PERCEPTION_VISION_API_KEY: 'vk', R4_PERCEPTION_VISION_BASE_URL: 'http://127.0.0.1:9' };
+    expect(loadPerceptionConfig(env, { allowNetwork: true }).vision).not.toHaveProperty('outputLimitParam');
+    expect(() => loadPerceptionConfig({ ...env, R4_PERCEPTION_VISION_OUTPUT_LIMIT_PARAM: 'max_output_tokens' }, { allowNetwork: true })).toThrow(/OUTPUT_LIMIT_PARAM/);
+    const vision = loadPerceptionConfig({ ...env, R4_PERCEPTION_VISION_OUTPUT_LIMIT_PARAM: 'max_completion_tokens' }, { allowNetwork: true }).vision!;
+    const f = fake([{ status: 200, body: { choices: [{ message: { content: JSON.stringify(output) } }] } }]);
+    await new ChatCompletionsImageDescriber(vision, { fetch: f.fetch }).describe({ bytes: new Uint8Array([1]), mimeType: 'image/png' }, { timeoutMs: 1000 });
+    const sent = JSON.parse(f.calls[0]!.body as string);
+    expect(sent.max_completion_tokens).toBe(1500);
+    expect(sent).not.toHaveProperty('max_tokens');
   });
 
   it('fails on anything but the perception object', async () => {

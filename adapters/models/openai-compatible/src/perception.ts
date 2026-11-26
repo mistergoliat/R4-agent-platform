@@ -33,6 +33,12 @@ export interface PerceptionEndpoint {
   /** Never logged or persisted. */
   readonly apiKey: string;
   readonly model: string;
+  /**
+   * R4_PERCEPTION_VISION_OUTPUT_LIMIT_PARAM (vision only): the name the output ceiling is sent under. Default
+   * `max_tokens`; OpenAI's own API refuses it on its reasoning models and wants `max_completion_tokens` (measured
+   * 2026-11-26 on gpt-6-luna).
+   */
+  readonly outputLimitParam?: 'max_tokens' | 'max_completion_tokens';
 }
 
 export interface PerceptionConfig {
@@ -84,7 +90,10 @@ export function loadPerceptionConfig(env: Readonly<Record<string, string | undef
   const prompt = env.R4_PERCEPTION_STT_PROMPT?.trim();
   const rpm = env.R4_PERCEPTION_VISION_MAX_REQUESTS_PER_MINUTE?.trim();
   if (rpm && !/^[1-9][0-9]{0,4}$/.test(rpm)) throw new PerceptionError('invalid_perception_config', 'R4_PERCEPTION_VISION_MAX_REQUESTS_PER_MINUTE must be a positive integer');
-  return { enabled: true, vision, speech: stt ? { ...stt, provider: 'openai', promptOverride: prompt ? prompt.slice(0, 900) : null } : null, ...(rpm ? { visionMaxRequestsPerMinute: Number(rpm) } : {}) };
+  const rawLimitParam = env.R4_PERCEPTION_VISION_OUTPUT_LIMIT_PARAM?.trim();
+  if (rawLimitParam && rawLimitParam !== 'max_tokens' && rawLimitParam !== 'max_completion_tokens') throw new PerceptionError('invalid_perception_config', 'R4_PERCEPTION_VISION_OUTPUT_LIMIT_PARAM must be max_tokens or max_completion_tokens');
+  const limitParam = rawLimitParam as PerceptionEndpoint['outputLimitParam'];
+  return { enabled: true, vision: vision && limitParam ? { ...vision, outputLimitParam: limitParam } : vision, speech: stt ? { ...stt, provider: 'openai', promptOverride: prompt ? prompt.slice(0, 900) : null } : null, ...(rpm ? { visionMaxRequestsPerMinute: Number(rpm) } : {}) };
 }
 
 /** Safe description (no secrets) for plans and readiness. */
@@ -181,7 +190,7 @@ export class ChatCompletionsImageDescriber {
     const body = JSON.stringify({
       model: this.#e.model,
       response_format: { type: 'json_object' },
-      max_tokens: 1500,
+      [this.#e.outputLimitParam ?? 'max_tokens']: 1500,
       messages: [{ role: 'system', content: this.#instructions }, { role: 'user', content: [{ type: 'image_url', image_url: { url: dataUrl } }] }],
     });
     const res = await post(this.#fetch, `${this.#e.baseUrl}/chat/completions`, this.#e.apiKey, body, true, options.timeoutMs, options.signal, this.#limiter);
