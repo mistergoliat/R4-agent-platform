@@ -36,7 +36,7 @@ consola los pide, sobre una ventana de días. No hay tabla de ocurrencias que ma
 
 | Detector | Qué detecta | Gravedad |
 |---|---|---|
-| `customer_unanswered` | El último mensaje del cliente en una tarea no tiene respuesta aceptada por el canal después de 10 minutos, la tarea no la tiene una persona y la conversación es autónoma | crítica |
+| `customer_unanswered` | El último mensaje del cliente en una tarea no tiene respuesta aceptada por el canal después de 4 minutos (owner, 2026-11-26; antes 10), la tarea no la tiene una persona y la conversación es autónoma | crítica |
 | `run_failed` | Run terminado en `failed`, por `termination_reason/termination_code` | alta si es `model_failure` o `budget_exhausted`; media en el resto |
 | `platform_handoff` | Traspaso iniciado por la plataforma, por motivo | media; informativa para `autonomy_disabled` y `rollout_excluded` |
 | `step_error` | Paso rechazado o inválido aunque el run se haya recuperado, por `error_code` | baja |
@@ -47,7 +47,7 @@ consola los pide, sobre una ventana de días. No hay tabla de ocurrencias que ma
 Cada grupo entrega: firma, detector, gravedad, agente y versión, código, cantidad, primera y última vez, y hasta 5
 tareas de ejemplo (identificadores opacos). **Nunca** texto de mensajes, datos de contacto ni razonamiento.
 
-Los umbrales (10 minutos, 60 s) son constantes con nombre en el código; cambiarlos es un cambio revisado.
+Los umbrales (4 minutos sin respuesta, 10 minutos para una consulta, 60 s por turno) son constantes con nombre en el código; cambiarlos es un cambio revisado. El owner bajó «cliente sin respuesta» de 10 a 4 minutos el 2026-11-26.
 
 **Implementación** (`packages/persistence-postgres/src/incidents.ts`, `UNANSWERED_AFTER_MS`, `SLOW_REPLY_MS`):
 
