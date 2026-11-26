@@ -68,8 +68,8 @@ beforeAll(async () => {
   // (owner 2026-11-26) A second reply to the same input minutes later (a relayed consultation answer) is NOT slow:
   // the customer already had the first one. slow_reply below still counts exactly one turn for this task.
   await bed.rows(
-    `insert into outbound_messages (outbound_id, origin, task_id, binding_id, channel, idempotency_key, content_sha256, body, status, response_key, response_step_id, profile, correlation_id, accepted_at)
-     select $1, 'agent', o.task_id, o.binding_id, o.channel, 'incident-relay', o.content_sha256, o.body, o.status, 'incident-relay', o.response_step_id, o.profile, 'incident-test', o.accepted_at + interval '3 minutes'
+    `insert into outbound_messages (outbound_id, origin, task_id, binding_id, channel, idempotency_key, content_sha256, body, status, response_key, response_step_id, run_id, profile, correlation_id, accepted_at)
+     select $1, 'agent', o.task_id, o.binding_id, o.channel, 'incident-relay', o.content_sha256, o.body, o.status, o.response_key, o.response_step_id, o.run_id, o.profile, 'incident-test', o.accepted_at + interval '3 minutes'
        from outbound_messages o where o.task_id = $2 and o.origin = 'agent' and o.accepted_at is not null order by o.accepted_at limit 1`,
     [randomUUID(), tasks.answered],
   );
