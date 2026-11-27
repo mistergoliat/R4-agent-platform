@@ -123,7 +123,9 @@ describe('what the Sales agent sees of a call (ADR-068 D4, owner decision 2026-1
   it('(owner decision 2026-11-26) after an answered call the agent only asks, briefly, whether it helped', () => {
     const t = frameUnsupported('call-ended');
     expect(t.startsWith('[r4:evento] Terminó la llamada de WhatsApp')).toBe(true);
-    expect(t).toContain('¿Te pude ayudar en la llamada, o hubo algún problema?');
+    // (Owner 2026-11-27) Its own words: the frame gives the intent, never a phrase to copy.
+    expect(t).toContain('con tus propias palabras');
+    expect(t).not.toMatch(/[«"]/);
     expect(guardIntentReply(t)).toEqual({ confirmed: false, reason: 'disqualified' });
     // The permission reply Meta sends after ANY call (answered or not) stays a silent event.
     expect(frameUnsupported('call-permission-reply')).toContain('no respondas solo por esto');

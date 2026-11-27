@@ -82,7 +82,7 @@ describe('WhatsApp calls into the same conversation (ADR-068)', { timeout: 60_00
     expect(res).toMatchObject({ status: 200, body: { ingested: 1 } });
     const landed = (res.body.landed as { taskId: string; inputId: string }[])[0]!;
     const input = await inputOf(bed, landed.inputId);
-    expect(input.text).toContain('¿Te pude ayudar en la llamada, o hubo algún problema?');
+    expect(input.text).toContain('para saber si lo pudiste ayudar en la llamada o si hubo algún problema');
     const [row] = await bed.rows('select content_kind, content_type, disposition from inbound_events where input_id = $1', [landed.inputId]);
     expect(row).toEqual({ content_kind: 'unsupported', content_type: 'call-ended', disposition: 'autonomous' });
     expect(await send()).toMatchObject({ status: 200, body: { ingested: 0, duplicates: 1 } });
