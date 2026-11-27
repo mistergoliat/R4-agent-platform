@@ -46,6 +46,11 @@ const REPORTS: Readonly<Record<string, { readonly step: WebProgressStep; readonl
   [LANE_CAPABILITY_IDS.catalogDiscover]: { step: 'discover', when: 'before', detail: () => null },
   // The name comes from Catalog's answer (the owner), never from the agent.
   [CAPABILITY_IDS.productContext]: { step: 'product', when: 'after', detail: (_input, output) => field(output, 'facts', 'name') ?? field(output, 'name') },
+  // (sales-web@24) The names of the products found, in the order read (the edge cuts the text to its own length).
+  [LANE_CAPABILITY_IDS.catalogProductsContext]: { step: 'product', when: 'after', detail: (_input, output) => {
+    const products = (output as { products?: unknown } | null)?.products;
+    return Array.isArray(products) ? products.map((p) => field(p, 'facts', 'name')).filter((n) => n !== null).join(', ') || null : null;
+  } },
   [CAPABILITY_IDS.shippingQuote]: { step: 'shipping', when: 'before', detail: (input) => field(input, 'destination', 'commune') },
 };
 

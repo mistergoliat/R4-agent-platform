@@ -259,12 +259,25 @@ export const SALES_WEB_PROFILE_V23: ProductionProfile = Object.freeze({
   description: 'sales-web@22 pinned to definition v23: volume-price requests noticed to the wholesale sellers and recorded as traspaso with segment mayorista, the closing line only after two insistences, a new record when real buying intent follows a joke, off-topic replies in two short sentences, [[despedida]] on a real goodbye.',
 } satisfies ProductionProfile);
 
-export const SALES_WEB_QUOTE_PROFILES: ReadonlySet<string> = new Set(['sales-web@19', 'sales-web@20', 'sales-web@21', 'sales-web@22', 'sales-web@23']);
+/**
+ * (Response time, 2026-11-26) sales-web@23 plus catalog.get_products_context (up to 8 products in one read, each exactly
+ * as catalog.get_product_context reads it), pinned to definition v24 = v23 with the reading rules: list results already
+ * carry price, stock and variants; read a product only for what the list lacks; several products in one call; never
+ * again while its observation is current. Everything else is @23's.
+ */
+export const SALES_WEB_PROFILE_V24: ProductionProfile = Object.freeze({
+  ...SALES_WEB_PROFILE_V23,
+  version: 24,
+  description: 'sales-web@23 with catalog.get_products_context (several products in one read) pinned to definition v24: no product read to re-confirm what a list result already shows, the details of several products in one call, and no second read of a product while its observation is current.',
+  capabilities: [...SALES_WEB_PROFILE_V23.capabilities, { capabilityId: LANE_CAPABILITY_IDS.catalogProductsContext, domain: SALES_DOMAINS.catalog, effect: 'read' as const }],
+} satisfies ProductionProfile);
 
-export const SALES_WEB_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_WEB_PROFILE_V1, SALES_WEB_PROFILE_V2, SALES_WEB_PROFILE_V3, SALES_WEB_PROFILE_V4, SALES_WEB_PROFILE_V5, SALES_WEB_PROFILE_V6, SALES_WEB_PROFILE_V7, SALES_WEB_PROFILE_V8, SALES_WEB_PROFILE_V9, SALES_WEB_PROFILE_V10, SALES_WEB_PROFILE_V11, SALES_WEB_PROFILE_V12, SALES_WEB_PROFILE_V13, SALES_WEB_PROFILE_V14, SALES_WEB_PROFILE_V15, SALES_WEB_PROFILE_V16, SALES_WEB_PROFILE_V17, SALES_WEB_PROFILE_V18, SALES_WEB_PROFILE_V19, SALES_WEB_PROFILE_V20, SALES_WEB_PROFILE_V21, SALES_WEB_PROFILE_V22, SALES_WEB_PROFILE_V23]);
+export const SALES_WEB_QUOTE_PROFILES: ReadonlySet<string> = new Set(['sales-web@19', 'sales-web@20', 'sales-web@21', 'sales-web@22', 'sales-web@23', 'sales-web@24']);
+
+export const SALES_WEB_PROFILES: readonly ProductionProfile[] = Object.freeze([SALES_WEB_PROFILE_V1, SALES_WEB_PROFILE_V2, SALES_WEB_PROFILE_V3, SALES_WEB_PROFILE_V4, SALES_WEB_PROFILE_V5, SALES_WEB_PROFILE_V6, SALES_WEB_PROFILE_V7, SALES_WEB_PROFILE_V8, SALES_WEB_PROFILE_V9, SALES_WEB_PROFILE_V10, SALES_WEB_PROFILE_V11, SALES_WEB_PROFILE_V12, SALES_WEB_PROFILE_V13, SALES_WEB_PROFILE_V14, SALES_WEB_PROFILE_V15, SALES_WEB_PROFILE_V16, SALES_WEB_PROFILE_V17, SALES_WEB_PROFILE_V18, SALES_WEB_PROFILE_V19, SALES_WEB_PROFILE_V20, SALES_WEB_PROFILE_V21, SALES_WEB_PROFILE_V22, SALES_WEB_PROFILE_V23, SALES_WEB_PROFILE_V24]);
 
 /** The sales-web definition version each web profile pins. */
-const SALES_WEB_AGENT_VERSIONS: Readonly<Record<string, number>> = Object.freeze({ 'sales-web@1': 1, 'sales-web@2': 2, 'sales-web@3': 3, 'sales-web@4': 4, 'sales-web@5': 5, 'sales-web@6': 6, 'sales-web@7': 7, 'sales-web@8': 8, 'sales-web@9': 9, 'sales-web@10': 10, 'sales-web@11': 11, 'sales-web@12': 12, 'sales-web@13': 13, 'sales-web@14': 14, 'sales-web@15': 15, 'sales-web@16': 16, 'sales-web@17': 17, 'sales-web@18': 18, 'sales-web@19': 19, 'sales-web@20': 20, 'sales-web@21': 21, 'sales-web@22': 22, 'sales-web@23': 23 });
+const SALES_WEB_AGENT_VERSIONS: Readonly<Record<string, number>> = Object.freeze({ 'sales-web@1': 1, 'sales-web@2': 2, 'sales-web@3': 3, 'sales-web@4': 4, 'sales-web@5': 5, 'sales-web@6': 6, 'sales-web@7': 7, 'sales-web@8': 8, 'sales-web@9': 9, 'sales-web@10': 10, 'sales-web@11': 11, 'sales-web@12': 12, 'sales-web@13': 13, 'sales-web@14': 14, 'sales-web@15': 15, 'sales-web@16': 16, 'sales-web@17': 17, 'sales-web@18': 18, 'sales-web@19': 19, 'sales-web@20': 20, 'sales-web@21': 21, 'sales-web@22': 22, 'sales-web@23': 23, 'sales-web@24': 24 });
 
 export function salesWebProfile(label: string): ProductionProfile | null {
   return SALES_WEB_PROFILES.find((p) => profileLabel(p) === label) ?? null;

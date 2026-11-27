@@ -74,13 +74,28 @@ function discoverFacts(p: Json): Json {
   };
 }
 
-/** Which catalog subject an observation speaks about (newest wins), or null when it is not covered. */
-function subjectOf(o: Observation): string | null {
-  if (o.source.kind !== 'capability' || o.outcome !== 'succeeded') return null;
+interface Subject {
+  readonly subject: string;
+  readonly observation: Observation;
+  /** The product context or the Discover answer its facts come from. */
+  readonly payload: Json;
+  readonly itemId: string;
+}
+
+/**
+ * Which catalog subjects an observation speaks about (newest wins): one for a single read or a Discover answer, one per
+ * product for a batch read (sales-web@24; a product it could not read speaks about nothing). Empty when not covered.
+ */
+function subjectsOf(o: Observation): Subject[] {
+  if (o.source.kind !== 'capability' || o.outcome !== 'succeeded') return [];
   const p = obj(o.payload);
-  if (o.source.capabilityId === CAPABILITY_IDS.productContext && typeof p.productKey === 'string') return `product:${p.productKey}`;
-  if (o.source.capabilityId === LANE_CAPABILITY_IDS.catalogDiscover && typeof p.need === 'string') return `need:${p.need.trim().toLowerCase().replace(/\s+/gu, ' ')}`;
-  return null;
+  const itemId = `${CATALOG_DESCRIPTIVE_SOURCE}:${o.observationId}`;
+  if (o.source.capabilityId === CAPABILITY_IDS.productContext && typeof p.productKey === 'string') return [{ subject: `product:${p.productKey}`, observation: o, payload: p, itemId }];
+  if (o.source.capabilityId === LANE_CAPABILITY_IDS.catalogProductsContext) {
+    return arr(p.products).map(obj).flatMap((i) => (typeof i.productKey === 'string' && i.status !== 'failed' ? [{ subject: `product:${i.productKey}`, observation: o, payload: i, itemId: `${itemId}:${i.productKey}` }] : []));
+  }
+  if (o.source.capabilityId === LANE_CAPABILITY_IDS.catalogDiscover && typeof p.need === 'string') return [{ subject: `need:${p.need.trim().toLowerCase().replace(/\s+/gu, ' ')}`, observation: o, payload: p, itemId }];
+  return [];
 }
 
 /**
@@ -89,24 +104,25 @@ function subjectOf(o: Observation): string | null {
  * whose newest read is `not_found` gets none.
  */
 export function catalogDescriptiveItems(observations: readonly Observation[], now: Date, windowMs: number): ContextContributionInput[] {
-  const newest = new Map<string, Observation>();
+  const newest = new Map<string, Subject>();
   for (const o of observations) {
-    const subject = subjectOf(o);
-    if (subject === null) continue;
-    const previous = newest.get(subject);
-    if (!previous || o.observedAt > previous.observedAt || (o.observedAt === previous.observedAt && o.observationId > previous.observationId)) newest.set(subject, o);
+    for (const s of subjectsOf(o)) {
+      const previous = newest.get(s.subject)?.observation;
+      if (!previous || o.observedAt > previous.observedAt || (o.observedAt === previous.observedAt && o.observationId > previous.observationId)) newest.set(s.subject, s);
+    }
   }
   const at = now.getTime();
   const minutes = windowMs % 60_000 === 0 ? `${windowMs / 60_000} minutes` : `${windowMs / 1000} seconds`;
   const items: ContextContributionInput[] = [];
-  for (const o of newest.values()) {
-    const p = obj(o.payload);
+  for (const { observation: o, payload: p, itemId } of newest.values()) {
     const until = Date.parse(o.observedAt) + windowMs;
+    // A batch read has one validity for all its products, the earliest of theirs (catalogProductsOwnerValidUntil).
     if (o.validUntil === null || at < Date.parse(o.validUntil) || at >= until) continue;
-    if (o.source.capabilityId === CAPABILITY_IDS.productContext && p.status !== 'found') continue;
-    const facts = o.source.capabilityId === CAPABILITY_IDS.productContext ? productFacts(p) : discoverFacts(p);
+    const product = o.source.capabilityId !== LANE_CAPABILITY_IDS.catalogDiscover;
+    if (product && p.status !== 'found') continue;
+    const facts = product ? productFacts(p) : discoverFacts(p);
     items.push({
-      itemId: `${CATALOG_DESCRIPTIVE_SOURCE}:${o.observationId}`,
+      itemId,
       kind: 'observation',
       authority: 'OBSERVED',
       temporality: 'point_in_time',

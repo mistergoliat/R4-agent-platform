@@ -1,7 +1,7 @@
 import type { Observation } from '@r4/contracts';
 import type { ClaimVerification, ClaimVerifier, ExtractedClaim } from '@r4/evaluation';
 import { catalogEvidenceValidUntil } from '../capabilities/catalog.js';
-import { CAPABILITY_IDS } from '../ids.js';
+import { CAPABILITY_IDS, LANE_CAPABILITY_IDS } from '../ids.js';
 
 /**
  * Deterministic verification of Sales claims against the observations a
@@ -76,8 +76,8 @@ type Money = { amount?: unknown } | undefined;
 type Price = { kind?: unknown; finalGross?: Money } | null | undefined;
 
 /** False when the owner had already declared the answer expired at the instant R4 observed it. */
-function ownerCurrentAtObservation(o: Observation): boolean {
-  const validUntil = catalogEvidenceValidUntil({ validUntil: null, payload: o.payload });
+function ownerCurrentAtObservation(o: Observation, payload: unknown = o.payload): boolean {
+  const validUntil = catalogEvidenceValidUntil({ validUntil: null, payload });
   return validUntil === null || Date.parse(validUntil) >= Date.parse(o.observedAt);
 }
 
@@ -122,22 +122,26 @@ function index(evidence: readonly Observation[]): EvidenceIndex {
         if (typeof a?.sellability === 'string' && typeof a.reason === 'string') entry.availability = { sellability: a.sellability, reason: a.reason };
         for (const v of leafValues({ name: r.name, category })) entry.detailValues.add(v);
       }
-    } else if (capability === CAPABILITY_IDS.productContext) {
-      if (payload.status === 'not_found' && typeof payload.productKey === 'string') idx.notFound.set(payload.productKey, o.observationId);
-      if (payload.status !== 'found' || typeof payload.productKey !== 'string') continue;
-      const facts = payload.facts as { name?: unknown; category?: { name?: unknown } | null; brand?: unknown; status?: unknown; specifications?: unknown; sellableItemKey?: unknown; variantOptions?: { itemKey?: unknown; attributes?: unknown }[] };
-      const derived = payload.derived as { price?: Price; availability?: { sellability?: unknown; reason?: unknown } };
-      const entry = product(payload.productKey, facts.name, o.observationId);
-      if (typeof facts.category?.name === 'string') entry.category = facts.category.name;
-      addCategory(facts.category?.name, o.observationId);
-      price(entry, derived.price, o.observationId, ownerCurrentAtObservation(o));
-      if (typeof derived.availability?.sellability === 'string' && typeof derived.availability.reason === 'string') entry.availability = { sellability: derived.availability.sellability, reason: derived.availability.reason };
-      // Only authoritative facts ground a specification: never catalog-edited free text or inferred blocks.
-      for (const v of leafValues({ name: facts.name, category: facts.category, brand: facts.brand, status: facts.status, specifications: facts.specifications, variants: (facts.variantOptions ?? []).map((v) => v.attributes) })) entry.detailValues.add(v);
-      if (typeof facts.sellableItemKey === 'string') idx.aliases.set(facts.sellableItemKey, payload.productKey);
-      for (const v of facts.variantOptions ?? []) if (typeof v.itemKey === 'string') idx.aliases.set(v.itemKey, payload.productKey);
-      const fbt = (payload.inferred as { frequentlyBoughtTogether?: { status?: unknown; items?: { productKey?: unknown }[] } } | undefined)?.frequentlyBoughtTogether;
-      if (fbt?.status === 'available') for (const item of fbt.items ?? []) if (typeof item.productKey === 'string') entry.boughtTogether.add(item.productKey);
+    } else if (capability === CAPABILITY_IDS.productContext || capability === LANE_CAPABILITY_IDS.catalogProductsContext) {
+      // (sales-web@24) A batch read is indexed product by product, each with its own owner freshness.
+      const items = capability === CAPABILITY_IDS.productContext ? [payload] : ((payload.products as Record<string, unknown>[] | undefined) ?? []);
+      for (const item of items) {
+        if (item.status === 'not_found' && typeof item.productKey === 'string') idx.notFound.set(item.productKey, o.observationId);
+        if (item.status !== 'found' || typeof item.productKey !== 'string') continue;
+        const facts = item.facts as { name?: unknown; category?: { name?: unknown } | null; brand?: unknown; status?: unknown; specifications?: unknown; sellableItemKey?: unknown; variantOptions?: { itemKey?: unknown; attributes?: unknown }[] };
+        const derived = item.derived as { price?: Price; availability?: { sellability?: unknown; reason?: unknown } };
+        const entry = product(item.productKey, facts.name, o.observationId);
+        if (typeof facts.category?.name === 'string') entry.category = facts.category.name;
+        addCategory(facts.category?.name, o.observationId);
+        price(entry, derived.price, o.observationId, ownerCurrentAtObservation(o, item));
+        if (typeof derived.availability?.sellability === 'string' && typeof derived.availability.reason === 'string') entry.availability = { sellability: derived.availability.sellability, reason: derived.availability.reason };
+        // Only authoritative facts ground a specification: never catalog-edited free text or inferred blocks.
+        for (const v of leafValues({ name: facts.name, category: facts.category, brand: facts.brand, status: facts.status, specifications: facts.specifications, variants: (facts.variantOptions ?? []).map((v) => v.attributes) })) entry.detailValues.add(v);
+        if (typeof facts.sellableItemKey === 'string') idx.aliases.set(facts.sellableItemKey, item.productKey);
+        for (const v of facts.variantOptions ?? []) if (typeof v.itemKey === 'string') idx.aliases.set(v.itemKey, item.productKey);
+        const fbt = (item.inferred as { frequentlyBoughtTogether?: { status?: unknown; items?: { productKey?: unknown }[] } } | undefined)?.frequentlyBoughtTogether;
+        if (fbt?.status === 'available') for (const bought of fbt.items ?? []) if (typeof bought.productKey === 'string') entry.boughtTogether.add(bought.productKey);
+      }
     } else if (capability === CAPABILITY_IDS.shippingQuote) {
       for (const offer of (payload.offers as { price?: { customerGross?: { amount?: unknown }; ownerNet?: { amount?: unknown } } }[] | undefined) ?? []) {
         addAmount(offer.price?.customerGross?.amount, o.observationId);

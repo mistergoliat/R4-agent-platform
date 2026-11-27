@@ -21,8 +21,44 @@ export function renderMessages(request: ModelRequest, order: RenderOrder = 'comp
   if (json) {
     messages.push({ role: 'system', content: `Output: exactly one JSON document matching the "${request.outputContract.name}" JSON Schema below. ${ONE_DOCUMENT_RULE}\n${JSON.stringify(request.outputContract.schema)}` });
   }
+  if (request.context && order === 'cache') {
+    // (2026-11-27, measured on OpenAI gpt-6-luna) The provider's prompt cache reuses only the system part of a request:
+    // a 13k-token prefix repeated in a system message came back cached (17,108 of 17,122 tokens); the same prefix at the
+    // start of the user message, or in a user message of its own, never did. The agent definition and its capabilities
+    // are platform content, identical for every call of a profile, so they travel in a system message. Everything that
+    // comes from a customer or a capability (conversation, observations, memories, state) stays in the user message:
+    // untrusted text never gains the system role.
+    const { stable, rest } = splitStable(request.context);
+    if (stable) messages.push({ role: 'system', content: `${STABLE_CONTEXT_PREAMBLE}\n${stable}` });
+    messages.push({ role: 'user', content: `${rest}${json ? `\n${ONE_DOCUMENT_REMINDER}` : ''}` });
+    return messages;
+  }
   if (request.context) messages.push({ role: 'user', content: `${renderContext(request.context, order)}${json ? `\n${ONE_DOCUMENT_REMINDER}` : ''}` });
   return messages;
+}
+
+/** The context sections that are platform content and the same for every call of a profile: rendered as system. */
+export const STABLE_CONTEXT_SECTIONS: readonly ContextSection[] = Object.freeze(['agent', 'capabilities'] as const satisfies readonly ContextSection[]);
+export const STABLE_CONTEXT_PREAMBLE =
+  'Platform context for this agent (compiled by the platform, the same on every call of this task): the agent definition and the capabilities it may use. The structured context of this call follows in the next message.';
+
+/** 'cache' layout split in two: the stable sections (system) and the rest of the document (user), in RENDER_SECTION_ORDER. */
+function splitStable(context: CompiledContext): { stable: string | null; rest: string } {
+  const pick = (names: readonly ContextSection[]) => Object.fromEntries(names.flatMap((name) => {
+    const items = context.sections[name] ?? [];
+    return items.length > 0 ? [[name, items.map(renderItem)]] : [];
+  }));
+  const stableSections = pick(STABLE_CONTEXT_SECTIONS);
+  const stable = Object.keys(stableSections).length > 0 ? JSON.stringify({ schemaVersion: context.schemaVersion, sections: stableSections }) : null;
+  const document = {
+    schemaVersion: context.schemaVersion,
+    sections: pick(RENDER_SECTION_ORDER.filter((s) => !STABLE_CONTEXT_SECTIONS.includes(s))),
+    ...(context.conflicts.length > 0 ? { conflicts: context.conflicts } : {}),
+    ...(Object.keys(context.omissions).length > 0 ? { omissions: context.omissions } : {}),
+    asOf: context.asOf,
+    iteration: context.scope.iteration,
+  };
+  return { stable, rest: `Structured context (compiled by the platform; authority and freshness per item). Decide the next step.\n${JSON.stringify(document)}` };
 }
 
 /**
@@ -37,14 +73,18 @@ export const ONE_DOCUMENT_REMINDER = 'Answer with exactly one JSON document and 
 
 /**
  * Sections from the most stable to the most variable, so consecutive calls share the longest identical prefix and
- * the provider's prompt cache serves it: the agent definition and capabilities do not change inside a task, the
- * conversation and observations grow at their end, the task's counters change on every call. The call's asOf and
- * iteration close the document for the same reason. Every CompiledContext section appears exactly once (a unit test
- * holds this list to CONTEXT_SECTIONS).
+ * the provider's prompt cache serves it: the agent definition and capabilities do not change inside a task; the
+ * memories, the history and the observations (the bulk of the tokens: product reads) grow at their end; the
+ * conversation (short) grows by one message per turn; the working memory and the task's counters change on every
+ * call. The call's asOf and iteration close the document for the same reason.
+ * The conversation goes AFTER the observations (owner 2026-11-26): a new customer message then lands near the end, so
+ * the first call of a turn still reuses every earlier observation, and the newest message sits next to the task, where
+ * the model reads it last. A new observation inside a turn only re-sends the short conversation after it.
+ * Every CompiledContext section appears exactly once (a unit test holds this list to CONTEXT_SECTIONS).
  */
 export const RENDER_SECTION_ORDER: readonly ContextSection[] = Object.freeze([
-  'agent', 'capabilities', 'conversation', 'episodicMemory', 'derivedMemory', 'workingMemory',
-  'history', 'observations', 'authoritativeState', 'goals', 'task',
+  'agent', 'capabilities', 'episodicMemory', 'derivedMemory', 'history', 'observations',
+  'conversation', 'workingMemory', 'authoritativeState', 'goals', 'task',
 ] as const satisfies readonly ContextSection[]);
 
 /**
