@@ -110,12 +110,40 @@ export interface ContactFeedbackEvent {
   readonly occurredAt: string;
 }
 
+/**
+ * (ADR-069 D2) The full transcript of a channel session (a call): what the speech engine heard from the contact and
+ * what the agent's voice said, in order. A record of the conversation, never an input: the agent never sees it. The
+ * contact's lines are their own words (untrusted, personal); the agent's lines are model output (untrusted).
+ */
+export const TRANSCRIPT_MAX_LINES = 600;
+export const TRANSCRIPT_LINE_MAX = 2000;
+export interface SessionTranscriptLine {
+  readonly speaker: 'contact' | 'agent';
+  readonly at: string;
+  readonly text: string;
+}
+export interface SessionTranscriptEvent {
+  readonly accountRef: string;
+  readonly conversationRef: string;
+  /** The provider's event id: a re-delivery with the same id is ignored. */
+  readonly eventId: string;
+  readonly modality: string;
+  readonly startedAt: string;
+  readonly endedAt: string;
+  readonly lines: readonly SessionTranscriptLine[];
+  /** The sender's body went over the caps and was cut from the end. */
+  readonly truncated: boolean;
+  /** The sender's audit of figures the agent's voice said without backing (ADR-068 D3); null when none ran. */
+  readonly audit: { readonly delegations: number; readonly unbacked: readonly string[] } | null;
+}
+
 export interface ParsedNotification {
   readonly inbound: readonly CanonicalInbound[];
   readonly statuses: readonly ProviderStatusEvent[];
   readonly rejected: readonly RejectedInbound[];
   readonly presence?: readonly ContactPresenceEvent[];
   readonly feedback?: readonly ContactFeedbackEvent[];
+  readonly transcripts?: readonly SessionTranscriptEvent[];
 }
 
 export type HeaderBag = Readonly<Record<string, string | undefined>>;

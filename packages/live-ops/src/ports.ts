@@ -1,5 +1,5 @@
 import type { AutonomyControlsState } from './autonomy.js';
-import type { ContactFeedbackEvent, OutboundDocument, ProviderStatusEvent } from './channel.js';
+import type { ContactFeedbackEvent, OutboundDocument, ProviderStatusEvent, SessionTranscriptEvent } from './channel.js';
 import type { DispatchDecision, DispatchFacts, OutboundOrigin, OutboundStatus, SubmissionDisposition, SubmissionResult } from './delivery.js';
 import type { InboundInspector } from './inspection.js';
 
@@ -485,6 +485,11 @@ export interface ProductionStore {
    * returns 1 when recorded, 0 for a re-delivery.
    */
   recordFeedback(channel: string, conversationKey: string, feedback: ContactFeedbackEvent): Promise<number>;
+  /**
+   * (ADR-069 D2) Records a session transcript against the conversation's task (its open binding, else its newest one;
+   * null when none). Idempotent by (channel, eventId): returns 1 when recorded, 0 for a re-delivery.
+   */
+  recordTranscript(channel: string, conversationKey: string, transcript: SessionTranscriptEvent): Promise<number>;
   attention(): Promise<ProductionAttention>;
   metrics(): Promise<ProductionMetrics>;
 }

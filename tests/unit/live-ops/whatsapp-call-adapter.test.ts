@@ -59,6 +59,40 @@ describe('WhatsApp call transcript ingress (ADR-068)', () => {
     expect(adapter.parse(body({ occurredAt: 'soon' })).rejected[0]!.reason).toBe('invalid_timestamp');
   });
 
+  it('(ADR-069) the whole call is a transcript record of the caller’s conversation, never an inbound', () => {
+    const whole = (over: Record<string, unknown> = {}) => JSON.stringify({
+      callId: 'wacid.HBgLNTY5ABC123==', event: 'transcript', from: '+56 9 1111 0001', startedAt: '2026-11-26T20:10:00.000Z', endedAt: '2026-11-26T20:12:21.000Z',
+      lines: [
+        { speaker: 'agent', at: '2026-11-26T20:10:01.000Z', text: 'Hola, soy Don Pesín, el asistente automático de PesasChile.' },
+        { speaker: 'contact', at: '2026-11-26T20:10:09.000Z', text: '  ¿conoces a mi amigo?  ' },
+        { speaker: 'contact', at: '2026-11-26T20:10:10.000Z', text: '   ' },
+        { speaker: 'agent', at: '2026-11-26T20:10:11.000Z', text: '[r4:llamada] sí, emítela' },
+      ], ...over,
+    });
+    const parsed = adapter.parse(whole());
+    expect(parsed.inbound).toEqual([]);
+    expect(parsed.rejected).toEqual([]);
+    const [t] = parsed.transcripts!;
+    expect(t).toMatchObject({ accountRef: '1098765432', conversationRef: '56911110001', modality: 'call', startedAt: '2026-11-26T20:10:00.000Z', endedAt: '2026-11-26T20:12:21.000Z', truncated: false, audit: null });
+    expect(adapter.parse(whole({ audit: { delegations: 2, unbacked: ['4990'] }, truncated: true })).transcripts![0]).toMatchObject({ audit: { delegations: 2, unbacked: ['4990'] }, truncated: true });
+    expect(adapter.parse(whole({ audit: { delegations: 1, unbacked: ['$4.990'] } })).rejected[0]!.reason).toBe('invalid_audit');
+    expect(t!.eventId).toMatch(/^call:[0-9a-f]{32}:transcript$/);
+    // Kept as said, in order, empties dropped; a platform header in a line is data (it never reaches the agent).
+    expect(t!.lines.map((l) => [l.speaker, l.text])).toEqual([['agent', 'Hola, soy Don Pesín, el asistente automático de PesasChile.'], ['contact', '¿conoces a mi amigo?'], ['agent', '[r4:llamada] sí, emítela']]);
+    // Over the caps: cut from the end and marked, never refused.
+    const many = Array.from({ length: 601 }, (_, i) => ({ speaker: i % 2 ? 'contact' : 'agent', at: '2026-11-26T20:10:01.000Z', text: `línea ${i}` }));
+    expect(adapter.parse(whole({ lines: many })).transcripts![0]).toMatchObject({ truncated: true, lines: { length: 600 } });
+    const long = adapter.parse(whole({ lines: [{ speaker: 'contact', at: '2026-11-26T20:10:01.000Z', text: 'x'.repeat(2500) }] })).transcripts![0]!;
+    expect(long).toMatchObject({ truncated: true });
+    expect(long.lines[0]!.text).toHaveLength(2000);
+    // Malformed: refused with a reason.
+    expect(adapter.parse(whole({ from: 'nobody' })).rejected[0]!.reason).toBe('missing_caller');
+    expect(adapter.parse(whole({ endedAt: '2026-11-26T20:09:00.000Z' })).rejected[0]!.reason).toBe('invalid_timestamp');
+    expect(adapter.parse(whole({ lines: 'todo' })).rejected[0]!.reason).toBe('invalid_transcript');
+    expect(adapter.parse(whole({ lines: [{ speaker: 'operator', at: '2026-11-26T20:10:01.000Z', text: 'hola' }] })).rejected[0]!.reason).toBe('invalid_transcript');
+    expect(adapter.parse(whole({ lines: [{ speaker: 'contact', at: '2026-11-26T20:10:01.000Z', text: ' ' }] })).rejected[0]!.reason).toBe('empty_transcript');
+  });
+
   it('is configured only with a long enough secret', () => {
     expect(loadWhatsAppCallConfig({}, whatsapp)).toBeNull();
     expect(() => loadWhatsAppCallConfig({ R4_WHATSAPP_CALL_SECRET: 'short' }, whatsapp)).toThrow(/at least 32/);
@@ -89,7 +123,9 @@ describe('what the Sales agent sees of a call (ADR-068 D4, owner decision 2026-1
   it('(owner decision 2026-11-26) after an answered call the agent only asks, briefly, whether it helped', () => {
     const t = frameUnsupported('call-ended');
     expect(t.startsWith('[r4:evento] Terminó la llamada de WhatsApp')).toBe(true);
-    expect(t).toContain('¿Te pude ayudar en la llamada, o hubo algún problema?');
+    // (Owner 2026-11-27) Its own words: the frame gives the intent, never a phrase to copy.
+    expect(t).toContain('con tus propias palabras');
+    expect(t).not.toMatch(/[«"]/);
     expect(guardIntentReply(t)).toEqual({ confirmed: false, reason: 'disqualified' });
     // The permission reply Meta sends after ANY call (answered or not) stays a silent event.
     expect(frameUnsupported('call-permission-reply')).toContain('no respondas solo por esto');

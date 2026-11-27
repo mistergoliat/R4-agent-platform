@@ -4,7 +4,7 @@ import type { Logger } from 'pino';
 import { PlatformError, systemClock, uuidV7Generator, type Clock, type IdGenerator } from '@r4/contracts';
 import { AgentRegistry } from '@r4/agent-registry';
 import { createLogger } from '@r4/observability';
-import { PostgresAgentDefinitionStore, PostgresContactStore, PostgresExecutionStore, PostgresProductionStore, PostgresTaskRuntimeStore, PostgresWorkerPresenceStore, checkDatabaseReadiness, coreSchemaHead, createPool, migrationStatus, type Pool } from '@r4/persistence-postgres';
+import { PostgresAgentDefinitionStore, PostgresContactStore, PostgresExecutionStore, PostgresProductionStore, PostgresTaskRuntimeStore, PostgresTranscripts, PostgresWorkerPresenceStore, checkDatabaseReadiness, coreSchemaHead, createPool, migrationStatus, type Pool } from '@r4/persistence-postgres';
 import {
   AutonomyControls,
   CaseIdleCloser,
@@ -85,6 +85,8 @@ export interface GatewayPlatform {
 const MAX_WEBHOOK_BYTES = 1024 * 1024;
 /** Pacing of the idle-case sweep only: which cases are idle is decided on the database temporal clock. */
 const IDLE_SWEEP_MS = 60_000;
+/** (ADR-069 D4) Pacing of the session-transcript purge: retention is in days, an hourly pass keeps it to the hour. */
+const TRANSCRIPT_PURGE_MS = 3_600_000;
 
 /**
  * Composition root of the channel gateway (R4-I) — the only process that talks
@@ -132,6 +134,7 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
       throw new PlatformError('unavailable', 'schema_not_current', `database schema is not current (pending: ${status.pending.join(', ') || 'none'}; modified: ${status.modified.join(', ') || 'none'})`);
     }
     const store = new PostgresProductionStore(pool);
+    const transcripts = new PostgresTranscripts(pool);
     // Kill switch state must be known before anything is accepted.
     await store.readControls();
     const agents = new AgentRegistry({ store: new PostgresAgentDefinitionStore(pool), clock, logger });
@@ -245,6 +248,7 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
     let signalTimer: NodeJS.Timeout | null = null;
     let idleTimer: NodeJS.Timeout | null = null;
     let contactTimer: NodeJS.Timeout | null = null;
+    let purgeTimer: NodeJS.Timeout | null = null;
     let started = false;
     return {
       app, pool, ingress, delivery, controls, logger, inspection, workingSignals, idleClose, contact,
@@ -278,11 +282,18 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
               .finally(() => (deciding = false));
           }, IDLE_SWEEP_MS);
         }
+        // (ADR-069 D4) Expired session transcripts are deleted (idempotent: several gateways may run it).
+        const purge = () => void transcripts.purge()
+          .then((n) => { if (n > 0) logger.info({ purged: n }, 'session transcripts purged'); })
+          .catch((error: unknown) => logger.warn({ err: error instanceof Error ? error.message : String(error) }, 'session transcript purge failed'));
+        purge();
+        purgeTimer = setInterval(purge, TRANSCRIPT_PURGE_MS);
       },
       async close() {
         if (resumeTimer) clearInterval(resumeTimer);
         if (idleTimer) clearInterval(idleTimer);
         if (contactTimer) clearInterval(contactTimer);
+        if (purgeTimer) clearInterval(purgeTimer);
         if (signalTimer) clearInterval(signalTimer);
         if (started && config.dispatch) await dispatcher.stop();
         await inspection?.stop();

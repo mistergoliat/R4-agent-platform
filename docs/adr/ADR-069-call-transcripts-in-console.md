@@ -53,8 +53,9 @@ por la misma ruta firmada de ADR-068 D2 (`/v1/channels/whatsapp-call/webhook`, H
 ```
 
 - **Identidad:** el evento es `call:<hash del id de llamada>:transcript`. Repetir el envío no duplica.
-- **Orden:** va antes del evento `ended`, para que la conversación ya tenga la transcripción cuando el agente
-  pregunte «¿te pude ayudar?».
+- **Orden (T1):** va **después** del evento `ended`. Ese evento abre la conversación de un llamante que nunca
+  escribió; enviada antes, la transcripción no tendría tarea a la cual quedar asociada. El agente nunca la lee, así
+  que el orden no cambia su respuesta.
 - **Topes:**
   - 600 líneas, 2.000 caracteres por línea y 128 KB por cuerpo.
   - Con el tope de llamada de 10 minutos de `r4-voice`, nunca se alcanzan. Si se pasan, se trunca por el final y la
@@ -178,7 +179,7 @@ llamada.
 - **Purga:** borra lo vencido y no toca otras tablas.
 - **`r4-voice`:**
   - Arma los turnos en orden con su hablante.
-  - Envía la transcripción antes del `ended`.
+  - Envía la transcripción después del `ended`.
   - No escribe la transcripción en sus logs.
   - El saludo trae el aviso.
   - Una negativa en cualquier momento de la llamada deja sin enviar la transcripción. Se prueba con frases de
