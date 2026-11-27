@@ -33,10 +33,32 @@ describe('opportunity labeled set', () => {
     expect(ig.length).toBeGreaterThanOrEqual(3);
     expect(fb.length).toBeGreaterThanOrEqual(3);
     expect(wa.some((c) => c.expected?.trigger === 'traspaso')).toBe(true);
-    // The web chat and Meta never hand off; Meta never quotes.
-    for (const c of [...opportunityCasesOf('web'), ...ig, ...fb]) expect(c.expected?.trigger, c.id).not.toBe('traspaso');
+    // Meta never hands off and never quotes ((v23) the web chat records the wholesale-sellers notice as traspaso).
+    for (const c of [...ig, ...fb]) expect(c.expected?.trigger, c.id).not.toBe('traspaso');
     for (const c of [...ig, ...fb]) expect(c.expected?.trigger, c.id).not.toBe('cotizacion');
     expect(opportunityCasesOf('web').length + wa.length + ig.length + fb.length).toBe(OPPORTUNITY_LABELED_SET.length);
+  });
+
+  it('(owner 2026-11-26) web and WhatsApp volume-price requests are traspaso, segment mayorista, with the handoff signal; other B2B needs keep the normal flows', () => {
+    const webWa = [...opportunityCasesOf('web'), ...opportunityCasesOf('whatsapp')];
+    const volume = webWa.filter((c) => c.expected?.segment === 'mayorista');
+    // A reseller, a distributor, a school and a gym asking for volume prices: all mayorista.
+    expect(volume.map((c) => c.id).sort()).toEqual(['opp-05-mayorista-compra', 'opp-06-mayorista-cotizacion', 'opp-26-colegio-volumen', 'opp-wa-04-mayorista', 'opp-wa-08-gimnasio-volumen']);
+    for (const c of volume) {
+      expect(c.expected!.trigger, c.id).toBe('traspaso');
+      expect(c.signals, c.id).toEqual(['traspaso']);
+      expect(c.visitor.join(' '), c.id).toMatch(/volumen|por mayor|por cantidad|mayorista/i);
+    }
+    // No volume price asked: a tender, a school's purchase order, a whole facility or a factura follow the normal flows.
+    for (const id of ['opp-04-empresa-proyecto', 'opp-07-institucional-proyecto', 'opp-08-institucional-compra', 'opp-10-box-empresa-proyecto', 'opp-19-compra-empresa-factura', 'opp-wa-06-institucional']) expect(OPPORTUNITY_LABELED_SET.find((c) => c.id === id)!.expected!.trigger, id).toBe('consulta');
+  });
+
+  it('(sales-web@22 exam) a real purchase after a joke is an opportunity with a product signal', () => {
+    const c = OPPORTUNITY_LABELED_SET.find((x) => x.id === 'opp-ni-14-broma-luego-compra')!;
+    expect(c.expected).toEqual({ trigger: 'conversacion', intent: 'compra', segment: 'persona', complexity: 'estandar' });
+    expect(c.signals).toEqual(['producto']);
+    // The prediction is the conversation's first record that is an opportunity, not the joke's sin_intencion record.
+    expect(scoreOpportunityRecords({ [c.id]: { ...c.expected!, signals: ['producto'] } }, [c]).misses).toEqual([]);
   });
 });
 

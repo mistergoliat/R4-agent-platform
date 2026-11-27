@@ -94,7 +94,7 @@ describe('A. @23 is @22 with catalog.get_product_context@3, pinned to v23; a lan
   });
 
   it('capped units are @23 and its successors @24 to @28 only; lane and canary only, never a production profile', () => {
-    expect([...SALES_STOCK_COUNT_PROFILES]).toEqual(['sales-production@23', 'sales-production@24', 'sales-production@25', 'sales-production@26', 'sales-production@27', 'sales-production@28']);
+    expect([...SALES_STOCK_COUNT_PROFILES]).toEqual(['sales-production@23', 'sales-production@24', 'sales-production@25', 'sales-production@26', 'sales-production@27', 'sales-production@28', 'sales-production@29']);
     expect([...SALES_PRODUCTION_PROFILES, ...SALES_CANARY_ONLY_PROFILES].map(profileLabel)).not.toContain('sales-production@23');
     expect(() => selectedSalesProductionProfile(env('sales-production@23').config)).toThrow(/not a Sales production profile/);
     expect(selectedSalesProductionProfile(env('sales-production@23').config, { lane: true })).toBe(v23);

@@ -38,6 +38,8 @@ import { flag, loadLocalEnv, option, print } from './common.js';
  *                      (one of OPPORTUNITY_CHANNELS).
  *   --adversarial FILE score recorded replies against the real-traffic adversarial set
  *                      (evaluations/adversarial.ts); exit 1 unless every case passes.
+ *   --lane             with --adversarial: the replies come from the messaging lane profile, not the
+ *                      web chat; the web-only cases ([[despedida]]) are skipped.
  *
  * Artifacts: artifacts/evaluations/<timestamp>/ (git-ignored), one directory
  * per evaluation run plus index.json. Never secrets, never reasoning text.
@@ -56,8 +58,9 @@ async function main(): Promise<void> {
   }
   const replies = option('adversarial');
   if (replies) {
-    const result = scoreAdversarialReplies(JSON.parse(readFileSync(replies, 'utf8')) as Record<string, RecordedTurn[]>);
-    print(`adversarial real-traffic set: ${result.passed}/${result.cases} cases pass`);
+    const lane = flag('lane');
+    const result = scoreAdversarialReplies(JSON.parse(readFileSync(replies, 'utf8')) as Record<string, RecordedTurn[]>, undefined, { web: !lane });
+    print(`adversarial real-traffic set${lane ? ' (lane)' : ''}: ${result.passed}/${result.cases} cases pass`);
     for (const f of result.failures) print(`  fail ${f.caseId} turn ${f.turn}: ${f.check}`);
     if (result.passed < result.cases) process.exit(1);
     return;
