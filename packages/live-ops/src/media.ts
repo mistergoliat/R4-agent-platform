@@ -50,6 +50,28 @@ export function parseReactionRefContent(content: string): InboundReactionRef | n
   }
 }
 
+const TRANSCRIPT_TAG = 'r4-transcript-ref/v1';
+
+/** (ADR-068) What the contact said in a call, as it waits on its unsettled row (until its framed text replaces it). */
+export interface InboundTranscript {
+  readonly text: string;
+  readonly source: 'call';
+}
+
+export function transcriptRefContent(t: InboundTranscript): string {
+  return JSON.stringify({ [TRANSCRIPT_TAG]: { text: t.text, source: t.source } });
+}
+
+export function parseTranscriptRefContent(content: string): InboundTranscript | null {
+  if (!content.startsWith(`{"${TRANSCRIPT_TAG}"`)) return null;
+  try {
+    const t = (JSON.parse(content) as Record<string, InboundTranscript>)[TRANSCRIPT_TAG];
+    return t && typeof t.text === 'string' && t.source === 'call' ? t : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The agent message a reaction points at, as the platform resolved it (null: not one of this deployment's messages). */
 export interface ReactionTarget {
   /** The text of that agent message (null when it was not an agent response, e.g. a platform notice). */
@@ -102,4 +124,6 @@ export interface MediaPerception {
   frameUnsupported(contentType: string): string;
   /** The input text of a reaction (emoji null: removed), given the agent message it points at as the platform resolved it. */
   frameReaction(reaction: { readonly emoji: string | null; readonly target: ReactionTarget | null }): string;
+  /** (ADR-068) The input text of what the contact said in a call. Absent: call transcripts are unsupported content. */
+  frameTranscript?(transcript: InboundTranscript): string;
 }

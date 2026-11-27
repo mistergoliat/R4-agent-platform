@@ -1,6 +1,7 @@
 import type { JsonObject, Principal } from '@r4/contracts';
 import type { NewArtifactProposal, PostgresArtifacts } from '@r4/persistence-postgres';
 import { PRODUCT_GRAPH_KIND } from '../graph.js';
+import { proposeOnce } from '../once.js';
 import { readSignedGraph } from '../signed.js';
 import type { ProductSheetView } from './capabilities.js';
 import { checkClassification, classificationTargets, kindVocabulary } from './classify.js';
@@ -33,7 +34,7 @@ const FINISHED = new Set(['completed', 'failed', 'cancelled', 'blocked']);
  */
 export async function runClassificationBatch(
   deps: {
-    readonly artifacts: Pick<PostgresArtifacts, 'current' | 'propose'>;
+    readonly artifacts: Pick<PostgresArtifacts, 'current' | 'propose' | 'proposals'>;
     readonly tasks: CuratorTasks;
     readonly sheet: (productKey: string) => Promise<ProductSheetView>;
     readonly asked: ReadonlyMap<string, number>;
@@ -81,7 +82,7 @@ export async function runClassificationBatch(
     if (c.kind) proposals.push({ fingerprint: `missing_data|AGENT_KIND|${key}|`, summary: `${name}: el curador lo clasifica como ${c.kind} (confianza ${c.confidence})`, evidence: { task: 'missing_data', rule: 'AGENT_KIND', productKey: key, relatedKey: null, effect: 'Al aprobar: el grafo usa ese tipo para este producto.', ...evidence }, change: { op: 'set_kind', key, kind: c.kind } });
     if (c.muscles.length) proposals.push({ fingerprint: `missing_data|AGENT_MUSCLES|${key}|`, summary: `${name}: trabaja ${c.muscles.join(', ').replaceAll('_', ' ')} (curador, confianza ${c.confidence})`, evidence: { task: 'missing_data', rule: 'AGENT_MUSCLES', productKey: key, relatedKey: null, effect: 'Al aprobar: el grafo registra qué grupos trabaja.', muscles: c.muscles, ...evidence }, change: { op: 'set_muscles', key, muscles: c.muscles } });
   }
-  const stored = await deps.artifacts.propose({ kind: PRODUCT_GRAPH_KIND, baseVersion: signed.version, source: `graph-curator-agent:${input.batchId}`, correlationId: `graph-classify-${input.batchId}`, proposals });
+  const { stored } = await proposeOnce(deps.artifacts, { kind: PRODUCT_GRAPH_KIND, baseVersion: signed.version, source: `graph-curator-agent:${input.batchId}`, correlationId: `graph-classify-${input.batchId}`, proposals });
   return { batchId: input.batchId, targets: targets.length, completed, proposals: stored, refused, pending: [...taskOf.keys()].filter((k) => !done.has(k)) };
 }
 

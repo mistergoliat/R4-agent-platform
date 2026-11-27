@@ -30,6 +30,11 @@ export const canonicalInboundSchema = z.strictObject({
     /** A reaction to an earlier message: the emoji (null = the reaction was removed) and the provider id of that message. */
     z.strictObject({ kind: z.literal('reaction'), emoji: z.string().min(1).max(16).nullable(), targetProviderMessageId: ref }),
     /**
+     * (ADR-068) What the contact said in a call on this channel, as transcribed by the channel's call gateway. It is never
+     * an ordinary typed text: the pack frames it (MediaPerception.frameTranscript); without that, it is unsupported content.
+     */
+    z.strictObject({ kind: z.literal('transcript'), text: z.string().trim().min(1).max(4000), source: z.enum(['call']) }),
+    /**
      * (Inbound multimodal v1) An image or audio the contact sent: only the provider's REFERENCE, never the bytes. It is
      * downloaded and perceived only for autonomous work (media.ts); otherwise it is held exactly like `unsupported`.
      */
@@ -81,11 +86,36 @@ export interface ContactPresenceEvent {
   readonly occurredAt: string;
 }
 
+/**
+ * (ADR-067 D1) The contact rated the conversation (`conversation`: the card was `shown`, then `bien`, `mas_o_menos`
+ * or `mal`) or one reply (`message`: `up` or `down`, with that reply's outbound id). An Evaluation signal of the
+ * channel, never an input: the agent never sees it. The comment is the contact's own text: untrusted data.
+ */
+export const FEEDBACK_VALUES = { conversation: ['shown', 'bien', 'mas_o_menos', 'mal'], message: ['up', 'down'] } as const;
+export const FEEDBACK_COMMENT_MAX = 500;
+export type FeedbackScope = keyof typeof FEEDBACK_VALUES;
+export type FeedbackValue = (typeof FEEDBACK_VALUES)[FeedbackScope][number];
+
+export interface ContactFeedbackEvent {
+  readonly accountRef: string;
+  readonly conversationRef: string;
+  /** The provider's event id: a re-delivery with the same id is ignored. */
+  readonly eventId: string;
+  readonly scope: FeedbackScope;
+  readonly value: FeedbackValue;
+  /** Required for `message` (the rated reply), null for `conversation`. */
+  readonly outboundId: string | null;
+  /** Trimmed, at most FEEDBACK_COMMENT_MAX characters; null when absent or empty. */
+  readonly comment: string | null;
+  readonly occurredAt: string;
+}
+
 export interface ParsedNotification {
   readonly inbound: readonly CanonicalInbound[];
   readonly statuses: readonly ProviderStatusEvent[];
   readonly rejected: readonly RejectedInbound[];
   readonly presence?: readonly ContactPresenceEvent[];
+  readonly feedback?: readonly ContactFeedbackEvent[];
 }
 
 export type HeaderBag = Readonly<Record<string, string | undefined>>;
@@ -98,6 +128,16 @@ export interface InboundChannelAdapter {
    * inspector then never takes `senderRef === conversationRef` as proof of a direct sender.
    */
   readonly directConversations?: boolean;
+  /**
+   * (ADR-068) A second ingress for the same channel (e.g. its call gateway), served at
+   * `/v1/channels/<route>/webhook`. Absent: the channel's own provider ingress, at its channel id.
+   */
+  readonly route?: string;
+  /**
+   * (ADR-068) Only for a trusted internal provider: the webhook answer lists the task and input each item landed on,
+   * so the provider can read the reply. Never set for an external provider.
+   */
+  readonly returnsOutcomes?: boolean;
   /** Provider subscription handshake (if the provider has one). */
   verifySubscription(query: Readonly<Record<string, string | undefined>>): { readonly ok: true; readonly body: string } | { readonly ok: false; readonly status: number; readonly reason: string };
   /** Authenticity of a notification, on the raw body exactly as received. Fails closed. */

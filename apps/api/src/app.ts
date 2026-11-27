@@ -16,7 +16,7 @@ import {
 import type { AgentRegistry } from '@r4/agent-registry';
 import type { TaskRuntime, TemporalRuntime } from '@r4/task-runtime';
 import type { ProductionOperator } from '@r4/live-ops';
-import { ARTIFACT_PROPOSAL_STATES, INCIDENT_SIGNATURE, type PostgresAgentDrafts, type PostgresArtifactFacts, type PostgresArtifacts, type PostgresConsoleReads, type PostgresIncidents, type PostgresInsights, type PostgresKnowledge } from '@r4/persistence-postgres';
+import { ARTIFACT_PROPOSAL_STATES, INCIDENT_SIGNATURE, type PostgresAgentDrafts, type PostgresArtifactFacts, type PostgresArtifacts, type PostgresConsoleReads, type PostgresFeedback, type PostgresIncidents, type PostgresInsights, type PostgresKnowledge } from '@r4/persistence-postgres';
 import { resolveCorrelationId, runWithCorrelation } from '@r4/observability';
 import { toErrorResponse } from './errors.js';
 import { unauthenticatedPrincipalResolver, type PrincipalResolver } from './principal.js';
@@ -50,6 +50,8 @@ export interface AppDependencies {
   readonly consoleReads?: PostgresConsoleReads;
   /** (ADR-051) Incident groups (read) and their human triage (write). */
   readonly incidents?: PostgresIncidents;
+  /** (ADR-067) Contact satisfaction ratings (read). */
+  readonly feedback?: PostgresFeedback;
   /** (ADR-052) Releases, quality funnel, learning gaps and autonomy reads. */
   readonly insights?: PostgresInsights;
   /** (ADR-052) Curated knowledge entries (read; signed operator writes). */
@@ -319,6 +321,19 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
           if (!operator.scopes.includes('incident.triage')) throw new PlatformError('precondition', 'human_scope_denied', 'operator lacks the incident.triage scope');
           const { signature, state, note, requestUrl } = parse(triageBody, request.body ?? undefined, 'body');
           return { signature, triage: await incidents.triage(signature, { state, note, requestUrl: requestUrl ?? null }, operator.humanRef, request.id) };
+        }),
+      );
+    }
+
+    if (deps.feedback) {
+      // ADR-067 D3: satisfaction totals and the review list (service reader or operator, like a conversation thread).
+      // The review comments are the contacts' own words: returned as data, never interpreted.
+      const feedback = deps.feedback;
+      const feedbackQuery = z.strictObject({ days: z.coerce.number().int().min(1).max(31).default(7) });
+      app.get('/v1/feedback', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          return feedback.summary(parse(feedbackQuery, request.query, 'query').days);
         }),
       );
     }

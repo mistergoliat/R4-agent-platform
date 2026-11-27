@@ -130,6 +130,16 @@ describe('OpenAI-compatible output limit (R4-J1E-R2.3: fixed vs provider-managed
     expect(managed.body).toEqual(rest);
   });
 
+  it('sends the ceiling as max_completion_tokens when R4_MODEL_OUTPUT_LIMIT_PARAM says so (OpenAI direct refuses max_tokens)', async () => {
+    expect(loadOpenAICompatibleConfig(env)?.outputLimitParam).toBe('max_tokens');
+    expect(loadOpenAICompatibleConfig({ ...env, R4_MODEL_OUTPUT_LIMIT_PARAM: '' })?.outputLimitParam).toBe('max_tokens');
+    expect(() => loadOpenAICompatibleConfig({ ...env, R4_MODEL_OUTPUT_LIMIT_PARAM: 'max_output_tokens' })).toThrow();
+    const config = loadOpenAICompatibleConfig({ ...env, R4_MODEL_OUTPUT_LIMIT_PARAM: 'max_completion_tokens', R4_MODEL_MAX_OUTPUT_TOKENS: '1000' })!;
+    const { body } = await send({ ...CONFIG, outputLimitParam: config.outputLimitParam! });
+    expect(body).toMatchObject({ max_completion_tokens: 1_000 });
+    expect(body).not.toHaveProperty('max_tokens');
+  });
+
   it('B. fixed: the request carries the configured max_tokens', async () => {
     expect((await send(CONFIG)).body).toMatchObject({ max_tokens: 1_000 });
     // A request may only lower a fixed ceiling.

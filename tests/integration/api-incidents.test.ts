@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createPlatform, type ApiConfig, type Platform } from '@r4/api';
 import { createSilentLogger } from '@r4/observability';
 import { SALES_AGENT_DIR } from '@r4-sales/agent';
-import { LiveOpsTestbed, invalid, say } from '../support/live-ops.js';
+import { CANARY_PHONE_ID, LiveOpsTestbed, invalid, keyOf, say } from '../support/live-ops.js';
 
 /**
  * ADR-051: incidents are deterministic SQL detectors over existing tables, grouped by signature, with a durable
@@ -65,6 +65,22 @@ beforeAll(async () => {
 
   // The agent reply took more than 60 s.
   await bed.rows(`update outbound_messages set accepted_at = accepted_at + interval '61 seconds' where task_id = $1 and origin = 'agent'`, [tasks.answered]);
+  // (owner 2026-11-26) A second reply to the same input minutes later (a relayed consultation answer) is NOT slow:
+  // the customer already had the first one. slow_reply below still counts exactly one turn for this task.
+  const relayStep = randomUUID();
+  // The relayed reply has its own step (same run, a later iteration), like the step that relays a consultation answer.
+  await bed.rows(
+    `insert into agent_run_steps select (jsonb_populate_record(null::agent_run_steps, to_jsonb(s) - 'invocation_id' - 'observation_id' - 'context_snapshot_id'
+       || jsonb_build_object('step_id', $1::uuid, 'iteration', s.iteration + 1000, 'created_at', s.created_at + interval '2 minutes'))).*
+       from agent_run_steps s join outbound_messages o on o.response_step_id = s.step_id where o.task_id = $2 and o.origin = 'agent' order by o.accepted_at limit 1`,
+    [relayStep, tasks.answered],
+  );
+  await bed.rows(
+    `insert into outbound_messages (outbound_id, origin, task_id, binding_id, channel, idempotency_key, content_sha256, body, status, response_key, response_step_id, run_id, profile, correlation_id, accepted_at)
+     select $1, 'agent', o.task_id, o.binding_id, o.channel, 'incident-relay', o.content_sha256, o.body, o.status, o.response_key, $3, o.run_id, o.profile, 'incident-test', o.accepted_at + interval '3 minutes'
+       from outbound_messages o where o.task_id = $2 and o.origin = 'agent' and o.accepted_at is not null order by o.accepted_at limit 1`,
+    [randomUUID(), tasks.answered, relayStep],
+  );
   // Delivery problems the testbed cannot produce; a superseded send is not a problem.
   const [binding] = await bed.rows<{ binding_id: string }>('select binding_id from channel_conversation_bindings where task_id = $1', [tasks.answered]);
   for (const [status, cancel, error] of [['failed', null, '131047'], ['unknown', null, null], ['cancelled', 'expired', null], ['cancelled', 'superseded_by_newer_input', null]] as const) {
@@ -91,6 +107,9 @@ beforeAll(async () => {
      values ($1, $2, $3, 'consultation', 'requested', $4::jsonb, clock_timestamp(), clock_timestamp(), 'incident-test')`,
     [randomUUID(), tasks.answered, run!.run_id, JSON.stringify({ question: '¿Factura a 30 días? SECRETO-PREGUNTA', contextRefs: [], options: ['Sí', 'No'] })],
   );
+
+  // (ADR-067 D3) The answered customer rated the conversation «Mal», with a comment no incident may carry.
+  await bed.store.recordFeedback('whatsapp', keyOf(ANSWERED), { accountRef: CANARY_PHONE_ID, conversationRef: ANSWERED, eventId: 'evt-inc-rating-1', scope: 'conversation', value: 'mal', outboundId: null, comment: 'Pésimo SECRETO-COMENTARIO', occurredAt: new Date().toISOString() });
 
   const dir = mkdtempSync(join(tmpdir(), 'r4-incidents-it-'));
   const operatorsFile = join(dir, 'operators.json');
@@ -168,6 +187,7 @@ describe('ADR-051 GET /v1/incidents', () => {
     expect(bySignature[INBOUND_SIGNATURE]).toMatchObject({ detector: 'inbound_problem', severity: 'info', agentId: null, agentVersion: null, code: 'foreign_business_number', count: 6, exampleTaskIds: [] });
     expect(bySignature[`inbound_problem:${at}:failed/incomplete_inbound_record`]).toMatchObject({ severity: 'high', count: 1, exampleTaskIds: [tasks.answered] });
     expect(bySignature[`slow_reply:${at}:customer_turn_over_60s`]).toMatchObject({ severity: 'medium', count: 1, exampleTaskIds: [tasks.answered] });
+    expect(bySignature[`customer_rating_bad:${at}:rating_mal`]).toMatchObject({ severity: 'low', count: 1, exampleTaskIds: [tasks.answered] });
     // Four minutes have not passed: nobody is unanswered yet, and the consultation is not late yet.
     expect(find(v, 'customer_unanswered:')).toEqual([]);
     expect(find(v, 'consultation_waiting:')).toEqual([]);
@@ -188,7 +208,7 @@ describe('ADR-051 GET /v1/incidents', () => {
       const rank = order.indexOf(a.severity) - order.indexOf(b.severity);
       expect(rank < 0 || (rank === 0 && Date.parse(a.lastSeen) >= Date.parse(b.lastSeen)), `${a.signature} before ${b.signature}`).toBe(true);
     }
-    expect(new Set(v.incidents.map((i) => i.detector))).toEqual(new Set(['customer_unanswered', 'run_failed', 'platform_handoff', 'step_error', 'outbound_problem', 'inbound_problem', 'slow_reply', 'consultation_waiting']));
+    expect(new Set(v.incidents.map((i) => i.detector))).toEqual(new Set(['customer_unanswered', 'run_failed', 'platform_handoff', 'step_error', 'outbound_problem', 'inbound_problem', 'slow_reply', 'consultation_waiting', 'customer_rating_bad']));
   });
 
   it('owner 2026-11-26: a customer is unanswered after 4 minutes, a consultation only after its 10-minute SLA', async () => {

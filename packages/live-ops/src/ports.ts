@@ -1,5 +1,5 @@
 import type { AutonomyControlsState } from './autonomy.js';
-import type { OutboundDocument, ProviderStatusEvent } from './channel.js';
+import type { ContactFeedbackEvent, OutboundDocument, ProviderStatusEvent } from './channel.js';
 import type { DispatchDecision, DispatchFacts, OutboundOrigin, OutboundStatus, SubmissionDisposition, SubmissionResult } from './delivery.js';
 import type { InboundInspector } from './inspection.js';
 
@@ -479,6 +479,12 @@ export interface ProductionStore {
   conversations(limit: number): Promise<ConversationSummary[]>;
   /** (ADR-057 D3) Records the contact's presence on the open binding(s) of a conversation, only if newer. Returns rows changed. */
   recordPresence(conversationKey: string, state: 'present' | 'away', at: string): Promise<number>;
+  /**
+   * (ADR-067 D2) Records a contact's rating against the conversation's task (the rated reply's task for `message`,
+   * else the conversation's open binding, else its newest one; null when none). Idempotent by (channel, eventId):
+   * returns 1 when recorded, 0 for a re-delivery.
+   */
+  recordFeedback(channel: string, conversationKey: string, feedback: ContactFeedbackEvent): Promise<number>;
   attention(): Promise<ProductionAttention>;
   metrics(): Promise<ProductionMetrics>;
 }

@@ -107,7 +107,8 @@ export async function createGatewayPlatform(config: GatewayConfig, bindings: Gat
   const profile = assertProductionProfile(bindings.profile);
   const problems: string[] = [];
   if (profileLabel(profile) !== production.policyProfile) problems.push(`the composed profile ${profileLabel(profile)} is not the declared R4_PROD_POLICY_PROFILE ${production.policyProfile}`);
-  const inbound = bindings.inbound.find((a) => a.channel === profile.channel.id);
+  // The channel's own provider adapter; (ADR-068) a second ingress of the same channel (its call gateway) has a `route`.
+  const inbound = bindings.inbound.find((a) => a.channel === profile.channel.id && a.route === undefined);
   const outbound = bindings.outbound.find((a) => a.channel === profile.channel.id);
   if (!inbound) problems.push(`no inbound adapter for channel ${profile.channel.id}`);
   if (!outbound) problems.push(`no outbound adapter (delivery owner binding) for channel ${profile.channel.id}`);

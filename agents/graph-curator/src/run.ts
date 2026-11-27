@@ -9,6 +9,7 @@ import { applyChanges, changeOf, graphChangeSchema } from './changes.js';
 import { AUTO_ACTOR, AUTO_RULES, revertChange } from './undo.js';
 import { PRODUCT_GRAPH_KIND, graphStats, productGraphSchema } from './graph.js';
 import { countFindings, curate, fingerprintOf } from './rules.js';
+import { proposeOnce } from './once.js';
 import { readSignedGraph } from './signed.js';
 
 export const GRAPH_MIGRATIONS_DIR = fileURLToPath(new URL('../migrations', import.meta.url));
@@ -70,7 +71,7 @@ export async function runCuration(deps: { readonly pool: Pool; readonly artifact
     });
     // G3: each finding becomes a proposal the person decides (a decided change is not proposed again; a notice that is
     // still true reopens).
-    const proposals = await deps.artifacts.propose({
+    const { stored: proposals } = await proposeOnce(deps.artifacts, {
       kind: PRODUCT_GRAPH_KIND, baseVersion: signed.version, source: `graph-curator:${runId}`, correlationId: `graph-curate-${runId}`,
       proposals: findings.map((f) => { const { change, effect } = changeOf(f); return { fingerprint: fingerprintOf(f), summary: f.summary, evidence: { task: f.task, rule: f.rule, productKey: f.productKey, relatedKey: f.relatedKey, effect, ...f.evidence }, change }; }),
     });

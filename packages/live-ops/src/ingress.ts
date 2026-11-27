@@ -7,7 +7,7 @@ import type { AutonomyControls } from './controls.js';
 import type { ProductionConfig, ProductionSecrets } from './mode.js';
 import type { InboundInspector } from './inspection.js';
 import { isOptOut, type ContactOptOut, type ContactStore } from './contact.js';
-import { mediaRefContent, parseMediaRefContent, parseReactionRefContent, reactionRefContent, type MediaKind, type MediaPerception } from './media.js';
+import { mediaRefContent, parseMediaRefContent, parseReactionRefContent, parseTranscriptRefContent, reactionRefContent, transcriptRefContent, type MediaKind, type MediaPerception } from './media.js';
 import { IDLE_TIMEOUT } from './idle-close.js';
 import type { OutboundDeliveryRuntime } from './outbound.js';
 import type { ConversationBindingRecord, InboundEventRecord, ProductionStore } from './ports.js';
@@ -117,7 +117,10 @@ export function unsupportedContentMarker(contentType: string): string {
  */
 export class ChannelIngress {
   readonly #o: ChannelIngressOptions;
+  /** By ingress route (`route` ?? channel); (ADR-068) a channel may have a second, internal ingress (its call gateway). */
   readonly #adapters: ReadonlyMap<string, InboundChannelAdapter>;
+  /** The channel's own provider adapter (no `route`): what its attestations (directConversations) are read from. */
+  readonly #byChannel: ReadonlyMap<string, InboundChannelAdapter>;
   readonly #main: ServedProfile;
   readonly #lane: (ServedProfile & { readonly keys: ReadonlySet<string> }) | null;
   readonly #rolloutFingerprint: string;
@@ -126,7 +129,8 @@ export class ChannelIngress {
 
   constructor(options: ChannelIngressOptions) {
     this.#o = options;
-    this.#adapters = new Map(options.adapters.map((a) => [a.channel, a]));
+    this.#adapters = new Map(options.adapters.map((a) => [a.route ?? a.channel, a]));
+    this.#byChannel = new Map(options.adapters.filter((a) => a.route === undefined).map((a) => [a.channel, a]));
     this.#main = { label: profileLabel(options.profile), fingerprint: profileFingerprint(options.profile), profile: options.profile, taskFactory: options.taskFactory };
     const lane = options.lane;
     this.#lane = lane ? { label: profileLabel(lane.profile), fingerprint: profileFingerprint(lane.profile), profile: lane.profile, taskFactory: lane.taskFactory, keys: new Set(lane.conversationKeys) } : null;
@@ -158,7 +162,7 @@ export class ChannelIngress {
   }
 
   channels(): string[] {
-    return [...this.#adapters.keys()];
+    return [...new Set([...this.#adapters.values()].map((a) => a.channel))];
   }
 
   verify(channel: string, query: Readonly<Record<string, string | undefined>>): WebhookResponse {
@@ -176,9 +180,10 @@ export class ChannelIngress {
    * them, so no retry loop). 500 only on an infrastructure failure, so the
    * provider re-delivers (safe: dedupe).
    */
-  async receive(channel: string, rawBody: string, headers: HeaderBag, correlationId: string): Promise<WebhookResponse> {
-    const adapter = this.#adapters.get(channel);
+  async receive(route: string, rawBody: string, headers: HeaderBag, correlationId: string): Promise<WebhookResponse> {
+    const adapter = this.#adapters.get(route);
     if (!adapter) return { status: 404, body: { error: 'unknown_channel' } };
+    const { channel } = adapter;
     const auth = adapter.authenticate(rawBody, headers);
     if (!auth.ok) {
       emitTelemetry(this.#o.logger, 'inbound.authentication_failed', { channel, reason: auth.reason, correlationId });
@@ -195,8 +200,10 @@ export class ChannelIngress {
       if (created) emitTelemetry(this.#o.logger, 'inbound.rejected', { channel, reason: item.reason.slice(0, 64), correlationId });
       results.rejected += 1;
     }
+    const landed: { taskId: string; inputId: string }[] = [];
     for (const inbound of parsed.inbound) {
       const outcome = await this.ingest(inbound, correlationId);
+      if (outcome.kind === 'ingested' && adapter.returnsOutcomes) landed.push({ taskId: outcome.taskId, inputId: outcome.inputId });
       if (outcome.kind === 'ingested') results.ingested += 1;
       else if (outcome.kind === 'deferred') results.deferred += 1;
       else if (outcome.kind === 'duplicate') results.duplicates += 1;
@@ -211,7 +218,12 @@ export class ChannelIngress {
     for (const p of parsed.presence ?? []) {
       presence += await this.#o.store.recordPresence(conversationKey(this.#o.secrets.identityHashKey, channel, p.accountRef, p.conversationRef), p.state, p.occurredAt);
     }
-    return { status: 200, body: { ok: true, ...results, ...(parsed.presence ? { presence } : {}) } };
+    // (ADR-067 D1) A rating is an Evaluation signal of the channel, never an input: nothing wakes, the agent never sees it.
+    let feedback = 0;
+    for (const f of parsed.feedback ?? []) {
+      feedback += await this.#o.store.recordFeedback(channel, conversationKey(this.#o.secrets.identityHashKey, channel, f.accountRef, f.conversationRef), f);
+    }
+    return { status: 200, body: { ok: true, ...results, ...(parsed.presence ? { presence } : {}), ...(parsed.feedback ? { feedback } : {}), ...(adapter.returnsOutcomes ? { landed } : {}) } };
   }
 
   /** Canonical inbound → durable input. Idempotent by the provider event identity. */
@@ -223,19 +235,22 @@ export class ChannelIngress {
     const ec = event.content;
     const c = ec.kind === 'media' && !this.#perceivesMedia(undefined, ec.mediaKind) ? { kind: 'unsupported' as const, contentType: ec.mediaKind }
       : ec.kind === 'reaction' && !this.#perceivesMedia() ? { kind: 'unsupported' as const, contentType: 'reaction' }
+      // (ADR-068) What the contact said in a call is kept only where the pack frames it; elsewhere it is unsupported content.
+      : ec.kind === 'transcript' && !(this.#perceivesMedia() && this.#o.media?.perception.frameTranscript) ? { kind: 'unsupported' as const, contentType: 'transcript' }
       : ec;
     // A media item keeps only its provider reference until it is perceived (or held as unsupported); never bytes.
     // A contact's text never starts with a platform header: "[r4:…" written by the contact is neutralized, so it can
     // never pose as a perceived file or a reaction.
-    const text = c.kind === 'text' ? c.text.replace(/^(\s*)\[\s*r4\s*:/i, '$1[r4 :') : c.kind === 'reaction' ? reactionRefContent({ emoji: c.emoji, targetProviderMessageId: c.targetProviderMessageId }) : c.kind === 'media'
+    const text = c.kind === 'text' ? c.text.replace(/^(\s*)\[\s*r4\s*:/i, '$1[r4 :') : c.kind === 'reaction' ? reactionRefContent({ emoji: c.emoji, targetProviderMessageId: c.targetProviderMessageId })
+      : c.kind === 'transcript' ? transcriptRefContent({ text: c.text, source: c.source }) : c.kind === 'media'
       ? mediaRefContent({ kind: c.mediaKind, mediaId: c.mediaId, mimeType: c.mimeType, sha256: c.sha256, caption: c.caption, voice: c.voice })
       : unsupportedContentMarker(c.contentType);
     const inbound = {
       inboundId: this.#o.ids.next(),
       channel: event.channel,
       providerEventId: event.providerEventId,
-      contentKind: c.kind === 'reaction' ? ('unsupported' as const) : c.kind,
-      contentType: c.kind === 'unsupported' ? c.contentType : c.kind === 'media' ? c.mediaKind : c.kind === 'reaction' ? 'reaction' : 'text',
+      contentKind: c.kind === 'reaction' || c.kind === 'transcript' ? ('unsupported' as const) : c.kind,
+      contentType: c.kind === 'unsupported' ? c.contentType : c.kind === 'media' ? c.mediaKind : c.kind === 'reaction' ? 'reaction' : c.kind === 'transcript' ? 'transcript' : 'text',
       content: text,
       contentSha256: sha256Hex(text),
       conversationKey: key,
@@ -253,7 +268,7 @@ export class ChannelIngress {
           inspector,
           inspectable: c.kind === 'text',
           senderRef: event.senderRef,
-          direct: this.#adapters.get(event.channel)?.directConversations === true && event.senderRef === event.conversationRef,
+          direct: this.#byChannel.get(event.channel)?.directConversations === true && event.senderRef === event.conversationRef,
         })
       : await this.#o.store.recordInbound(inbound);
     if (!created) {
@@ -309,13 +324,19 @@ export class ChannelIngress {
     const humanOwned = binding.taskId ? ((await this.#o.store.taskState(binding.taskId))?.humanOwned ?? false) : false;
     let text = unsupportedContentMarker(record.contentType ?? 'media');
     const reaction = record.contentKind === 'unsupported' ? parseReactionRefContent(record.content ?? '') : null;
-    if (!held && !humanOwned && reaction && this.#perceivesMedia(profileLabel)) {
+    const transcript = record.contentKind === 'unsupported' ? parseTranscriptRefContent(record.content ?? '') : null;
+    const perception = this.#o.media?.perception;
+    if (!held && !humanOwned && transcript && perception?.frameTranscript && this.#perceivesMedia(profileLabel)) {
+      // (ADR-068) What the contact said in a call: framed by the pack, never an ordinary typed text.
+      text = perception.frameTranscript(transcript);
+      emitTelemetry(this.#o.logger, 'inbound.media.perceived', { channel: record.channel, inboundId: record.inboundId, outcome: 'transcript', reason: transcript.source });
+    } else if (!held && !humanOwned && reaction && this.#perceivesMedia(profileLabel)) {
       // (Reactions) The agent learns which of its messages was reacted to, and whether it is its latest one (the offer).
       const target = await this.#o.store.reactionTarget(record.channel, reaction.targetProviderMessageId);
       const own = target && target.taskId === binding.taskId ? target : null;
       text = this.#o.media!.perception.frameReaction({ emoji: reaction.emoji, target: own ? { text: own.text, latest: own.latest, stepId: own.stepId } : null });
       emitTelemetry(this.#o.logger, 'inbound.media.perceived', { channel: record.channel, inboundId: record.inboundId, outcome: 'reaction', reason: own ? (own.latest ? 'latest_agent_message' : 'earlier_message') : 'unknown_message' });
-    } else if (!held && !humanOwned && !(ref && this.#perceivesMedia(profileLabel, ref.kind)) && this.#perceivesMedia(profileLabel)) {
+    } else if (!held && !humanOwned && !transcript && !(ref && this.#perceivesMedia(profileLabel, ref.kind)) && this.#perceivesMedia(profileLabel)) {
       // Not representable here (an album, a sticker, a kind without a provider…): the agent answers, nothing is downloaded.
       text = this.#o.media!.perception.frameUnsupported(record.contentType ?? 'unsupported');
       emitTelemetry(this.#o.logger, 'inbound.media.perceived', { channel: record.channel, inboundId: record.inboundId, outcome: 'not_representable', reason: record.contentType ?? null });
@@ -347,7 +368,7 @@ export class ChannelIngress {
     const unsupportedRow = record.contentKind === 'unsupported';
     /** The text of a media or unsupported input: the stored decision (after a crash: exactly what may already be submitted), or decided below. */
     let mediaText: string | null = media && parseMediaRefContent(record.content) === null ? record.content
-      : unsupportedRow && record.content !== unsupportedContentMarker(record.contentType ?? '') && parseReactionRefContent(record.content) === null ? record.content : null;
+      : unsupportedRow && record.content !== unsupportedContentMarker(record.contentType ?? '') && parseReactionRefContent(record.content) === null && parseTranscriptRefContent(record.content) === null ? record.content : null;
     let decidedHere = false;
     const contact = this.#o.contact;
     const optOut = contact !== undefined && record.contentKind === 'text' && isOptOut(contact.optOut, record.content);

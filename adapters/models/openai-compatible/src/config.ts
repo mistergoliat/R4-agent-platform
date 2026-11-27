@@ -27,6 +27,11 @@ export interface OpenAICompatibleConfig {
    * ceiling is sent and none is reserved; the provider/model owns it.
    */
   readonly maxOutputTokens: number | null;
+  /**
+   * R4_MODEL_OUTPUT_LIMIT_PARAM: the name the output ceiling is sent under. Default `max_tokens`; OpenAI's own API
+   * refuses it on its reasoning models and wants `max_completion_tokens` (measured 2026-11-26 on gpt-6-luna).
+   */
+  readonly outputLimitParam?: 'max_tokens' | 'max_completion_tokens';
   /** `json_object` asks the server for a JSON document; `none` relies on the instructions only. */
   readonly responseFormat: 'json_object' | 'none';
   readonly temperature: number | null;
@@ -70,6 +75,7 @@ const envSchema = z.object({
   R4_MODEL_CONTEXT_WINDOW_TOKENS: z.coerce.number().int().min(1_024),
   // Absent (or empty) = provider-managed: no numeric default is substituted (R4-J1E-R2.3).
   R4_MODEL_MAX_OUTPUT_TOKENS: z.preprocess((v) => (v === '' ? undefined : v), z.coerce.number().int().min(64).optional()),
+  R4_MODEL_OUTPUT_LIMIT_PARAM: z.preprocess((v) => (v === '' ? undefined : v), z.enum(['max_tokens', 'max_completion_tokens']).default('max_tokens')),
   R4_MODEL_RESPONSE_FORMAT: z.enum(['json_object', 'none']).default('json_object'),
   R4_MODEL_TEMPERATURE: z.coerce.number().min(0).max(2).optional(),
   R4_MODEL_EXTRA_BODY: extraBodySchema.optional(),
@@ -100,6 +106,7 @@ export function loadOpenAICompatibleConfig(env: NodeJS.ProcessEnv): OpenAICompat
     timeoutMs: c.R4_MODEL_TIMEOUT_MS,
     contextWindowTokens: c.R4_MODEL_CONTEXT_WINDOW_TOKENS,
     maxOutputTokens: c.R4_MODEL_MAX_OUTPUT_TOKENS ?? null,
+    outputLimitParam: c.R4_MODEL_OUTPUT_LIMIT_PARAM,
     responseFormat: c.R4_MODEL_RESPONSE_FORMAT,
     temperature: c.R4_MODEL_TEMPERATURE ?? null,
     extraBody: c.R4_MODEL_EXTRA_BODY ?? {},

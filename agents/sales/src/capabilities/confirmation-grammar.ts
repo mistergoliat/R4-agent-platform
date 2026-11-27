@@ -115,6 +115,9 @@ export function mediaReplyBody(text: string): string | false | null | { readonly
     const last = REACTION_LAST_LINE.exec(t);
     return last ? { reaction: last[1]!, stepId: last[2]! } : false;
   }
+  // (ADR-068 D4, owner decision 2026-11-26) What the customer said in a call is read like a typed reply: the same guard
+  // (no question, negation, hesitation or change) decides whether it accepts the offer.
+  if (t.startsWith(`${MEDIA_TEXT_HEADERS.call} `)) return /\n«([\s\S]*)»\s*$/.exec(t)?.[1] ?? false;
   if (!t.startsWith(`${MEDIA_TEXT_HEADERS.audio} `)) return false;
   const body = /\n«([\s\S]*)»\s*$/.exec(t)?.[1];
   return body === undefined || body.includes(UNCERTAIN_OPEN) ? false : body;
