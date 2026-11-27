@@ -86,7 +86,7 @@ export function salesActionPolicyFor(profile: ProductionProfile): ActionPolicyCo
   // (ADR-057 C4) The web quote profile (a string, not an import: profile-web imports this pack's earlier profiles).
   if (['sales-web@19', 'sales-web@20'].includes(profileLabel(profile))) return SALES_WEB_QUOTE_ACTION_POLICY;
   // (ADR-062 O1) sales-web@21 also records opportunities in the sales desk.
-  if (['sales-web@21', 'sales-web@22', 'sales-web@23'].includes(profileLabel(profile))) return SALES_WEB_DESK_ACTION_POLICY;
+  if (['sales-web@21', 'sales-web@22', 'sales-web@23', 'sales-web@24'].includes(profileLabel(profile))) return SALES_WEB_DESK_ACTION_POLICY;
   // (ADR-062 O1, all channels) The WhatsApp lane @27 and the Meta v2 profiles also record opportunities.
   if (['sales-production@27', 'sales-production@28', 'sales-production@29'].includes(profileLabel(profile))) return SALES_PRODUCTION_DESK_ACTION_POLICY;
   if (['sales-instagram@2', 'sales-facebook@2'].includes(profileLabel(profile))) return SALES_META_DESK_ACTION_POLICY;

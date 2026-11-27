@@ -244,13 +244,19 @@ describe('OpenAICompatibleModelProvider', () => {
     const first = renderContext(build(1, '2026-11-12T18:00:00.000Z', ['o1']), 'cache');
     const second = renderContext(build(2, '2026-11-12T18:00:09.000Z', ['o1', 'o2']), 'cache');
     const doc = JSON.parse(first.slice(first.indexOf('\n') + 1)) as Record<string, object>;
-    expect(Object.keys(doc.sections!)).toEqual(['agent', 'capabilities', 'conversation', 'observations', 'task']);
+    expect(Object.keys(doc.sections!)).toEqual(['agent', 'capabilities', 'observations', 'conversation', 'task']);
     expect(Object.keys(doc).slice(-2)).toEqual(['asOf', 'iteration']);
-    // The next call repeats everything up to the newest observation: definition, capabilities, conversation, o1.
+    // Inside a turn, the next call repeats everything up to the newest observation: definition, capabilities, o1.
     let shared = 0;
     while (first[shared] === second[shared]) shared += 1;
     expect(first.slice(0, shared)).toContain('"o1"');
     expect(first.slice(0, shared)).not.toContain('"running"');
+    // Between turns (owner 2026-11-26), a new customer message repeats every earlier observation: only the end changes.
+    const turn2 = renderContext({ ...build(3, '2026-11-12T18:02:00.000Z', ['o1', 'o2']), sections: { ...build(3, '2026-11-12T18:02:00.000Z', ['o1', 'o2']).sections, conversation: [item('m1', { text: 'hola' }), item('m2', { text: 'y el precio?' })] } } as never, 'cache');
+    let reused = 0;
+    while (second[reused] === turn2[reused]) reused += 1;
+    expect(second.slice(0, reused)).toContain('"o2"');
+    expect(turn2.indexOf('y el precio?')).toBeGreaterThan(turn2.indexOf('"o2"'));
     expect(Object.isFrozen(RENDER_SECTION_ORDER)).toBe(true);
     // The default stays the compiled layout every definition was evaluated with: asOf and iteration first, compiler order.
     const compiled = JSON.parse(renderContext(build(1, '2026-11-12T18:00:00.000Z', ['o1'])).split('\n')[1]!) as Record<string, object>;

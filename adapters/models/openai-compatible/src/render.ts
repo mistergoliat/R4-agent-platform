@@ -37,14 +37,18 @@ export const ONE_DOCUMENT_REMINDER = 'Answer with exactly one JSON document and 
 
 /**
  * Sections from the most stable to the most variable, so consecutive calls share the longest identical prefix and
- * the provider's prompt cache serves it: the agent definition and capabilities do not change inside a task, the
- * conversation and observations grow at their end, the task's counters change on every call. The call's asOf and
- * iteration close the document for the same reason. Every CompiledContext section appears exactly once (a unit test
- * holds this list to CONTEXT_SECTIONS).
+ * the provider's prompt cache serves it: the agent definition and capabilities do not change inside a task; the
+ * memories, the history and the observations (the bulk of the tokens: product reads) grow at their end; the
+ * conversation (short) grows by one message per turn; the working memory and the task's counters change on every
+ * call. The call's asOf and iteration close the document for the same reason.
+ * The conversation goes AFTER the observations (owner 2026-11-26): a new customer message then lands near the end, so
+ * the first call of a turn still reuses every earlier observation, and the newest message sits next to the task, where
+ * the model reads it last. A new observation inside a turn only re-sends the short conversation after it.
+ * Every CompiledContext section appears exactly once (a unit test holds this list to CONTEXT_SECTIONS).
  */
 export const RENDER_SECTION_ORDER: readonly ContextSection[] = Object.freeze([
-  'agent', 'capabilities', 'conversation', 'episodicMemory', 'derivedMemory', 'workingMemory',
-  'history', 'observations', 'authoritativeState', 'goals', 'task',
+  'agent', 'capabilities', 'episodicMemory', 'derivedMemory', 'history', 'observations',
+  'conversation', 'workingMemory', 'authoritativeState', 'goals', 'task',
 ] as const satisfies readonly ContextSection[]);
 
 /**

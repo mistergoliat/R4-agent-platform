@@ -31,7 +31,7 @@ export const SALES_PRODUCTION_PROFILE_V7: ProductionProfile = Object.freeze({
 } satisfies ProductionProfile);
 
 /** Profiles whose offer message is rendered by Sales and must be presented exactly (quote.preview@3, quote.create@5). */
-export const SALES_DETERMINISTIC_OFFER_PROFILES: ReadonlySet<string> = new Set(['sales-production@7', 'sales-production@8', 'sales-production@12', 'sales-production@14', 'sales-production@15', 'sales-production@16', 'sales-production@17', 'sales-production@18', 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23', 'sales-production@24', 'sales-production@25', 'sales-production@26', 'sales-production@27', 'sales-production@28', 'sales-production@29', 'sales-web@19', 'sales-web@20', 'sales-web@21', 'sales-web@22', 'sales-web@23']);
+export const SALES_DETERMINISTIC_OFFER_PROFILES: ReadonlySet<string> = new Set(['sales-production@7', 'sales-production@8', 'sales-production@12', 'sales-production@14', 'sales-production@15', 'sales-production@16', 'sales-production@17', 'sales-production@18', 'sales-production@19', 'sales-production@20', 'sales-production@21', 'sales-production@22', 'sales-production@23', 'sales-production@24', 'sales-production@25', 'sales-production@26', 'sales-production@27', 'sales-production@28', 'sales-production@29', 'sales-web@19', 'sales-web@20', 'sales-web@21', 'sales-web@22', 'sales-web@23', 'sales-web@24']);
 
 export function isDeterministicOfferProfile(profile: ProductionProfile): boolean {
   return SALES_DETERMINISTIC_OFFER_PROFILES.has(profileLabel(profile));
