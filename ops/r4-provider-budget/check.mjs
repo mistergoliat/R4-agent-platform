@@ -80,8 +80,19 @@ async function openAiSpend() {
   const buckets = [];
   try {
     let page = null;
+    // The Costs API answers an occasional 429 (about 1 % of the 10-minute checks, 2026-11-27); each one used to page
+    // the owner twice (WARN, then «Recuperado»). A 429 or 5xx is retried twice, honouring Retry-After (capped at 30 s).
+    const retryMs = Number(cfg.OPENAI_COSTS_RETRY_MS ?? 10_000);
+    const get = async (url) => {
+      for (let attempt = 0; ; attempt++) {
+        const response = await fetch(url, { headers: { authorization: `Bearer ${usageKey}` }, signal: AbortSignal.timeout(15_000) });
+        if (response.ok || attempt === 2 || !(response.status === 429 || response.status >= 500)) return response;
+        const after = Number(response.headers.get('retry-after'));
+        await new Promise((r) => setTimeout(r, Math.min(Number.isFinite(after) && after > 0 ? after * 1000 : retryMs * (attempt + 1), 30_000)));
+      }
+    };
     for (let i = 0; i < 6; i++) { // 6 pages of 31 daily buckets is far more than a month plus a week
-      const response = await fetch(`${costsUrl}/organization/costs?start_time=${from / 1000}&bucket_width=1d&group_by=line_item&limit=31${page ? `&page=${encodeURIComponent(page)}` : ''}`, { headers: { authorization: `Bearer ${usageKey}` }, signal: AbortSignal.timeout(15_000) });
+      const response = await get(`${costsUrl}/organization/costs?start_time=${from / 1000}&bucket_width=1d&group_by=line_item&limit=31${page ? `&page=${encodeURIComponent(page)}` : ''}`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const body = await response.json();
       buckets.push(...(body.data ?? []));

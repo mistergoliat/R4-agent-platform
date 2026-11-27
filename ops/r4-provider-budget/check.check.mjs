@@ -144,10 +144,11 @@ server.close();
   const bucket = (start, items) => ({ start_time: start, end_time: start + day, results: items.map(([line_item, value]) => ({ amount: { value, currency: 'usd' }, line_item })) });
   // Yesterday US$1.00; today 2.30 on Luna and 0.09 on calls. Two pages, to exercise the paging.
   const pages = { first: { data: [bucket(today - day, [['gpt-6-luna, cache writes', 1.0]])], has_more: true, next_page: 'p2' }, p2: { data: [bucket(today, [['gpt-6-luna, cache writes', 2.1], ['gpt-6-luna, output', 0.2], ['gpt-live-1.1', 0.09]])], has_more: false, next_page: null } };
-  let status = 200; const seen = [];
+  let status = 200; let transient = []; const seen = [];
   const costs = createServer((req, res) => {
     seen.push({ url: req.url, auth: req.headers.authorization });
-    if (status !== 200) { res.writeHead(status).end('{"error":"no"}'); return; }
+    const now = transient.length ? transient.shift() : status;
+    if (now !== 200) { res.writeHead(now).end('{"error":"no"}'); return; }
     res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(pages[new URL(req.url, 'http://x').searchParams.get('page') ?? 'first']));
   });
   await new Promise((r2) => costs.listen(0, '127.0.0.1', r2));
@@ -158,7 +159,7 @@ server.close();
     n += 1;
     execFile(process.execPath, [fileURLToPath(new URL('./check.mjs', import.meta.url))], {
       env: { PATH: process.env.PATH, HOME: dir, USERPROFILE: dir, PROVIDER_BUDGET_ENV: join(dir, 'none.env'), KEY_ENV_FILE: join(dir, 'production.env'), OPENAI_USAGE_KEY_FILE: join(dir, 'usage.env'),
-        OPENAI_COSTS_BASE_URL: `http://127.0.0.1:${costs.address().port}`, STATE_FILE: join(dir, `openai-state-${n}.json`), SNAPSHOTS_FILE: join(dir, 'openai-usage.jsonl'), LOG_FILES: log, ...extra },
+        OPENAI_COSTS_BASE_URL: `http://127.0.0.1:${costs.address().port}`, OPENAI_COSTS_RETRY_MS: '5', STATE_FILE: join(dir, `openai-state-${n}.json`), SNAPSHOTS_FILE: join(dir, 'openai-usage.jsonl'), LOG_FILES: log, ...extra },
     }, (error, stdout) => {
       process.stdout.write(`[openai: ${name}] exit ${error?.code ?? 0}: ${stdout}`);
       assert.doesNotMatch(stdout, /sk-/);
@@ -203,10 +204,21 @@ server.close();
   r = await openai('no usage key', { OPENAI_USAGE_KEY_FILE: join(dir, 'missing.env') });
   assert.equal(r.code, 1);
   assert.match(r.stdout, /WARN: OpenAI spend is not checked: no usage-read key/);
-  status = 403;
+  // A transient 429 or 5xx is retried and ends OK; a persistent 429 warns after 3 tries; a 403 is not retried.
+  transient = [429, 503];
+  r = await openai('costs 429 then 503, then fine');
+  assert.equal(r.code, 0);
+  assert.match(r.stdout, /provider-budget OK \|.*today 2\.39/);
+  status = 429; seen.length = 0;
+  r = await openai('costs 429 persistent');
+  assert.equal(r.code, 1);
+  assert.match(r.stdout, /WARN: OpenAI costs unreadable \(HTTP 429\)/);
+  assert.equal(seen.length, 3);
+  status = 403; seen.length = 0;
   r = await openai('costs refused');
   assert.equal(r.code, 1);
   assert.match(r.stdout, /WARN: OpenAI costs unreadable \(HTTP 403\)/);
+  assert.equal(seen.length, 1);
   costs.close();
 }
 process.stdout.write('check.mjs self-check: OK\n');
