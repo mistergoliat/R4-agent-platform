@@ -18,7 +18,7 @@ export const SALES_PRODUCTION_PROFILE_V28: ProductionProfile = Object.freeze({
 export const SALES_QUOTE_LANE_V28_PROFILE_LABEL = 'sales-production@28';
 
 /** (ADR-062) Profiles that compose desk.opportunity.record@2 (signals and contactRef); every other recording profile keeps @1. */
-export const SALES_DESK_SIGNALS_PROFILES: ReadonlySet<string> = new Set(['sales-web@22', 'sales-web@23', SALES_QUOTE_LANE_V28_PROFILE_LABEL, 'sales-production@29']);
+export const SALES_DESK_SIGNALS_PROFILES: ReadonlySet<string> = new Set(['sales-web@22', 'sales-web@23', 'sales-web@24', SALES_QUOTE_LANE_V28_PROFILE_LABEL, 'sales-production@29']);
 
 /** What must be true before @28 is activated on the lane: what @27 requires, plus the desk accepting v2, the no-intent and adversarial L3. */
 export const SALES_PRODUCTION_PROFILE_V28_GATE = Object.freeze([

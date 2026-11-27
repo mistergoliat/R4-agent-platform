@@ -39,6 +39,8 @@ export const LANE_CAPABILITY_IDS = {
   catalogBuildStep: 'catalog.build_step',
   /** (sales-web@12+): READ, a product → its second selection and sellable replacements (store graph). */
   catalogReplacements: 'catalog.replacements',
+  /** (sales-web@24+): READ, up to 8 products' contexts in one call (each item = what catalog.get_product_context returns). */
+  catalogProductsContext: 'catalog.get_products_context',
 } as const;
 
 /**

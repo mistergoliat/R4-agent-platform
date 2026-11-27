@@ -1,7 +1,7 @@
 import type { ContextContributionInput, JsonValue, Observation } from '@r4/contracts';
 import type { ContextSource, ContextSourceRequest } from '@r4/context-compiler';
 import { catalogEvidenceValidUntil } from '../capabilities/catalog.js';
-import { CAPABILITY_IDS, SALES_TASK_TYPE, WORKSPACE_SOURCE_ID } from '../ids.js';
+import { CAPABILITY_IDS, LANE_CAPABILITY_IDS, SALES_TASK_TYPE, WORKSPACE_SOURCE_ID } from '../ids.js';
 import { catalogDescriptiveItems } from './catalog-descriptive.js';
 import { selectionOf, type Workspace } from './model.js';
 import type { ConversationBinding, PostgresSalesStore, QuoteReference, WorkspaceTransition } from './store.js';
@@ -129,11 +129,11 @@ export function projectWorkspace(input: WorkspaceProjectionInput): Record<string
 
 /** Catalog keys an observation speaks about: search results' productKeys; a product context's key, sellable item and variant itemKeys. */
 function catalogKeysOf(o: Observation): unknown[] {
-  if (o.source.capabilityId === CAPABILITY_IDS.productContext) {
-    const payload = o.payload as { status?: unknown; productKey?: unknown; facts?: { sellableItemKey?: unknown; variantOptions?: { itemKey?: unknown }[] } } | null;
-    if (payload?.status !== 'found') return [];
-    return [payload.productKey, payload.facts?.sellableItemKey, ...(payload.facts?.variantOptions ?? []).map((v) => v.itemKey)];
-  }
+  type Product = { status?: unknown; productKey?: unknown; facts?: { sellableItemKey?: unknown; variantOptions?: { itemKey?: unknown }[] } } | null | undefined;
+  const productKeys = (payload: Product): unknown[] => (payload?.status !== 'found' ? [] : [payload.productKey, payload.facts?.sellableItemKey, ...(payload.facts?.variantOptions ?? []).map((v) => v.itemKey)]);
+  if (o.source.capabilityId === CAPABILITY_IDS.productContext) return productKeys(o.payload as Product);
+  // (sales-web@24) A batch read speaks about each product it found.
+  if (o.source.capabilityId === LANE_CAPABILITY_IDS.catalogProductsContext) return ((o.payload as { products?: Product[] } | null)?.products ?? []).flatMap(productKeys);
   if (o.source.capabilityId === CAPABILITY_IDS.catalogSearch) return ((o.payload as { results?: { productKey?: unknown }[] } | null)?.results ?? []).map((r) => r.productKey);
   return [];
 }

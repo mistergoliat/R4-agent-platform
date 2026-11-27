@@ -54,7 +54,7 @@ import { GATEWAY_ONLY_ENV, salesGatewayInspection } from './gateway-identity.js'
 import { SALES_IMAGE_PERCEPTION_INSTRUCTIONS, SALES_TRANSCRIPTION_PROMPT, SalesMediaPerceiver } from './media-perception.js';
 import { salesHumanRequestNotice, salesRunFailureNotice } from './service-hours.js';
 import { configuredMediaPerception } from '../model.js';
-import { catalogCapabilities } from '../capabilities/catalog.js';
+import { catalogCapabilities, catalogProductsContextCapability } from '../capabilities/catalog.js';
 import { withWebProgress, type WebProgressReporter } from './web-progress.js';
 import { F1_COMMERCIAL_POLICY_V2_VERSION, F1_COMMERCIAL_POLICY_VERSION, type CommercialEligibility } from '../capabilities/commercial-snapshot.js';
 import { F1_COMMERCIAL_POLICY_V3_VERSION } from '../capabilities/promotion-policy.js';
@@ -230,9 +230,12 @@ export function composeSalesProductionWorker(options: SalesProductionWorkerOptio
     // READ capabilities offered to the model; they execute through the CapabilityInvoker only.
     // (F1-COMMERCIAL-POLICY-v3) Under an F1 policy, a discounted product says whether its promotional price can be quoted.
     const commercial = salesCommercialEligibility(profile, options.promotionalQuotes === true);
-    const [catalogSearch, productContext] = catalogCapabilities(catalog, { variantAvailability: SALES_VARIANT_AVAILABILITY_PROFILES.has(profileLabel(profile)) || isSalesWebProfile(profile) || isSalesMetaProfile(profile), stockCount: SALES_STOCK_COUNT_PROFILES.has(profileLabel(profile)), promotions: commercial ? { eligibility: commercial, now: () => clock.now() } : null });
+    const productReads = { variantAvailability: SALES_VARIANT_AVAILABILITY_PROFILES.has(profileLabel(profile)) || isSalesWebProfile(profile) || isSalesMetaProfile(profile), stockCount: SALES_STOCK_COUNT_PROFILES.has(profileLabel(profile)), promotions: commercial ? { eligibility: commercial, now: () => clock.now() } : null };
+    const [catalogSearch, productContext] = catalogCapabilities(catalog, productReads);
     capabilities.register(progress(catalogSearch));
     capabilities.register(progress(productContext));
+    // (sales-web@24) Several products in one call, each read exactly as the single read above reads it.
+    if (capabilityAvailability(profile, LANE_CAPABILITY_IDS.catalogProductsContext).available) capabilities.register(progress(catalogProductsContextCapability(catalog, productReads)));
   }
   // (ADR-045) The lane profile reads Catalog V2 Discover; it never composes without it. (ADR-046) Nor does a web profile.
   if (isSalesLaneProfile(profile) || isSalesWebProfile(profile) || isSalesMetaProfile(profile)) {
