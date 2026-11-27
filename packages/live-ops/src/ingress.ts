@@ -223,7 +223,12 @@ export class ChannelIngress {
     for (const f of parsed.feedback ?? []) {
       feedback += await this.#o.store.recordFeedback(channel, conversationKey(this.#o.secrets.identityHashKey, channel, f.accountRef, f.conversationRef), f);
     }
-    return { status: 200, body: { ok: true, ...results, ...(parsed.presence ? { presence } : {}), ...(parsed.feedback ? { feedback } : {}), ...(adapter.returnsOutcomes ? { landed } : {}) } };
+    // (ADR-069 D2) A session transcript is a record of the conversation, never an input: nothing wakes, the agent never sees it.
+    let transcripts = 0;
+    for (const t of parsed.transcripts ?? []) {
+      transcripts += await this.#o.store.recordTranscript(channel, conversationKey(this.#o.secrets.identityHashKey, channel, t.accountRef, t.conversationRef), t);
+    }
+    return { status: 200, body: { ok: true, ...results, ...(parsed.presence ? { presence } : {}), ...(parsed.feedback ? { feedback } : {}), ...(parsed.transcripts ? { transcripts } : {}), ...(adapter.returnsOutcomes ? { landed } : {}) } };
   }
 
   /** Canonical inbound → durable input. Idempotent by the provider event identity. */

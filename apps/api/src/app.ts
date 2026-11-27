@@ -16,7 +16,7 @@ import {
 import type { AgentRegistry } from '@r4/agent-registry';
 import type { TaskRuntime, TemporalRuntime } from '@r4/task-runtime';
 import type { ProductionOperator } from '@r4/live-ops';
-import { ARTIFACT_PROPOSAL_STATES, INCIDENT_SIGNATURE, type PostgresAgentDrafts, type PostgresArtifactFacts, type PostgresArtifacts, type PostgresConsoleReads, type PostgresFeedback, type PostgresIncidents, type PostgresInsights, type PostgresKnowledge } from '@r4/persistence-postgres';
+import { ARTIFACT_PROPOSAL_STATES, INCIDENT_SIGNATURE, type PostgresAgentDrafts, type PostgresArtifactFacts, type PostgresArtifacts, type PostgresConsoleReads, type PostgresFeedback, type PostgresIncidents, type PostgresTranscripts, type PostgresInsights, type PostgresKnowledge } from '@r4/persistence-postgres';
 import { resolveCorrelationId, runWithCorrelation } from '@r4/observability';
 import { toErrorResponse } from './errors.js';
 import { unauthenticatedPrincipalResolver, type PrincipalResolver } from './principal.js';
@@ -52,6 +52,8 @@ export interface AppDependencies {
   readonly incidents?: PostgresIncidents;
   /** (ADR-067) Contact satisfaction ratings (read). */
   readonly feedback?: PostgresFeedback;
+  /** (ADR-069) Session (call) transcripts (read). */
+  readonly transcripts?: PostgresTranscripts;
   /** (ADR-052) Releases, quality funnel, learning gaps and autonomy reads. */
   readonly insights?: PostgresInsights;
   /** (ADR-052) Curated knowledge entries (read; signed operator writes). */
@@ -334,6 +336,20 @@ export function buildApp(deps: AppDependencies): FastifyInstance {
         inContext(request, async () => {
           reader(request);
           return feedback.summary(parse(feedbackQuery, request.query, 'query').days);
+        }),
+      );
+    }
+
+    if (deps.transcripts) {
+      // ADR-069 D3: one session transcript (service reader or operator, like the thread that references it). The lines are
+      // the contact's words and model output: returned as data, never interpreted.
+      const transcripts = deps.transcripts;
+      app.get('/v1/session-transcripts/:id', (request) =>
+        inContext(request, async () => {
+          reader(request);
+          const transcript = await transcripts.get(parse(taskParams, request.params, 'path').id);
+          if (!transcript) throw new PlatformError('not_found', 'transcript_not_found', 'session transcript not found');
+          return { transcript };
         }),
       );
     }

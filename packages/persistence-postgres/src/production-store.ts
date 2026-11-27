@@ -9,6 +9,7 @@ import {
   type AutonomyControlsState,
   type ClaimOutboundCommand,
   type ContactFeedbackEvent,
+  type SessionTranscriptEvent,
   type ConversationBindingRecord,
   type ConversationMigration,
   type ConversationMigrationResult,
@@ -841,6 +842,19 @@ export class PostgresProductionStore implements ProductionStore {
       const data = r.notice_key ? { type: 'platform.notice', noticeKey: r.notice_key as string } : { type: 'platform.fallback', humanRequestId: r.human_request_id as string };
       entries.push(entry(iso(r.created_at), r.outbound_id as string, 'event', null, data, delivery(r)));
     }
+    // (ADR-069 D3) A session transcript is shown by reference, never by its lines (read apart, GET /v1/session-transcripts/:id).
+    const transcripts = (await query<Row>(
+      this.#pool,
+      `select transcript_id, modality, started_at, extract(epoch from ended_at - started_at)::int as duration_s, jsonb_array_length(lines) as lines, truncated, jsonb_array_length(audit->'unbacked') as unbacked
+         from session_transcripts where task_id = $1`,
+      [taskId],
+    )).rows;
+    for (const r of transcripts) {
+      entries.push(entry(iso(r.started_at), r.transcript_id as string, 'event', null, {
+        type: 'session.transcript', transcriptId: r.transcript_id as string, modality: r.modality as string,
+        durationS: String(r.duration_s), lines: String(r.lines), truncated: String(r.truncated), unbacked: r.unbacked === null ? null : String(r.unbacked),
+      }, null));
+    }
     const events = (await query<Row>(
       this.#pool,
       `select event_id, event_type, occurred_at, actor_ref, data from temporal_events where task_id = $1 and event_type in ('handoff.requested', 'handoff.activated', 'handoff.released', 'handoff.cancelled', 'task.cancelled')`,
@@ -942,6 +956,20 @@ export class PostgresProductionStore implements ProductionStore {
               $1, $3, $4, $5::uuid, $6, $7, $8::timestamptz
        on conflict (channel, event_id) do nothing`,
       [channel, conversationKey, f.scope, f.value, f.outboundId, f.comment, f.eventId, f.occurredAt],
+    );
+    return r.rowCount ?? 0;
+  }
+
+  async recordTranscript(channel: string, conversationKey: string, t: SessionTranscriptEvent): Promise<number> {
+    // The task: the conversation's open binding, else its newest one (like a rating of the conversation).
+    const r = await query(
+      this.#pool,
+      `insert into session_transcripts (task_id, channel, modality, event_id, started_at, ended_at, lines, truncated, audit)
+       select (select b.task_id from channel_conversation_bindings b where b.channel = $1 and b.conversation_key = $2 and b.task_id is not null
+                order by (b.status = 'open') desc, b.created_at desc limit 1),
+              $1, $3, $4, $5::timestamptz, $6::timestamptz, $7::jsonb, $8, $9::jsonb
+       on conflict (channel, event_id) do nothing`,
+      [channel, conversationKey, t.modality, t.eventId, t.startedAt, t.endedAt, JSON.stringify(t.lines), t.truncated, t.audit ? JSON.stringify(t.audit) : null],
     );
     return r.rowCount ?? 0;
   }

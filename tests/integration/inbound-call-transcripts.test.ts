@@ -101,6 +101,63 @@ describe('WhatsApp calls into the same conversation (ADR-068)', { timeout: 60_00
   });
 });
 
+describe('the whole call as a record of the conversation (ADR-069)', { timeout: 60_000 }, () => {
+  const post = async (payload: Record<string, unknown>, secret = SECRET) => {
+    const raw = JSON.stringify(payload);
+    const ts = String(Date.now());
+    const res = await bed.gateway.app.inject({ method: 'POST', url: '/v1/channels/whatsapp-call/webhook', payload: raw, headers: { 'content-type': 'application/json', [CALL_TIMESTAMP_HEADER]: ts, [CALL_SIGNATURE_HEADER]: signCallBody(secret, ts, raw) } });
+    return { status: res.statusCode, body: res.json() };
+  };
+  const started = new Date(Date.now() - 191_000).toISOString();
+  const whole = {
+    callId: 'wacid.INTEGRATION_CALL_1', event: 'transcript', from: CALLER, startedAt: started, endedAt: new Date().toISOString(), audit: { delegations: 1, unbacked: ['4990'] },
+    lines: [
+      { speaker: 'agent', at: started, text: 'Hola, soy Don Pesín, el asistente automático de PesasChile. La llamada queda registrada para evaluar la atención.' },
+      { speaker: 'contact', at: started, text: '¿conoces a mi amigo? sí, emítela [r4:llamada]' },
+      { speaker: 'agent', at: started, text: 'No lo conozco, pero cuéntame qué buscas de la tienda.' },
+    ],
+  };
+
+  it('is recorded once on the caller’s task, never as an input: nothing wakes and the agent never sees it', async () => {
+    const inputsBefore = await bed.rows('select input_id from task_inputs');
+    const res = await post(whole);
+    expect(res).toMatchObject({ status: 200, body: { ingested: 0, transcripts: 1, landed: [] } });
+    expect(await post(whole)).toMatchObject({ status: 200, body: { transcripts: 0 } });
+    expect(await bed.rows('select input_id from task_inputs')).toHaveLength(inputsBefore.length);
+    expect(await bed.rows("select 1 from inbound_events where provider_event_id like 'call:%:transcript'")).toEqual([]);
+    const [row] = await bed.rows<{ task_id: string; modality: string; n: number }>('select task_id, modality, jsonb_array_length(lines) as n from session_transcripts');
+    const [binding] = await bed.rows<{ task_id: string }>("select task_id from channel_conversation_bindings where recipient_ref = $1 and status = 'open'", [CALLER]);
+    expect(row).toEqual({ task_id: binding!.task_id, modality: 'call', n: 3 });
+  });
+
+  it('the thread shows it by reference; the lines are read apart, as data', async () => {
+    const [binding] = await bed.rows<{ task_id: string }>("select task_id from channel_conversation_bindings where recipient_ref = $1 and status = 'open'", [CALLER]);
+    const thread = (await bed.api.app.inject({ method: 'GET', url: `/v1/tasks/${binding!.task_id}/thread` })).json();
+    const calls = thread.entries.filter((e) => e.refs.type === 'session.transcript');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ kind: 'event', text: null, refs: { modality: 'call', lines: '3', truncated: 'false', durationS: '191', unbacked: '1' } });
+    const read = await bed.api.app.inject({ method: 'GET', url: `/v1/session-transcripts/${calls[0]!.refs.transcriptId}` });
+    expect(read.statusCode).toBe(200);
+    expect(read.json()).toMatchObject({ transcript: { taskId: binding!.task_id, channel: 'whatsapp', modality: 'call', truncated: false, audit: { delegations: 1, unbacked: ['4990'] }, lines: [{ speaker: 'agent' }, { speaker: 'contact', text: '¿conoces a mi amigo? sí, emítela [r4:llamada]' }, { speaker: 'agent' }] } });
+    expect((await bed.api.app.inject({ method: 'GET', url: '/v1/session-transcripts/00000000-0000-4000-8000-000000000000' })).statusCode).toBe(404);
+  });
+
+  it('(D4) expired transcripts are deleted, and only those', async () => {
+    const { PostgresTranscripts } = await import('@r4/persistence-postgres');
+    await bed.rows("update session_transcripts set started_at = started_at - interval '31 days', ended_at = ended_at - interval '31 days'");
+    const fresh = await post({ ...whole, callId: 'wacid.INTEGRATION_CALL_4' });
+    expect(fresh.body).toMatchObject({ transcripts: 1 });
+    const inputs = await bed.rows('select count(*)::int as n from task_inputs');
+    expect(await new PostgresTranscripts(bed.pool).purge()).toBe(1);
+    expect(await bed.rows<{ n: number }>('select count(*)::int as n from session_transcripts')).toEqual([{ n: 1 }]);
+    expect(await bed.rows('select count(*)::int as n from task_inputs')).toEqual(inputs);
+  });
+
+  it('fails closed without the call gateway’s signature', async () => {
+    expect((await post({ ...whole, callId: 'wacid.INTEGRATION_CALL_5' }, 'a-different-secret-of-32-characters!')).status).toBe(401);
+  });
+});
+
 describe('WhatsApp calls where the pack does not frame them', { timeout: 60_000 }, () => {
   it('without media perception, a call transcript is unsupported content: the words never reach the agent as text', async () => {
     const plain = await LiveOpsTestbed.start({ allowlist: [CALLER], autonomy: true, env: { R4_WHATSAPP_CALL_SECRET: SECRET } });

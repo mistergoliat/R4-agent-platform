@@ -1,5 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
-import type { CanonicalInbound, HeaderBag, InboundChannelAdapter, ParsedNotification } from '@r4/live-ops';
+import { TRANSCRIPT_LINE_MAX, TRANSCRIPT_MAX_LINES, type CanonicalInbound, type HeaderBag, type InboundChannelAdapter, type ParsedNotification, type SessionTranscriptLine } from '@r4/live-ops';
 import { WHATSAPP_CHANNEL_ID, type WhatsAppCloudConfig } from './config.js';
 import { normalizeWaId } from './inbound.js';
 
@@ -83,12 +83,16 @@ export class WhatsAppCallTranscriptAdapter implements InboundChannelAdapter {
     // `{ callId, event: "ended", from, occurredAt }`: the end of a call Don Pesín answered (owner decision 2026-11-26:
     // the only thing the agent writes after a call is a short «¿te pude ayudar?»). A channel event, never content.
     const ended = isObject(p) && p.event === 'ended';
-    if (!isObject(p) || typeof p.callId !== 'string' || !/^[A-Za-z0-9._=+/-]{8,512}$/.test(p.callId) || (!ended && (!Number.isInteger(p.turn) || (p.turn as number) < 1 || (p.turn as number) > 10_000))) {
+    // (ADR-069) `{ callId, event: "transcript", from, startedAt, endedAt, lines: [{ speaker, at, text }] }`: the whole call,
+    // a record of the conversation (never an input).
+    const whole = isObject(p) && p.event === 'transcript';
+    if (!isObject(p) || typeof p.callId !== 'string' || !/^[A-Za-z0-9._=+/-]{8,512}$/.test(p.callId) || (!ended && !whole && (!Number.isInteger(p.turn) || (p.turn as number) < 1 || (p.turn as number) > 10_000))) {
       return { inbound: [], statuses: [], rejected: [{ providerEventId: null, reason: 'invalid_call_event' }] };
     }
     // The call id is Meta's (long, base64-like): its hash keeps the event identity short and stable.
-    const providerEventId = `call:${createHash('sha256').update(p.callId).digest('hex').slice(0, 32)}:${ended ? 'ended' : String(p.turn)}`;
+    const providerEventId = `call:${createHash('sha256').update(p.callId).digest('hex').slice(0, 32)}:${ended ? 'ended' : whole ? 'transcript' : String(p.turn)}`;
     const from = normalizeWaId(p.from);
+    if (whole) return this.#transcript(p, providerEventId, from);
     const text = typeof p.text === 'string' ? p.text.trim() : '';
     const at = typeof p.occurredAt === 'string' ? new Date(p.occurredAt) : null;
     if (!from) return { inbound: [], statuses: [], rejected: [{ providerEventId, reason: 'missing_caller' }] };
@@ -105,5 +109,40 @@ export class WhatsAppCallTranscriptAdapter implements InboundChannelAdapter {
       metadata: ended ? { messageType: 'call_ended' } : { messageType: 'call_transcript', turn: p.turn as number },
     };
     return { inbound: [inbound], statuses: [], rejected: [] };
+  }
+
+  /** Over the caps the transcript is cut from the end and marked, never refused (ADR-069 D1). */
+  #transcript(p: Json, eventId: string, from: string | null): ParsedNotification {
+    const reject = (reason: string): ParsedNotification => ({ inbound: [], statuses: [], rejected: [{ providerEventId: eventId, reason }] });
+    if (!from) return reject('missing_caller');
+    const started = typeof p.startedAt === 'string' ? new Date(p.startedAt) : null;
+    const ended = typeof p.endedAt === 'string' ? new Date(p.endedAt) : null;
+    if (!started || !ended || Number.isNaN(started.getTime()) || Number.isNaN(ended.getTime()) || ended < started) return reject('invalid_timestamp');
+    if (!Array.isArray(p.lines)) return reject('invalid_transcript');
+    const lines: SessionTranscriptLine[] = [];
+    // The sender may already have cut it (its own body cap): the mark is kept.
+    let truncated = p.truncated === true || p.lines.length > TRANSCRIPT_MAX_LINES;
+    for (const l of p.lines.slice(0, TRANSCRIPT_MAX_LINES)) {
+      if (!isObject(l) || (l.speaker !== 'contact' && l.speaker !== 'agent') || typeof l.text !== 'string' || typeof l.at !== 'string') return reject('invalid_transcript');
+      const at = new Date(l.at);
+      if (Number.isNaN(at.getTime())) return reject('invalid_transcript');
+      const text = l.text.trim();
+      if (text === '') continue;
+      if (text.length > TRANSCRIPT_LINE_MAX) truncated = true;
+      lines.push({ speaker: l.speaker, at: at.toISOString(), text: text.slice(0, TRANSCRIPT_LINE_MAX) });
+    }
+    if (lines.length === 0) return reject('empty_transcript');
+    // `audit: { delegations, unbacked: [figure] }` (ADR-068 D3), optional; figures are digits only.
+    let audit: { delegations: number; unbacked: string[] } | null = null;
+    if (p.audit !== undefined && p.audit !== null) {
+      const a = p.audit;
+      if (!isObject(a) || !Number.isInteger(a.delegations) || (a.delegations as number) < 0 || (a.delegations as number) > 10_000 || !Array.isArray(a.unbacked)
+        || a.unbacked.length > 100 || !a.unbacked.every((f): f is string => typeof f === 'string' && /^\d{1,15}$/.test(f))) return reject('invalid_audit');
+      audit = { delegations: a.delegations as number, unbacked: a.unbacked };
+    }
+    return {
+      inbound: [], statuses: [], rejected: [],
+      transcripts: [{ accountRef: this.#config.phoneNumberId, conversationRef: from, eventId, modality: 'call', startedAt: started.toISOString(), endedAt: ended.toISOString(), lines, truncated, audit }],
+    };
   }
 }
