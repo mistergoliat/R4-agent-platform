@@ -6,10 +6,15 @@
     conversación y poder evaluarla».
   - Forma elegida por el owner el mismo día: «parte con el ADR de la transcripción». El texto va primero y el audio
     queda para después.
+  - **Revisión 1, mismo día.** El owner resolvió las tres decisiones abiertas:
+    - Retención: «sí», 30 días.
+    - La mesa de ventas también ve la transcripción: «obvio».
+    - Aviso al saludar y derecho a negarse: «que diga que la llamada va a ser [registrada] a modo de evaluar. Si el
+      cliente no quiere puede colgar o decir explícitamente que no se grabe. En ese caso, la conversación quedaría
+      entre ellos y nadie más sabrá lo que hablaron».
   - La implementación necesita su OK explícito. Los despliegues necesitan su OK por SHA.
 - **Fecha:** 2026-11-27
-- **Modifica:** ADR-068 D6 («no se guarda transcripción completa»). Solo para la lista de permitidos mientras no se
-  resuelvan las decisiones abiertas 1 a 3.
+- **Modifica:** ADR-068 D6 («no se guarda transcripción completa»): se guarda, salvo que el llamante se niegue (D5).
 - **Relacionados:**
   - ADR-068: la llamada es una modalidad del canal WhatsApp.
   - ADR-067: las calificaciones del contacto son una señal, nunca una entrada. Es el patrón que se repite aquí.
@@ -105,25 +110,56 @@ hora.
 - La auditoría de cifras de esa llamada (coincide / cifras sin respaldo) se muestra arriba.
 - Nada se edita.
 
-**La mesa de ventas no la muestra en T1** (decisión abierta 2).
+**La mesa de ventas (ADR-048) la muestra igual** (decisión del owner, revisión 1):
+- La conversación de la mesa muestra la misma entrada y la misma vista de solo lectura.
+- La lee con su firmante de servicio, por el mismo endpoint.
 
 ## Decisión 4 — Retención y aviso
 
-- **Retención:** una purga diaria borra las transcripciones con más de **30 días**. Es la cifra propuesta (decisión
-  abierta 1). La auditoría de cifras y los metadatos de la llamada (duración, delegaciones, espera) no son
-  transcripción y quedan.
-- **Aviso al llamante:**
-  - En T1 solo llama la lista de permitidos (el owner), que sabe que se transcribe.
-  - Antes de abrir la voz a clientes (ADR-068 V2), el saludo agrega un aviso corto, por ejemplo «esta llamada queda
-    transcrita para mejorar la atención». El aviso de privacidad del sitio se actualiza.
-  - Esto sigue pendiente de revisión legal (G0 O-8, Ley 21.719).
+- **Retención:** una purga diaria borra las transcripciones con más de **30 días** (owner, revisión 1). La auditoría
+  de cifras y los metadatos de la llamada (duración, delegaciones, espera) no son transcripción y quedan.
+- **Aviso al llamante:** desde T1, en cada llamada, el saludo lo dice justo después de presentarse como el asistente
+  automático:
+  - **Texto base:** «La llamada queda registrada para evaluar la atención. Si prefieres que no, dímelo y no queda
+    registro».
+  - La voz puede variar la forma, pero nunca omitir las dos partes: que se registra y que se puede negar.
+  - **Exactitud:** en T1 no se graba audio, así que el aviso dice «registrada» y no «grabada». Si T3 agrega audio,
+    el aviso pasa a decir «grabada».
+- **Aviso de privacidad del sitio:** se actualiza antes de abrir la voz a clientes (ADR-068 V2), junto con la revisión
+  legal (G0 O-8, Ley 21.719).
+
+## Decisión 5 — Si el llamante se niega, no queda registro de la llamada
+
+**Decisión del owner, revisión 1:** si el cliente dice que no quiere que se registre, «la conversación quedaría entre
+ellos y nadie más sabrá lo que hablaron».
+
+**Cómo se detecta:**
+- `r4-voice` revisa lo que oyó del cliente, la transcripción de entrada, contra frases de negativa: «no grabes», «no
+  quiero que quede registro», «no me grabes» y similares.
+- Además, la voz está instruida para confirmar en una frase: «Listo, no queda registro de esta llamada».
+- **Ante la duda, no se registra:** la detección es por las palabras del cliente, nunca por la salida del modelo. Una
+  coincidencia falsa solo hace que esa llamada no se registre, que es el lado seguro.
+
+**Qué pasa entonces:**
+- `r4-voice` descarta la transcripción en memoria y no envía el evento `transcript`.
+- La negativa vale para toda la llamada, aunque llegue al final.
+- `r4-voice` registra solo `transcript_declined` en sus metadatos, sin texto.
+
+**Lo que sí queda, y la voz lo dice:**
+- Lo que el cliente pide cotizar o comprar se atiende por su WhatsApp (ADR-068): la cotización, la oferta y el PDF
+  quedan en el chat, como si los hubiera escrito.
+- Al confirmar la negativa, la voz lo aclara: «Lo que me pidas cotizar te llega igual por WhatsApp».
+- Si el cliente tampoco quiere eso, la voz no delega y le ofrece seguir por escrito o con un vendedor.
+
+**Lo demás:** el evento `ended` y la pregunta posterior «¿te pude ayudar?» se mantienen. No llevan contenido de la
+llamada.
 
 ## Fases
 
 | Fase | Contenido | Estado |
 |---|---|---|
-| T1 | Envío desde `r4-voice`, tabla `session_transcripts`, entrada de hilo, endpoint lector, vista en la consola, purga diaria; solo lista de permitidos | Propuesta |
-| T2 | Aviso en el saludo y en la política de privacidad; transcripción para llamantes reales (con ADR-068 V2) | Propuesta, tras revisión legal |
+| T1 | Envío desde `r4-voice`, aviso en el saludo y negativa (D5), tabla `session_transcripts`, entrada de hilo, endpoint lector, vista en la consola y en la mesa, purga diaria; solo lista de permitidos | Propuesta |
+| T2 | Aviso de privacidad del sitio; transcripción para llamantes reales (con ADR-068 V2) | Propuesta, tras revisión legal |
 | T3 | Audio de la llamada (dos pistas Opus por llamada en S3, con retención y acceso solo de administradores) | Fuera de este ADR; se decide si el texto no basta |
 
 ## Evaluación (va con la implementación)
@@ -144,14 +180,18 @@ hora.
   - Arma los turnos en orden con su hablante.
   - Envía la transcripción antes del `ended`.
   - No escribe la transcripción en sus logs.
-- **L3:** una llamada del owner con una pregunta fuera de tema y una cotización. La consola muestra la llamada
-  completa, con la delegación y la auditoría de cifras.
+  - El saludo trae el aviso.
+  - Una negativa en cualquier momento de la llamada deja sin enviar la transcripción. Se prueba con frases de
+    negativa en varios turnos.
+  - Una llamada sin negativa sí la envía.
+- **L3:** dos llamadas del owner.
+  - **Primera:** una pregunta fuera de tema y una cotización. La consola y la mesa muestran la llamada completa, con
+    la delegación y la auditoría de cifras.
+  - **Segunda:** dice «no la grabes». No aparece transcripción. La cotización pedida igual llega al WhatsApp.
 
 ## Decisiones abiertas del owner
 
-1. Retención: 30 días propuestos.
-2. Si la mesa de ventas (ADR-048) también ve la transcripción, o solo la consola.
-3. El texto del aviso en el saludo (T2).
+Ninguna. Las tres se resolvieron en la revisión 1.
 
 ## Fuera de alcance
 
